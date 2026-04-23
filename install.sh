@@ -85,10 +85,16 @@ if [ "$MODE" = "frontend" ] || [ "$MODE" = "both" ]; then
   cp_safe "$SCAFFOLD_DIR/forbidden-patterns/frontend.txt.template" ".forbidden-patterns/frontend.txt"
 fi
 
-# Wire the hook
+# Wire the hook — preserve existing core.hooksPath if already set (e.g. Husky)
 if [ -d .git ]; then
-  git config core.hooksPath .githooks
-  echo "configured:   core.hooksPath = .githooks"
+  EXISTING_HOOKS_PATH=$(git config --get core.hooksPath || true)
+  if [ -z "$EXISTING_HOOKS_PATH" ] || [ "$EXISTING_HOOKS_PATH" = ".githooks" ]; then
+    git config core.hooksPath .githooks
+    echo "configured:   core.hooksPath = .githooks"
+  else
+    echo "warning: core.hooksPath is already '$EXISTING_HOOKS_PATH' — leaving it alone."
+    echo "         Point it at .githooks or chain our hook into your existing setup."
+  fi
 else
   echo "warning: no .git directory — run 'git config core.hooksPath .githooks' after 'git init'"
 fi
