@@ -24,8 +24,6 @@ select = [
 ]
 
 ignore = [
-    "ANN101",  # self annotations unneeded
-    "ANN102",  # cls annotations unneeded
     "ANN401",  # Any sometimes unavoidable
 ]
 
