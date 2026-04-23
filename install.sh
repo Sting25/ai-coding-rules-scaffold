@@ -29,6 +29,14 @@ for arg in "$@"; do
   esac
 done
 
+# Guard against running inside the scaffold repo itself — source==destination
+# on files like coding-rules.md would abort the script under `set -e`.
+if [ "$(pwd -P)" = "$SCAFFOLD_DIR" ]; then
+  echo "error: don't run install.sh from the scaffold directory itself." >&2
+  echo "       cd into your target project and run the script from there." >&2
+  exit 1
+fi
+
 # Auto-detect stack
 if [ "$MODE" = "auto" ]; then
   HAS_PY=0
