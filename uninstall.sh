@@ -80,7 +80,9 @@ fi
 # Clean up empty dirs the installer created
 for dir in .githooks .github/workflows .github; do
   [ -d "$dir" ] || continue
-  rmdir "$dir" 2>/dev/null && echo "removed empty: $dir" || true
+  if rmdir "$dir" 2>/dev/null; then
+    echo "removed empty: $dir"
+  fi
 done
 
 # Unwire the hook

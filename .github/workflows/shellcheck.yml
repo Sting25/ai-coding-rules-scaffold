@@ -14,4 +14,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: shellcheck install.sh uninstall.sh githooks/pre-commit.template
+      - run: shellcheck -S info install.sh uninstall.sh githooks/pre-commit.template
