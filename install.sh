@@ -7,6 +7,7 @@
 #   install.sh --frontend   # TS/JS only
 #   install.sh --both       # install both stacks
 #   install.sh --force      # overwrite existing files
+#   install.sh --no-verify  # skip the post-install linter smoke test
 #   install.sh --help       # show this help
 
 set -euo pipefail
@@ -14,14 +15,16 @@ set -euo pipefail
 SCAFFOLD_DIR="$(cd "$(dirname "$0")" && pwd)"
 MODE="auto"
 FORCE=0
+VERIFY=1
 
 for arg in "$@"; do
   case "$arg" in
-    --python)   MODE="python" ;;
-    --frontend) MODE="frontend" ;;
-    --both)     MODE="both" ;;
-    --force)    FORCE=1 ;;
-    --help|-h)  sed -n '2,10p' "$0"; exit 0 ;;
+    --python)    MODE="python" ;;
+    --frontend)  MODE="frontend" ;;
+    --both)      MODE="both" ;;
+    --force)     FORCE=1 ;;
+    --no-verify) VERIFY=0 ;;
+    --help|-h)   sed -n '2,11p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -36,7 +39,10 @@ if [ "$MODE" = "auto" ]; then
   if   [ "$HAS_PY" -eq 1 ] && [ "$HAS_JS" -eq 1 ]; then MODE="both"
   elif [ "$HAS_PY" -eq 1 ]; then MODE="python"
   elif [ "$HAS_JS" -eq 1 ]; then MODE="frontend"
-  else MODE="python"; echo "note: no pyproject.toml / package.json — defaulting to Python"
+  else
+    echo "error: no pyproject.toml / requirements.txt / setup.py / package.json found." >&2
+    echo "       Specify the stack explicitly: --python, --frontend, or --both." >&2
+    exit 1
   fi
 fi
 
@@ -79,12 +85,35 @@ else
 fi
 
 echo ""
-echo "Done (mode: $MODE). Next steps:"
-case "$MODE" in
-  python|both)   echo "  - Install ruff:    pip install ruff" ;;
-esac
-case "$MODE" in
-  frontend|both) echo "  - Install eslint:  npm i -D eslint @eslint/js typescript-eslint" ;;
-esac
+echo "Done (mode: $MODE)."
+
+# Post-install smoke test — confirms linters are installed and configs load.
+if [ "$VERIFY" -eq 1 ]; then
+  echo ""
+  echo "Verifying linters:"
+  case "$MODE" in
+    python|both)
+      if command -v ruff >/dev/null 2>&1; then
+        if ruff check --quiet --exit-zero . >/dev/null 2>&1; then
+          echo "  ✓ ruff installed and config loads"
+        else
+          echo "  ✗ ruff installed but 'ruff check' errored — check ruff.toml"
+        fi
+      else
+        echo "  ! ruff not installed — run: pip install ruff"
+      fi ;;
+  esac
+  case "$MODE" in
+    frontend|both)
+      if command -v npx >/dev/null 2>&1 && npx --no-install eslint --version >/dev/null 2>&1; then
+        echo "  ✓ eslint installed"
+      else
+        echo "  ! eslint not installed — run: npm i -D eslint @eslint/js typescript-eslint"
+      fi ;;
+  esac
+fi
+
+echo ""
+echo "Next:"
 echo "  - Edit CLAUDE.md — fill in the Project section at the bottom"
-echo "  - Verify: add 'print(\"x\")' to a .py file, 'git add' it, try to commit — hook should reject"
+echo "  - Verify the hook: add 'print(\"x\")' to a .py file, 'git add' it, try to commit — hook should reject"
