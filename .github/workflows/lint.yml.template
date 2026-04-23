@@ -85,7 +85,7 @@ jobs:
           config=.forbidden-patterns/secrets.txt
           [ -f "$config" ] || exit 0
           files=$(git ls-files | grep -vE '\.(svg|png|jpg|jpeg|gif|ico|pdf|lock|zip|tar|gz|woff2?|ttf|mp4|mov)$' \
-                              | grep -vE '^(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|uv\.lock|Cargo\.lock)$')
+                              | grep -vE '^(package-lock\.json|pnpm-lock\.yaml)$')
           while IFS='|' read -r pattern description; do
             [ -z "$pattern" ] && continue
             case "$pattern" in \#*) continue ;; esac
