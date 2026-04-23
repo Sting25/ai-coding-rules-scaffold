@@ -25,7 +25,7 @@ Clone the scaffold somewhere stable:
 ```sh
 git clone https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
 # Or pin to a specific release:
-git clone --branch v0.1.0 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
+git clone --branch v0.2.0 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
 ```
 
 From your project root:
