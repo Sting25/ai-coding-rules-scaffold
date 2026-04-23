@@ -3,7 +3,7 @@
 [![Latest release](https://img.shields.io/github/v/release/Sting25/ai-coding-rules-scaffold)](https://github.com/Sting25/ai-coding-rules-scaffold/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Minimum-viable coding guardrails that prevent unbounded file growth, copy-paste logic, deeply nested control flow, silenced exceptions, and debug leaks in production. Agent-agnostic: works with Cursor, Claude Code, Copilot, Cline, Aider, or no AI at all — enforcement is `ruff` + `eslint` + a pre-commit hook + a CI workflow.
+Minimum-viable coding guardrails that prevent unbounded file growth, deeply nested control flow, silenced exceptions, debug leaks (`print`, `console.log`, `breakpoint`, `pdb`), hardcoded secrets/tokens, and stray `.env` or private-key files. Agent-agnostic: works with Cursor, Claude Code, Copilot, Cline, Aider, or no AI at all — enforcement is `ruff` + `eslint` + a pre-commit hook + a CI mirror that runs the same checks server-side so `--no-verify` doesn't become the escape hatch.
 
 Built for Python/FastAPI + optional TypeScript/React projects. Adapt freely for other stacks.
 
@@ -63,7 +63,7 @@ npm i -D eslint @eslint/js typescript-eslint       # TS/JS
 | `coding-rules.md` | `coding-rules.md` | Short list of rules that aren't tool-enforceable |
 | `ruff.toml.template` | `ruff.toml` | Python lint config |
 | `eslint.config.js.template` | `eslint.config.js` | TS/JS lint config (flat config, ESLint 9+) |
-| `githooks/pre-commit.template` | `.githooks/pre-commit` | File-size + forbidden-patterns check |
+| `githooks/pre-commit.template` | `.githooks/pre-commit` | File-size, forbidden-patterns, secrets, and blocked-filenames check |
 | `.github/workflows/lint.yml.template` | `.github/workflows/lint.yml` | CI mirror of the hook |
 | `forbidden-patterns/backend.txt.template` | `.forbidden-patterns/backend.txt` | Python patterns consumed by hook + CI |
 | `forbidden-patterns/frontend.txt.template` | `.forbidden-patterns/frontend.txt` | TS/JS patterns consumed by hook + CI |
@@ -115,7 +115,7 @@ Commit + CI-breaking (pre-commit hook + `lint.yml`):
 
 | Concern | Check |
 |---|---|
-| `print()` in Python files | regex |
+| `print()`, `breakpoint()`, `pdb.set_trace()`, `ipdb.set_trace()` in Python files | regex |
 | `console.log` / `debugger` / `alert` in TS/JS | regex |
 | File size > 500 lines | `wc -l` per staged file |
 | TODO/FIXME without ticket ref | regex (opt-in; commented in template) |
