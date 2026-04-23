@@ -1,5 +1,8 @@
 # ai-coding-rules-scaffold
 
+[![Latest release](https://img.shields.io/github/v/release/Sting25/ai-coding-rules-scaffold)](https://github.com/Sting25/ai-coding-rules-scaffold/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Minimum-viable coding guardrails that prevent unbounded file growth, copy-paste logic, deeply nested control flow, silenced exceptions, and debug leaks in production. Agent-agnostic: works with Cursor, Claude Code, Copilot, Cline, Aider, or no AI at all — enforcement is `ruff` + `eslint` + a pre-commit hook + a CI workflow.
 
 Built for Python/FastAPI + optional TypeScript/React projects. Adapt freely for other stacks.
@@ -21,6 +24,8 @@ Clone the scaffold somewhere stable:
 
 ```sh
 git clone https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
+# Or pin to a specific release:
+git clone --branch v0.1.0 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
 ```
 
 From your project root:
