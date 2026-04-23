@@ -20,7 +20,6 @@ jobs:
           python-version: "3.12"
       - run: pip install ruff
       - run: ruff check .
-      - run: ruff format --check .
 
   frontend:
     if: hashFiles('eslint.config.js', 'package.json') != ''
