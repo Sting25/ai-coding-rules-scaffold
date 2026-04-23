@@ -1,0 +1,7 @@
+# Forbidden patterns for TS/JS files (*.ts, *.tsx, *.js, *.jsx). Applied by .githooks/pre-commit.
+# Format: <regex>|<description>   (one per line; # comments ignored)
+# Copy to your project as `.forbidden-patterns/frontend.txt`.
+
+\bconsole\.log\s*\(|Use the project logger, not console.log
+\bdebugger\b|Remove debugger statement before committing
+\balert\s*\(|Don't ship alert() calls — use a proper UI dialog

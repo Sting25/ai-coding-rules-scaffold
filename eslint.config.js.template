@@ -1,0 +1,37 @@
+// Copy to project root as `eslint.config.js` (flat config, ESLint 9+).
+// Install peers: npm i -D eslint @eslint/js typescript-eslint
+// Adjust parserOptions.project per project if type-aware rules are needed.
+
+import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
+
+export default tseslint.config(
+  js.configs.recommended,
+  ...tseslint.configs.strict,
+  {
+    rules: {
+      // Structure
+      'max-depth': ['error', 3],
+      'complexity': ['error', 10],
+      'max-lines-per-function': ['error', { max: 50, skipComments: true, skipBlankLines: true }],
+      'max-lines': ['error', { max: 500, skipComments: true, skipBlankLines: true }],
+      'no-else-return': 'error',
+
+      // Debug leaks
+      'no-console': 'error',
+
+      // TypeScript discipline
+      '@typescript-eslint/no-explicit-any': ['error', { ignoreRestArgs: false }],
+      '@typescript-eslint/explicit-module-boundary-types': 'error',
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    },
+  },
+  {
+    // Test files get looser rules
+    files: ['**/*.test.ts', '**/*.test.tsx', '**/*.spec.ts'],
+    rules: {
+      'max-lines-per-function': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+);

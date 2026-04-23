@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Pre-commit hook enforcing file size limits + forbidden patterns.
+#
+# Install (from project root):
+#   mkdir -p .githooks && cp <scaffold>/githooks/pre-commit.template .githooks/pre-commit
+#   chmod +x .githooks/pre-commit
+#   git config core.hooksPath .githooks
+#
+# Patterns are read from:
+#   .forbidden-patterns/backend.txt   (lines: regex|description; applied to *.py)
+#   .forbidden-patterns/frontend.txt  (lines: regex|description; applied to *.ts,*.tsx,*.js,*.jsx)
+#
+# Lines starting with # in those files are comments.
+
+set -euo pipefail
+
+MAX_LINES=${MAX_LINES:-500}
+FAILED=0
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$STAGED" ] && exit 0
+
+# ---------- 1. File size ----------
+while IFS= read -r file; do
+  [ -f "$file" ] || continue
+  # Skip non-source file types (docs, configs, data)
+  case "$file" in
+    *.md|*.json|*.toml|*.yaml|*.yml|*.lock|*.txt|*.csv|*.sql) continue ;;
+    *.svg|*.png|*.jpg|*.jpeg|*.gif|*.ico|*.pdf) continue ;;
+  esac
+  LINES=$(wc -l < "$file" | tr -d ' ')
+  if [ "$LINES" -gt "$MAX_LINES" ]; then
+    echo "✗ $file: $LINES lines (max $MAX_LINES) — extract a module"
+    FAILED=1
+  fi
+done <<< "$STAGED"
+
+# ---------- 2. Forbidden patterns ----------
+check_patterns() {
+  local config=$1
+  local glob_filter=$2
+  [ -f "$config" ] || return 0
+
+  while IFS='|' read -r pattern description; do
+    # Skip comments and blank lines
+    [ -z "$pattern" ] && continue
+    case "$pattern" in \#*) continue ;; esac
+
+    while IFS= read -r file; do
+      [ -f "$file" ] || continue
+      # Filter by extension
+      local matched=0
+      for ext in $glob_filter; do
+        case "$file" in *."$ext") matched=1; break ;; esac
+      done
+      [ "$matched" -eq 1 ] || continue
+
+      if grep -nE "$pattern" "$file" >/dev/null 2>&1; then
+        echo "✗ $file: $description"
+        grep -nE "$pattern" "$file" | head -3 | sed 's/^/    /'
+        FAILED=1
+      fi
+    done <<< "$STAGED"
+  done < "$config"
+}
+
+check_patterns ".forbidden-patterns/backend.txt" "py"
+check_patterns ".forbidden-patterns/frontend.txt" "ts tsx js jsx"
+
+if [ "$FAILED" -ne 0 ]; then
+  echo ""
+  echo "Pre-commit failed. Fix the issues above or use 'git commit --no-verify' to skip (don't)."
+  exit 1
+fi
+
+exit 0

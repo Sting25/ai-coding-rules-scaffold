@@ -1,0 +1,45 @@
+# Copy to project root as `ruff.toml`.
+# Python lint config enforcing the coding-rules scaffold.
+# Adjust target-version and line-length per project if needed.
+
+target-version = "py312"
+line-length = 100
+
+[lint]
+select = [
+    "E",     # pycodestyle errors
+    "F",     # pyflakes
+    "I",     # import sorting
+    "W",     # pycodestyle warnings
+    "B",     # bugbear (common bug patterns)
+    "UP",    # pyupgrade (modernize syntax)
+    "SIM",   # flake8-simplify (collapsible ifs, ternaries, early returns)
+    "PTH",   # enforce pathlib over os.path
+    "ANN",   # type annotations
+    "BLE",   # no blind except
+    "C90",   # mccabe complexity
+    "PL",    # pylint subset (branches, statements)
+    "PT",    # pytest style
+    "RUF",   # ruff-specific rules
+]
+
+ignore = [
+    "ANN101",  # self annotations unneeded
+    "ANN102",  # cls annotations unneeded
+    "ANN401",  # Any sometimes unavoidable
+]
+
+[lint.mccabe]
+max-complexity = 10
+
+[lint.pylint]
+max-branches = 12
+max-statements = 60
+
+[lint.per-file-ignores]
+"tests/**/*.py" = ["ANN", "PLR2004"]  # tests may have magic values, looser annotations
+
+[format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true

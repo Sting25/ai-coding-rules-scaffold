@@ -1,0 +1,6 @@
+# Forbidden patterns for Python files (*.py). Applied by .githooks/pre-commit.
+# Format: <regex>|<description>   (one per line; # comments ignored)
+# Copy to your project as `.forbidden-patterns/backend.txt`.
+
+\bprint\s*\(|Use structlog (or the project's logger), not print()
+os\.path\.join|Use pathlib.Path(), not os.path.join
