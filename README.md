@@ -42,23 +42,42 @@ pip install ruff                                   # Python
 npm i -D eslint @eslint/js typescript-eslint       # TS/JS
 ```
 
-Finally, reference the rules from your AI agent config. For Claude Code, add to `.claude/CLAUDE.md`:
+Finally, reference the rules from your AI agent config. The installer drops a ready-to-edit `CLAUDE.md` at the project root — if you use a different tool, copy the same reference into its config file.
 
+**Claude Code** — `CLAUDE.md` (installer creates this):
 ```markdown
 ## Coding rules
-See `.claude/coding-rules.md` and `ruff.toml`. Tool-enforced on every commit via `.githooks/pre-commit`.
+See `.claude/coding-rules.md` and `ruff.toml`. Tool-enforced on every commit via `.githooks/pre-commit` and on every PR via `.github/workflows/lint.yml`.
 ```
 
-For Cursor / Cline / Aider / etc., reference `.claude/coding-rules.md` from whatever config file the tool uses.
+**Cursor** — `.cursorrules` (project root):
+```
+Follow the rules in .claude/coding-rules.md.
+Lint config: ruff.toml (Python), eslint.config.js (TS/JS).
+Pre-commit hook enforces file-size ceiling and forbidden patterns — do not bypass with --no-verify.
+```
+
+**Cline** — `.clinerules` (project root): same content as `.cursorrules` above.
+
+**Aider** — add to `.aider.conf.yml`:
+```yaml
+read:
+  - .claude/coding-rules.md
+  - CLAUDE.md
+```
+
+**Continue / Copilot / other** — point the tool at `.claude/coding-rules.md` via whatever mechanism it supports.
 
 ## What's in the scaffold
 
 | File | Goes to | Purpose |
 |---|---|---|
 | `coding-rules.md` | `<project>/.claude/coding-rules.md` | Short list of rules that aren't tool-enforceable |
+| `CLAUDE.md.template` | `<project>/CLAUDE.md` | Top-level agent config: git discipline + project section to fill in |
 | `ruff.toml.template` | `<project>/ruff.toml` | Python lint config |
 | `eslint.config.js.template` | `<project>/eslint.config.js` | TS/JS lint config (flat config, ESLint 9+) |
 | `githooks/pre-commit.template` | `<project>/.githooks/pre-commit` | Shell script: file-size + forbidden-patterns check |
+| `.github/workflows/lint.yml.template` | `<project>/.github/workflows/lint.yml` | CI: mirrors the hook so `--no-verify` can't sneak past |
 | `forbidden-patterns/backend.txt.template` | `<project>/.forbidden-patterns/backend.txt` | Python-side patterns consumed by the hook |
 | `forbidden-patterns/frontend.txt.template` | `<project>/.forbidden-patterns/frontend.txt` | TS/JS patterns consumed by the hook |
 | `install.sh` | — | One-command installer (you run this) |

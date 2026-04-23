@@ -53,8 +53,10 @@ cp_safe() {
 
 # Always
 cp_safe "$SCAFFOLD_DIR/coding-rules.md" ".claude/coding-rules.md"
+cp_safe "$SCAFFOLD_DIR/CLAUDE.md.template" "CLAUDE.md"
 cp_safe "$SCAFFOLD_DIR/githooks/pre-commit.template" ".githooks/pre-commit"
 chmod +x .githooks/pre-commit
+cp_safe "$SCAFFOLD_DIR/.github/workflows/lint.yml.template" ".github/workflows/lint.yml"
 
 # Python
 if [ "$MODE" = "python" ] || [ "$MODE" = "both" ]; then
@@ -84,5 +86,5 @@ esac
 case "$MODE" in
   frontend|both) echo "  - Install eslint:  npm i -D eslint @eslint/js typescript-eslint" ;;
 esac
-echo "  - Reference .claude/coding-rules.md from your CLAUDE.md (or equivalent AI agent config)"
+echo "  - Edit CLAUDE.md — fill in the Project section at the bottom"
 echo "  - Verify: add 'print(\"x\")' to a .py file, 'git add' it, try to commit — hook should reject"

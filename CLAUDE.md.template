@@ -1,0 +1,41 @@
+# CLAUDE.md
+
+Project guidance for Claude Code (and any other AI coding agent that reads a top-level config). Copy to your project root as `CLAUDE.md` and edit the **Project** section.
+
+## Coding rules
+
+See `.claude/coding-rules.md` and `ruff.toml` / `eslint.config.js`. Tool-enforced on every commit via `.githooks/pre-commit` and on every PR via `.github/workflows/lint.yml`.
+
+The file-size ceiling (500 lines) is non-negotiable — never raise it.
+
+## Git discipline
+
+- **Never `--amend` a commit that has been pushed.** Amending public history forces everyone else to reset.
+- **Never `push --force` or `push --force-with-lease`** without explicit instruction for this specific push. On `main` / `master`, refuse even with instruction — ask first.
+- **Never `git commit --no-verify`.** The pre-commit hook is the enforcement layer; bypassing it defeats the whole scaffold. If the hook is wrong, fix the hook.
+- **Never push unless asked.** Committing is local and reversible; pushing is not. Wait for explicit "push it" / "open a PR" before `git push`.
+- **Never `reset --hard`, `checkout .`, or `clean -fd`** on a dirty tree without confirming — those destroy uncommitted work silently.
+- **One commit per logical change.** Don't bundle "fix bug + rename vars + add feature" into one commit; split them.
+
+## Commit message format
+
+```
+<type>: <imperative summary, <=72 chars>
+
+<optional body: why, not what — the diff shows what>
+<optional: "Considered extending X but Y" for new files, per coding-rules.md rule 3>
+```
+
+Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`.
+
+## When creating a new file
+
+Per `coding-rules.md` rule 3: search the codebase for an existing module that could absorb the logic. In the commit body, state what you considered and why extending wasn't viable. This is the single best defense against codebase sprawl.
+
+## Project
+
+<!-- Replace this section with project-specific context: stack, key entry points, architectural constraints, non-obvious gotchas. Keep it tight — this file is read on every turn. -->
+
+- Stack: _(e.g. FastAPI + SQLAlchemy 2.0 + React/TS)_
+- Entry points: _(e.g. `app/main.py`, `web/src/index.tsx`)_
+- Gotchas: _(e.g. "all DB sessions must go through `get_session()` — raw `Session()` leaks connections")_

@@ -1,0 +1,84 @@
+name: lint
+
+# Copy to your project as `.github/workflows/lint.yml`.
+# Mirrors the pre-commit hook server-side so --no-verify can't sneak past.
+# Adjust Python / Node versions per project.
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+jobs:
+  python:
+    if: hashFiles('ruff.toml', 'pyproject.toml') != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check .
+      - run: ruff format --check .
+
+  frontend:
+    if: hashFiles('eslint.config.js', 'package.json') != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci || npm install
+      - run: npx eslint .
+
+  guardrails:
+    # File-size + forbidden-patterns check, mirroring .githooks/pre-commit.
+    # Runs regardless of stack so the size ceiling is enforced everywhere.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: File size ceiling (500 lines)
+        run: |
+          MAX_LINES=${MAX_LINES:-500}
+          FAILED=0
+          while IFS= read -r file; do
+            [ -f "$file" ] || continue
+            case "$file" in
+              *.md|*.json|*.toml|*.yaml|*.yml|*.lock|*.txt|*.csv|*.sql) continue ;;
+              *.svg|*.png|*.jpg|*.jpeg|*.gif|*.ico|*.pdf) continue ;;
+            esac
+            LINES=$(wc -l < "$file" | tr -d ' ')
+            if [ "$LINES" -gt "$MAX_LINES" ]; then
+              echo "::error file=$file::$LINES lines (max $MAX_LINES) — extract a module"
+              FAILED=1
+            fi
+          done < <(git ls-files)
+          exit $FAILED
+      - name: Forbidden patterns
+        run: |
+          FAILED=0
+          check() {
+            local config=$1; shift
+            [ -f "$config" ] || return 0
+            local find_expr=()
+            for ext in "$@"; do find_expr+=(-o -name "*.$ext"); done
+            # Strip leading -o
+            find_expr=("${find_expr[@]:1}")
+            while IFS='|' read -r pattern description; do
+              [ -z "$pattern" ] && continue
+              case "$pattern" in \#*) continue ;; esac
+              while IFS= read -r file; do
+                if grep -nE "$pattern" "$file" >/dev/null 2>&1; then
+                  echo "::error file=$file::$description"
+                  FAILED=1
+                fi
+              done < <(find . -type f \( "${find_expr[@]}" \) -not -path './node_modules/*' -not -path './.venv/*')
+            done < "$config"
+          }
+          check .forbidden-patterns/backend.txt py
+          check .forbidden-patterns/frontend.txt ts tsx js jsx
+          exit $FAILED
