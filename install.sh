@@ -72,6 +72,7 @@ cp_safe "$SCAFFOLD_DIR/CLAUDE.md.pointer" "CLAUDE.md"
 cp_safe "$SCAFFOLD_DIR/githooks/pre-commit.template" ".githooks/pre-commit"
 chmod +x .githooks/pre-commit
 cp_safe "$SCAFFOLD_DIR/.github/workflows/lint.yml.template" ".github/workflows/lint.yml"
+cp_safe "$SCAFFOLD_DIR/forbidden-patterns/secrets.txt.template" ".forbidden-patterns/secrets.txt"
 
 # Python
 if [ "$MODE" = "python" ] || [ "$MODE" = "both" ]; then

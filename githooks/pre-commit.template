@@ -55,9 +55,9 @@ check_patterns() {
       done
       [ "$matched" -eq 1 ] || continue
 
-      if grep -nE "$pattern" "$file" >/dev/null 2>&1; then
+      if grep -nE -- "$pattern" "$file" >/dev/null 2>&1; then
         echo "✗ $file: $description"
-        grep -nE "$pattern" "$file" | head -3 | sed 's/^/    /'
+        grep -nE -- "$pattern" "$file" | head -3 | sed 's/^/    /'
         FAILED=1
       fi
     done <<< "$STAGED"
@@ -66,6 +66,34 @@ check_patterns() {
 
 check_patterns ".forbidden-patterns/backend.txt" "py"
 check_patterns ".forbidden-patterns/frontend.txt" "ts tsx js jsx"
+
+# ---------- 3. Secrets (all files, case-insensitive) ----------
+check_secrets() {
+  local config=".forbidden-patterns/secrets.txt"
+  [ -f "$config" ] || return 0
+
+  while IFS='|' read -r pattern description; do
+    [ -z "$pattern" ] && continue
+    case "$pattern" in \#*) continue ;; esac
+
+    while IFS= read -r file; do
+      [ -f "$file" ] || continue
+      # Skip binaries and lockfiles (high false-positive rate, rarely carry real secrets)
+      case "$file" in
+        *.svg|*.png|*.jpg|*.jpeg|*.gif|*.ico|*.pdf) continue ;;
+        *.lock|*.zip|*.tar|*.gz|*.woff|*.woff2|*.ttf|*.mp4|*.mov) continue ;;
+        package-lock.json|yarn.lock|pnpm-lock.yaml|poetry.lock|uv.lock|Cargo.lock) continue ;;
+      esac
+
+      if grep -niE -- "$pattern" "$file" >/dev/null 2>&1; then
+        echo "✗ $file: $description"
+        grep -niE -- "$pattern" "$file" | head -3 | sed 's/^/    /'
+        FAILED=1
+      fi
+    done <<< "$STAGED"
+  done < "$config"
+}
+check_secrets
 
 if [ "$FAILED" -ne 0 ]; then
   echo ""

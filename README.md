@@ -62,6 +62,7 @@ npm i -D eslint @eslint/js typescript-eslint       # TS/JS
 | `.github/workflows/lint.yml.template` | `.github/workflows/lint.yml` | CI mirror of the hook |
 | `forbidden-patterns/backend.txt.template` | `.forbidden-patterns/backend.txt` | Python patterns consumed by hook + CI |
 | `forbidden-patterns/frontend.txt.template` | `.forbidden-patterns/frontend.txt` | TS/JS patterns consumed by hook + CI |
+| `forbidden-patterns/secrets.txt.template` | `.forbidden-patterns/secrets.txt` | Secret/credential patterns, scanned across all file types |
 
 Scripts (stay in the scaffold repo):
 
@@ -113,6 +114,7 @@ Commit + CI-breaking (pre-commit hook + `lint.yml`):
 | `console.log` / `debugger` / `alert` in TS/JS | regex |
 | File size > 500 lines | `wc -l` per staged file |
 | TODO/FIXME without ticket ref | regex (opt-in; commented in template) |
+| Secret / credential leaks (AWS keys, GitHub tokens, private keys, URLs with embedded credentials, hardcoded password=/token= assignments) | regex (case-insensitive, all files) |
 
 ## Verify it works
 

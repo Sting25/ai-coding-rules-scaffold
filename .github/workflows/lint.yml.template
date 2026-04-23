@@ -69,7 +69,7 @@ jobs:
               [ -z "$pattern" ] && continue
               case "$pattern" in \#*) continue ;; esac
               while IFS= read -r file; do
-                if grep -nE "$pattern" "$file" >/dev/null 2>&1; then
+                if grep -nE -- "$pattern" "$file" >/dev/null 2>&1; then
                   echo "::error file=$file::$description"
                   FAILED=1
                 fi
@@ -78,4 +78,23 @@ jobs:
           }
           check .forbidden-patterns/backend.txt py
           check .forbidden-patterns/frontend.txt ts tsx js jsx
+          exit $FAILED
+      - name: Secret scan
+        run: |
+          FAILED=0
+          config=.forbidden-patterns/secrets.txt
+          [ -f "$config" ] || exit 0
+          files=$(git ls-files | grep -vE '\.(svg|png|jpg|jpeg|gif|ico|pdf|lock|zip|tar|gz|woff2?|ttf|mp4|mov)$' \
+                              | grep -vE '^(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|uv\.lock|Cargo\.lock)$')
+          while IFS='|' read -r pattern description; do
+            [ -z "$pattern" ] && continue
+            case "$pattern" in \#*) continue ;; esac
+            while IFS= read -r file; do
+              [ -z "$file" ] && continue
+              if grep -niE -- "$pattern" "$file" >/dev/null 2>&1; then
+                echo "::error file=$file::$description"
+                FAILED=1
+              fi
+            done <<< "$files"
+          done < "$config"
           exit $FAILED
