@@ -1,4 +1,4 @@
-# coding-rules-scaffold
+# ai-coding-rules-scaffold
 
 Minimum-viable coding guardrails that prevent unbounded file growth, copy-paste logic, deeply nested control flow, silenced exceptions, and debug leaks in production. Works with any AI coding tool (Claude Code, Cursor, Copilot, Cline, Aider) or no AI at all — the enforcement layer is `ruff` + `eslint` + a pre-commit hook, all tool-agnostic.
 
@@ -13,7 +13,7 @@ The file-size rule (max 500 lines) is the one rule to never raise. Every other r
 ## Get the scaffold
 
 ```sh
-git clone https://github.com/Sting25/coding-rules-scaffold ~/.claude/templates/coding-rules-scaffold
+git clone https://github.com/Sting25/ai-coding-rules-scaffold ~/.claude/templates/ai-coding-rules-scaffold
 ```
 
 You can clone anywhere; `~/.claude/templates/` is a convention, not a requirement.
@@ -23,7 +23,7 @@ You can clone anywhere; `~/.claude/templates/` is a convention, not a requiremen
 From your project root:
 
 ```sh
-~/.claude/templates/coding-rules-scaffold/install.sh
+~/.claude/templates/ai-coding-rules-scaffold/install.sh
 ```
 
 The script auto-detects Python (pyproject.toml / requirements.txt / setup.py) or frontend (package.json) and installs the matching pieces. To override:

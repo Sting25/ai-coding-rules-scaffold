@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install.sh — install coding-rules-scaffold into the current project.
+# install.sh — install ai-coding-rules-scaffold into the current project.
 #
 # Usage:
 #   install.sh              # auto-detect Python/frontend based on project files
