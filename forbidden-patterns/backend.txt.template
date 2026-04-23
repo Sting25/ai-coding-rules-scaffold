@@ -6,6 +6,9 @@
 
 \bprint\s*\(|Use structlog (or the project's logger), not print()
 os\.path\.join|Use pathlib.Path(), not os.path.join
+\bbreakpoint\s*\(|Remove breakpoint() before committing
+\bpdb\.set_trace\s*\(|Remove pdb.set_trace() before committing
+\bipdb\.set_trace\s*\(|Remove ipdb.set_trace() before committing
 
 # Optional: uncomment to forbid TODO/FIXME/XXX (one line per keyword — regex can't use `|`).
 # \bTODO\b|TODO not allowed — open a ticket instead
