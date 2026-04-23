@@ -63,10 +63,8 @@ jobs:
           check() {
             local config=$1; shift
             [ -f "$config" ] || return 0
-            local find_expr=()
-            for ext in "$@"; do find_expr+=(-o -name "*.$ext"); done
-            # Strip leading -o
-            find_expr=("${find_expr[@]:1}")
+            local pathspec=()
+            for ext in "$@"; do pathspec+=("*.${ext}"); done
             while IFS='|' read -r pattern description; do
               [ -z "$pattern" ] && continue
               case "$pattern" in \#*) continue ;; esac
@@ -75,7 +73,7 @@ jobs:
                   echo "::error file=$file::$description"
                   FAILED=1
                 fi
-              done < <(find . -type f \( "${find_expr[@]}" \) -not -path './node_modules/*' -not -path './.venv/*')
+              done < <(git ls-files -- "${pathspec[@]}")
             done < "$config"
           }
           check .forbidden-patterns/backend.txt py
