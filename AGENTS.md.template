@@ -1,10 +1,10 @@
-# CLAUDE.md
+# AGENTS.md
 
-Project guidance for Claude Code (and any other AI coding agent that reads a top-level config). Copy to your project root as `CLAUDE.md` and edit the **Project** section.
+Instructions for AI coding agents working in this repo. `AGENTS.md` is an emerging cross-tool convention — Cursor, Aider, and others read it directly. For Claude Code, a thin `CLAUDE.md` pointer is installed alongside this file. Copy to your project root as `AGENTS.md` and edit the **Project** section.
 
 ## Coding rules
 
-See `.claude/coding-rules.md` and `ruff.toml` / `eslint.config.js`. Tool-enforced on every commit via `.githooks/pre-commit` and on every PR via `.github/workflows/lint.yml`.
+See [`coding-rules.md`](./coding-rules.md), `ruff.toml`, and `eslint.config.js`. Tool-enforced on every commit via `.githooks/pre-commit` and on every PR via `.github/workflows/lint.yml`.
 
 The file-size ceiling (500 lines) is non-negotiable — never raise it.
 

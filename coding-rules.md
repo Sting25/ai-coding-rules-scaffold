@@ -20,7 +20,7 @@ Minimum rule set. Most discipline is enforced by the linter (`ruff` / `eslint`) 
 
 ## Git
 
-See `CLAUDE.md` for commit format and Git discipline (no amend, no force-push, no push unless asked).
+See `AGENTS.md` for commit format and Git discipline (no amend, no force-push, no push unless asked).
 
 ## What the tooling enforces (for reference)
 
@@ -49,4 +49,4 @@ Commit-breaking (pre-commit hook):
 
 ## Project-specific additions
 
-Each project adds its own tech-specific rules in `.claude/coding-rules.md` under a "Project-specific" section (library quirks, import-path conventions, architectural constraints). This scaffold file stays universal.
+Each project adds its own tech-specific rules in `coding-rules.md` under a "Project-specific" section (library quirks, import-path conventions, architectural constraints). This scaffold file stays universal.

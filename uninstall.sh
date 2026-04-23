@@ -5,12 +5,13 @@
 # current templates byte-for-byte. Locally modified files are reported and
 # left alone — edit or delete them yourself.
 #
-# Files considered "likely customized" (CLAUDE.md, .claude/coding-rules.md,
+# Files considered "likely customized" (AGENTS.md, coding-rules.md,
 # .forbidden-patterns/*.txt) are always left alone unless --all is given.
+# CLAUDE.md is treated as a regenerable pointer and removed if unchanged.
 #
 # Usage:
 #   uninstall.sh          # safe mode: only unchanged generated files
-#   uninstall.sh --all    # also remove CLAUDE.md / coding-rules.md / patterns
+#   uninstall.sh --all    # also remove AGENTS.md / coding-rules.md / patterns
 #   uninstall.sh --dry-run
 #   uninstall.sh --help
 
@@ -24,7 +25,7 @@ for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
     --all)     REMOVE_ALL=1 ;;
-    --help|-h) sed -n '2,14p' "$0"; exit 0 ;;
+    --help|-h) sed -n '2,15p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -67,16 +68,17 @@ remove_if_unmodified "ruff.toml"                     "$SCAFFOLD_DIR/ruff.toml.te
 remove_if_unmodified "eslint.config.js"              "$SCAFFOLD_DIR/eslint.config.js.template"
 remove_if_unmodified ".githooks/pre-commit"          "$SCAFFOLD_DIR/githooks/pre-commit.template"
 remove_if_unmodified ".github/workflows/lint.yml"    "$SCAFFOLD_DIR/.github/workflows/lint.yml.template"
+remove_if_unmodified "CLAUDE.md"                     "$SCAFFOLD_DIR/CLAUDE.md.pointer"
 
 # Likely-customized files — only with --all
 if [ "$REMOVE_ALL" -eq 1 ]; then
-  force_remove "CLAUDE.md"
-  force_remove ".claude/coding-rules.md"
+  force_remove "AGENTS.md"
+  force_remove "coding-rules.md"
   force_remove ".forbidden-patterns"
 fi
 
 # Clean up empty dirs the installer created
-for dir in .githooks .github/workflows .github .claude; do
+for dir in .githooks .github/workflows .github; do
   [ -d "$dir" ] || continue
   rmdir "$dir" 2>/dev/null && echo "removed empty: $dir" || true
 done

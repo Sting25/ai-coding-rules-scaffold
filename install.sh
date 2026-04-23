@@ -58,8 +58,9 @@ cp_safe() {
 }
 
 # Always
-cp_safe "$SCAFFOLD_DIR/coding-rules.md" ".claude/coding-rules.md"
-cp_safe "$SCAFFOLD_DIR/CLAUDE.md.template" "CLAUDE.md"
+cp_safe "$SCAFFOLD_DIR/coding-rules.md" "coding-rules.md"
+cp_safe "$SCAFFOLD_DIR/AGENTS.md.template" "AGENTS.md"
+cp_safe "$SCAFFOLD_DIR/CLAUDE.md.pointer" "CLAUDE.md"
 cp_safe "$SCAFFOLD_DIR/githooks/pre-commit.template" ".githooks/pre-commit"
 chmod +x .githooks/pre-commit
 cp_safe "$SCAFFOLD_DIR/.github/workflows/lint.yml.template" ".github/workflows/lint.yml"
@@ -115,5 +116,5 @@ fi
 
 echo ""
 echo "Next:"
-echo "  - Edit CLAUDE.md — fill in the Project section at the bottom"
+echo "  - Edit AGENTS.md — fill in the Project section at the bottom"
 echo "  - Verify the hook: add 'print(\"x\")' to a .py file, 'git add' it, try to commit — hook should reject"

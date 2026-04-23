@@ -6,10 +6,10 @@
 .vscode/
 
 # Accidental installs inside the scaffold repo itself
-.claude/
 .githooks/
 .forbidden-patterns/
 .github/workflows/lint.yml
+AGENTS.md
 CLAUDE.md
 ruff.toml
 eslint.config.js

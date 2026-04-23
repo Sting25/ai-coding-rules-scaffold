@@ -1,6 +1,6 @@
 # ai-coding-rules-scaffold
 
-Minimum-viable coding guardrails that prevent unbounded file growth, copy-paste logic, deeply nested control flow, silenced exceptions, and debug leaks in production. Works with any AI coding tool (Claude Code, Cursor, Copilot, Cline, Aider) or no AI at all — enforcement is `ruff` + `eslint` + a pre-commit hook + a CI workflow, all tool-agnostic.
+Minimum-viable coding guardrails that prevent unbounded file growth, copy-paste logic, deeply nested control flow, silenced exceptions, and debug leaks in production. Agent-agnostic: works with Cursor, Claude Code, Copilot, Cline, Aider, or no AI at all — enforcement is `ruff` + `eslint` + a pre-commit hook + a CI workflow.
 
 Built for Python/FastAPI + optional TypeScript/React projects. Adapt freely for other stacks.
 
@@ -12,21 +12,21 @@ The file-size rule (max 500 lines) is the one rule to never raise. Every other r
 
 Enforcement runs in two places:
 
-- **Pre-commit hook** — blocks the commit locally. Fast feedback, but skippable with `--no-verify`.
+- **Pre-commit hook** — blocks the commit locally. Fast feedback, skippable with `--no-verify`.
 - **CI workflow** — blocks the PR server-side. Unskippable. The hook and CI run the same checks.
 
 ## Install
 
-Clone the scaffold somewhere stable (the path below is a convention, not a requirement):
+Clone the scaffold somewhere stable:
 
 ```sh
-git clone https://github.com/Sting25/ai-coding-rules-scaffold ~/.claude/templates/ai-coding-rules-scaffold
+git clone https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
 ```
 
 From your project root:
 
 ```sh
-~/.claude/templates/ai-coding-rules-scaffold/install.sh
+~/src/ai-coding-rules-scaffold/install.sh
 ```
 
 The script auto-detects Python (`pyproject.toml` / `requirements.txt` / `setup.py`) or frontend (`package.json`) and installs the matching pieces. If neither is present, it exits — pass the stack explicitly:
@@ -52,8 +52,9 @@ npm i -D eslint @eslint/js typescript-eslint       # TS/JS
 
 | Scaffold file | Installed as | Purpose |
 |---|---|---|
-| `coding-rules.md` | `.claude/coding-rules.md` | Short list of rules that aren't tool-enforceable |
-| `CLAUDE.md.template` | `CLAUDE.md` | Top-level agent config: git discipline + project section |
+| `AGENTS.md.template` | `AGENTS.md` | Primary agent doc: git discipline + project section |
+| `CLAUDE.md.pointer` | `CLAUDE.md` | One-liner pointing Claude Code at `AGENTS.md` |
+| `coding-rules.md` | `coding-rules.md` | Short list of rules that aren't tool-enforceable |
 | `ruff.toml.template` | `ruff.toml` | Python lint config |
 | `eslint.config.js.template` | `eslint.config.js` | TS/JS lint config (flat config, ESLint 9+) |
 | `githooks/pre-commit.template` | `.githooks/pre-commit` | File-size + forbidden-patterns check |
@@ -61,36 +62,30 @@ npm i -D eslint @eslint/js typescript-eslint       # TS/JS
 | `forbidden-patterns/backend.txt.template` | `.forbidden-patterns/backend.txt` | Python patterns consumed by hook + CI |
 | `forbidden-patterns/frontend.txt.template` | `.forbidden-patterns/frontend.txt` | TS/JS patterns consumed by hook + CI |
 
-Scripts (live only in the scaffold repo):
+Scripts (stay in the scaffold repo):
 
 | Script | Purpose |
 |---|---|
-| `install.sh` | Copy templates into your project, wire `core.hooksPath` |
+| `install.sh` | Copy templates into your project, wire `core.hooksPath`, verify linters |
 | `uninstall.sh` | Remove unmodified scaffold files, unwire the hook |
 
 ## AI agent integration
 
-`install.sh` drops a ready-to-edit `CLAUDE.md` at your project root. If you use a different agent, point it at the same rules.
+The scaffold follows the cross-tool **`AGENTS.md` convention** — a single file at the project root that multiple agents already read (Cursor, Aider, and others). For tools that read a different filename, `install.sh` or a one-line pointer handles it:
 
-**Claude Code** — `CLAUDE.md` ships covering git discipline (no amend, no force-push, no `--no-verify`), commit format, and a `Project` section for you to fill in. The rules doc is referenced from there.
-
-**Cursor** — create `.cursorrules` at project root:
-```
-Follow the rules in .claude/coding-rules.md.
-Lint config: ruff.toml (Python), eslint.config.js (TS/JS).
-Pre-commit hook enforces file-size ceiling and forbidden patterns — do not bypass with --no-verify.
-```
-
-**Cline** — `.clinerules` at project root; same content as `.cursorrules`.
-
-**Aider** — add to `.aider.conf.yml`:
-```yaml
-read:
-  - .claude/coding-rules.md
-  - CLAUDE.md
-```
-
-**Continue / Copilot / other** — point the tool at `.claude/coding-rules.md` via whatever mechanism it supports.
+- **Cursor** — reads `AGENTS.md` natively. Nothing else needed.
+- **Claude Code** — reads `CLAUDE.md`. `install.sh` drops a one-line `CLAUDE.md` containing `@AGENTS.md`, which pulls `AGENTS.md` into context.
+- **Aider** — add to `.aider.conf.yml`:
+  ```yaml
+  read:
+    - AGENTS.md
+    - coding-rules.md
+  ```
+- **Cline** — create `.clinerules` with one line:
+  ```
+  Follow the rules in AGENTS.md and coding-rules.md.
+  ```
+- **Continue / Copilot / other** — point the tool at `AGENTS.md` via whatever config it supports.
 
 ## What the tooling enforces
 
@@ -132,48 +127,49 @@ git commit -m "should be rejected"
 ## Customize per project
 
 - **`coding-rules.md`** — minimal on purpose. Add a "Project-specific" section at the bottom for stack rules (SQLAlchemy column quirks, import conventions, architectural constraints).
+- **`AGENTS.md`** — the `Project` section is meant to be edited: stack, entry points, gotchas. Keep it tight; agents reread it on every turn.
 - **`.forbidden-patterns/*.txt`** — simple `regex|description` lines. Add deprecated import paths, old service names, etc. Lines starting with `#` are comments; an opt-in TODO/FIXME pattern is pre-seeded as a comment.
 - **`ruff.toml`** — opinionated set (`E,F,I,W,B,UP,SIM,PTH,ANN,BLE,C90,PL,PT,RUF`). Trim `ignore = [...]` if a rule fights your style.
 - **Pre-commit hook** — `MAX_LINES=500` by default. Override per-invocation: `MAX_LINES=800 git commit`. Edit the hook to change permanently. The CI workflow reads the same env var.
 
 ## Update & uninstall
 
-**Update:** the project's configs are local forks of the templates — `install.sh --force` will overwrite them, including any edits you've made. Diff first:
+**Update:** the project's configs are local forks of the templates. `install.sh --force` overwrites them, including any edits. Diff first:
 
 ```sh
-diff ~/.claude/templates/ai-coding-rules-scaffold/ruff.toml.template ruff.toml
+diff ~/src/ai-coding-rules-scaffold/ruff.toml.template ruff.toml
 # merge in the changes you want; leave your customizations
 ```
 
-For the git repo itself, a `git pull` in the scaffold clone picks up new rules / patterns.
+A `git pull` in the scaffold clone picks up new rules / patterns upstream.
 
 **Uninstall:**
 
 ```sh
-~/.claude/templates/ai-coding-rules-scaffold/uninstall.sh            # safe: only unmodified files
-~/.claude/templates/ai-coding-rules-scaffold/uninstall.sh --dry-run  # preview
-~/.claude/templates/ai-coding-rules-scaffold/uninstall.sh --all      # also nuke CLAUDE.md, coding-rules.md, patterns
+~/src/ai-coding-rules-scaffold/uninstall.sh            # safe: only unmodified files
+~/src/ai-coding-rules-scaffold/uninstall.sh --dry-run  # preview
+~/src/ai-coding-rules-scaffold/uninstall.sh --all      # also nuke AGENTS.md, coding-rules.md, patterns
 ```
 
-Safe mode only removes files whose content matches the current scaffold template byte-for-byte, so local edits are never lost. `CLAUDE.md`, `.claude/coding-rules.md`, and `.forbidden-patterns/` are kept unless you pass `--all`.
+Safe mode only removes files whose content matches the current scaffold template byte-for-byte, so local edits are never lost. `AGENTS.md`, `coding-rules.md`, and `.forbidden-patterns/` are kept unless you pass `--all`. `CLAUDE.md` is treated as a regenerable pointer and removed if unchanged.
 
 ## Platform notes
 
 - **macOS / Linux:** first-class.
-- **Windows:** use Git Bash or WSL. The pre-commit hook is `bash`; Git Bash (bundled with Git for Windows) runs it fine. `chmod +x` is a no-op on NTFS but Git for Windows treats shell scripts in `.githooks/` as executable regardless.
+- **Windows:** use Git Bash or WSL. The pre-commit hook is `bash`; Git Bash (bundled with Git for Windows) runs it fine. `chmod +x` is a no-op on NTFS, but Git for Windows treats shell scripts in `.githooks/` as executable regardless.
 
 ## What this scaffold deliberately omits
 
 | Concern | Where it lives instead |
 |---|---|
 | Architecture / module boundaries | Your project spec or design doc |
-| Framework-specific rules (React Query, specific import paths) | `.claude/coding-rules.md` "Project-specific" section |
+| Framework-specific rules (React Query, specific import paths) | `coding-rules.md` "Project-specific" section |
 | Test coverage thresholds, logging conventions | Per-project decision |
 | Formatter enforcement (`ruff format`, `prettier`) | Drop-in if you want; the scaffold stays opinion-light here |
 
 ## Using this without an AI
 
-The scaffold works fine without any AI tool. Drop the files in, run the hook — same enforcement. The `.claude/coding-rules.md` doc is just a named place to put the rules humans should read. Rename or relocate if that name bothers you.
+The scaffold works fine without any AI tool. Drop the files in, run the hook — same enforcement. `coding-rules.md` is just a named place to put the rules humans should read.
 
 ## License
 
