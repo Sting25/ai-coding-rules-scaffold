@@ -6,5 +6,10 @@
 \bdebugger\b|Remove debugger statement before committing
 \balert\s*\(|Don't ship alert() calls — use a proper UI dialog
 
-# Optional: uncomment to forbid TODO/FIXME/XXX without a ticket ref like (PROJ-123).
+# Optional: uncomment to forbid all TODO/FIXME/XXX (track work in the issue tracker instead).
+# \b(TODO|FIXME|XXX)\b|TODO/FIXME/XXX not allowed — open a ticket instead
+#
+# Optional (PCRE): flag TODO/FIXME/XXX only when missing a ticket ref like (PROJ-123).
+# The hook and CI use `grep -E` (ERE), which doesn't support lookahead — enabling this
+# requires switching them to `grep -P` (GNU grep only; macOS needs `brew install grep`).
 # (TODO|FIXME|XXX)(?!\s*\([A-Z]+-[0-9]+\))|TODO/FIXME/XXX must reference a ticket, e.g. TODO(PROJ-123)
