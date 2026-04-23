@@ -37,6 +37,7 @@ The script auto-detects Python (`pyproject.toml` / `requirements.txt` / `setup.p
 ./install.sh --both         # both stacks
 ./install.sh --force        # overwrite existing files
 ./install.sh --no-verify    # skip the post-install linter check
+./install.sh --help         # show usage
 ```
 
 At the end, `install.sh` verifies that `ruff` and/or `eslint` are installed and that their configs load. If either is missing, it prints the install command.
@@ -131,6 +132,7 @@ git commit -m "should be rejected"
 - **`.forbidden-patterns/*.txt`** — simple `regex|description` lines. Add deprecated import paths, old service names, etc. Lines starting with `#` are comments; an opt-in TODO/FIXME pattern is pre-seeded as a comment.
 - **`ruff.toml`** — opinionated set (`E,F,I,W,B,UP,SIM,PTH,ANN,BLE,C90,PL,PT,RUF`). Trim `ignore = [...]` if a rule fights your style.
 - **Pre-commit hook** — `MAX_LINES=500` by default. Override per-invocation: `MAX_LINES=800 git commit`. Edit the hook to change permanently. The CI workflow reads the same env var.
+- **Adopting on an existing codebase** — the CI size check runs against *all* tracked source files, not just changed ones. If the repo already has files over 500 lines, the first PR will fail. Either extract the offenders first (preferred — this is the debt the rule is meant to catch) or set `MAX_LINES` higher temporarily in both the hook and CI, then ratchet it down as you refactor.
 
 ## Update & uninstall
 
