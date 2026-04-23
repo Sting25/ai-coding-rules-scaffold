@@ -3,7 +3,7 @@
 [![Latest release](https://img.shields.io/github/v/release/Sting25/ai-coding-rules-scaffold)](https://github.com/Sting25/ai-coding-rules-scaffold/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Opinionated coding guardrails that prevent unbounded file growth, deeply nested control flow, silenced exceptions, debug leaks (`print`, `console.log`, `breakpoint`, `pdb`), hardcoded secrets/tokens, and stray `.env` or private-key files. Agent-agnostic: works with Cursor, Claude Code, Copilot, Cline, Aider, or no AI at all — enforcement is `ruff` + `eslint` + a pre-commit hook + a CI mirror that runs the same checks server-side so `--no-verify` doesn't become the escape hatch.
+Coding guardrails that prevent unbounded file growth, deeply nested control flow, silenced exceptions, debug leaks (`print`, `console.log`, `breakpoint`, `pdb`), hardcoded secrets/tokens, and stray `.env` or private-key files. Agent-agnostic: works with Cursor, Claude Code, Copilot, Cline, Aider, or no AI at all — enforcement is `ruff` + `eslint` + a pre-commit hook + a CI mirror that runs the same checks server-side so `--no-verify` doesn't become the escape hatch.
 
 Built for Python/FastAPI + optional TypeScript/React projects. Adapt freely for other stacks.
 
@@ -138,7 +138,7 @@ git commit -m "should be rejected"
 - **`coding-rules.md`** — short by design. Add a "Project-specific" section at the bottom for stack rules (SQLAlchemy column quirks, import conventions, architectural constraints).
 - **`AGENTS.md`** — the `Project` section is meant to be edited: stack, entry points, gotchas. Keep it tight; agents reread it on every turn.
 - **`.forbidden-patterns/*.txt`** — simple `regex|description` lines. Add deprecated import paths, old service names, etc. Lines starting with `#` are comments; an opt-in TODO/FIXME pattern is pre-seeded as a comment.
-- **`ruff.toml`** — opinionated set (`E,F,I,W,B,UP,SIM,PTH,ANN,BLE,C90,PL,PT,RUF`). Trim `ignore = [...]` if a rule fights your style.
+- **`ruff.toml`** — enables `E,F,I,W,B,UP,SIM,PTH,ANN,BLE,C90,PL,PT,RUF`. Trim `ignore = [...]` if a rule fights your style.
 - **Pre-commit hook** — `MAX_LINES=500` by default. Override per-invocation: `MAX_LINES=800 git commit`. Edit the hook to change permanently. The CI workflow reads the same env var.
 - **Adopting on an existing codebase** — the CI size check runs against *all* tracked source files, not just changed ones. If the repo already has files over 500 lines, the first PR will fail. Either extract the offenders first (preferred — this is the debt the rule is meant to catch) or set `MAX_LINES` higher temporarily in both the hook and CI, then ratchet it down as you refactor.
 
