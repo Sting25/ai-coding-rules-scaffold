@@ -79,13 +79,40 @@ jobs:
           check .forbidden-patterns/backend.txt py
           check .forbidden-patterns/frontend.txt ts tsx js jsx
           exit $FAILED
+      - name: Blocked filenames
+        run: |
+          FAILED=0
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              *.pem)
+                echo "::error file=$file::PEM file (likely private key) — rotate and use a secret manager"
+                FAILED=1
+                continue
+                ;;
+            esac
+            name=$(basename "$file")
+            case "$name" in
+              .env.example|.env.sample|.env.template) ;;
+              .env|.env.*)
+                echo "::error file=$file::environment file — use .env.example for shared config"
+                FAILED=1
+                ;;
+              id_rsa|id_ed25519|id_ecdsa|id_dsa)
+                echo "::error file=$file::SSH private key — rotate and use a secret manager"
+                FAILED=1
+                ;;
+            esac
+          done < <(git ls-files)
+          exit $FAILED
       - name: Secret scan
         run: |
           FAILED=0
           config=.forbidden-patterns/secrets.txt
           [ -f "$config" ] || exit 0
           files=$(git ls-files | grep -vE '\.(svg|png|jpg|jpeg|gif|ico|pdf|lock|zip|tar|gz|woff2?|ttf|mp4|mov)$' \
-                              | grep -vE '^(package-lock\.json|pnpm-lock\.yaml)$')
+                              | grep -vE '^(package-lock\.json|pnpm-lock\.yaml)$' \
+                              | grep -vE '^\.forbidden-patterns/')
           while IFS='|' read -r pattern description; do
             [ -z "$pattern" ] && continue
             case "$pattern" in \#*) continue ;; esac

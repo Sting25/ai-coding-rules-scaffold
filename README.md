@@ -120,6 +120,7 @@ Commit + CI-breaking (pre-commit hook + `lint.yml`):
 | File size > 500 lines | `wc -l` per staged file |
 | TODO/FIXME without ticket ref | regex (opt-in; commented in template) |
 | Secret / credential leaks (AWS keys, GitHub tokens, private keys, URLs with embedded credentials, hardcoded password=/token= assignments) | regex (case-insensitive, all files) |
+| Committed `.env` / `*.pem` / SSH private keys (`id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`) | filename check (`.env.example` / `.env.sample` / `.env.template` allowed) |
 
 ## Verify it works
 

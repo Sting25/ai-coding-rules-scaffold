@@ -78,11 +78,12 @@ check_secrets() {
 
     while IFS= read -r file; do
       [ -f "$file" ] || continue
-      # Skip binaries and lockfiles (high false-positive rate, rarely carry real secrets)
+      # Skip binaries, lockfiles, and the pattern config itself (false positives on example text)
       case "$file" in
         *.svg|*.png|*.jpg|*.jpeg|*.gif|*.ico|*.pdf) continue ;;
         *.lock|*.zip|*.tar|*.gz|*.woff|*.woff2|*.ttf|*.mp4|*.mov) continue ;;
         package-lock.json|pnpm-lock.yaml) continue ;;
+        .forbidden-patterns/*) continue ;;
       esac
 
       if grep -niE -- "$pattern" "$file" >/dev/null 2>&1; then
@@ -94,6 +95,34 @@ check_secrets() {
   done < "$config"
 }
 check_secrets
+
+# ---------- 4. Blocked filenames ----------
+check_blocked_filenames() {
+  while IFS= read -r file; do
+    [ -z "$file" ] && continue
+    case "$file" in
+      *.pem)
+        echo "✗ $file: PEM file (likely private key) — rotate and use a secret manager"
+        FAILED=1
+        continue
+        ;;
+    esac
+    local name
+    name=$(basename "$file")
+    case "$name" in
+      .env.example|.env.sample|.env.template) ;;
+      .env|.env.*)
+        echo "✗ $file: environment file — use .env.example for shared config, keep secrets in env vars"
+        FAILED=1
+        ;;
+      id_rsa|id_ed25519|id_ecdsa|id_dsa)
+        echo "✗ $file: SSH private key — rotate it and use a secret manager"
+        FAILED=1
+        ;;
+    esac
+  done <<< "$STAGED"
+}
+check_blocked_filenames
 
 if [ "$FAILED" -ne 0 ]; then
   echo ""
