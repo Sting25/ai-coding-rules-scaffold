@@ -1,6 +1,6 @@
 # Coding rules
 
-Minimum rule set. Most discipline is enforced by the linter (`ruff` / `eslint`) and the pre-commit hook — those fail the build or the commit. The rules below are the things that aren't tool-enforceable.
+Short rule set. Most discipline is enforced by the linter (`ruff` / `eslint`) and the pre-commit hook — those fail the build or the commit. The rules below are the things that aren't tool-enforceable.
 
 ## File size
 
