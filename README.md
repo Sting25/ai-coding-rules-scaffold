@@ -105,8 +105,8 @@ Build-breaking (`ruff` / `eslint`, on every lint + in CI):
 | `os.path.join` / string path math | `ruff PTH100-208` |
 | Blind `except Exception: pass` | `ruff BLE001` |
 | Missing public-API return types | `ruff ANN201` |
-| Function > 60 lines | `ruff PLR0915` |
-| Too many branches / statements | `ruff PLR0912`, `PLR0915` |
+| Function size > 80 statements (Python) / 80 lines (TS/JS) | `ruff PLR0915` (`max-statements`), `eslint max-lines-per-function` |
+| Too many branches in a function | `ruff PLR0912` (`max-branches`) |
 | Line length > 100 | `ruff E501` |
 | Unsorted / unused imports | `ruff I`, `F401` |
 | `any` in TypeScript without comment | `@typescript-eslint/no-explicit-any` |
