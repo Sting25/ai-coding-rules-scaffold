@@ -9,10 +9,15 @@ versioning follows [SemVer](https://semver.org/).
 ## [v0.3.0] — 2026-04-28
 
 ### Added
-- Scaffold self-tests (`tests/run.sh`) verifying hook behaviour on six fixture
-  cases, run on Linux + macOS via matrix CI.
+- Scaffold self-tests (`tests/run.sh`) — 10 fixture cases verifying hook
+  behaviour, matrix-run on `ubuntu-latest` and `macos-latest` via CI.
 - `permissions: contents: read` on all GitHub workflows.
-- `forbidden-patterns/README.md` — developer reference for the pattern format.
+- `forbidden-patterns/README.md` — developer reference for the pattern
+  format.
+- `forbidden-patterns/shell.txt` — dangerous shell patterns
+  (`curl|bash`, `rm -rf /`, `chmod 0?777`) for `*.sh` and `*.bash`. v0.3
+  roadmap item 2, unblocked by the TAB-separator change.
+- `CHANGELOG.md` (this file).
 
 ### Changed
 - Function-size limit raised from 60 to 80 (`ruff max-statements`,
@@ -23,6 +28,9 @@ versioning follows [SemVer](https://semver.org/).
 - Forbidden-patterns separator switched from `|` to TAB. Patterns can now
   contain literal `|` for ERE alternation (e.g. `(TODO|FIXME|XXX)`). v0.3
   roadmap item 1.
+- Six per-keyword hardcoded-credential patterns (`password`, `passwd`,
+  `token`, `api_key`, `secret_key`, `access_token`) collapsed into one
+  alternation pattern in `secrets.txt`, enabled by the new separator.
 - GitHub Actions pinned to commit SHAs (`actions/checkout` v4.3.0,
   `actions/setup-python` v5.6.0, `actions/setup-node` v4.4.0). v0.3 roadmap
   item 3.
