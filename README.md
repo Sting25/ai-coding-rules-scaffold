@@ -195,8 +195,12 @@ a docs example showing an AWS key prefix, a fixture with a synthetic
 credential — append `scaffold-allow` (any case, in a comment) on the
 matched line. `check-patterns` and `check-secrets` skip lines containing
 the marker; `check-filenames` and `check-size` are file-level and
-unaffected. Audit usage with `git grep -i scaffold-allow`. See
-`forbidden-patterns/README.md` for examples.
+unaffected. See `forbidden-patterns/README.md` for examples.
+
+**Reviewers: every PR that adds or moves a `scaffold-allow` marker is
+suppressing a guardrail.** Treat new markers like new `# noqa`s — confirm
+the suppression is justified before approving. Audit the full set with
+`git grep -i scaffold-allow`.
 
 ## Verify it works
 

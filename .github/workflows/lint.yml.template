@@ -45,9 +45,12 @@ jobs:
       - name: Run scaffold checks
         run: |
           chmod +x .githooks/lib/check-*
+          # core.quotepath=off so unicode filenames aren't C-quoted into
+          # bypass paths — see pre-commit.template for the same fix.
+          FILES=$(git -c core.quotepath=off ls-files)
           FAILED=0
-          git ls-files | .githooks/lib/check-size      --ci || FAILED=1
-          git ls-files | .githooks/lib/check-patterns  --ci || FAILED=1
-          git ls-files | .githooks/lib/check-filenames --ci || FAILED=1
-          git ls-files | .githooks/lib/check-secrets   --ci || FAILED=1
+          echo "$FILES" | .githooks/lib/check-size      --ci || FAILED=1
+          echo "$FILES" | .githooks/lib/check-patterns  --ci || FAILED=1
+          echo "$FILES" | .githooks/lib/check-filenames --ci || FAILED=1
+          echo "$FILES" | .githooks/lib/check-secrets   --ci || FAILED=1
           exit $FAILED

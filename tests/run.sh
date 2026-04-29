@@ -162,6 +162,65 @@ else
   echo "  - skipped ruff test (ruff not installed)"
 fi
 
+# 14. unicode filename — `core.quotepath=on` (git default) would emit the
+#     name as a C-quoted string, the downstream `[ -f "$file" ]` check
+#     would fail, and the file would slip past every scanner. The hook
+#     now uses `-c core.quotepath=off` so this case rejects.
+echo 'pri''nt("debug")' >café.py
+git add café.py
+assert_rejects "unicode filename does not bypass scan"
+
+# 15. MAX_LINES env override — passing 100 should cause a 200-line file
+#     to reject (default 500 would let it through).
+seq 1 200 >medium.py
+git add medium.py
+if MAX_LINES=100 .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ MAX_LINES=100 — hook accepted, expected reject"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+else
+  echo "  ✓ MAX_LINES env var override"
+  PASS=$((PASS + 1))
+fi
+reset_repo
+
+# 16. MAX_LINES non-numeric — the size check should fail loudly with
+#     exit 2, not silently misbehave.
+echo 'ok = True' >tiny.py
+git add tiny.py
+if MAX_LINES=abc .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ MAX_LINES=abc — hook accepted, expected reject"
+  FAIL=$((FAIL + 1))
+elif grep -q "MAX_LINES must be a positive integer" "$HOOK_OUT"; then
+  echo "  ✓ MAX_LINES validation rejects non-numeric"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ MAX_LINES=abc — rejected but without expected error message"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+reset_repo
+
+# 17. invalid pattern in backend.txt — the scan should warn and drop the
+#     bad pattern, then continue with the rest. A valid `print` pattern
+#     match must still reject.
+printf '[unclosed\tbroken regex\n' >>.forbidden-patterns/backend.txt
+echo 'pri''nt("debug")' >app.py
+git add .forbidden-patterns/backend.txt app.py
+if .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ invalid-pattern test — hook accepted, expected reject (on print)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+elif grep -q "invalid pattern dropped" "$HOOK_OUT"; then
+  echo "  ✓ invalid pattern dropped with warning, valid patterns still scan"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ invalid-pattern test — rejected but no warning emitted"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+reset_repo
+
 echo ""
 echo "Result: $PASS passed, $FAIL failed"
 exit $FAIL

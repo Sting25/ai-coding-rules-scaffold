@@ -85,7 +85,7 @@ marker — those rules are file-level, not line-level. Audit usage with
 ## Why three files
 
 Splitting by language keeps regexes precise: a pattern targeting Python
-function calls (`[[:<:]]print[[:space:]]*\(`) shouldn't run against a TS
-file containing the string `print` in a comment. The secrets file is
-language-agnostic and case-insensitive because credentials leak from
+function calls (`(^|[^A-Za-z_])print[[:space:]]*\(`) shouldn't run against
+a TS file containing the string `print` in a comment. The secrets file
+is language-agnostic and case-insensitive because credentials leak from
 config, docs, scripts, and code alike.

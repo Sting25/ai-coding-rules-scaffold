@@ -27,14 +27,33 @@ scan() {
   [ -f "$config" ] || return 0
   [ ${#FILES[@]} -eq 0 ] && return 0
 
-  local patterns=() descriptions=()
+  local raw_patterns=() raw_descs=()
   local pattern description
   while IFS=$'\t' read -r pattern description; do
     [ -z "$pattern" ] && continue
     case "$pattern" in \#*) continue ;; esac
-    patterns+=("$pattern")
-    descriptions+=("$description")
+    raw_patterns+=("$pattern")
+    raw_descs+=("$description")
   done <"$config"
+
+  [ ${#raw_patterns[@]} -eq 0 ] && return 0
+
+  # Validate each pattern up-front. An invalid ERE here would otherwise
+  # poison the combined regex (silently dropping every file) and produce
+  # cryptic per-file grep errors. `printf '' | grep -E p` returns 1
+  # (no match) for valid patterns and writes to stderr for invalid ones —
+  # so empty stderr means valid.
+  local patterns=() descriptions=()
+  local i p_err
+  for i in "${!raw_patterns[@]}"; do
+    p_err=$(printf '' | grep -E -- "${raw_patterns[$i]}" 2>&1 1>/dev/null || true)
+    if [ -n "$p_err" ]; then
+      echo "warning: $config: invalid pattern dropped: ${raw_patterns[$i]} — $p_err" >&2
+      continue
+    fi
+    patterns+=("${raw_patterns[$i]}")
+    descriptions+=("${raw_descs[$i]}")
+  done
 
   [ ${#patterns[@]} -eq 0 ] && return 0
 
