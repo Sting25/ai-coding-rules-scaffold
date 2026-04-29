@@ -39,6 +39,7 @@ if [ ! -e "$GIT_DIR/MERGE_HEAD" ] && [ ! -e "$GIT_DIR/REBASE_HEAD" ]; then
   fi
 fi
 
+# shellcheck disable=SC2317,SC2329  # invoked via the EXIT trap below
 restore_stash() {
   if [ "$NEED_RESTORE" -eq 1 ]; then
     git stash pop --quiet 2>/dev/null || true
