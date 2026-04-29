@@ -105,6 +105,13 @@ EOF
 git add app.py
 assert_passes "clean Python file"
 
+# 7. hardcoded credential — exercises the alternation branch in secrets.txt.
+#    Split `pass`+`word` so this file's source doesn't itself trip the scan,
+#    same trick as the AKIA fixture above.
+echo 'pass''word = "abcdefghijklmnop12345"' >config.py
+git add config.py
+assert_rejects "hardcoded credential (alternation match)"
+
 echo ""
 echo "Result: $PASS passed, $FAIL failed"
 exit $FAIL
