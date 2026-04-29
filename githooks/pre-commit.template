@@ -1,128 +1,33 @@
 #!/usr/bin/env bash
-# Pre-commit hook enforcing file size limits + forbidden patterns.
+# Pre-commit hook orchestrator — calls the four check scripts in lib/.
+# Each lib/check-* script is independently runnable; the CI workflow
+# invokes the same scripts so the hook and CI can never drift.
 #
-# Install (from project root):
-#   mkdir -p .githooks && cp <scaffold>/githooks/pre-commit.template .githooks/pre-commit
-#   chmod +x .githooks/pre-commit
+# Install (from project root) — install.sh handles all of this:
+#   .githooks/pre-commit
+#   .githooks/lib/{check-size,check-patterns,check-filenames,check-secrets}
 #   git config core.hooksPath .githooks
 #
 # Patterns are read from:
-#   .forbidden-patterns/backend.txt   (lines: regex|description; applied to *.py)
-#   .forbidden-patterns/frontend.txt  (lines: regex|description; applied to *.ts,*.tsx,*.js,*.jsx)
+#   .forbidden-patterns/backend.txt   (regex|description; applied to *.py)
+#   .forbidden-patterns/frontend.txt  (regex|description; applied to *.ts,*.tsx,*.js,*.jsx)
+#   .forbidden-patterns/secrets.txt   (regex|description; applied to all text files)
 #
 # Lines starting with # in those files are comments.
 
 set -euo pipefail
 
-MAX_LINES=${MAX_LINES:-500}
-FAILED=0
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+LIB="$HOOK_DIR/lib"
 
 STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
 [ -z "$STAGED" ] && exit 0
 
-# ---------- 1. File size ----------
-while IFS= read -r file; do
-  [ -f "$file" ] || continue
-  # Skip non-source file types (docs, configs, data)
-  case "$file" in
-    *.md|*.json|*.toml|*.yaml|*.yml|*.lock|*.txt|*.csv|*.sql) continue ;;
-    *.svg|*.png|*.jpg|*.jpeg|*.gif|*.ico|*.pdf) continue ;;
-  esac
-  LINES=$(wc -l < "$file" | tr -d ' ')
-  if [ "$LINES" -gt "$MAX_LINES" ]; then
-    echo "✗ $file: $LINES lines (max $MAX_LINES) — extract a module"
-    FAILED=1
-  fi
-done <<< "$STAGED"
-
-# ---------- 2. Forbidden patterns ----------
-check_patterns() {
-  local config=$1
-  local glob_filter=$2
-  [ -f "$config" ] || return 0
-
-  while IFS='|' read -r pattern description; do
-    # Skip comments and blank lines
-    [ -z "$pattern" ] && continue
-    case "$pattern" in \#*) continue ;; esac
-
-    while IFS= read -r file; do
-      [ -f "$file" ] || continue
-      # Filter by extension
-      local matched=0
-      for ext in $glob_filter; do
-        case "$file" in *."$ext") matched=1; break ;; esac
-      done
-      [ "$matched" -eq 1 ] || continue
-
-      if grep -nE -- "$pattern" "$file" >/dev/null 2>&1; then
-        echo "✗ $file: $description"
-        grep -nE -- "$pattern" "$file" | head -3 | sed 's/^/    /'
-        FAILED=1
-      fi
-    done <<< "$STAGED"
-  done < "$config"
-}
-
-check_patterns ".forbidden-patterns/backend.txt" "py"
-check_patterns ".forbidden-patterns/frontend.txt" "ts tsx js jsx"
-
-# ---------- 3. Secrets (all files, case-insensitive) ----------
-check_secrets() {
-  local config=".forbidden-patterns/secrets.txt"
-  [ -f "$config" ] || return 0
-
-  while IFS='|' read -r pattern description; do
-    [ -z "$pattern" ] && continue
-    case "$pattern" in \#*) continue ;; esac
-
-    while IFS= read -r file; do
-      [ -f "$file" ] || continue
-      # Skip binaries, lockfiles, and the pattern config itself (false positives on example text)
-      case "$file" in
-        *.svg|*.png|*.jpg|*.jpeg|*.gif|*.ico|*.pdf) continue ;;
-        *.lock|*.zip|*.tar|*.gz|*.woff|*.woff2|*.ttf|*.mp4|*.mov) continue ;;
-        package-lock.json|pnpm-lock.yaml) continue ;;
-        .forbidden-patterns/*) continue ;;
-      esac
-
-      if grep -niE -- "$pattern" "$file" >/dev/null 2>&1; then
-        echo "✗ $file: $description"
-        grep -niE -- "$pattern" "$file" | head -3 | sed 's/^/    /'
-        FAILED=1
-      fi
-    done <<< "$STAGED"
-  done < "$config"
-}
-check_secrets
-
-# ---------- 4. Blocked filenames ----------
-check_blocked_filenames() {
-  while IFS= read -r file; do
-    [ -z "$file" ] && continue
-    case "$file" in
-      *.pem)
-        echo "✗ $file: PEM file (likely private key) — rotate and use a secret manager"
-        FAILED=1
-        continue
-        ;;
-    esac
-    local name
-    name=$(basename "$file")
-    case "$name" in
-      .env.example|.env.sample|.env.template) ;;
-      .env|.env.*)
-        echo "✗ $file: environment file — use .env.example for shared config, keep secrets in env vars"
-        FAILED=1
-        ;;
-      id_rsa|id_ed25519|id_ecdsa|id_dsa)
-        echo "✗ $file: SSH private key — rotate it and use a secret manager"
-        FAILED=1
-        ;;
-    esac
-  done <<< "$STAGED"
-}
-check_blocked_filenames
+FAILED=0
+echo "$STAGED" | "$LIB/check-size"      || FAILED=1
+echo "$STAGED" | "$LIB/check-patterns"  || FAILED=1
+echo "$STAGED" | "$LIB/check-filenames" || FAILED=1
+echo "$STAGED" | "$LIB/check-secrets"   || FAILED=1
 
 if [ "$FAILED" -ne 0 ]; then
   echo ""

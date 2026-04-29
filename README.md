@@ -63,8 +63,9 @@ npm i -D eslint @eslint/js typescript-eslint       # TS/JS
 | `coding-rules.md` | `coding-rules.md` | Short list of rules that aren't tool-enforceable |
 | `ruff.toml.template` | `ruff.toml` | Python lint config |
 | `eslint.config.js.template` | `eslint.config.js` | TS/JS lint config (flat config, ESLint 9+) |
-| `githooks/pre-commit.template` | `.githooks/pre-commit` | File-size, forbidden-patterns, secrets, and blocked-filenames check |
-| `.github/workflows/lint.yml.template` | `.github/workflows/lint.yml` | CI mirror of the hook |
+| `githooks/pre-commit.template` | `.githooks/pre-commit` | Hook orchestrator — invokes the four `lib/check-*` scripts |
+| `githooks/lib/check-{size,patterns,filenames,secrets}.template` | `.githooks/lib/check-{size,patterns,filenames,secrets}` | Reusable check scripts; the same scripts run from CI so hook and CI can't drift |
+| `.github/workflows/lint.yml.template` | `.github/workflows/lint.yml` | CI mirror — invokes the same `lib/check-*` scripts as the hook |
 | `forbidden-patterns/backend.txt.template` | `.forbidden-patterns/backend.txt` | Python patterns consumed by hook + CI |
 | `forbidden-patterns/frontend.txt.template` | `.forbidden-patterns/frontend.txt` | TS/JS patterns consumed by hook + CI |
 | `forbidden-patterns/secrets.txt.template` | `.forbidden-patterns/secrets.txt` | Secret/credential patterns, scanned across all file types |

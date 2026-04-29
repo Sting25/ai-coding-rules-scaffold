@@ -67,6 +67,9 @@ force_remove() {
 remove_if_unmodified "ruff.toml"                     "$SCAFFOLD_DIR/ruff.toml.template"
 remove_if_unmodified "eslint.config.js"              "$SCAFFOLD_DIR/eslint.config.js.template"
 remove_if_unmodified ".githooks/pre-commit"          "$SCAFFOLD_DIR/githooks/pre-commit.template"
+for check in check-size check-patterns check-filenames check-secrets; do
+  remove_if_unmodified ".githooks/lib/${check}" "$SCAFFOLD_DIR/githooks/lib/${check}.template"
+done
 remove_if_unmodified ".github/workflows/lint.yml"    "$SCAFFOLD_DIR/.github/workflows/lint.yml.template"
 remove_if_unmodified "CLAUDE.md"                     "$SCAFFOLD_DIR/CLAUDE.md.pointer"
 
@@ -78,7 +81,7 @@ if [ "$REMOVE_ALL" -eq 1 ]; then
 fi
 
 # Clean up empty dirs the installer created
-for dir in .githooks .github/workflows .github; do
+for dir in .githooks/lib .githooks .github/workflows .github; do
   [ -d "$dir" ] || continue
   if rmdir "$dir" 2>/dev/null; then
     echo "removed empty: $dir"

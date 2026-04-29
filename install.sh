@@ -71,6 +71,10 @@ cp_safe "$SCAFFOLD_DIR/AGENTS.md.template" "AGENTS.md"
 cp_safe "$SCAFFOLD_DIR/CLAUDE.md.pointer" "CLAUDE.md"
 cp_safe "$SCAFFOLD_DIR/githooks/pre-commit.template" ".githooks/pre-commit"
 chmod +x .githooks/pre-commit
+for check in check-size check-patterns check-filenames check-secrets; do
+  cp_safe "$SCAFFOLD_DIR/githooks/lib/${check}.template" ".githooks/lib/${check}"
+  chmod +x ".githooks/lib/${check}"
+done
 cp_safe "$SCAFFOLD_DIR/.github/workflows/lint.yml.template" ".github/workflows/lint.yml"
 cp_safe "$SCAFFOLD_DIR/forbidden-patterns/secrets.txt.template" ".forbidden-patterns/secrets.txt"
 
