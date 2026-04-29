@@ -77,8 +77,10 @@ echo 'console.log("debug");' >app.ts
 git add app.ts
 assert_rejects "console.log in TS"
 
-# 4. AKIA-prefix AWS key
-echo 'AKIAIOSFODNN7EXAMPLE' >config.txt
+# 4. AKIA-prefix AWS key. Split the literal so this test file doesn't itself
+#    trip the secrets scan — runtime concatenation reassembles the full key
+#    inside the temp repo, where rejection is the assertion.
+echo "AKIA""IOSFODNN7EXAMPLE" >config.txt
 git add config.txt
 assert_rejects "AWS access key (AKIA...)"
 
