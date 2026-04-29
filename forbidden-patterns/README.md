@@ -48,6 +48,31 @@ The text after the TAB, printed when the pattern matches alongside the
 file:line that triggered it. Keep it actionable — every consumer project
 sees this on every blocked commit.
 
+## Per-line opt-out: `scaffold-allow`
+
+A line containing the substring `scaffold-allow` (case-insensitive) is
+exempt from `check-patterns` and `check-secrets`. Use it as an inline
+escape valve when a match is intentional — a CLI entry point that needs
+`print`, a docs example showing an AWS key prefix, a test fixture with a
+synthetic credential. Mirrors the role `# noqa` plays for ruff.
+
+```python
+print("entering CLI")  # scaffold-allow — no logger configured yet
+```
+
+```ts
+console.log(banner);  // scaffold-allow — pre-init log, before logger ready
+```
+
+```md
+Example AWS key: AKIAIOSFODNN7EXAMPLE  <!-- scaffold-allow docs example -->
+```
+
+The marker only suppresses **its own line**. Other matches in the same
+file still fail the check. `check-filenames` and `check-size` ignore the
+marker — those rules are file-level, not line-level. Audit usage with
+`git grep -i scaffold-allow`.
+
 ## Adding a pattern
 
 1. Pick the right file (backend / frontend / secrets).

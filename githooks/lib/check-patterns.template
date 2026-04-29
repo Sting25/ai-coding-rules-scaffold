@@ -4,6 +4,9 @@
 # against frontend.txt. Pattern format: <regex><TAB><description>
 # (TAB is the field separator so regex can use literal `|` alternation).
 #
+# Lines containing `scaffold-allow` (case-insensitive) are exempt — an
+# explicit per-line opt-out, like `# noqa`. Use sparingly.
+#
 # Output: human-readable on tty; ::error file=...:: when --ci is passed.
 # Exit:   0 if all OK, 1 if any violation.
 
@@ -20,31 +23,58 @@ done
 scan() {
   local config=$1
   shift
+  local exts=("$@")
   [ -f "$config" ] || return 0
   [ ${#FILES[@]} -eq 0 ] && return 0
 
+  local patterns=() descriptions=()
+  local pattern description
   while IFS=$'\t' read -r pattern description; do
     [ -z "$pattern" ] && continue
     case "$pattern" in \#*) continue ;; esac
-
-    for file in "${FILES[@]}"; do
-      local matched=0
-      for ext in "$@"; do
-        case "$file" in *."$ext") matched=1; break ;; esac
-      done
-      [ "$matched" -eq 1 ] || continue
-
-      if grep -nE -- "$pattern" "$file" >/dev/null 2>&1; then
-        if [ "$CI_MODE" -eq 1 ]; then
-          echo "::error file=$file::$description"
-        else
-          echo "✗ $file: $description"
-          grep -nE -- "$pattern" "$file" | head -3 | sed 's/^/    /'
-        fi
-        FAILED=1
-      fi
-    done
+    patterns+=("$pattern")
+    descriptions+=("$description")
   done <"$config"
+
+  [ ${#patterns[@]} -eq 0 ] && return 0
+
+  # Combine all patterns into one ERE so a single grep call per file decides
+  # whether to drop into the per-pattern attribution loop. Cuts grep calls
+  # from O(P*F) to F + matching_files*P — large repos see a big speedup.
+  local combined=""
+  local p
+  for p in "${patterns[@]}"; do
+    if [ -z "$combined" ]; then
+      combined="(${p})"
+    else
+      combined="${combined}|(${p})"
+    fi
+  done
+
+  local file ext keep i pat desc m
+  for file in "${FILES[@]}"; do
+    keep=0
+    for ext in "${exts[@]}"; do
+      case "$file" in *."$ext") keep=1; break ;; esac
+    done
+    [ "$keep" -eq 1 ] || continue
+
+    grep -nE -- "$combined" "$file" >/dev/null 2>&1 || continue
+
+    for i in "${!patterns[@]}"; do
+      pat="${patterns[$i]}"
+      desc="${descriptions[$i]}"
+      m=$(grep -nE -- "$pat" "$file" 2>/dev/null | grep -iv 'scaffold-allow' || true)
+      [ -n "$m" ] || continue
+      if [ "$CI_MODE" -eq 1 ]; then
+        echo "::error file=$file::$desc"
+      else
+        echo "✗ $file: $desc"
+        printf '%s\n' "$m" | head -3 | sed 's/^/    /'
+      fi
+      FAILED=1
+    done
+  done
 }
 
 FAILED=0

@@ -53,6 +53,35 @@ echo "$STAGED" | "$LIB/check-patterns"  || FAILED=1
 echo "$STAGED" | "$LIB/check-filenames" || FAILED=1
 echo "$STAGED" | "$LIB/check-secrets"   || FAILED=1
 
+# Lint staged files with ruff / eslint when configs exist and the tool is
+# installed. CI is the source of truth — running here just shortens the
+# feedback loop. Silently skipped if a tool isn't on PATH so the hook
+# stays usable on machines that haven't run `pip install ruff` yet.
+STAGED_PY=()
+STAGED_JS=()
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  case "$f" in
+    *.py)                  STAGED_PY+=("$f") ;;
+    *.ts|*.tsx|*.js|*.jsx) STAGED_JS+=("$f") ;;
+  esac
+done <<<"$STAGED"
+
+# Config detection mirrors `lint.yml`'s `hashFiles(...)` predicate so the
+# hook fires in the same projects where CI does.
+if [ ${#STAGED_PY[@]} -gt 0 ] \
+   && { [ -f ruff.toml ] || [ -f pyproject.toml ]; } \
+   && command -v ruff >/dev/null 2>&1; then
+  ruff check "${STAGED_PY[@]}" || FAILED=1
+fi
+
+if [ ${#STAGED_JS[@]} -gt 0 ] \
+   && { [ -f eslint.config.js ] || [ -f package.json ]; } \
+   && command -v npx >/dev/null 2>&1 \
+   && npx --no-install eslint --version >/dev/null 2>&1; then
+  npx --no-install eslint "${STAGED_JS[@]}" || FAILED=1
+fi
+
 if [ "$FAILED" -ne 0 ]; then
   echo ""
   echo "Pre-commit failed. Fix the issues above or use 'git commit --no-verify' to skip (don't)."

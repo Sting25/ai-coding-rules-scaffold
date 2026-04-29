@@ -6,6 +6,34 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Per-line `scaffold-allow` marker.** Lines containing `scaffold-allow`
+  (case-insensitive) are exempt from `check-patterns` and `check-secrets`
+  — an inline `# noqa`-style escape valve for legitimate `print` calls,
+  docs examples showing key prefixes, and synthetic test fixtures. Audit
+  usage with `git grep -i scaffold-allow`. `check-filenames` and
+  `check-size` ignore the marker (they're file-level rules).
+- Pre-commit hook now runs `ruff` / `eslint` against staged files when
+  their configs are present and the tool is on PATH. Cuts the
+  edit→push→CI→fix loop; CI remains the authoritative backstop.
+  Silently skipped when a tool isn't installed so the hook doesn't break
+  on fresh checkouts.
+- `actions/setup-python` + `pip install ruff` step in `tests.yml` so the
+  new ruff-integration test case actually exercises lint at hook time.
+
+### Changed
+- `check-patterns` and `check-secrets` rewritten to combine all patterns
+  into one ERE per scan and run a single `grep` per file as a fast-path
+  filter. Per-pattern attribution only runs on files that already
+  matched something. Cuts grep invocations from O(P×F) to F + matching×P
+  — meaningful on the CI path where `git ls-files` feeds in thousands of
+  files.
+
+### Fixed
+- "Clean Python file" test fixture (`tests/run.sh` case 6) gained the
+  blank line between `import logging` and the rest, which ruff I001
+  requires now that the hook lints.
+
 ## [v0.3.2] — 2026-05-02
 
 ### Added

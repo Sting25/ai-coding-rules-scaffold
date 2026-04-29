@@ -99,9 +99,10 @@ echo "FOO=bar" >.env
 git add -f .env
 assert_rejects ".env file blocked"
 
-# 6. clean code passes
+# 6. clean code passes — ruff-clean too (blank line after imports for I001).
 cat >app.py <<'EOF'
 import logging
+
 log = logging.getLogger(__name__)
 log.info("ok")
 EOF
@@ -127,6 +128,39 @@ echo 'pri''nt("debug")' >sneaky.py
 git add sneaky.py
 echo '# clean now' >sneaky.py
 assert_rejects "scans staged content (not working tree)"
+
+# 10. scaffold-allow marker exempts the matched line.
+echo 'pri''nt("entry")  # scaffold-allow CLI entry point' >cli.py
+git add cli.py
+assert_passes "scaffold-allow exempts marked line"
+
+# 11. scaffold-allow only exempts its own line — an unmarked offending line
+#     in the same file must still reject.
+{
+  echo 'pri''nt("ok")  # scaffold-allow'
+  echo 'pri''nt("real leak")'
+} >mixed.py
+git add mixed.py
+assert_rejects "scaffold-allow does not whitelist whole file"
+
+# 12. scaffold-allow works for the secrets check too. AKIA literal split
+#     so this test file itself doesn't trip the scan.
+echo "AKIA""IOSFODNN7EXAMPLE  # scaffold-allow docs example" >example.md
+git add example.md
+assert_passes "scaffold-allow exempts secret on docs line"
+
+# 13. ruff lint integration — the hook should run ruff on staged .py when
+#     ruff.toml is present and ruff is on PATH. Skipped otherwise.
+if command -v ruff >/dev/null 2>&1; then
+  cat >badimports.py <<'EOF'
+import sys
+import os
+EOF
+  git add badimports.py
+  assert_rejects "ruff catches unsorted imports"
+else
+  echo "  - skipped ruff test (ruff not installed)"
+fi
 
 echo ""
 echo "Result: $PASS passed, $FAIL failed"
