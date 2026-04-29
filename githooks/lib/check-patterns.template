@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # .githooks/lib/check-patterns — forbidden-pattern scan for source files.
 # Reads file paths on stdin. Scans .py against backend.txt and TS/JS
-# against frontend.txt. Pattern format: <regex>|<description>.
+# against frontend.txt. Pattern format: <regex><TAB><description>
+# (TAB is the field separator so regex can use literal `|` alternation).
 #
 # Output: human-readable on tty; ::error file=...:: when --ci is passed.
 # Exit:   0 if all OK, 1 if any violation.
@@ -22,7 +23,7 @@ scan() {
   [ -f "$config" ] || return 0
   [ ${#FILES[@]} -eq 0 ] && return 0
 
-  while IFS='|' read -r pattern description; do
+  while IFS=$'\t' read -r pattern description; do
     [ -z "$pattern" ] && continue
     case "$pattern" in \#*) continue ;; esac
 

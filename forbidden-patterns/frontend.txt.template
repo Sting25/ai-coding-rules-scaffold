@@ -1,21 +1,11 @@
 # Forbidden patterns for TS/JS files (*.ts, *.tsx, *.js, *.jsx). Applied by .githooks/pre-commit.
-# Format: <regex>|<description>   (one per line; # comments ignored)
-# Patterns cannot contain a literal `|` (the field separator) — use multiple
-# lines or character classes for alternation.
+# Format: <regex><TAB><description>   (one per line; # comments ignored)
+# Separator is TAB — patterns can contain literal `|` for ERE alternation.
 # Copy to your project as `.forbidden-patterns/frontend.txt`.
 
-[[:<:]]console\.log[[:space:]]*\(|Use the project logger, not console.log
-[[:<:]]debugger[[:>:]]|Remove debugger statement before committing
-[[:<:]]alert[[:space:]]*\(|Don't ship alert() calls — use a proper UI dialog
+[[:<:]]console\.log[[:space:]]*\(	Use the project logger, not console.log
+[[:<:]]debugger[[:>:]]	Remove debugger statement before committing
+[[:<:]]alert[[:space:]]*\(	Don't ship alert() calls — use a proper UI dialog
 
-# Optional: uncomment to forbid TODO/FIXME/XXX (one line per keyword — regex can't use `|`).
-# \bTODO\b|TODO not allowed — open a ticket instead
-# \bFIXME\b|FIXME not allowed — open a ticket instead
-# \bXXX\b|XXX not allowed — open a ticket instead
-#
-# Optional (PCRE): flag TODO/FIXME/XXX only when missing a ticket ref like (PROJ-123).
-# The hook and CI use `grep -E` (ERE), which supports neither lookahead nor this pattern's
-# `|` alternation in one line. Enabling this requires rewriting the hook to use `grep -P`
-# (GNU grep only; macOS needs `brew install grep`) and changing the config parser to not
-# split on `|`. Kept here as reference only.
-# (TODO|FIXME|XXX)(?!\s*\([A-Z]+-[0-9]+\))
+# Optional: forbid TODO/FIXME/XXX in one line via regex alternation.
+# [[:<:]](TODO|FIXME|XXX)[[:>:]]	TODO/FIXME/XXX not allowed — open a ticket instead

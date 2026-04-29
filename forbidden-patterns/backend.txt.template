@@ -1,23 +1,18 @@
 # Forbidden patterns for Python files (*.py). Applied by .githooks/pre-commit.
-# Format: <regex>|<description>   (one per line; # comments ignored)
-# Patterns cannot contain a literal `|` (the field separator) — use multiple
-# lines or character classes for alternation.
+# Format: <regex><TAB><description>   (one per line; # comments ignored)
+# Separator is TAB — patterns can contain literal `|` for ERE alternation
+# (e.g. `(TODO|FIXME|XXX)`). Patterns cannot contain a literal TAB.
 # Copy to your project as `.forbidden-patterns/backend.txt`.
 
-[[:<:]]print[[:space:]]*\(|Use structlog (or the project's logger), not print()
-os\.path\.join|Use pathlib.Path(), not os.path.join
-[[:<:]]breakpoint[[:space:]]*\(|Remove breakpoint() before committing
-[[:<:]]pdb\.set_trace[[:space:]]*\(|Remove pdb.set_trace() before committing
-[[:<:]]ipdb\.set_trace[[:space:]]*\(|Remove ipdb.set_trace() before committing
+[[:<:]]print[[:space:]]*\(	Use structlog (or the project's logger), not print()
+os\.path\.join	Use pathlib.Path(), not os.path.join
+[[:<:]]breakpoint[[:space:]]*\(	Remove breakpoint() before committing
+[[:<:]]pdb\.set_trace[[:space:]]*\(	Remove pdb.set_trace() before committing
+[[:<:]]ipdb\.set_trace[[:space:]]*\(	Remove ipdb.set_trace() before committing
 
-# Optional: uncomment to forbid TODO/FIXME/XXX (one line per keyword — regex can't use `|`).
-# \bTODO\b|TODO not allowed — open a ticket instead
-# \bFIXME\b|FIXME not allowed — open a ticket instead
-# \bXXX\b|XXX not allowed — open a ticket instead
+# Optional: forbid TODO/FIXME/XXX in one line via regex alternation.
+# [[:<:]](TODO|FIXME|XXX)[[:>:]]	TODO/FIXME/XXX not allowed — open a ticket instead
 #
-# Optional (PCRE): flag TODO/FIXME/XXX only when missing a ticket ref like (PROJ-123).
-# The hook and CI use `grep -E` (ERE), which supports neither lookahead nor this pattern's
-# `|` alternation in one line. Enabling this requires rewriting the hook to use `grep -P`
-# (GNU grep only; macOS needs `brew install grep`) and changing the config parser to not
-# split on `|`. Kept here as reference only.
-# (TODO|FIXME|XXX)(?!\s*\([A-Z]+-[0-9]+\))
+# Optional (PCRE only — ERE doesn't support lookahead): flag TODO/FIXME/XXX
+# only when missing a ticket ref like (PROJ-123). Requires grep -P (GNU only).
+# (TODO|FIXME|XXX)(?!\s*\([A-Z]+-[0-9]+\))	TODO without ticket ref
