@@ -14,6 +14,10 @@ Short rule set. Most discipline is enforced by the linter (`ruff` / `eslint`) an
 5. **SQLAlchemy 2.0 style only** (`Mapped[]`, `mapped_column()`). No `declarative_base` or pre-2.0 patterns. Applies if the project uses SQLAlchemy.
 6. **`asyncio.to_thread()` for blocking CPU work** in async paths. Never block the event loop.
 
+## Pattern files
+
+Stack-specific deny patterns live in `.forbidden-patterns/{backend,frontend,secrets}.txt`. Add deprecated import paths, old service names, banned API keys, etc. — the hook scans them on every commit and so does CI. Format is `<regex><TAB><description>` per line; see `forbidden-patterns/README.md` for the full reference.
+
 ## Communication
 
 7. **Cite `file:line` when flagging an issue.** "The config is wrong" is vague; "`config.py:43` is wrong because…" is actionable. Applies to code review, bug reports, memory entries, and mid-task observations.

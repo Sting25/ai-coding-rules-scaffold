@@ -24,8 +24,8 @@ Clone the scaffold somewhere stable:
 
 ```sh
 git clone https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
-# Or pin to a specific release:
-git clone --branch v0.2.0 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
+# Or pin to a specific release — see https://github.com/Sting25/ai-coding-rules-scaffold/releases
+git clone --branch <tag> https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
 ```
 
 From your project root:
@@ -53,6 +53,19 @@ Install the linters:
 pip install ruff                                   # Python
 npm i -D eslint @eslint/js typescript-eslint       # TS/JS
 ```
+
+### Pairing with Husky / lefthook
+
+If your project already uses Husky or lefthook, `install.sh` detects the existing `core.hooksPath` and won't overwrite it. Two ways forward:
+
+1. **Switch to `.githooks`** — point `core.hooksPath` at `.githooks` and migrate any existing hooks into it. Simplest if your existing hooks are minimal.
+2. **Chain** — keep your existing tool and have it invoke the scaffold hook as a step. Husky example:
+   ```sh
+   # .husky/pre-commit
+   .githooks/pre-commit
+   ```
+
+Either way, the four `lib/check-*` scripts in `.githooks/lib/` are also runnable directly (`git ls-files | .githooks/lib/check-secrets`), so you can wire them into any orchestrator.
 
 ## What lands in your project
 
