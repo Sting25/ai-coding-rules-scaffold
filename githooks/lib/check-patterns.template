@@ -50,5 +50,6 @@ scan() {
 FAILED=0
 scan ".forbidden-patterns/backend.txt" py
 scan ".forbidden-patterns/frontend.txt" ts tsx js jsx
+scan ".forbidden-patterns/shell.txt" sh bash
 
 exit $FAILED

@@ -7,6 +7,7 @@ Pattern files consumed by `.githooks/lib/check-patterns` and
 |----------------|----------------------------------------------------|----------------|
 | `backend.txt`  | `*.py`                                             | yes            |
 | `frontend.txt` | `*.ts`, `*.tsx`, `*.js`, `*.jsx`                   | yes            |
+| `shell.txt`    | `*.sh`, `*.bash`                                   | yes            |
 | `secrets.txt`  | all tracked text files (binaries / lockfiles excluded) | no         |
 
 ## Format

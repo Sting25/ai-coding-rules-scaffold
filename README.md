@@ -82,6 +82,7 @@ Either way, the four `lib/check-*` scripts in `.githooks/lib/` are also runnable
 | `forbidden-patterns/backend.txt.template` | `.forbidden-patterns/backend.txt` | Python patterns consumed by hook + CI |
 | `forbidden-patterns/frontend.txt.template` | `.forbidden-patterns/frontend.txt` | TS/JS patterns consumed by hook + CI |
 | `forbidden-patterns/secrets.txt.template` | `.forbidden-patterns/secrets.txt` | Secret/credential patterns, scanned across all file types |
+| `forbidden-patterns/shell.txt.template` | `.forbidden-patterns/shell.txt` | Dangerous shell patterns (`curl \| bash`, `rm -rf /`, `chmod 777`) for `*.sh` and `*.bash` |
 
 Scripts (stay in the scaffold repo):
 

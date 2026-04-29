@@ -77,6 +77,7 @@ for check in check-size check-patterns check-filenames check-secrets; do
 done
 cp_safe "$SCAFFOLD_DIR/.github/workflows/lint.yml.template" ".github/workflows/lint.yml"
 cp_safe "$SCAFFOLD_DIR/forbidden-patterns/secrets.txt.template" ".forbidden-patterns/secrets.txt"
+cp_safe "$SCAFFOLD_DIR/forbidden-patterns/shell.txt.template" ".forbidden-patterns/shell.txt"
 
 # Python
 if [ "$MODE" = "python" ] || [ "$MODE" = "both" ]; then
