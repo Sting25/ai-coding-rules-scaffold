@@ -6,6 +6,8 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.3.0] — 2026-04-28
+
 ### Added
 - Scaffold self-tests (`tests/run.sh`) verifying hook behaviour on six fixture
   cases, run on Linux + macOS via matrix CI.
