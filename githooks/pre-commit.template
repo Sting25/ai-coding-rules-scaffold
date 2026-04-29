@@ -23,6 +23,29 @@ LIB="$HOOK_DIR/lib"
 STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
 [ -z "$STAGED" ] && exit 0
 
+# Make the working tree match the staged content for the duration of the
+# checks, so each lib/check-* script sees exactly what's about to be
+# committed. Without this, `git add bad.py` followed by `echo '' > bad.py`
+# would let the dirty index slip past — the hook would scan the clean
+# working tree and pass. Skipped during merge/rebase, where stash is
+# unsafe.
+NEED_RESTORE=0
+GIT_DIR=$(git rev-parse --git-dir 2>/dev/null || echo .git)
+if [ ! -e "$GIT_DIR/MERGE_HEAD" ] && [ ! -e "$GIT_DIR/REBASE_HEAD" ]; then
+  if ! git diff --quiet 2>/dev/null; then
+    if git stash push --keep-index --quiet --message "pre-commit-hook" 2>/dev/null; then
+      NEED_RESTORE=1
+    fi
+  fi
+fi
+
+restore_stash() {
+  if [ "$NEED_RESTORE" -eq 1 ]; then
+    git stash pop --quiet 2>/dev/null || true
+  fi
+}
+trap restore_stash EXIT
+
 FAILED=0
 echo "$STAGED" | "$LIB/check-size"      || FAILED=1
 echo "$STAGED" | "$LIB/check-patterns"  || FAILED=1

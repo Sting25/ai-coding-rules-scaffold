@@ -39,15 +39,11 @@ versioning follows [SemVer](https://semver.org/).
 - `install.sh` uses `git rev-parse --git-dir` instead of `[ -d .git ]` to
   detect a git repo, so it works in worktrees (where `.git` is a file)
   and submodules.
-
-### Known limitations
-- The pre-commit hook scans the working-tree version of each staged file,
-  not the staged content. If you `git add bad.py` and then edit `bad.py`
-  to be clean, the hook scans the clean version and the dirty staged
-  content commits through. The CI mirror in `lint.yml` always scans the
-  pushed commit, so this never bypasses CI. Fixing it cleanly requires
-  `git stash --keep-index` around the checks, which adds latency and
-  edge-case risk; deferred to a future release.
+- Pre-commit hook now `git stash --keep-index`s unstaged changes before
+  running checks, so each check sees the staged content rather than the
+  working tree. Closes the bypass where staging bad code and then editing
+  the working tree clean would let the dirty index commit through. Skipped
+  during merge / rebase, where stash is unsafe.
 
 ## [v0.2.0] — 2026-04-23
 
