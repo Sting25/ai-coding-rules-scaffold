@@ -23,9 +23,6 @@ versioning follows [SemVer](https://semver.org/).
 - Forbidden-patterns separator switched from `|` to TAB. Patterns can now
   contain literal `|` for ERE alternation (e.g. `(TODO|FIXME|XXX)`). v0.3
   roadmap item 1.
-- Pattern files use POSIX-derived word boundaries (`[[:<:]]`, `[[:>:]]`,
-  `[[:space:]]`) for compatibility with minimal grep implementations
-  (busybox / Alpine).
 - GitHub Actions pinned to commit SHAs (`actions/checkout` v4.3.0,
   `actions/setup-python` v5.6.0, `actions/setup-node` v4.4.0). v0.3 roadmap
   item 3.

@@ -4,14 +4,14 @@
 # (e.g. `(TODO|FIXME|XXX)`). Patterns cannot contain a literal TAB.
 # Copy to your project as `.forbidden-patterns/backend.txt`.
 
-[[:<:]]print[[:space:]]*\(	Use structlog (or the project's logger), not print()
+\bprint\s*\(	Use structlog (or the project's logger), not print()
 os\.path\.join	Use pathlib.Path(), not os.path.join
-[[:<:]]breakpoint[[:space:]]*\(	Remove breakpoint() before committing
-[[:<:]]pdb\.set_trace[[:space:]]*\(	Remove pdb.set_trace() before committing
-[[:<:]]ipdb\.set_trace[[:space:]]*\(	Remove ipdb.set_trace() before committing
+\bbreakpoint\s*\(	Remove breakpoint() before committing
+\bpdb\.set_trace\s*\(	Remove pdb.set_trace() before committing
+\bipdb\.set_trace\s*\(	Remove ipdb.set_trace() before committing
 
 # Optional: forbid TODO/FIXME/XXX in one line via regex alternation.
-# [[:<:]](TODO|FIXME|XXX)[[:>:]]	TODO/FIXME/XXX not allowed — open a ticket instead
+# \b(TODO|FIXME|XXX)\b	TODO/FIXME/XXX not allowed — open a ticket instead
 #
 # Optional (PCRE only — ERE doesn't support lookahead): flag TODO/FIXME/XXX
 # only when missing a ticket ref like (PROJ-123). Requires grep -P (GNU only).
