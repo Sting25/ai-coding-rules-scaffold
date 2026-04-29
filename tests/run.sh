@@ -67,6 +67,13 @@ seq 1 501 >big.py
 git add big.py
 assert_rejects "size cap (501-line .py)"
 
+# 1b. file size cap with no trailing newline — `wc -l` would under-count
+#     by 1 here; the size check uses `grep -c ''` to catch the final line.
+seq 1 500 >no_newline.py
+printf '501' >>no_newline.py
+git add no_newline.py
+assert_rejects "size cap (501 lines, no trailing newline)"
+
 # 2. print() in Python
 echo 'print("debug")' >app.py
 git add app.py

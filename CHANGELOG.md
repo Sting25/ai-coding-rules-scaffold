@@ -33,6 +33,21 @@ versioning follows [SemVer](https://semver.org/).
 ### Fixed
 - Test-fixture AKIA string in `tests/run.sh` split across adjacent quoted
   segments so the secrets scan does not false-positive on its own data.
+- File-size check now uses `grep -c ''` instead of `wc -l`, correctly
+  counting the last line of a file without a trailing newline (which
+  `wc -l` silently misses).
+- `install.sh` uses `git rev-parse --git-dir` instead of `[ -d .git ]` to
+  detect a git repo, so it works in worktrees (where `.git` is a file)
+  and submodules.
+
+### Known limitations
+- The pre-commit hook scans the working-tree version of each staged file,
+  not the staged content. If you `git add bad.py` and then edit `bad.py`
+  to be clean, the hook scans the clean version and the dirty staged
+  content commits through. The CI mirror in `lint.yml` always scans the
+  pushed commit, so this never bypasses CI. Fixing it cleanly requires
+  `git stash --keep-index` around the checks, which adds latency and
+  edge-case risk; deferred to a future release.
 
 ## [v0.2.0] — 2026-04-23
 
