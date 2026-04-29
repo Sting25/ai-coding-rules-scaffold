@@ -22,20 +22,25 @@ One pattern per line. Field separator is a literal TAB. Lines starting with
 ### Regex syntax
 
 **Extended Regular Expressions** (ERE) — the dialect that `grep -E`
-accepts on both BSD and GNU. A few notes:
+accepts on every grep implementation we care about (GNU, BSD, busybox).
+Patterns in this scaffold use the **POSIX-portable** subset only:
 
-- **Word boundaries:** `\b`. Works on GNU grep (Linux) and modern macOS
-  BSD grep. The BSD-specific `[[:<:]]` / `[[:>:]]` form is *not*
-  supported by GNU grep, so don't use it. Truly minimal greps
-  (busybox / Alpine) may not support `\b` either; this scaffold
-  targets developer workstations and standard CI runners, where `\b`
-  works reliably.
-- **Whitespace:** `\s`. Same portability story as `\b`. POSIX `[[:space:]]`
-  also works and is a fine drop-in if you prefer it.
+- **Word boundaries:** `(^|[^A-Za-z_])` for word-start, `($|[^A-Za-z0-9_])`
+  for word-end. Verbose but works everywhere ERE works. Avoid `\b`
+  (GNU + modern BSD only) and `[[:<:]]` / `[[:>:]]` (BSD only — does
+  *not* work on GNU grep, contrary to its POSIX-class-shaped syntax).
+- **Whitespace:** `[[:space:]]`. POSIX character class, supported on
+  every grep. `\s` is a GNU/BSD extension; not used here.
 - **Alternation:** patterns can contain literal `|` since the field
-  separator is TAB. `(TODO|FIXME|XXX)` works in one line.
-- **Tabs in patterns:** not supported (a TAB inside the regex would split
-  the field). Use `\s` or `[[:space:]]` for whitespace matching.
+  separator is TAB. `(TODO|FIXME|XXX)` works in one line. The word-
+  boundary form above also relies on alternation.
+- **Tabs in patterns:** not supported (a TAB inside the regex would
+  split the field). Use `[[:space:]]` for whitespace matching.
+
+The verbose word-boundary form is a deliberate trade. `\b` is
+shorter, but adds a portability assumption we can't verify on every
+grep our users run. Spelling the boundary out as a character class
+keeps the patterns honest.
 
 ### Description
 

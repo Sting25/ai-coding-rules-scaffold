@@ -31,6 +31,10 @@ versioning follows [SemVer](https://semver.org/).
 - Six per-keyword hardcoded-credential patterns (`password`, `passwd`,
   `token`, `api_key`, `secret_key`, `access_token`) collapsed into one
   alternation pattern in `secrets.txt`, enabled by the new separator.
+- Pattern files use POSIX-portable word boundaries `(^|[^A-Za-z_])` and
+  `($|[^A-Za-z0-9_])` instead of GNU-only `\b` or BSD-only `[[:<:]]`.
+  Verbose, but works on every `grep -E` that supports ERE alternation
+  (GNU, BSD, busybox). Whitespace uses `[[:space:]]`, also POSIX.
 - GitHub Actions pinned to commit SHAs (`actions/checkout` v4.3.0,
   `actions/setup-python` v5.6.0, `actions/setup-node` v4.4.0). v0.3 roadmap
   item 3.
