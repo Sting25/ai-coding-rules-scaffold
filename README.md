@@ -24,8 +24,8 @@ Clone the scaffold somewhere stable:
 
 ```sh
 git clone https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
-# Or pin to a specific release:
-git clone --branch v0.2.0 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
+# Or pin to a specific release — see https://github.com/Sting25/ai-coding-rules-scaffold/releases
+git clone --branch <tag> https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
 ```
 
 From your project root:
@@ -54,6 +54,19 @@ pip install ruff                                   # Python
 npm i -D eslint @eslint/js typescript-eslint       # TS/JS
 ```
 
+### Pairing with Husky / lefthook
+
+If your project already uses Husky or lefthook, `install.sh` detects the existing `core.hooksPath` and won't overwrite it. Two ways forward:
+
+1. **Switch to `.githooks`** — point `core.hooksPath` at `.githooks` and migrate any existing hooks into it. Simplest if your existing hooks are minimal.
+2. **Chain** — keep your existing tool and have it invoke the scaffold hook as a step. Husky example:
+   ```sh
+   # .husky/pre-commit
+   .githooks/pre-commit
+   ```
+
+Either way, the four `lib/check-*` scripts in `.githooks/lib/` are also runnable directly (`git ls-files | .githooks/lib/check-secrets`), so you can wire them into any orchestrator.
+
 ## What lands in your project
 
 | Scaffold file | Installed as | Purpose |
@@ -63,11 +76,13 @@ npm i -D eslint @eslint/js typescript-eslint       # TS/JS
 | `coding-rules.md` | `coding-rules.md` | Short list of rules that aren't tool-enforceable |
 | `ruff.toml.template` | `ruff.toml` | Python lint config |
 | `eslint.config.js.template` | `eslint.config.js` | TS/JS lint config (flat config, ESLint 9+) |
-| `githooks/pre-commit.template` | `.githooks/pre-commit` | File-size, forbidden-patterns, secrets, and blocked-filenames check |
-| `.github/workflows/lint.yml.template` | `.github/workflows/lint.yml` | CI mirror of the hook |
+| `githooks/pre-commit.template` | `.githooks/pre-commit` | Hook orchestrator — invokes the four `lib/check-*` scripts |
+| `githooks/lib/check-{size,patterns,filenames,secrets}.template` | `.githooks/lib/check-{size,patterns,filenames,secrets}` | Reusable check scripts; the same scripts run from CI so hook and CI can't drift |
+| `.github/workflows/lint.yml.template` | `.github/workflows/lint.yml` | CI mirror — invokes the same `lib/check-*` scripts as the hook |
 | `forbidden-patterns/backend.txt.template` | `.forbidden-patterns/backend.txt` | Python patterns consumed by hook + CI |
 | `forbidden-patterns/frontend.txt.template` | `.forbidden-patterns/frontend.txt` | TS/JS patterns consumed by hook + CI |
 | `forbidden-patterns/secrets.txt.template` | `.forbidden-patterns/secrets.txt` | Secret/credential patterns, scanned across all file types |
+| `forbidden-patterns/shell.txt.template` | `.forbidden-patterns/shell.txt` | Dangerous shell patterns (`curl \| bash`, `rm -rf /`, `chmod 777`) for `*.sh` and `*.bash` |
 
 Scripts (stay in the scaffold repo):
 
@@ -105,8 +120,8 @@ Build-breaking (`ruff` / `eslint`, on every lint + in CI):
 | `os.path.join` / string path math | `ruff PTH100-208` |
 | Blind `except Exception: pass` | `ruff BLE001` |
 | Missing public-API return types | `ruff ANN201` |
-| Function > 60 lines | `ruff PLR0915` |
-| Too many branches / statements | `ruff PLR0912`, `PLR0915` |
+| Function size > 80 statements (Python) / 80 lines (TS/JS) | `ruff PLR0915` (`max-statements`), `eslint max-lines-per-function` |
+| Too many branches in a function | `ruff PLR0912` (`max-branches`) |
 | Line length > 100 | `ruff E501` |
 | Unsorted / unused imports | `ruff I`, `F401` |
 | `any` in TypeScript without comment | `@typescript-eslint/no-explicit-any` |

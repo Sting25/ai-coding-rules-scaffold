@@ -1,7 +1,8 @@
 name: lint
 
 # Copy to your project as `.github/workflows/lint.yml`.
-# Mirrors the pre-commit hook server-side so --no-verify can't sneak past.
+# Mirrors the pre-commit hook server-side via the same lib/check-* scripts —
+# the hook and CI can never drift because they share one implementation.
 # Adjust Python / Node versions per project.
 
 on:
@@ -9,13 +10,16 @@ on:
   push:
     branches: [main, master]
 
+permissions:
+  contents: read
+
 jobs:
   python:
     if: hashFiles('ruff.toml', 'pyproject.toml') != ''
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955  # v4.3.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: "3.12"
       - run: pip install ruff
@@ -25,103 +29,25 @@ jobs:
     if: hashFiles('eslint.config.js', 'package.json') != ''
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955  # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
           node-version: "20"
       - run: npm ci || npm install
       - run: npx eslint .
 
   guardrails:
-    # File-size + forbidden-patterns check, mirroring .githooks/pre-commit.
-    # Runs regardless of stack so the size ceiling is enforced everywhere.
+    # File size, forbidden patterns, blocked filenames, secret scan —
+    # the same lib/check-* scripts the pre-commit hook calls.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: File size ceiling (500 lines)
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955  # v4.3.0
+      - name: Run scaffold checks
         run: |
-          MAX_LINES=${MAX_LINES:-500}
+          chmod +x .githooks/lib/check-*
           FAILED=0
-          while IFS= read -r file; do
-            [ -f "$file" ] || continue
-            case "$file" in
-              *.md|*.json|*.toml|*.yaml|*.yml|*.lock|*.txt|*.csv|*.sql) continue ;;
-              *.svg|*.png|*.jpg|*.jpeg|*.gif|*.ico|*.pdf) continue ;;
-            esac
-            LINES=$(wc -l < "$file" | tr -d ' ')
-            if [ "$LINES" -gt "$MAX_LINES" ]; then
-              echo "::error file=$file::$LINES lines (max $MAX_LINES) — extract a module"
-              FAILED=1
-            fi
-          done < <(git ls-files)
-          exit $FAILED
-      - name: Forbidden patterns
-        run: |
-          FAILED=0
-          check() {
-            local config=$1; shift
-            [ -f "$config" ] || return 0
-            local pathspec=()
-            for ext in "$@"; do pathspec+=("*.${ext}"); done
-            while IFS='|' read -r pattern description; do
-              [ -z "$pattern" ] && continue
-              case "$pattern" in \#*) continue ;; esac
-              while IFS= read -r file; do
-                if grep -nE -- "$pattern" "$file" >/dev/null 2>&1; then
-                  echo "::error file=$file::$description"
-                  FAILED=1
-                fi
-              done < <(git ls-files -- "${pathspec[@]}")
-            done < "$config"
-          }
-          check .forbidden-patterns/backend.txt py
-          check .forbidden-patterns/frontend.txt ts tsx js jsx
-          exit $FAILED
-      - name: Blocked filenames
-        run: |
-          FAILED=0
-          while IFS= read -r file; do
-            [ -z "$file" ] && continue
-            case "$file" in
-              *.pem)
-                echo "::error file=$file::PEM file (likely private key) — rotate and use a secret manager"
-                FAILED=1
-                continue
-                ;;
-            esac
-            name=$(basename "$file")
-            case "$name" in
-              .env.example|.env.sample|.env.template) ;;
-              .env|.env.*)
-                echo "::error file=$file::environment file — use .env.example for shared config"
-                FAILED=1
-                ;;
-              id_rsa|id_ed25519|id_ecdsa|id_dsa)
-                echo "::error file=$file::SSH private key — rotate and use a secret manager"
-                FAILED=1
-                ;;
-            esac
-          done < <(git ls-files)
-          exit $FAILED
-      - name: Secret scan
-        run: |
-          FAILED=0
-          config=.forbidden-patterns/secrets.txt
-          [ -f "$config" ] || exit 0
-          files=$(git ls-files | grep -vE '\.(svg|png|jpg|jpeg|gif|ico|pdf|lock|zip|tar|gz|woff2?|ttf|mp4|mov)$' \
-                              | grep -vE '^(package-lock\.json|pnpm-lock\.yaml)$' \
-                              | grep -vE '^\.forbidden-patterns/')
-          while IFS='|' read -r pattern description; do
-            [ -z "$pattern" ] && continue
-            case "$pattern" in \#*) continue ;; esac
-            while IFS= read -r file; do
-              [ -z "$file" ] && continue
-              if grep -niE -- "$pattern" "$file" >/dev/null 2>&1; then
-                echo "::error file=$file::$description"
-                FAILED=1
-              fi
-            done <<< "$files"
-          done < "$config"
+          git ls-files | .githooks/lib/check-size      --ci || FAILED=1
+          git ls-files | .githooks/lib/check-patterns  --ci || FAILED=1
+          git ls-files | .githooks/lib/check-filenames --ci || FAILED=1
+          git ls-files | .githooks/lib/check-secrets   --ci || FAILED=1
           exit $FAILED

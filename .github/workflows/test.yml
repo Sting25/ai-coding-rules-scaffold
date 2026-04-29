@@ -1,0 +1,25 @@
+name: tests
+
+# Runs the scaffold's own test harness against a throwaway git repo.
+# Cross-platform matrix catches portability bugs in the hook (BSD vs GNU
+# grep, file-iteration edge cases) before they hit consumer projects.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955  # v4.3.0
+      - run: chmod +x tests/run.sh install.sh githooks/pre-commit.template
+      - run: ./tests/run.sh

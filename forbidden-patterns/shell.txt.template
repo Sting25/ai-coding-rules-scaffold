@@ -1,0 +1,6 @@
+# Forbidden patterns for shell scripts (*.sh, *.bash). See forbidden-patterns/README.md.
+# Copy to your project as `.forbidden-patterns/shell.txt`.
+
+(^|[^A-Za-z_])(curl|wget)[[:space:]][^[:space:]]*[[:space:]]*\|[[:space:]]*(bash|sh|zsh)([[:space:]]|$)	Piping remote download to a shell — review the script and run it as a separate step
+(^|[^A-Za-z_])rm[[:space:]]+-[rfRF]+[[:space:]]+/[[:space:]]*([;&]|$)	`rm -rf /` detected — refuse to ship; scope to a specific path
+(^|[^A-Za-z_])chmod[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*0?777([[:space:]]|$)	chmod 0?777 — overly permissive; scope to specific user/group bits

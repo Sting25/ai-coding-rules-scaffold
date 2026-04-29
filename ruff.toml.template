@@ -32,7 +32,7 @@ max-complexity = 10
 
 [lint.pylint]
 max-branches = 12
-max-statements = 60
+max-statements = 80
 
 [lint.per-file-ignores]
 "tests/**/*.py" = ["ANN", "PLR2004"]  # tests may have magic values, looser annotations

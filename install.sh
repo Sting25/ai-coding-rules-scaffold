@@ -71,8 +71,13 @@ cp_safe "$SCAFFOLD_DIR/AGENTS.md.template" "AGENTS.md"
 cp_safe "$SCAFFOLD_DIR/CLAUDE.md.pointer" "CLAUDE.md"
 cp_safe "$SCAFFOLD_DIR/githooks/pre-commit.template" ".githooks/pre-commit"
 chmod +x .githooks/pre-commit
+for check in check-size check-patterns check-filenames check-secrets; do
+  cp_safe "$SCAFFOLD_DIR/githooks/lib/${check}.template" ".githooks/lib/${check}"
+  chmod +x ".githooks/lib/${check}"
+done
 cp_safe "$SCAFFOLD_DIR/.github/workflows/lint.yml.template" ".github/workflows/lint.yml"
 cp_safe "$SCAFFOLD_DIR/forbidden-patterns/secrets.txt.template" ".forbidden-patterns/secrets.txt"
+cp_safe "$SCAFFOLD_DIR/forbidden-patterns/shell.txt.template" ".forbidden-patterns/shell.txt"
 
 # Python
 if [ "$MODE" = "python" ] || [ "$MODE" = "both" ]; then
@@ -86,8 +91,10 @@ if [ "$MODE" = "frontend" ] || [ "$MODE" = "both" ]; then
   cp_safe "$SCAFFOLD_DIR/forbidden-patterns/frontend.txt.template" ".forbidden-patterns/frontend.txt"
 fi
 
-# Wire the hook — preserve existing core.hooksPath if already set (e.g. Husky)
-if [ -d .git ]; then
+# Wire the hook — preserve existing core.hooksPath if already set (e.g. Husky).
+# Use `git rev-parse --git-dir` so this works in worktrees (where .git is a
+# file, not a directory) and submodules.
+if git rev-parse --git-dir >/dev/null 2>&1; then
   EXISTING_HOOKS_PATH=$(git config --get core.hooksPath || true)
   if [ -z "$EXISTING_HOOKS_PATH" ] || [ "$EXISTING_HOOKS_PATH" = ".githooks" ]; then
     git config core.hooksPath .githooks
@@ -97,7 +104,7 @@ if [ -d .git ]; then
     echo "         Point it at .githooks or chain our hook into your existing setup."
   fi
 else
-  echo "warning: no .git directory — run 'git config core.hooksPath .githooks' after 'git init'"
+  echo "warning: not in a git repo — run 'git config core.hooksPath .githooks' after 'git init'"
 fi
 
 echo ""

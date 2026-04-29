@@ -14,6 +14,10 @@ Short rule set. Most discipline is enforced by the linter (`ruff` / `eslint`) an
 5. **SQLAlchemy 2.0 style only** (`Mapped[]`, `mapped_column()`). No `declarative_base` or pre-2.0 patterns. Applies if the project uses SQLAlchemy.
 6. **`asyncio.to_thread()` for blocking CPU work** in async paths. Never block the event loop.
 
+## Pattern files
+
+Stack-specific deny patterns live in `.forbidden-patterns/{backend,frontend,secrets}.txt`. Add deprecated import paths, old service names, banned API keys, etc. — the hook scans them on every commit and so does CI. Format is `<regex><TAB><description>` per line; see `forbidden-patterns/README.md` for the full reference.
+
 ## Communication
 
 7. **Cite `file:line` when flagging an issue.** "The config is wrong" is vague; "`config.py:43` is wrong because…" is actionable. Applies to code review, bug reports, memory entries, and mid-task observations.
@@ -22,30 +26,9 @@ Short rule set. Most discipline is enforced by the linter (`ruff` / `eslint`) an
 
 See `AGENTS.md` for commit format and Git discipline (no amend, no force-push, no push unless asked).
 
-## What the tooling enforces (for reference)
+## What the tooling enforces
 
-Build-breaking (`ruff` / `eslint`):
-
-| Concern | Tool rule |
-|---|---|
-| Nested control flow > 3 deep | `ruff C901`, `eslint max-depth: 3` |
-| Cyclomatic complexity > 10 | `ruff C901`, `eslint complexity: 10` |
-| `os.path.join` / string path math | `ruff PTH100-208` |
-| Blind `except Exception: pass` | `ruff BLE001` |
-| Missing public-API return types | `ruff ANN201` |
-| Function > 60 lines | `ruff PLR0915` |
-| Too many branches / statements | `ruff PLR0912`, `PLR0915` |
-| Line length > 100 | `ruff E501` |
-| Unsorted / unused imports | `ruff I`, `F401` |
-| `any` in TypeScript without comment | `@typescript-eslint/no-explicit-any` |
-
-Commit-breaking (pre-commit hook):
-
-| Concern | Check |
-|---|---|
-| `print()` in Python files | regex |
-| `console.log` in TS/JS files | regex |
-| File size > 500 lines | `wc -l` per staged file |
+See [README.md](./README.md) > "What the tooling enforces" for the full matrix of build-breaking (`ruff` / `eslint`) and commit-breaking (pre-commit hook + CI) checks. Single source of truth — this doc stays focused on the human-readable rules above.
 
 ## Project-specific additions
 

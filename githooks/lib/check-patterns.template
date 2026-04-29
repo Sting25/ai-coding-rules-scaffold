@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# .githooks/lib/check-patterns — forbidden-pattern scan for source files.
+# Reads file paths on stdin. Scans .py against backend.txt and TS/JS
+# against frontend.txt. Pattern format: <regex><TAB><description>
+# (TAB is the field separator so regex can use literal `|` alternation).
+#
+# Output: human-readable on tty; ::error file=...:: when --ci is passed.
+# Exit:   0 if all OK, 1 if any violation.
+
+set -euo pipefail
+
+CI_MODE=0
+[ "${1:-}" = "--ci" ] && CI_MODE=1
+
+FILES=()
+while IFS= read -r f; do
+  [ -n "$f" ] && [ -f "$f" ] && FILES+=("$f")
+done
+
+scan() {
+  local config=$1
+  shift
+  [ -f "$config" ] || return 0
+  [ ${#FILES[@]} -eq 0 ] && return 0
+
+  while IFS=$'\t' read -r pattern description; do
+    [ -z "$pattern" ] && continue
+    case "$pattern" in \#*) continue ;; esac
+
+    for file in "${FILES[@]}"; do
+      local matched=0
+      for ext in "$@"; do
+        case "$file" in *."$ext") matched=1; break ;; esac
+      done
+      [ "$matched" -eq 1 ] || continue
+
+      if grep -nE -- "$pattern" "$file" >/dev/null 2>&1; then
+        if [ "$CI_MODE" -eq 1 ]; then
+          echo "::error file=$file::$description"
+        else
+          echo "✗ $file: $description"
+          grep -nE -- "$pattern" "$file" | head -3 | sed 's/^/    /'
+        fi
+        FAILED=1
+      fi
+    done
+  done <"$config"
+}
+
+FAILED=0
+scan ".forbidden-patterns/backend.txt" py
+scan ".forbidden-patterns/frontend.txt" ts tsx js jsx
+scan ".forbidden-patterns/shell.txt" sh bash
+
+exit $FAILED
