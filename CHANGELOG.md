@@ -6,6 +6,31 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `RECOMMENDATIONS.md` — entries for ideas the scaffold deliberately doesn't
+  ship (agent-runtime hooks, `SPEC.md` templates, language-agnostic forbidden
+  patterns) with explicit triggering conditions and a maintenance protocol so
+  entries don't bit-rot. Closes the documented gap from the v0.3.0 audit cycle.
+
+### Changed
+- README `Why this exists` rewritten with concrete failure-mode mechanics
+  (Monday/Wednesday inconsistency, agents-grow-files-they-can't-see, debug
+  statements that look like logging, recurrent training-data muscle memory)
+  rather than abstract failure-mode names. Origin context and audience now
+  explicit.
+- README install command now pins `--branch v0.3.0` by default; tracking
+  `main` is shown as the alternative. Matches the scaffold's reproducibility
+  preaching.
+- `AGENTS.md.template` Project section gains a 30-line budget note,
+  nested-`CLAUDE.md` guidance, and a "Module pattern" line. Git-discipline
+  section gains a `git worktree` bullet so parallel agent sessions don't
+  overwrite each other.
+
+### Fixed
+- `install.sh` post-install smoke test now distinguishes a bad ruff config
+  (exit ≥ 2) from successful runs (exit 0 or 1). The previous
+  `--exit-zero` form silently passed even when ruff hit a config error.
+
 ## [v0.3.0] — 2026-04-28
 
 ### Added

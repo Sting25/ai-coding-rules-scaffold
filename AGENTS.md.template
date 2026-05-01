@@ -16,6 +16,7 @@ The file-size ceiling (500 lines) is non-negotiable — never raise it.
 - **Never push unless asked.** Committing is local and reversible; pushing is not. Wait for explicit "push it" / "open a PR" before `git push`.
 - **Never `reset --hard`, `checkout .`, or `clean -fd`** on a dirty tree without confirming — those destroy uncommitted work silently.
 - **One commit per logical change.** Don't bundle "fix bug + rename vars + add feature" into one commit; split them.
+- **Use `git worktree` for parallel agent sessions.** Two agents working in the same checkout will overwrite each other. `git worktree add ../<repo>-<feature> -b <feature>` gives each session an isolated working tree on its own branch.
 
 ## Commit message format
 
@@ -34,8 +35,12 @@ Per `coding-rules.md` rule 3: search the codebase for an existing module that co
 
 ## Project
 
-<!-- Replace this section with project-specific context: stack, key entry points, architectural constraints, non-obvious gotchas. Keep it tight — this file is read on every turn. -->
+<!-- Replace this section with project-specific context. Hard rule: keep it ≤ 30 lines.
+     This file is reread on every turn — every line costs context window for every prompt.
+     For deeper area-specific context, drop a CLAUDE.md (or .cursorrules) inside that
+     directory; agents read the nearest one walking up from the file being edited. -->
 
 - Stack: _(e.g. FastAPI + SQLAlchemy 2.0 + React/TS)_
 - Entry points: _(e.g. `app/main.py`, `web/src/index.tsx`)_
+- Module pattern: _(e.g. "feature-based co-location under `app/features/<name>/`; no shared `utils/`")_
 - Gotchas: _(e.g. "all DB sessions must go through `get_session()` — raw `Session()` leaks connections")_

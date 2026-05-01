@@ -3,9 +3,27 @@
 [![Latest release](https://img.shields.io/github/v/release/Sting25/ai-coding-rules-scaffold)](https://github.com/Sting25/ai-coding-rules-scaffold/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Coding guardrails that prevent unbounded file growth, deeply nested control flow, silenced exceptions, debug leaks (`print`, `console.log`, `breakpoint`, `pdb`), hardcoded secrets/tokens, and stray `.env` or private-key files. Agent-agnostic: works with Cursor, Claude Code, Copilot, Cline, Aider, or no AI at all — enforcement is `ruff` + `eslint` + a pre-commit hook + a CI mirror that runs the same checks server-side so `--no-verify` doesn't become the escape hatch.
+**Two-layer enforcement (pre-commit hook + CI mirror) for small teams using AI agents** — catches debug leaks (`print`, `console.log`, `breakpoint`, `pdb`), unbounded file growth, nested-if hell, silenced exceptions, hardcoded secrets/tokens, and stray `.env` or private-key files before they merge. The same `lib/check-*` scripts run in both layers, so the hook and CI can't drift apart and `--no-verify` doesn't become the escape hatch.
 
-Built for Python/FastAPI + optional TypeScript/React projects. Adapt freely for other stacks.
+Agent-agnostic: works with Cursor, Claude Code, Copilot, Cline, Aider, or no AI at all. Built for Python/FastAPI + optional TypeScript/React projects; adapt freely for other stacks.
+
+## Why this exists
+
+This scaffold came out of working on a large federated geospatial pipeline — Python/FastAPI backend with TypeScript on the front, agents writing in both. The intended audience is small teams (2–5 devs) using Claude Code or a similar agent, often with the AI filling the senior-engineering role on a real codebase.
+
+That setup hits four compounding failure modes that ordinary linting alone doesn't catch:
+
+1. **AI writes inconsistent or conflicting patterns across sessions.** A teammate prompts the agent Monday and it picks one convention; on Wednesday, a different teammate prompts the agent on the same area and it picks a different one. Without machine-checkable rules, the codebase grows three flavors of the same thing — different error-handling shapes, different import styles, different naming. Tools that fail the build on rule violations are the only thing that survives across sessions.
+
+2. **Files grow unboundedly.** Agents add to existing files rather than extract new modules — every request becomes a new function in the same file. Past a certain size the agent can no longer fit the file in context, and the bugs that follow are subtle (the agent can't see the whole file either, so it stops noticing the duplication and inconsistency *it* introduced). The 500-line cap is calibrated well below that threshold so extraction stays cheap.
+
+3. **Debug statements ship silently.** `print()`, `console.log`, `breakpoint()`, `pdb.set_trace()` — agents add them while diagnosing a bug and forget to remove them on the way out. They survive code review because they look like intentional logging at first glance. Commit-time rejection is the only layer that catches them every time.
+
+4. **Forbidden patterns recur.** Agents reach for old import paths, deprecated service names, and outdated idioms because their training data still has them. A per-stack regex deny-list (`backend.txt`, `frontend.txt`, `secrets.txt`, `shell.txt`) is the only durable fix — the agent can't be talked out of recurrent muscle memory, but the build can fail on it.
+
+This scaffold ships the **enforcement layer** that addresses all four directly. Two layers are live: commit-time (the pre-commit hook) and merge-time (the CI mirror), both running the same `lib/check-*` scripts. A third layer — agent-runtime hooks that block bad patterns *before* they're written — is deferred; see [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) for the design space and tradeoffs.
+
+What the scaffold doesn't try to solve: parallel-session collisions, context-window discipline across long projects, and spec-first workflows. Those belong to git workflow (`git worktree` per session), nested `CLAUDE.md` files, and project-specific spec docs respectively. Recommended patterns for each are documented in `AGENTS.md` and `RECOMMENDATIONS.md`.
 
 ## Philosophy
 
@@ -13,20 +31,25 @@ Built for Python/FastAPI + optional TypeScript/React projects. Adapt freely for 
 
 The file-size rule (max 500 lines) is the one rule to never raise. Every other rule has tradeoffs in specific cases; unbounded file growth is how projects rot.
 
-Enforcement runs in two places:
+Enforcement runs in two places, sharing the same scripts:
 
 - **Pre-commit hook** — blocks the commit locally. Fast feedback, skippable with `--no-verify`.
-- **CI workflow** — blocks the PR server-side. Unskippable. The hook and CI run the same checks.
+- **CI workflow** — blocks the PR server-side. Unskippable.
+
+Both invoke the same four `lib/check-*` scripts (`check-size`, `check-patterns`, `check-filenames`, `check-secrets`). The hook and CI can't drift apart because there's nothing to keep in sync — they call the same code. Each script is also runnable on its own (`git ls-files | .githooks/lib/check-secrets`), so you can wire it into Husky, lefthook, or any other orchestrator without rewriting the logic.
 
 ## Install
 
 Clone the scaffold somewhere stable:
 
 ```sh
+# Recommended: pin to a tagged release for reproducibility
+git clone --branch v0.3.0 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
+# Or track main if you want the latest changes
 git clone https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
-# Or pin to a specific release — see https://github.com/Sting25/ai-coding-rules-scaffold/releases
-git clone --branch <tag> https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
 ```
+
+See [Releases](https://github.com/Sting25/ai-coding-rules-scaffold/releases) for available tags.
 
 From your project root:
 
@@ -108,6 +131,12 @@ The scaffold follows the cross-tool **`AGENTS.md` convention** — a single file
   Follow the rules in AGENTS.md and coding-rules.md.
   ```
 - **Continue / Copilot / other** — point the tool at `AGENTS.md` via whatever config it supports.
+
+### Scaling context across a large codebase
+
+Root-level `AGENTS.md` is reread on every turn, so its token cost is paid for every prompt. For codebases over ~50 files, drop a `CLAUDE.md` in each major directory (`app/api/`, `app/web/`, `lib/`) with area-specific gotchas. Claude Code reads the nearest one walking up from the file being edited — root-level context stays small, area context stays relevant. Same applies to Cursor's nested `.cursorrules`.
+
+For parallel agent sessions, use `git worktree add ../proj-feat-x -b feat-x` so each session has an isolated working tree on its own branch. Two agents in the same checkout will overwrite each other.
 
 ## What the tooling enforces
 
@@ -191,6 +220,9 @@ Safe mode only removes files whose content matches the current scaffold template
 | Framework-specific rules (React Query, specific import paths) | `coding-rules.md` "Project-specific" section |
 | Test coverage thresholds, logging conventions | Per-project decision |
 | Formatter enforcement (`ruff format`, `prettier`) | Drop-in if you want; the scaffold stays opinion-light here |
+| Spec-first workflow templates (`SPEC.md`) | Out of scope — see [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) |
+| Claude Code agent-runtime hooks (`.claude/settings.json` `PreToolUse`) | Deferred — see [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) for design space and tradeoffs |
+| `git worktree` orchestration for parallel agent sessions | Documented in `AGENTS.md`; not automated |
 
 ## Using this without an AI
 

@@ -117,10 +117,15 @@ if [ "$VERIFY" -eq 1 ]; then
   case "$MODE" in
     python|both)
       if command -v ruff >/dev/null 2>&1; then
-        if ruff check --quiet --exit-zero . >/dev/null 2>&1; then
+        # Explicit exit-code handling so the smoke test actually distinguishes
+        # "config parsed cleanly" from "ruff crashed on a bad config".
+        # ruff: 0 = no issues, 1 = lint issues found, 2+ = config/invocation error.
+        ruff_exit=0
+        ruff check --quiet . >/dev/null 2>&1 || ruff_exit=$?
+        if [ "$ruff_exit" -le 1 ]; then
           echo "  ✓ ruff installed and config loads"
         else
-          echo "  ✗ ruff installed but 'ruff check' errored — check ruff.toml"
+          echo "  ✗ ruff installed but config errored (exit $ruff_exit) — check ruff.toml"
         fi
       else
         echo "  ! ruff not installed — run: pip install ruff"
