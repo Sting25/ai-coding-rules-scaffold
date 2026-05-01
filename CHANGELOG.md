@@ -6,6 +6,8 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.3.1] — 2026-05-01
+
 ### Added
 - `RECOMMENDATIONS.md` — entries for ideas the scaffold deliberately doesn't
   ship (agent-runtime hooks, `SPEC.md` templates, language-agnostic forbidden
@@ -18,7 +20,7 @@ versioning follows [SemVer](https://semver.org/).
   statements that look like logging, recurrent training-data muscle memory)
   rather than abstract failure-mode names. Origin context and audience now
   explicit.
-- README install command now pins `--branch v0.3.0` by default; tracking
+- README install command now pins `--branch v0.3.1` by default; tracking
   `main` is shown as the alternative. Matches the scaffold's reproducibility
   preaching.
 - `AGENTS.md.template` Project section gains a 30-line budget note,
