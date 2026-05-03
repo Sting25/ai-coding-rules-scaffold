@@ -6,6 +6,8 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.3.2] — 2026-05-02
+
 ### Added
 - `operational-rules.md` — process, collaboration, and judgment rules
   extracted from real failure modes (pre-flight checks before long
