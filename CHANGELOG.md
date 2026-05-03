@@ -6,7 +6,52 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
-### Security / hardening (audit pass)
+## [v0.4.0] — 2026-05-03
+
+### Added
+- **Per-line `scaffold-allow` marker.** Lines containing `scaffold-allow`
+  (case-insensitive) are exempt from `check-patterns` and `check-secrets`
+  — an inline `# noqa`-style escape valve for legitimate `print` calls,
+  docs examples showing key prefixes, and synthetic test fixtures. Audit
+  usage with `git grep -i scaffold-allow`. `check-filenames` and
+  `check-size` ignore the marker (they're file-level rules).
+- Pre-commit hook now runs `ruff` / `eslint` against staged files when
+  their configs are present and the tool is on PATH. Cuts the
+  edit→push→CI→fix loop; CI remains the authoritative backstop.
+  Silently skipped when a tool isn't installed so the hook doesn't break
+  on fresh checkouts.
+- `actions/setup-python` + `pip install ruff` step in `test.yml` so the
+  new ruff-integration test case actually exercises lint at hook time.
+
+### Changed
+- `check-patterns` and `check-secrets` rewritten to combine all patterns
+  into one ERE per scan and run a single `grep` per file as a fast-path
+  filter. Per-pattern attribution only runs on files that already
+  matched something. Cuts grep invocations from O(P×F) to F + matching×P
+  — meaningful on the CI path where `git ls-files` feeds in thousands of
+  files.
+
+### Fixed
+- `uninstall.sh` uses `git rev-parse --git-dir` (matching `install.sh`)
+  so `core.hooksPath` is correctly unset in worktrees and submodules.
+- Pre-commit header comment described the pattern format as
+  `regex|description`; corrected to TAB-separated to match v0.3.0.
+- `check-secrets` skip list extended to cover `.exe`, `.dll`, `.so`,
+  `.dylib`, `.bin`, `.class`, `.pyc`, `.pyo`, `.o`, `.a`, `.parquet`,
+  plus `go.sum` and `package-lock.json` / `pnpm-lock.yaml` (other
+  named lockfiles fall under the existing `*.lock` glob). Cuts false
+  positives and slow scans.
+- `[a-z]+://` URL-with-credentials pattern in `secrets.txt` widened to
+  `[a-zA-Z]+://` so the regex reads correctly without depending on
+  `grep -i`.
+- Stale `[[:<:]]print` example in `forbidden-patterns/README.md`
+  updated to the POSIX-portable `(^|[^A-Za-z_])print` form actually
+  used elsewhere in the doc.
+- "Clean Python file" test fixture (`tests/run.sh` case 6) gained the
+  blank line between `import logging` and the rest, which ruff I001
+  requires now that the hook lints.
+
+### Security
 - **Unicode filename bypass closed.** `git diff --cached --name-only`
   honoured `core.quotepath=on` (the default), C-quoting non-ASCII names
   like `"caf\303\251.py"`. The downstream `[ -f "$file" ]` check then
@@ -25,51 +70,6 @@ versioning follows [SemVer](https://semver.org/).
 - **`MAX_LINES` env var validated.** Non-numeric values used to cause a
   cryptic `[: integer expression expected` mid-scan; now exit 2 with a
   clear message before any file is read.
-
-### Fixed
-- `uninstall.sh` uses `git rev-parse --git-dir` (matching `install.sh`)
-  so `core.hooksPath` is correctly unset in worktrees and submodules.
-- Pre-commit header comment described the pattern format as
-  `regex|description`; corrected to TAB-separated to match v0.3.0.
-- `check-secrets` skip list extended to cover `.exe`, `.dll`, `.so`,
-  `.dylib`, `.bin`, `.class`, `.pyc`, `.pyo`, `.o`, `.a`, `.parquet`,
-  plus `go.sum` and named lockfiles (`Cargo.lock`, `Gemfile.lock`,
-  `composer.lock`, `poetry.lock`, `yarn.lock`). Cuts false positives
-  and slow scans.
-- `[a-z]+://` URL-with-credentials pattern in `secrets.txt` widened to
-  `[a-zA-Z]+://` so the regex reads correctly without depending on
-  `grep -i`.
-- Stale `[[:<:]]print` example in `forbidden-patterns/README.md`
-  updated to the POSIX-portable `(^|[^A-Za-z_])print` form actually
-  used elsewhere in the doc.
-
-### Added
-- **Per-line `scaffold-allow` marker.** Lines containing `scaffold-allow`
-  (case-insensitive) are exempt from `check-patterns` and `check-secrets`
-  — an inline `# noqa`-style escape valve for legitimate `print` calls,
-  docs examples showing key prefixes, and synthetic test fixtures. Audit
-  usage with `git grep -i scaffold-allow`. `check-filenames` and
-  `check-size` ignore the marker (they're file-level rules).
-- Pre-commit hook now runs `ruff` / `eslint` against staged files when
-  their configs are present and the tool is on PATH. Cuts the
-  edit→push→CI→fix loop; CI remains the authoritative backstop.
-  Silently skipped when a tool isn't installed so the hook doesn't break
-  on fresh checkouts.
-- `actions/setup-python` + `pip install ruff` step in `tests.yml` so the
-  new ruff-integration test case actually exercises lint at hook time.
-
-### Changed
-- `check-patterns` and `check-secrets` rewritten to combine all patterns
-  into one ERE per scan and run a single `grep` per file as a fast-path
-  filter. Per-pattern attribution only runs on files that already
-  matched something. Cuts grep invocations from O(P×F) to F + matching×P
-  — meaningful on the CI path where `git ls-files` feeds in thousands of
-  files.
-
-### Fixed
-- "Clean Python file" test fixture (`tests/run.sh` case 6) gained the
-  blank line between `import logging` and the rest, which ruff I001
-  requires now that the hook lints.
 
 ## [v0.3.2] — 2026-05-02
 
