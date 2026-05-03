@@ -89,15 +89,15 @@ for dir in .githooks/lib .githooks .github/workflows .github; do
   fi
 done
 
-# Unwire the hook
-if [ -d .git ] && git config --get core.hooksPath >/dev/null 2>&1; then
-  if [ "$(git config --get core.hooksPath)" = ".githooks" ]; then
-    if [ "$DRY_RUN" -eq 1 ]; then
-      echo "would unset:  core.hooksPath"
-    else
-      git config --unset core.hooksPath
-      echo "unset:        core.hooksPath"
-    fi
+# Unwire the hook. Use `git rev-parse --git-dir` instead of `[ -d .git ]`
+# so the unwire works in worktrees and submodules, where `.git` is a file.
+if git rev-parse --git-dir >/dev/null 2>&1 \
+   && [ "$(git config --get core.hooksPath || true)" = ".githooks" ]; then
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "would unset:  core.hooksPath"
+  else
+    git config --unset core.hooksPath
+    echo "unset:        core.hooksPath"
   fi
 fi
 

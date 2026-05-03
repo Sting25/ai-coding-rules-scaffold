@@ -9,6 +9,14 @@
 set -euo pipefail
 
 MAX_LINES=${MAX_LINES:-500}
+case "$MAX_LINES" in
+  ''|*[!0-9]*)
+    echo "error: MAX_LINES must be a positive integer, got: $MAX_LINES" >&2
+    exit 2
+    ;;
+esac
+[ "$MAX_LINES" -gt 0 ] || { echo "error: MAX_LINES must be > 0" >&2; exit 2; }
+
 CI_MODE=0
 [ "${1:-}" = "--ci" ] && CI_MODE=1
 

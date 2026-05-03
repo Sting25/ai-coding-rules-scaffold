@@ -156,7 +156,13 @@ For parallel agent sessions, use `git worktree add ../proj-feat-x -b feat-x` so 
 
 ## What the tooling enforces
 
-Build-breaking (`ruff` / `eslint`, on every lint + in CI):
+The pre-commit hook now invokes `ruff` / `eslint` against staged files
+when their configs are present and the tool is on PATH — so most of the
+build-breaking rules below also fire at commit time, not only in CI.
+Linters are silently skipped if not installed; CI is the authoritative
+backstop.
+
+Build-breaking (`ruff` / `eslint`, on every lint + commit + in CI):
 
 | Concern | Rule |
 |---|---|
@@ -181,6 +187,20 @@ Commit + CI-breaking (pre-commit hook + `lint.yml`):
 | TODO/FIXME without ticket ref | regex (opt-in; commented in template) |
 | Secret / credential leaks (AWS keys, GitHub tokens, private keys, URLs with embedded credentials, hardcoded password=/token= assignments) | regex (case-insensitive, all files) |
 | Committed `.env` / `*.pem` / SSH private keys (`id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`) | filename check (`.env.example` / `.env.sample` / `.env.template` allowed) |
+
+### Per-line escape valve
+
+When a regex match is intentional — a CLI entry point that needs `print`,
+a docs example showing an AWS key prefix, a fixture with a synthetic
+credential — append `scaffold-allow` (any case, in a comment) on the
+matched line. `check-patterns` and `check-secrets` skip lines containing
+the marker; `check-filenames` and `check-size` are file-level and
+unaffected. See `forbidden-patterns/README.md` for examples.
+
+**Reviewers: every PR that adds or moves a `scaffold-allow` marker is
+suppressing a guardrail.** Treat new markers like new `# noqa`s — confirm
+the suppression is justified before approving. Audit the full set with
+`git grep -i scaffold-allow`.
 
 ## Verify it works
 

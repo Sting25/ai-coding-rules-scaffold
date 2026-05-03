@@ -9,9 +9,10 @@
 #   git config core.hooksPath .githooks
 #
 # Patterns are read from:
-#   .forbidden-patterns/backend.txt   (regex|description; applied to *.py)
-#   .forbidden-patterns/frontend.txt  (regex|description; applied to *.ts,*.tsx,*.js,*.jsx)
-#   .forbidden-patterns/secrets.txt   (regex|description; applied to all text files)
+#   .forbidden-patterns/backend.txt   (regex<TAB>description; *.py)
+#   .forbidden-patterns/frontend.txt  (regex<TAB>description; *.ts,*.tsx,*.js,*.jsx)
+#   .forbidden-patterns/shell.txt     (regex<TAB>description; *.sh,*.bash)
+#   .forbidden-patterns/secrets.txt   (regex<TAB>description; all text files)
 #
 # Lines starting with # in those files are comments.
 
@@ -20,7 +21,11 @@ set -euo pipefail
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 LIB="$HOOK_DIR/lib"
 
-STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+# core.quotepath=off so non-ASCII filenames are emitted verbatim, not as
+# `"caf\303\251.py"`. The C-quoted form would fail downstream `[ -f ... ]`
+# checks and silently skip the scan — a real bypass on repos with unicode
+# filenames.
+STAGED=$(git -c core.quotepath=off diff --cached --name-only --diff-filter=ACMR)
 [ -z "$STAGED" ] && exit 0
 
 # Make the working tree match the staged content for the duration of the
@@ -33,8 +38,16 @@ NEED_RESTORE=0
 GIT_DIR=$(git rev-parse --git-dir 2>/dev/null || echo .git)
 if [ ! -e "$GIT_DIR/MERGE_HEAD" ] && [ ! -e "$GIT_DIR/REBASE_HEAD" ]; then
   if ! git diff --quiet 2>/dev/null; then
+    # Fail loudly if we can't isolate staged content. The previous
+    # behaviour fell back to scanning the dirty working tree, which
+    # silently re-opens the bypass v0.3.0 closed.
     if git stash push --keep-index --quiet --message "pre-commit-hook" 2>/dev/null; then
       NEED_RESTORE=1
+    else
+      echo "error: pre-commit hook could not stash unstaged changes." >&2
+      echo "       Refusing to proceed — the scan would see the working tree," >&2
+      echo "       not the staged content. Commit or stash manually first." >&2
+      exit 1
     fi
   fi
 fi
@@ -52,6 +65,35 @@ echo "$STAGED" | "$LIB/check-size"      || FAILED=1
 echo "$STAGED" | "$LIB/check-patterns"  || FAILED=1
 echo "$STAGED" | "$LIB/check-filenames" || FAILED=1
 echo "$STAGED" | "$LIB/check-secrets"   || FAILED=1
+
+# Lint staged files with ruff / eslint when configs exist and the tool is
+# installed. CI is the source of truth — running here just shortens the
+# feedback loop. Silently skipped if a tool isn't on PATH so the hook
+# stays usable on machines that haven't run `pip install ruff` yet.
+STAGED_PY=()
+STAGED_JS=()
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  case "$f" in
+    *.py)                  STAGED_PY+=("$f") ;;
+    *.ts|*.tsx|*.js|*.jsx) STAGED_JS+=("$f") ;;
+  esac
+done <<<"$STAGED"
+
+# Config detection mirrors `lint.yml`'s `hashFiles(...)` predicate so the
+# hook fires in the same projects where CI does.
+if [ ${#STAGED_PY[@]} -gt 0 ] \
+   && { [ -f ruff.toml ] || [ -f pyproject.toml ]; } \
+   && command -v ruff >/dev/null 2>&1; then
+  ruff check "${STAGED_PY[@]}" || FAILED=1
+fi
+
+if [ ${#STAGED_JS[@]} -gt 0 ] \
+   && { [ -f eslint.config.js ] || [ -f package.json ]; } \
+   && command -v npx >/dev/null 2>&1 \
+   && npx --no-install eslint --version >/dev/null 2>&1; then
+  npx --no-install eslint "${STAGED_JS[@]}" || FAILED=1
+fi
 
 if [ "$FAILED" -ne 0 ]; then
   echo ""
