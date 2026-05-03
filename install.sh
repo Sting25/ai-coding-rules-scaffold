@@ -67,6 +67,7 @@ cp_safe() {
 
 # Always
 cp_safe "$SCAFFOLD_DIR/coding-rules.md" "coding-rules.md"
+cp_safe "$SCAFFOLD_DIR/operational-rules.md" "operational-rules.md"
 cp_safe "$SCAFFOLD_DIR/AGENTS.md.template" "AGENTS.md"
 cp_safe "$SCAFFOLD_DIR/CLAUDE.md.pointer" "CLAUDE.md"
 cp_safe "$SCAFFOLD_DIR/githooks/pre-commit.template" ".githooks/pre-commit"

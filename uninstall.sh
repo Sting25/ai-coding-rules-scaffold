@@ -77,6 +77,7 @@ remove_if_unmodified "CLAUDE.md"                     "$SCAFFOLD_DIR/CLAUDE.md.po
 if [ "$REMOVE_ALL" -eq 1 ]; then
   force_remove "AGENTS.md"
   force_remove "coding-rules.md"
+  force_remove "operational-rules.md"
   force_remove ".forbidden-patterns"
 fi
 

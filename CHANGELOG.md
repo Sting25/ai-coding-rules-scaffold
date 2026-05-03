@@ -6,6 +6,29 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `operational-rules.md` — process, collaboration, and judgment rules
+  extracted from real failure modes (pre-flight checks before long
+  jobs, smoke at the smallest scale that exercises the full path,
+  "agent reports measurements / user calls done", scope discipline,
+  surfacing uncertainty rather than guessing). Sibling document to
+  `coding-rules.md`; auto-installed by `install.sh` and referenced
+  from `AGENTS.md.template`. Standalone use supported via a one-line
+  `@operational-rules.md` directive in `CLAUDE.md` for users who
+  don't want the rest of the scaffolding.
+
+### Changed
+- `AGENTS.md.template` gains an "Operational rules" section pointing
+  at `operational-rules.md` alongside the existing "Coding rules"
+  section.
+- `README.md` "AI agent integration" section gains a "Use the rules
+  without the rest of the scaffold" subsection — minimal recipe for
+  adopting `operational-rules.md` / `coding-rules.md` standalone via
+  `@`-import in `CLAUDE.md` (or the equivalent in Cursor / Aider /
+  Cline configs). Aider and Cline config snippets updated to include
+  `operational-rules.md`. New row in the "What lands in your project"
+  table.
+
 ## [v0.3.1] — 2026-05-01
 
 ### Added

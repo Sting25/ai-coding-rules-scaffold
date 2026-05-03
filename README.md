@@ -96,7 +96,8 @@ Either way, the four `lib/check-*` scripts in `.githooks/lib/` are also runnable
 |---|---|---|
 | `AGENTS.md.template` | `AGENTS.md` | Primary agent doc: git discipline + project section |
 | `CLAUDE.md.pointer` | `CLAUDE.md` | One-liner pointing Claude Code at `AGENTS.md` |
-| `coding-rules.md` | `coding-rules.md` | Short list of rules that aren't tool-enforceable |
+| `coding-rules.md` | `coding-rules.md` | Short list of code-level rules that aren't tool-enforceable |
+| `operational-rules.md` | `operational-rules.md` | Process and collaboration rules — failure modes that no linter can catch |
 | `ruff.toml.template` | `ruff.toml` | Python lint config |
 | `eslint.config.js.template` | `eslint.config.js` | TS/JS lint config (flat config, ESLint 9+) |
 | `githooks/pre-commit.template` | `.githooks/pre-commit` | Hook orchestrator — invokes the four `lib/check-*` scripts |
@@ -125,12 +126,27 @@ The scaffold follows the cross-tool **`AGENTS.md` convention** — a single file
   read:
     - AGENTS.md
     - coding-rules.md
+    - operational-rules.md
   ```
 - **Cline** — create `.clinerules` with one line:
   ```
-  Follow the rules in AGENTS.md and coding-rules.md.
+  Follow the rules in AGENTS.md, coding-rules.md, and operational-rules.md.
   ```
 - **Continue / Copilot / other** — point the tool at `AGENTS.md` via whatever config it supports.
+
+### Use the rules without the rest of the scaffold
+
+You can use `operational-rules.md` (and/or `coding-rules.md`) standalone, without the linter / hook / CI scaffolding. Drop the file(s) into your project root and reference them from your AI tool's config:
+
+- **Claude Code** — add to `CLAUDE.md`:
+  ```
+  @operational-rules.md
+  @coding-rules.md
+  ```
+  The `@` directive auto-loads on session start.
+- **Cursor / Aider / Cline / etc.** — add the filename(s) to whatever config the tool reads every session (`.cursorrules`, `.aider.conf.yml`, `.clinerules`).
+
+No `install.sh`, no hooks, no CI — the docs are useful in isolation. The full scaffold layers on the enforcement (commit hooks + CI mirror) that turns the rules into machine-checkable failures.
 
 ### Scaling context across a large codebase
 

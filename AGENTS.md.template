@@ -8,6 +8,10 @@ See [`coding-rules.md`](./coding-rules.md), `ruff.toml`, and `eslint.config.js`.
 
 The file-size ceiling (500 lines) is non-negotiable — never raise it.
 
+## Operational rules
+
+See [`operational-rules.md`](./operational-rules.md) for process, collaboration, and judgment patterns extracted from real incidents — pre-flight checks before long jobs, smoke at the smallest scale that exercises the full path, "agent reports measurements / user calls done", scope discipline, and surfacing uncertainty rather than guessing. Not tool-enforceable; meant to be skimmed before non-trivial work.
+
 ## Git discipline
 
 - **Never `--amend` a commit that has been pushed.** Amending public history forces everyone else to reset.
