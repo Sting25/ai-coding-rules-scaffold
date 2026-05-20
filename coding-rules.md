@@ -34,6 +34,14 @@ Stack-specific deny patterns live in `.forbidden-patterns/{backend,frontend,secr
 
 9. **Pre-commit runs linter + type-checker** on every commit. Don't skip the hook (`--no-verify`) unless explicitly asked.
 
+## Observability
+
+10. **Structured logging library**, picked per stack. Output JSON, not plain text — downstream tools (alerting, dashboards, log search) all depend on parseable structure. Defaults: Python — `structlog`. TypeScript — `pino` or `winston`. New stacks pick equivalents.
+
+11. **Event names are `snake_case_verbs`**, not prose. Example: `request_received`, `cog_written`, `gpu_lock_acquired`. They must be filterable strings — log handlers, alerting rules, and grep all depend on stable identifiers. Prose like "the request came in fine" is not a log event name.
+
+12. **Bind a request correlation ID to log context** when running multiple services. Propagate via `X-Request-Id` HTTP header (or equivalent) — echo incoming, generate if missing. Every log line emitted during the request carries the same ID, so a single grep finds the full cross-service trace.
+
 ## Git
 
 See `AGENTS.md` for commit format and Git discipline (no amend, no force-push, no push unless asked).

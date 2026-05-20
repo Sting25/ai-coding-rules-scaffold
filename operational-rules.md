@@ -105,6 +105,20 @@ about what the code "should" do.
 bugs that surfaced as production incidents months after merge,
 because "looks right" beat "measured to work."
 
+### No silent failures
+When a unit of work fails — a request, a record, a cell, a job —
+log a WARN-or-higher event with the failure reason AND surface the
+failure in the response payload (e.g. via a `partial` status,
+explicit error field, or non-success HTTP code). Catching an
+exception and returning a "success" response without signaling
+the failure is the most expensive habit in production code;
+downstream consumers act on stale or wrong data, and the problem
+only surfaces hours later as a derived failure that's harder to
+trace back.
+*Anchor:* a batch job swallowed per-record errors and reported
+"complete"; downstream pipelines built on the missing-rows-without-error
+state spent days untangling the resulting derived corruption.
+
 ---
 
 ## Process

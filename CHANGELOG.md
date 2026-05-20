@@ -12,12 +12,20 @@ versioning follows [SemVer](https://semver.org/).
   project picks per stack. Pre-commit runs linter + type-checker.
   Codifies what the scaffold already assumes about tooling; previously
   only described informally in tool docs.
-- **`operational-rules.md`: two new Engineering entries.**
+- **`coding-rules.md`: "Observability" section (items 10–12).**
+  Structured logging library (stack-specific: `structlog` for Python,
+  `pino`/`winston` for TS), `snake_case_verb` event names (filterable
+  strings, not prose), and request-correlation-ID binding to log
+  context (`X-Request-Id` or equivalent) for cross-service tracing.
+- **`operational-rules.md`: three new Engineering entries.**
   - *Integration tests hit a real database, not mocks.* Mocked tests
     pass against the mock, not the schema; migration drift hides.
   - *Tests cover every code path; back claims with measurement.*
     "We have tests" ≠ "this is tested." Numbers from real runs beat
     narrative correctness.
+  - *No silent failures.* When work fails, log WARN+ AND surface in
+    response. Catch-and-return-success is the most expensive habit
+    in production code.
 
 ## [v0.4.0] — 2026-05-03
 
