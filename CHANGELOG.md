@@ -6,6 +6,19 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **`coding-rules.md`: "Testing" section (items 8–9).** Four-category
+  baseline (linter, type-checker, test runner, property-based) every
+  project picks per stack. Pre-commit runs linter + type-checker.
+  Codifies what the scaffold already assumes about tooling; previously
+  only described informally in tool docs.
+- **`operational-rules.md`: two new Engineering entries.**
+  - *Integration tests hit a real database, not mocks.* Mocked tests
+    pass against the mock, not the schema; migration drift hides.
+  - *Tests cover every code path; back claims with measurement.*
+    "We have tests" ≠ "this is tested." Numbers from real runs beat
+    narrative correctness.
+
 ## [v0.4.0] — 2026-05-03
 
 ### Added
