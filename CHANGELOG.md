@@ -6,6 +6,8 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.5.0] — 2026-05-20
+
 ### Added
 - **`coding-rules.md`: "Testing" section (items 8–9).** Four-category
   baseline (linter, type-checker, test runner, property-based) every
@@ -36,6 +38,9 @@ versioning follows [SemVer](https://semver.org/).
   - *Never print, cat, or echo secret files.* AI agents' habit of
     `cat .env` lands secrets in chat transcripts / logs forever;
     rotation cost is high. Verify by length / hash / count instead.
+
+### Changed
+- `README.md` install pin bumped to `v0.5.0`.
 
 ## [v0.4.0] — 2026-05-03
 
