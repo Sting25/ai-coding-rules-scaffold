@@ -42,6 +42,10 @@ Stack-specific deny patterns live in `.forbidden-patterns/{backend,frontend,secr
 
 12. **Bind a request correlation ID to log context** when running multiple services. Propagate via `X-Request-Id` HTTP header (or equivalent) — echo incoming, generate if missing. Every log line emitted during the request carries the same ID, so a single grep finds the full cross-service trace.
 
+## Versioning
+
+13. **Stable-additive only.** Adding new fields, files, endpoints, or columns is free and doesn't require coordination. Renaming, removing, or changing the type of existing fields requires: (a) a schema-version bump, (b) explicit notice to consumers before the change ships, (c) a deprecation window when feasible. Silent breaking changes are the most expensive kind because they fail downstream, far from the cause.
+
 ## Git
 
 See `AGENTS.md` for commit format and Git discipline (no amend, no force-push, no push unless asked).

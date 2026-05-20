@@ -17,7 +17,11 @@ versioning follows [SemVer](https://semver.org/).
   `pino`/`winston` for TS), `snake_case_verb` event names (filterable
   strings, not prose), and request-correlation-ID binding to log
   context (`X-Request-Id` or equivalent) for cross-service tracing.
-- **`operational-rules.md`: three new Engineering entries.**
+- **`coding-rules.md`: "Versioning" section (item 13).**
+  Stable-additive only — adding fields/files/endpoints is free;
+  renames/removals/type changes require a version bump + consumer
+  notice. Silent breaking changes fail downstream, far from cause.
+- **`operational-rules.md`: five new Engineering entries.**
   - *Integration tests hit a real database, not mocks.* Mocked tests
     pass against the mock, not the schema; migration drift hides.
   - *Tests cover every code path; back claims with measurement.*
@@ -26,6 +30,12 @@ versioning follows [SemVer](https://semver.org/).
   - *No silent failures.* When work fails, log WARN+ AND surface in
     response. Catch-and-return-success is the most expensive habit
     in production code.
+  - *Hold shared-resource locks for contiguous work, not per
+    operation.* Per-op locking causes thrash + starvation under
+    contention (GPU, DB pool, hardware port).
+  - *Never print, cat, or echo secret files.* AI agents' habit of
+    `cat .env` lands secrets in chat transcripts / logs forever;
+    rotation cost is high. Verify by length / hash / count instead.
 
 ## [v0.4.0] — 2026-05-03
 

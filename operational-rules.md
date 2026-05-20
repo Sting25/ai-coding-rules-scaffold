@@ -119,6 +119,31 @@ trace back.
 "complete"; downstream pipelines built on the missing-rows-without-error
 state spent days untangling the resulting derived corruption.
 
+### Hold shared-resource locks for contiguous work, not per operation
+When multiple processes contend for a single shared resource (GPU,
+DB connection from a small pool, hardware port, file lock),
+acquire the lock once for the contiguous stretch of work and
+release after — never per individual operation. Per-operation
+locking causes thrash, partial-state failures under contention,
+and starvation when one worker can never acquire long enough to
+complete a unit of work.
+*Anchor:* per-CUDA-call GPU lock acquisition caused worker thrash
+and out-of-memory failures because no single worker ever held the
+lock long enough to complete a contiguous compute unit.
+
+### Never print, cat, or echo secret files
+`.env` files, `credentials.json`, key files, OAuth tokens — never
+`cat`, `print`, `echo`, or log them. AI agents have a particular
+habit of running `cat .env` during debugging "to check something";
+the values then live in chat transcripts, log files, or git
+diffs forever and require rotation. To verify a value exists or
+matches an expected shape: check length, compare against a known
+hash, or count non-empty lines. The cheapest path is never to
+expose the secret in the first place.
+*Anchor:* AI-agent-driven `cat .env` to "verify the file is
+loaded" landed credentials into a permanent chat transcript;
+rotation across multiple services took hours.
+
 ---
 
 ## Process
