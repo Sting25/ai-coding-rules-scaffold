@@ -22,6 +22,18 @@ Stack-specific deny patterns live in `.forbidden-patterns/{backend,frontend,secr
 
 7. **Cite `file:line` when flagging an issue.** "The config is wrong" is vague; "`config.py:43` is wrong because…" is actionable. Applies to code review, bug reports, memory entries, and mid-task observations.
 
+## Testing
+
+8. **Four-category baseline**, picked per stack. Every project ships with all four:
+   - **Linter/formatter** — catches sloppy edits before commit
+   - **Type-checker** — catches contract drift before runtime
+   - **Test runner** — unit + integration tests
+   - **Property-based** — edge cases the human writer didn't think of, especially in numeric / spatial / parsing code
+
+   Defaults: Python — `ruff`, `pyright`/`mypy`, `pytest`, `hypothesis`. TypeScript — `eslint`+`prettier`, `tsc`, `vitest`/`jest`, `fast-check`. New stacks pick equivalents and document the choice in the project's `AGENTS.md`.
+
+9. **Pre-commit runs linter + type-checker** on every commit. Don't skip the hook (`--no-verify`) unless explicitly asked.
+
 ## Git
 
 See `AGENTS.md` for commit format and Git discipline (no amend, no force-push, no push unless asked).

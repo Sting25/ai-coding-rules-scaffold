@@ -85,6 +85,26 @@ implementation it just wrote.
 upstream component should have rejected; both components were
 AI-generated and neither validated the contract between them.
 
+### Integration tests hit a real database, not mocks
+Mocked tests pass against the mock's behavior, not against the
+database's actual behavior. Schema constraints, migration drift,
+and dialect quirks only surface against a real instance. Spin up
+an ephemeral DB per test run if isolation matters — but don't
+substitute a mock object for the connection.
+*Anchor:* mocked tests passed for months while the production
+migration silently broke; the divergence was invisible until a
+deploy hit the real schema.
+
+### Tests cover every code path; back claims with measurement
+"We have tests" is not the same as "this is tested." Every branch,
+every error path, every contract assertion needs an explicit test.
+When claiming correctness or performance, back the claim with a
+number from a real run against a real system — not a narrative
+about what the code "should" do.
+*Anchor:* untested code paths routinely shipped with undiscovered
+bugs that surfaced as production incidents months after merge,
+because "looks right" beat "measured to work."
+
 ---
 
 ## Process
