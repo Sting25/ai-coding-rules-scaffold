@@ -6,6 +6,8 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.5.1] — 2026-05-25
+
 ### Fixed
 - **`lint.yml.template`: workflow was invalid for every consumer.** The
   `python` and `frontend` jobs gated execution with a **job-level**
@@ -25,6 +27,9 @@ versioning follows [SemVer](https://semver.org/).
   `actionlint` (pinned 1.7.12), so a job-level `hashFiles()` — or any
   context-availability error — can never silently disable CI for consumers
   again. `actionlint` is skipped locally when absent; CI always runs it.
+
+### Changed
+- `README.md` install pin bumped to `v0.5.1`.
 
 ## [v0.5.0] — 2026-05-20
 
