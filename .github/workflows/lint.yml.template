@@ -15,26 +15,47 @@ permissions:
 
 jobs:
   python:
-    if: hashFiles('ruff.toml', 'pyproject.toml') != ''
+    # Detection runs as a step (after checkout), NOT a job-level `if:`.
+    # `hashFiles()` is only valid once a runner is assigned and the repo is
+    # checked out — using it in a job-level `if:` makes GitHub reject the
+    # WHOLE workflow as invalid, silently disabling every job including
+    # guardrails. The job always starts; its tool steps no-op when the
+    # configs are absent (frontend-only repos see a green, empty python job).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+      - id: detect
+        run: |
+          if [ -f ruff.toml ] || [ -f pyproject.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.detect.outputs.present == 'true'
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: "3.12"
-      - run: pip install ruff
-      - run: ruff check .
+      - if: steps.detect.outputs.present == 'true'
+        run: pip install ruff
+      - if: steps.detect.outputs.present == 'true'
+        run: ruff check .
 
   frontend:
-    if: hashFiles('eslint.config.js', 'package.json') != ''
+    # Same pattern as `python` — detect in a step, not a job-level `if:`.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+      - id: detect
+        run: |
+          if [ -f eslint.config.js ] || [ -f package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.detect.outputs.present == 'true'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
           node-version: "20"
-      - run: npm ci || npm install
-      - run: npx eslint .
+      - if: steps.detect.outputs.present == 'true'
+        run: npm ci || npm install
+      - if: steps.detect.outputs.present == 'true'
+        run: npx eslint .
 
   guardrails:
     # File size, forbidden patterns, blocked filenames, secret scan —

@@ -25,5 +25,14 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install ruff
+      - name: Install actionlint
+        # Validates the rendered lint.yml is a parseable GitHub Actions
+        # workflow — guards against the job-level `if: hashFiles(...)` class
+        # of error that silently disables every job. Version + download
+        # script both pinned for reproducibility.
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12 "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - run: chmod +x tests/run.sh install.sh githooks/pre-commit.template
       - run: ./tests/run.sh
