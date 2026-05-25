@@ -221,6 +221,27 @@ else
 fi
 reset_repo
 
+# 18. workflow validity — the rendered .github/workflows/lint.yml must be a
+#     VALID GitHub Actions workflow. A job-level `if: hashFiles(...)` (or any
+#     context-availability error) makes GitHub reject the whole file, silently
+#     disabling every job — the failure mode that shipped a no-op lint workflow
+#     to consumers for weeks. actionlint catches this class. shellcheck/pyflakes
+#     integration is disabled: this guard is about Actions semantics, not shell
+#     or Python style (those have their own checks). Skipped if actionlint is
+#     absent locally; CI installs it so the guard always runs there.
+if command -v actionlint >/dev/null 2>&1; then
+  if actionlint -shellcheck= -pyflakes= .github/workflows/lint.yml >"$HOOK_OUT" 2>&1; then
+    echo "  ✓ rendered lint.yml is a valid GitHub Actions workflow"
+    PASS=$((PASS + 1))
+  else
+    echo "  ✗ rendered lint.yml failed actionlint validation"
+    sed 's/^/      /' "$HOOK_OUT"
+    FAIL=$((FAIL + 1))
+  fi
+else
+  echo "  - skipped workflow validation (actionlint not installed)"
+fi
+
 echo ""
 echo "Result: $PASS passed, $FAIL failed"
 exit $FAIL

@@ -6,6 +6,31 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.5.1] — 2026-05-25
+
+### Fixed
+- **`lint.yml.template`: workflow was invalid for every consumer.** The
+  `python` and `frontend` jobs gated execution with a **job-level**
+  `if: hashFiles(...)`. `hashFiles()` is only available once a runner is
+  assigned and the repo is checked out, so GitHub rejected the *entire*
+  workflow file as invalid — meaning **no job ran at all**, including
+  `guardrails` (the server-side mirror of the pre-commit hook). Every push
+  reported a startup failure with no jobs and no annotations. File
+  detection now runs in a post-checkout `detect` step; the tool steps are
+  gated on `steps.detect.outputs.present`, preserving the
+  skip-when-absent behavior. A frontend-only repo now shows a green, empty
+  `python` job instead of a hard workflow error.
+
+### Added
+- **`tests/run.sh` + `test.yml`: workflow-validity regression guard.** The
+  harness now renders `lint.yml` via `install.sh` and validates it with
+  `actionlint` (pinned 1.7.12), so a job-level `hashFiles()` — or any
+  context-availability error — can never silently disable CI for consumers
+  again. `actionlint` is skipped locally when absent; CI always runs it.
+
+### Changed
+- `README.md` install pin bumped to `v0.5.1`.
+
 ## [v0.5.0] — 2026-05-20
 
 ### Added
