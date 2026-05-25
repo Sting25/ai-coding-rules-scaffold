@@ -6,6 +6,22 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.5.2] — 2026-05-25
+
+### Fixed
+- **Pinned actions ran on Node 20, force-deprecated 2026-06-02.** GitHub
+  forces all Node-20 actions to Node 24 on 2026-06-02 and removes the
+  Node-20 runtime 2026-09-16; every consumer's workflow runs were already
+  emitting the deprecation annotation. Bumped the SHA pins across
+  `lint.yml.template`, `test.yml`, and `shellcheck.yml` to Node-24-capable
+  majors: `actions/checkout` v4.3.1 → **v6.0.2**, `actions/setup-python`
+  v5.6.0 → **v6.2.0**, `actions/setup-node` v4.4.0 → **v6.4.0**. Inputs
+  (`python-version`, `node-version`) are unchanged and compatible; verified
+  with `actionlint` + the full test harness.
+
+### Changed
+- `README.md` install pin bumped to `v0.5.2`.
+
 ## [v0.5.1] — 2026-05-25
 
 ### Fixed
