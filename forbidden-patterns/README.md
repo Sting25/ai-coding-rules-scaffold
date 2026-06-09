@@ -50,11 +50,15 @@ sees this on every blocked commit.
 
 ## Per-line opt-out: `scaffold-allow`
 
-A line containing the substring `scaffold-allow` (case-insensitive) is
-exempt from `check-patterns` and `check-secrets`. Use it as an inline
-escape valve when a match is intentional — a CLI entry point that needs
-`print`, a docs example showing an AWS key prefix, a test fixture with a
-synthetic credential. Mirrors the role `# noqa` plays for ruff.
+A line is exempt from `check-patterns` and `check-secrets` when it carries a
+`scaffold-allow` marker **after a comment leader** — `#`, `//`, `/*`, `<!--`,
+or `--` (case-insensitive). The comment-leader requirement is deliberate: it
+stops the bare substring from being smuggled inside a string literal to
+whitelist a real secret (e.g. `token = "scaffold-allow..."` is **not**
+exempt). Use it as an inline escape valve when a match is intentional — a CLI
+entry point that needs `print`, a docs example showing an AWS key prefix, a
+test fixture with a synthetic credential. Mirrors the role `# noqa` plays for
+ruff.
 
 ```python
 print("entering CLI")  # scaffold-allow — no logger configured yet
