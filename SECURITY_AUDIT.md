@@ -35,6 +35,19 @@
   - INFO: Lint step passes staged filenames to ruff/eslint without `--`, allowing option injection via filenam…
 - Plus hardened stash-pop, combined-regex fail-closed, CRLF strip, `--` before lint filenames. See the commit body.
 
+### Update 2026-06-09 — detection-efficacy pass (branch `fix/audit-detection-efficacy`)
+
+High-specificity, low-false-positive pattern broadening (each validated against positive **and** negative corpora and locked in with harness fixtures #22–26):
+
+- HIGH `sk- secret regex misses modern OpenAI/Anthropic keys` → added `sk-ant-` and `sk-proj-` patterns.
+- HIGH `curl|bash guard misses the common form` → broadened to catch `curl -fsSL <url> | bash`, `wget -qO-`, `sudo`, multi-token, and no-space variants.
+- MEDIUM `github_pat_ fine-grained PAT not covered` → added `github_pat_[A-Za-z0-9_]{22,}`.
+- MEDIUM `rm -rf / guard misses /*, split flags, ~/$HOME` → broadened, while still **not** flagging scoped removals (`rm -rf /tmp/foo`, `node_modules`, `$BUILD_DIR`) — FP-guarded by fixture #25.
+- LOW `AWS coverage limited to AKIA` → added `ASIA` temporary-session keys.
+- **Regression fix:** PR #7's blob rewrite accidentally made `check-patterns` case-**insensitive** (`grep -aniE`); restored to case-sensitive (`grep -anE`) so identifiers like `Alert(`, `Console.log`, `Print(` are not false-matched (fixture #26).
+
+Deliberately **not** done here (needs a design decision, not a regex tweak): the generic **unquoted / multi-line** hardcoded-credential gaps. Every loose regex either over-matches dotted identifiers (false positives, which erode trust) or still misses — this case is better served by layering a purpose-built secret scanner (gitleaks/trufflehog), the audit's standing recommendation. Tracked under Root Cause B below.
+
 **Status legend:** ✅ Fixed on this branch · 🟡 Partially addressed · ⬜ Open (tracked below).
 
 ## 🔴 Critical
