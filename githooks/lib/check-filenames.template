@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # .githooks/lib/check-filenames — block committed credentials by filename.
-# Reads file paths on stdin. Rejects .env (allowing
-# .env.example/.sample/.template), *.pem, and SSH private key names.
+# Reads NUL-separated file paths on stdin (produced by `git ... -z`), so
+# filenames containing newlines, tabs, or quotes can't split the list and slip
+# past the check. Rejects .env (allowing .env.example/.sample/.template),
+# *.pem, and SSH private key names.
 #
 # Output: human-readable on tty; ::error file=...:: when --ci is passed.
 # Exit:   0 if all OK, 1 if any violation.
@@ -21,7 +23,7 @@ emit() {
 }
 
 FAILED=0
-while IFS= read -r file; do
+while IFS= read -r -d '' file; do
   [ -z "$file" ] && continue
   case "$file" in
     *.pem)
@@ -30,7 +32,9 @@ while IFS= read -r file; do
       continue
       ;;
   esac
-  name=$(basename "$file")
+  # `basename -- "$file"` so a path/name beginning with `-` is treated as data,
+  # not an option.
+  name=$(basename -- "$file")
   case "$name" in
     .env.example|.env.sample|.env.template) ;;
     .env|.env.*)

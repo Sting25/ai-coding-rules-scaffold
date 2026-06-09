@@ -15,56 +15,71 @@
 #   .forbidden-patterns/secrets.txt   (regex<TAB>description; all text files)
 #
 # Lines starting with # in those files are comments.
+#
+# The lib/check-* scripts scan the STAGED BLOB (`git show ":0:<path>"`), not the
+# working tree, so symlinks, embedded NUL bytes, and post-stage working-tree
+# edits cannot hide content from the scan.
 
 set -euo pipefail
 
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 LIB="$HOOK_DIR/lib"
 
-# core.quotepath=off so non-ASCII filenames are emitted verbatim, not as
-# `"caf\303\251.py"`. The C-quoted form would fail downstream `[ -f ... ]`
-# checks and silently skip the scan — a real bypass on repos with unicode
-# filenames.
-STAGED=$(git -c core.quotepath=off diff --cached --name-only --diff-filter=ACMR)
-[ -z "$STAGED" ] && exit 0
+# Enumerate staged files NUL-delimited (-z) so a filename containing a newline,
+# tab, or quote can't split the list and slip a file past every scanner. A
+# shell variable cannot hold NUL bytes, so the list goes to a temp file and each
+# check is fed from it. (core.quotepath is irrelevant under -z, which never
+# C-quotes; kept only for defence in depth.)
+STAGED_LIST=$(mktemp)
+git -c core.quotepath=off diff --cached -z --name-only --diff-filter=ACMR >"$STAGED_LIST"
+if [ ! -s "$STAGED_LIST" ]; then
+  rm -f "$STAGED_LIST"
+  exit 0
+fi
 
-# Make the working tree match the staged content for the duration of the
-# checks, so each lib/check-* script sees exactly what's about to be
-# committed. Without this, `git add bad.py` followed by `echo '' > bad.py`
-# would let the dirty index slip past — the hook would scan the clean
-# working tree and pass. Skipped during merge/rebase, where stash is
+# Make the working tree match the staged content for the duration of the run.
+# The guardrail checks read the index blob directly and so do not depend on this
+# — but the optional ruff/eslint feedback step below lints working-tree files,
+# and stashing keeps it honest. Skipped during merge/rebase, where stash is
 # unsafe.
 NEED_RESTORE=0
 GIT_DIR=$(git rev-parse --git-dir 2>/dev/null || echo .git)
 if [ ! -e "$GIT_DIR/MERGE_HEAD" ] && [ ! -e "$GIT_DIR/REBASE_HEAD" ]; then
   if ! git diff --quiet 2>/dev/null; then
-    # Fail loudly if we can't isolate staged content. The previous
-    # behaviour fell back to scanning the dirty working tree, which
-    # silently re-opens the bypass v0.3.0 closed.
     if git stash push --keep-index --quiet --message "pre-commit-hook" 2>/dev/null; then
       NEED_RESTORE=1
     else
       echo "error: pre-commit hook could not stash unstaged changes." >&2
-      echo "       Refusing to proceed — the scan would see the working tree," >&2
-      echo "       not the staged content. Commit or stash manually first." >&2
+      echo "       Refusing to proceed — commit or stash your changes manually first." >&2
+      rm -f "$STAGED_LIST"
       exit 1
     fi
   fi
 fi
 
 # shellcheck disable=SC2317,SC2329  # invoked via the EXIT trap below
-restore_stash() {
+cleanup() {
   if [ "$NEED_RESTORE" -eq 1 ]; then
-    git stash pop --quiet 2>/dev/null || true
+    # Do NOT silently swallow a failed pop: on a conflicted restore the user's
+    # unstaged work is stranded in the stash, and `|| true` would hide that.
+    if ! git stash pop --quiet 2>/dev/null; then
+      echo "" >&2
+      echo "error: pre-commit could not automatically restore your unstaged changes." >&2
+      echo "       They are SAFE in the stash. Recover with:" >&2
+      echo "         git stash list      # find the 'pre-commit-hook' entry" >&2
+      echo "         git stash pop       # resolve conflicts, or:" >&2
+      echo "         git checkout stash@{0} -- <file>" >&2
+    fi
   fi
+  rm -f "$STAGED_LIST"
 }
-trap restore_stash EXIT
+trap cleanup EXIT
 
 FAILED=0
-echo "$STAGED" | "$LIB/check-size"      || FAILED=1
-echo "$STAGED" | "$LIB/check-patterns"  || FAILED=1
-echo "$STAGED" | "$LIB/check-filenames" || FAILED=1
-echo "$STAGED" | "$LIB/check-secrets"   || FAILED=1
+"$LIB/check-size"      <"$STAGED_LIST" || FAILED=1
+"$LIB/check-patterns"  <"$STAGED_LIST" || FAILED=1
+"$LIB/check-filenames" <"$STAGED_LIST" || FAILED=1
+"$LIB/check-secrets"   <"$STAGED_LIST" || FAILED=1
 
 # Lint staged files with ruff / eslint when configs exist and the tool is
 # installed. CI is the source of truth — running here just shortens the
@@ -72,27 +87,27 @@ echo "$STAGED" | "$LIB/check-secrets"   || FAILED=1
 # stays usable on machines that haven't run `pip install ruff` yet.
 STAGED_PY=()
 STAGED_JS=()
-while IFS= read -r f; do
+while IFS= read -r -d '' f; do
   [ -z "$f" ] && continue
   case "$f" in
     *.py)                  STAGED_PY+=("$f") ;;
     *.ts|*.tsx|*.js|*.jsx) STAGED_JS+=("$f") ;;
   esac
-done <<<"$STAGED"
+done <"$STAGED_LIST"
 
 # Config detection mirrors `lint.yml`'s `hashFiles(...)` predicate so the
 # hook fires in the same projects where CI does.
 if [ ${#STAGED_PY[@]} -gt 0 ] \
    && { [ -f ruff.toml ] || [ -f pyproject.toml ]; } \
    && command -v ruff >/dev/null 2>&1; then
-  ruff check "${STAGED_PY[@]}" || FAILED=1
+  ruff check -- "${STAGED_PY[@]}" || FAILED=1
 fi
 
 if [ ${#STAGED_JS[@]} -gt 0 ] \
    && { [ -f eslint.config.js ] || [ -f package.json ]; } \
    && command -v npx >/dev/null 2>&1 \
    && npx --no-install eslint --version >/dev/null 2>&1; then
-  npx --no-install eslint "${STAGED_JS[@]}" || FAILED=1
+  npx --no-install eslint -- "${STAGED_JS[@]}" || FAILED=1
 fi
 
 if [ "$FAILED" -ne 0 ]; then
