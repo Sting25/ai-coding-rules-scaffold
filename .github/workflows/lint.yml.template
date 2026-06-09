@@ -66,12 +66,18 @@ jobs:
       - name: Run scaffold checks
         run: |
           chmod +x .githooks/lib/check-*
-          # core.quotepath=off so unicode filenames aren't C-quoted into
-          # bypass paths — see pre-commit.template for the same fix.
-          FILES=$(git -c core.quotepath=off ls-files)
+          # -z (NUL-delimited) so a filename containing a newline, tab, or
+          # quote can't split the list and slip a file past the scan. The
+          # check scripts read each file's committed blob (git show ":0:<path>"),
+          # so the server-side scan sees exactly what was committed — matching
+          # the pre-commit hook. A shell var can't hold NUL, so the list goes
+          # to a temp file fed to each check.
+          STAGED_LIST=$(mktemp)
+          git -c core.quotepath=off ls-files -z >"$STAGED_LIST"
           FAILED=0
-          echo "$FILES" | .githooks/lib/check-size      --ci || FAILED=1
-          echo "$FILES" | .githooks/lib/check-patterns  --ci || FAILED=1
-          echo "$FILES" | .githooks/lib/check-filenames --ci || FAILED=1
-          echo "$FILES" | .githooks/lib/check-secrets   --ci || FAILED=1
+          .githooks/lib/check-size      --ci <"$STAGED_LIST" || FAILED=1
+          .githooks/lib/check-patterns  --ci <"$STAGED_LIST" || FAILED=1
+          .githooks/lib/check-filenames --ci <"$STAGED_LIST" || FAILED=1
+          .githooks/lib/check-secrets   --ci <"$STAGED_LIST" || FAILED=1
+          rm -f "$STAGED_LIST"
           exit $FAILED

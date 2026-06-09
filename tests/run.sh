@@ -26,9 +26,16 @@ reset_repo() {
 }
 
 assert_rejects() {
-  local name=$1
+  # $1 = case name; optional $2 = substring the hook output must contain, so a
+  # case can't pass merely because the hook crashed/exited non-zero for an
+  # unrelated reason.
+  local name=$1 expect=${2:-}
   if .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
     echo "  ✗ $name — hook accepted, expected reject"
+    sed 's/^/      /' "$HOOK_OUT"
+    FAIL=$((FAIL + 1))
+  elif [ -n "$expect" ] && ! grep -qF "$expect" "$HOOK_OUT"; then
+    echo "  ✗ $name — rejected, but expected output missing: $expect"
     sed 's/^/      /' "$HOOK_OUT"
     FAIL=$((FAIL + 1))
   else
@@ -241,6 +248,33 @@ if command -v actionlint >/dev/null 2>&1; then
 else
   echo "  - skipped workflow validation (actionlint not installed)"
 fi
+
+# 19. NUL byte must not flip the secret scan into "binary file" mode. A single
+#     NUL anywhere in a text file used to make grep treat the whole file as
+#     binary and silently skip it, bypassing the secret scan in the hook AND in
+#     CI. Scanning the staged blob with -a/--text (and $()'s NUL-stripping)
+#     closes this. AKIA literal split so this file doesn't itself trip the scan.
+printf 'AKIA''IOSFODNN7EXAMPLE\000trailing\n' >nul.txt
+git add nul.txt
+assert_rejects "NUL byte does not hide a secret" "AWS access key"
+
+# 20. A secret carried as a symlink target must be scanned. A symlink's
+#     committed blob is its target string; the old path-based scan followed the
+#     link (or `[ -f ]`-skipped a dangling one) and never saw it. Blob scanning
+#     (git show :0:<path>) reads the target string and catches it.
+ln -s "$(printf 'AKIA''IOSFODNN7EXAMPLE')" akialink
+git add akialink
+assert_rejects "symlink target carrying a secret is scanned" "AWS access key"
+
+# 21. A filename containing a newline must not split the staged-file list and
+#     bypass every scanner. NUL-delimited (-z) enumeration end-to-end closes
+#     this; the old newline-delimited list saw "a" and "b.py" as two paths that
+#     both failed existence checks and were skipped. `pri''nt` split so this
+#     file doesn't itself trip the scan.
+nlfile=$(printf 'a\nb.py')
+printf 'pri''nt("debug")\n' >"$nlfile"
+git add "$nlfile"
+assert_rejects "newline in filename does not bypass scan" "print()"
 
 echo ""
 echo "Result: $PASS passed, $FAIL failed"
