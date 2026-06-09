@@ -21,6 +21,15 @@ set -euo pipefail
 CI_MODE=0
 [ "${1:-}" = "--ci" ] && CI_MODE=1
 
+# Cap the maximum scanned LINE length (see check-secrets): one very long line
+# can make the combined ERE hang the hook/CI. Over-long lines are dropped with
+# a warning. Linear awk length check; the ERE on a long line is not linear.
+MAX_LINE_LENGTH=${MAX_LINE_LENGTH:-50000}
+case "$MAX_LINE_LENGTH" in
+  ''|*[!0-9]*) echo "error: MAX_LINE_LENGTH must be a positive integer, got: $MAX_LINE_LENGTH" >&2; exit 2 ;;
+esac
+[ "$MAX_LINE_LENGTH" -gt 0 ] || { echo "error: MAX_LINE_LENGTH must be > 0" >&2; exit 2; }
+
 FILES=()
 while IFS= read -r -d '' f; do
   [ -n "$f" ] && FILES+=("$f")
@@ -96,7 +105,7 @@ scan() {
     use_prefilter=0
   fi
 
-  local file ext keep content pat desc m
+  local file ext keep content cap_rc pat desc m
   for file in "${FILES[@]}"; do
     keep=0
     for ext in "${exts[@]}"; do
@@ -104,8 +113,13 @@ scan() {
     done
     [ "$keep" -eq 1 ] || continue
 
-    # Scan the staged blob, not the working-tree path (see header).
-    content=$(git show ":0:$file" 2>/dev/null || true)
+    # Scan the staged blob, not the working-tree path (see header). awk (linear)
+    # drops over-long lines so the combined ERE never sees them (ReDoS guard).
+    cap_rc=0
+    content=$(git show ":0:$file" 2>/dev/null | awk -v n="$MAX_LINE_LENGTH" 'length > n { d=1; next } { print } END { exit (d ? 9 : 0) }') || cap_rc=$?
+    if [ "$cap_rc" -eq 9 ]; then
+      echo "warning: $file: line(s) over $MAX_LINE_LENGTH chars dropped from the scan (minified/generated?)" >&2
+    fi
     [ -n "$content" ] || continue
 
     if [ "$use_prefilter" -eq 1 ]; then

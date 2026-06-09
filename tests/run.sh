@@ -357,6 +357,27 @@ else
 fi
 reset_repo
 
+# 31. ReDoS guard: a line over MAX_LINE_LENGTH is dropped before the combined
+#     ERE (which can hang superlinearly on a long line), while a secret on a
+#     normal line is still caught. Long line is benign filler; AKIA split.
+{
+  echo "AKIA""IOSFODNN7EXAMPLE"
+  head -c 60000 /dev/zero | tr '\0' a
+  echo
+} >redos.txt
+git add redos.txt
+if .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ ReDoS guard — accepted, expected reject (secret on the normal line)"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "AWS access key" "$HOOK_OUT" && grep -qF "chars dropped from the scan" "$HOOK_OUT"; then
+  echo "  ✓ over-long line dropped with warning; secret on normal line still caught"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ ReDoS guard — rejected but missing the secret hit or the drop warning"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
 echo ""
 echo "Result: $PASS passed, $FAIL failed"
 exit $FAIL
