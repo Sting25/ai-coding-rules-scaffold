@@ -12,7 +12,7 @@ Short rule set. Most discipline is enforced by the linter (`ruff` / `eslint`) an
 3. **Before creating a new file, check for extension candidates.** Search the codebase for existing modules that could absorb the new logic. When you do create, state in the commit or PR body what you considered and why it couldn't extend.
 4. **FastAPI endpoints return Pydantic response models**, not raw dicts. Applies if the project uses FastAPI.
 5. **SQLAlchemy 2.0 style only** (`Mapped[]`, `mapped_column()`). No `declarative_base` or pre-2.0 patterns. Applies if the project uses SQLAlchemy.
-6. **`asyncio.to_thread()` for blocking CPU work** in async paths. Never block the event loop.
+6. **`asyncio.to_thread()` for blocking CPU work** in async paths. Never block the event loop. *(TypeScript)* Never leave a promise floating — `await` it or handle it explicitly. `eslint`'s `no-floating-promises` / `no-misused-promises` fail the build on the most common silent-async bug; they need type-aware linting (a `tsconfig.json`), which the shipped `eslint.config.js` enables by default.
 
 ## Pattern files
 
@@ -32,7 +32,7 @@ Stack-specific deny patterns live in `.forbidden-patterns/{backend,frontend,secr
 
    Defaults: Python — `ruff`, `pyright`/`mypy`, `pytest`, `hypothesis`. TypeScript — `eslint`+`prettier`, `tsc`, `vitest`/`jest`, `fast-check`. New stacks pick equivalents and document the choice in the project's `AGENTS.md`.
 
-9. **Pre-commit runs linter + type-checker** on every commit. Don't skip the hook (`--no-verify`) unless explicitly asked.
+9. **Don't skip the pre-commit hook (`--no-verify`) unless explicitly asked.** It runs the size/pattern/secret guards plus the linter (`ruff` / `eslint`), and — for TypeScript — `tsc --noEmit` whenever a `tsconfig.json` is present. Wire the rest of your type-checker (`pyright` / `mypy`) into CI per the project's `AGENTS.md`; the type-aware `eslint` config and `tsc` cover the TypeScript side at commit time and in CI.
 
 ## Observability
 

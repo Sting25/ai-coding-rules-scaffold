@@ -137,7 +137,7 @@ if [ "$VERIFY" -eq 1 ]; then
       if command -v npx >/dev/null 2>&1 && npx --no-install eslint --version >/dev/null 2>&1; then
         echo "  ✓ eslint installed"
       else
-        echo "  ! eslint not installed — run: npm i -D eslint @eslint/js typescript-eslint"
+        echo "  ! eslint not installed — run: npm i -D eslint @eslint/js typescript-eslint eslint-plugin-import-x eslint-plugin-unused-imports"
       fi ;;
   esac
 fi

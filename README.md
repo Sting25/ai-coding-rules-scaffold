@@ -157,10 +157,18 @@ For parallel agent sessions, use `git worktree add ../proj-feat-x -b feat-x` so 
 ## What the tooling enforces
 
 The pre-commit hook now invokes `ruff` / `eslint` against staged files
-when their configs are present and the tool is on PATH — so most of the
-build-breaking rules below also fire at commit time, not only in CI.
-Linters are silently skipped if not installed; CI is the authoritative
-backstop.
+when their configs are present and the tool is on PATH — and, for
+TypeScript, `tsc --noEmit` when a `tsconfig.json` is present — so most of
+the build-breaking rules below also fire at commit time, not only in CI.
+Linters and the type-checker are silently skipped if not installed; CI is
+the authoritative backstop.
+
+The shipped `eslint.config.js` extends typescript-eslint's
+**`strictTypeChecked`** tier (type-aware linting), wires import sorting and
+unused-import removal as parity with `ruff`'s `I` / `F401`, and ships an
+opt-in `react-hooks` block — comparable to what create-t3-app / antfu's
+config give a TypeScript project out of the box. Run `npx eslint --inspect-config`
+to see the resolved rule set.
 
 Build-breaking (`ruff` / `eslint`, on every lint + commit + in CI):
 
@@ -174,8 +182,10 @@ Build-breaking (`ruff` / `eslint`, on every lint + commit + in CI):
 | Function size > 80 statements (Python) / 80 lines (TS/JS) | `ruff PLR0915` (`max-statements`), `eslint max-lines-per-function` |
 | Too many branches in a function | `ruff PLR0912` (`max-branches`) |
 | Line length > 100 | `ruff E501` |
-| Unsorted / unused imports | `ruff I`, `F401` |
+| Unsorted / unused imports | `ruff I`, `F401`; `eslint import-x/order`, `unused-imports/no-unused-imports` |
 | `any` in TypeScript without comment | `@typescript-eslint/no-explicit-any` |
+| Floating / misused promises (TS) | `@typescript-eslint/no-floating-promises`, `no-misused-promises` (type-aware) |
+| TypeScript type errors | `tsc --noEmit` (hook + CI, when `tsconfig.json` present) |
 
 Commit + CI-breaking (pre-commit hook + `lint.yml`):
 
@@ -183,6 +193,7 @@ Commit + CI-breaking (pre-commit hook + `lint.yml`):
 |---|---|
 | `print()`, `breakpoint()`, `pdb.set_trace()`, `ipdb.set_trace()` in Python files | regex |
 | `console.log` / `debugger` / `alert` in TS/JS | regex |
+| Focused tests (`.only`), `@ts-ignore` / `@ts-nocheck`, `dangerouslySetInnerHTML`, hardcoded `localhost`/`127.0.0.1` URLs | regex (frontend.txt) |
 | File size > 500 lines | line count of the staged blob (`git show :0:<path>`, counting a final line with no trailing newline) |
 | TODO/FIXME without ticket ref | regex (opt-in; commented in template) |
 | Secret / credential leaks (AWS keys, GitHub tokens, private keys, URLs with embedded credentials, hardcoded password=/token= assignments) | regex (case-insensitive). Scans **every** tracked file's staged blob as text (no extension allowlist, so renaming a payload can't skip it); NUL bytes are stripped so they can't hide content, and a single line longer than `MAX_LINE_LENGTH` (50000) is dropped so a minified/binary blob can't hang the scan |

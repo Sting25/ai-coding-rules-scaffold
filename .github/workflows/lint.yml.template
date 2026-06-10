@@ -56,6 +56,18 @@ jobs:
         run: npm ci || npm install
       - if: steps.detect.outputs.present == 'true'
         run: npx eslint .
+      - name: Type-check (tsc --noEmit)
+        if: steps.detect.outputs.present == 'true'
+        # Project-wide type-check, guarded: only runs when a tsconfig.json is
+        # present AND TypeScript is installed — mirrors the pre-commit hook so
+        # the two layers stay in lockstep. coding-rules.md rule 9 mandates a
+        # type-checker; this is where it runs server-side.
+        run: |
+          if [ -f tsconfig.json ] && npx --no-install tsc --version >/dev/null 2>&1; then
+            npx --no-install tsc --noEmit
+          else
+            echo "tsconfig.json or typescript missing — skipping tsc type-check"
+          fi
 
   guardrails:
     # File size, forbidden patterns, blocked filenames, secret scan —
