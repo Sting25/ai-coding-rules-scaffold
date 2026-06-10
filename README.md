@@ -183,9 +183,9 @@ Commit + CI-breaking (pre-commit hook + `lint.yml`):
 |---|---|
 | `print()`, `breakpoint()`, `pdb.set_trace()`, `ipdb.set_trace()` in Python files | regex |
 | `console.log` / `debugger` / `alert` in TS/JS | regex |
-| File size > 500 lines | `wc -l` per staged file |
+| File size > 500 lines | line count of the staged blob (`git show :0:<path>`, counting a final line with no trailing newline) |
 | TODO/FIXME without ticket ref | regex (opt-in; commented in template) |
-| Secret / credential leaks (AWS keys, GitHub tokens, private keys, URLs with embedded credentials, hardcoded password=/token= assignments) | regex (case-insensitive, all files) |
+| Secret / credential leaks (AWS keys, GitHub tokens, private keys, URLs with embedded credentials, hardcoded password=/token= assignments) | regex (case-insensitive). Scans **every** tracked file's staged blob as text (no extension allowlist, so renaming a payload can't skip it); NUL bytes are stripped so they can't hide content, and a single line longer than `MAX_LINE_LENGTH` (50000) is dropped so a minified/binary blob can't hang the scan |
 | Committed `.env` / `*.pem` / SSH private keys (`id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`) | filename check (`.env.example` / `.env.sample` / `.env.template` allowed) |
 
 ### Per-line escape valve
@@ -220,7 +220,7 @@ git commit -m "should be rejected"
 - **`.forbidden-patterns/*.txt`** — simple `regex|description` lines. Add deprecated import paths, old service names, etc. Lines starting with `#` are comments; an opt-in TODO/FIXME pattern is pre-seeded as a comment.
 - **`ruff.toml`** — enables `E,F,I,W,B,UP,SIM,PTH,ANN,BLE,C90,PL,PT,RUF`. Trim `ignore = [...]` if a rule fights your style.
 - **Pre-commit hook** — `MAX_LINES=500` by default. Override per-invocation: `MAX_LINES=800 git commit`. Edit the hook to change permanently. The CI workflow reads the same env var.
-- **Adopting on an existing codebase** — the CI size check runs against *all* tracked source files, not just changed ones. If the repo already has files over 500 lines, the first PR will fail. Either extract the offenders first (preferred — this is the debt the rule is meant to catch) or set `MAX_LINES` higher temporarily in both the hook and CI, then ratchet it down as you refactor.
+- **Adopting on an existing codebase** — the local hook scans only the files in a given commit, but the CI job scans *all* tracked files (size, patterns, filenames, and secrets alike), not just changed ones. So the first PR after adoption surfaces pre-existing debt: a file already over 500 lines, an existing `print()`, or a secret already in history all fail in CI even if the PR didn't touch them. For the size case, extract the offenders first (preferred — this is the debt the rule is meant to catch) or set `MAX_LINES` higher temporarily in both the hook and CI, then ratchet it down as you refactor.
 
 ## Update & uninstall
 

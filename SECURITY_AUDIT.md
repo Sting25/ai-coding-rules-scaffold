@@ -64,6 +64,15 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 34/34 tests pass; shellcheck clean. Remaining HIGH from the audit: rename-to-skip-listed-extension. Still open: fork-PR trusted-ref guardrails, Git-LFS blob scanning, `::error` annotation escaping, broader `--ci`/per-pattern fixtures, and the gitleaks-layer decision for generic unquoted secrets.
 
+### Update 2026-06-10 — clean-fix batch (branch `fix/audit-batch-clean-fixes`)
+
+- HIGH `Renaming a secret to a skip-listed extension smuggles it past the scan` → `check-secrets` extension allowlist **removed**; every tracked file's staged blob is scanned as text. A NUL "binary, skip" sniff was deliberately rejected (it reopens the NUL bypass); large blobs are still handled by the `MAX_LINE_LENGTH` line-drop. `check-size`'s skip is intentionally kept (quality nudge, not a security boundary). Fixtures #32–34.
+- LOW `::error annotation fields echoed unescaped (annotation / file-target spoofing)` → all four `lib/check-*` scripts now percent-encode the `file=` property (`%`,CR,LF,`:`,`,`) and message body (`%`,CR,LF) per GitHub workflow-command rules. Fixture #35.
+- MEDIUM `fork-PR-from-head guardrail` and `Git-LFS pointer scanning` → **documented** in `lint.yml.template` as inherent limitations with consumer hardening guidance (base-ref scan / branch protection; `lfs: true`), rather than shipping an untested workflow restructure.
+- Docs: README `wc -l`, "all files", and file-scope-asymmetry claims corrected.
+
+39/39 tests pass (the actionlint workflow-validation case now runs); shellcheck clean. Still open: broader uninstall/`--force`/`--all` fixtures, the `pull_request` hardening/runner notes, and the **gitleaks-layer decision** for generic unquoted secrets (needs a design call, not code).
+
 **Status legend:** ✅ Fixed on this branch · 🟡 Partially addressed · ⬜ Open (tracked below).
 
 ## 🔴 Critical
@@ -110,7 +119,19 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 - **Recommendation:** Require the marker as a strict end-of-line comment token (e.g. match `(#\|//)\s*scaffold-allow\b` at line end only), and consider NOT honoring scaffold-allow for the secrets check at all (or require an explicit secret-specific token), so a code-style opt-out cannot whitelist credentials. Document th…
 - **Verifier note:** Finder's framing is essentially accurate. One nuance: the claim that 'even benign-looking lines' smuggle credentials slightly overstates accidental risk — 'scaffold-allow' is a project-specific litera…
 
-### ⬜ Open · `high` — Renaming a secret/oversized payload to a skip-listed extension or path smuggles it past both checks
+### ✅ Fixed · `high` — Renaming a secret/oversized payload to a skip-listed extension or path smuggles it past both checks
+
+> **Fixed (secret scan):** `check-secrets` no longer skips by extension — every
+> tracked file's staged blob is scanned as text. A NUL-byte "binary, skip"
+> sniff was deliberately rejected (it would reopen the NUL bypass closed by the
+> dangling-symlink/NUL findings); large minified/binary blobs are instead
+> dropped by the existing `MAX_LINE_LENGTH` cap. Harness fixtures #32–34 cover
+> `secret.png`, `secret in package-lock.json`, and NUL+binary-extension.
+> **Note (size scan):** `check-size`'s extension skip is intentionally retained
+> — it's a code-modularity nudge, not a security boundary, and content-scanning
+> data files (`.csv`/`.sql`/`.json`) for line count would false-positive on
+> legitimate large data. Renaming code to dodge the line cap has no security
+> impact.
 
 - **Location:** `githooks/lib/check-secrets.template:25-34`  ·  *(reproduced: yes, confidence: high, dimension: scanner-bypass)*
 - **What:** check-secrets skips a large extension list (*.svg,*.png,*.jpg,*.lock,*.zip,... and package-lock.json/pnpm-lock.yaml/go.sum) and the entire `.forbidden-patterns/*` directory. check-size (check-size.template line 27-30) skips *.md,*.json,*.toml,*.yaml,*.yml,*.lock,*.txt,*.csv,*.sql and image types. These are name-based, not content-based, so renaming a text pa…
@@ -168,7 +189,16 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ## 🟡 Medium
 
-### ⬜ Open · `medium` — Distributed guardrails job runs check scripts and pattern lists from PR head — a fork PR can neuter the server-side guardrail
+### 🟡 Documented · `medium` — Distributed guardrails job runs check scripts and pattern lists from PR head — a fork PR can neuter the server-side guardrail
+
+> **Documented, not structurally changed.** This is inherent to a
+> `pull_request` workflow running detectors from PR head (the verifier note
+> below confirms it grants no new code-exec beyond the existing python/frontend
+> jobs). The `guardrails` job in `lint.yml.template` now states this in-file:
+> it is defense in depth, not a trust boundary against a hostile fork — pair it
+> with branch protection / required review, and for untrusted forks gate merges
+> on a scan run from the base ref. A full base-ref-checkout restructure is left
+> as a documented consumer option rather than shipped untested.
 
 - **Location:** `.github/workflows/lint.yml.template:60-77`  ·  *(reproduced: yes, confidence: high, dimension: supply-chain-ci)*
 - **What:** The `guardrails` job is the server-side mirror of the pre-commit hook. It does `chmod +x .githooks/lib/check-*` and runs `.githooks/lib/check-{size,patterns,filenames,secrets}` (lines 68-76) — but these scripts, and the `.forbidden-patterns/*.txt` config files they read, are taken from the PR HEAD (the checked-out merge ref). On a `pull_request` event the sa…
@@ -176,7 +206,15 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 - **Recommendation:** Run the check scripts and pattern configs from a TRUSTED ref (e.g., checkout the base branch's .githooks/.forbidden-patterns, or pin/vendor them), then scan the PR's file contents with the trusted scanner. Alternatively gate guardrails behind a separate workflow that fetches the scanner from the bas…
 - **Verifier note:** This is not a code bug but an inherent property of `pull_request` workflows running detectors from PR head; it grants no new code-exec beyond the existing python/frontend jobs (which already run ruff/…
 
-### ⬜ Open · `medium` — CI guardrails scan reads the working tree by path, so a Git-LFS (or clean/smudge-filter) consumer repo can ship a secret in the committed blob while CI scans only the LFS pointer text — server-side-only bypass of the unskippable backstop
+### 🟡 Documented · `medium` — CI guardrails scan reads the working tree by path, so a Git-LFS (or clean/smudge-filter) consumer repo can ship a secret in the committed blob while CI scans only the LFS pointer text — server-side-only bypass of the unskippable backstop
+
+> **Documented, not structurally changed.** The scanners read the committed
+> blob (`git show :0:<path>`), which for an LFS-tracked file is the pointer,
+> not the smudged content — so LFS-stored text isn't meaningfully scanned. A
+> generic fix means trusting the smudge filter (fetch LFS, scan the working
+> tree) which is fragile and LFS-config-specific. The `guardrails` job now
+> documents the limitation and points consumers at `lfs: true` + working-tree
+> scanning if they keep scannable text in LFS.
 
 - **Location:** `.github/workflows/lint.yml.template:65-77`  ·  *(reproduced: yes, confidence: high, dimension: completeness-probe)*
 - **What:** Both check-secrets and check-patterns scan the WORKING TREE by path: they `[ -f "$f" ]`-test a path from `git ls-files` and then `grep -nE -- "$pat" "$file"`. They never read the committed blob (`git show :file` / `git cat-file -p HEAD:file` / `git grep --cached`). Git's content-filtering layer (gitattributes `filter=` clean/smudge, of which Git-LFS is the c…
@@ -279,10 +317,10 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 | ⬜ Open | Distributed lint.yml frontend job executes attacker-controlled lifecycle scripts and eslint config from fork P… | `lint.yml.template:41-58` |
 | ⬜ Open | All workflows trigger on bare `pull_request` with no concurrency control or runner hardening notes | `lint.yml.template:8-14` |
 | ⬜ Open | actionlint binary downloaded via curl\|bash from a mutable git tag with no checksum/signature verification | `test.yml:33-36` |
-| ⬜ Open | README claims size check uses `wc -l`, but code uses `grep -c ''` (stale doc, contradicts CHANGELOG) | `README.md:186` |
-| ⬜ Open | Secrets-scan docs overstate coverage: README says 'all files', but lockfiles/binaries are skipped | `README.md:188` |
+| ✅ Fixed | README claims size check uses `wc -l`, but code uses `grep -c ''` (stale doc, contradicts CHANGELOG) | `README.md:186` |
+| ✅ Fixed | Secrets-scan docs overstate coverage: README says 'all files', but lockfiles/binaries are skipped (now every tracked file IS scanned; doc corrected) | `README.md:188` |
 | ⬜ Open | 'Hook and CI can never drift' claim is only true for the 4 lib checks; ruff/eslint are unshared, unpinned, and… | `README.md:6,39,104` |
-| ⬜ Open | File-scope asymmetry (hook=changed-only, CI=all-tracked) documented only for size, not for secrets/patterns/fi… | `README.md:223` |
+| ✅ Fixed | File-scope asymmetry (hook=changed-only, CI=all-tracked) documented only for size, not for secrets/patterns/fi… | `README.md:223` |
 | ⬜ Open | No CR-stripping, no .gitattributes, and no line-ending guidance for distributed config files | `README.md:1` |
 | ⬜ Open | print/console.log/alert/os.path.join patterns fire inside comments and string literals (false positives); os.p… | `backend.txt.template:7-8` |
 | ⬜ Open | AWS key coverage limited to AKIA; temporary (ASIA) and other AWS key-ID prefixes are not detected, contrary to… | `secrets.txt.template:13` |
@@ -292,8 +330,8 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 | ✅ Fixed | `printf \| head -3 \| sed` aborts check-patterns/check-secrets via SIGPIPE under pipefail (exit 141) | `check-patterns.template:92` |
 | ⬜ Open | Pattern-validation oracle drops functional patterns on any stderr (warnings) and is grep-implementation/locale… | `check-patterns.template:48-56` |
 | ✅ Fixed | Combined-ERE prefilter conflates grep error (exit 2) with no-match, skipping the file (fail-open control flow) | `check-patterns.template:81` |
-| ⬜ Open | Pattern-config description field is echoed unescaped into ::error workflow command (annotation spoofing in CI) | `check-patterns.template:85-89` |
-| ⬜ Open | Committed filename containing `::` corrupts the file= property of every ::error annotation (file-target spoofi… | `check-patterns.template:89` |
+| ✅ Fixed | Pattern-config description field is echoed unescaped into ::error workflow command (annotation spoofing in CI) — all four check-* scripts now percent-encode message + file= per GitHub workflow-command rules | `check-patterns.template:85-89` |
+| ✅ Fixed | Committed filename containing `::` corrupts the file= property of every ::error annotation (file-target spoofing) — file= now percent-encodes `%`,CR,LF,`:`,`,` (fixture #35) | `check-patterns.template:89` |
 | ✅ Fixed | Scan reads working-tree/index via filesystem, not the git blob — divergence between scanned bytes and committe… | `check-secrets.template:78-79` |
 | ⬜ Open | scaffold-allow exempts an entire physical line — one marker hides multiple secrets on minified/single-line fil… | `check-secrets.template:83` |
 | ⬜ Open | Case-insensitive secrets scan makes prefix tokens (AKIA, AIza, sk-, BEGIN PRIVATE KEY) match lowercase, enabli… | `check-secrets.template:79` |
