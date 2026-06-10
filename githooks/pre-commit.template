@@ -30,6 +30,19 @@ LIB="$HOOK_DIR/lib"
 # shell variable cannot hold NUL bytes, so the list goes to a temp file and each
 # check is fed from it. (core.quotepath is irrelevant under -z, which never
 # C-quotes; kept only for defence in depth.)
+# Refuse to let a commit silently disable the scanners by deleting their config.
+# A staged deletion of a .forbidden-patterns/*.txt makes the matching check find
+# no config and exit 0 — a one-commit way to land a secret AND neuter the scan.
+# Checked BEFORE the empty-staged-list exit, since a delete-only commit has an
+# empty ACMR list. Use `git commit --no-verify` if a removal is intended (uninstall).
+DELETED_CONFIG=$(git diff --cached -z --name-only --diff-filter=D | tr '\0' '\n' | grep -E '^\.forbidden-patterns/.+\.txt$' || true)
+if [ -n "$DELETED_CONFIG" ]; then
+  echo "error: this commit deletes forbidden-pattern config, disabling the scanner:" >&2
+  printf '%s\n' "$DELETED_CONFIG" | sed 's/^/       /' >&2
+  echo "       Refusing — re-add it, or use 'git commit --no-verify' if intended." >&2
+  exit 1
+fi
+
 STAGED_LIST=$(mktemp)
 git -c core.quotepath=off diff --cached -z --name-only --diff-filter=ACMR >"$STAGED_LIST"
 if [ ! -s "$STAGED_LIST" ]; then

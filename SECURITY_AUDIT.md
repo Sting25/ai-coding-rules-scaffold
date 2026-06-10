@@ -48,6 +48,22 @@ High-specificity, low-false-positive pattern broadening (each validated against 
 
 Deliberately **not** done here (needs a design decision, not a regex tweak): the generic **unquoted / multi-line** hardcoded-credential gaps. Every loose regex either over-matches dotted identifiers (false positives, which erode trust) or still misses — this case is better served by layering a purpose-built secret scanner (gitleaks/trufflehog), the audit's standing recommendation. Tracked under Root Cause B below.
 
+### Update 2026-06-09 — fail-closed config trust (branch `fix/audit-config-trust`, Root Cause C)
+
+- HIGH `Deleting the forbidden-patterns config in the same commit disables the scan` → the hook now refuses a staged deletion of any `.forbidden-patterns/*.txt` (checked before the empty-staged-list exit, so a delete-only commit can't slip through); `--no-verify` remains the explicit escape for a genuine uninstall.
+- HIGH (CI side) → `check-secrets --ci` now fails **closed** when `secrets.txt` is absent (it is always installed by the scaffold, so its absence server-side means the scanner was disabled).
+- HIGH `scaffold-allow is a case-insensitive substring match anywhere on the line` → the marker is now honored **only after a comment leader** (`#`, `//`, `/*`, `<!--`, `--`), so it can't be smuggled inside a string literal to whitelist a real secret.
+- MEDIUM `Config line missing a TAB is promoted to a whole-line pattern` → pattern lines without a TAB separator are now skipped with a warning.
+
+Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closing the "harness never exercises the `--ci` path" finding). Still open from Root Cause C/D: escaping `::error` annotation fields (LOW), and a strict-token escape audit. 33/33 tests pass.
+
+### Update 2026-06-09 — ReDoS guard + supply-chain pin (branch `fix/audit-redos-supplychain`)
+
+- HIGH `Combined-ERE pre-filter blows up superlinearly on a long single line — hook and CI hang (ReDoS)` → both scanners now drop any line longer than `MAX_LINE_LENGTH` (default 50000, configurable) via a linear `awk` pass before the ERE ever sees it. Verified: an 800 KB single-line file now scans in ~0 s instead of hanging. A short secret on a normal line is still caught (fixture #31); over-long minified/generated lines are reported as skipped — point a dedicated scanner at those.
+- LOW (supply-chain) `actionlint installed via curl|bash from a mutable git tag` → `test.yml` now pins the download script to the **commit SHA** of `rhysd/actionlint` tag v1.7.12 (`914e7df…`), so a moved tag or compromised release can't swap the installer.
+
+34/34 tests pass; shellcheck clean. Remaining HIGH from the audit: rename-to-skip-listed-extension. Still open: fork-PR trusted-ref guardrails, Git-LFS blob scanning, `::error` annotation escaping, broader `--ci`/per-pattern fixtures, and the gitleaks-layer decision for generic unquoted secrets.
+
 **Status legend:** ✅ Fixed on this branch · 🟡 Partially addressed · ⬜ Open (tracked below).
 
 ## 🔴 Critical

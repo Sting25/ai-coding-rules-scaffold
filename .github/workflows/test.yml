@@ -28,11 +28,14 @@ jobs:
       - name: Install actionlint
         # Validates the rendered lint.yml is a parseable GitHub Actions
         # workflow — guards against the job-level `if: hashFiles(...)` class
-        # of error that silently disables every job. Version + download
-        # script both pinned for reproducibility.
+        # of error that silently disables every job. The download script is
+        # pinned to a COMMIT SHA, not the mutable v1.7.12 tag, so a moved tag
+        # or a compromised release can't swap the script under us. The `1.7.12`
+        # arg is the actionlint version the (pinned) script then downloads.
         run: |
           mkdir -p "$RUNNER_TEMP/bin"
-          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12 "$RUNNER_TEMP/bin"
+          # SHA is rhysd/actionlint tag v1.7.12.
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/914e7df21a07ef503a81201c76d2b11c789d3fca/scripts/download-actionlint.bash) 1.7.12 "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - run: chmod +x tests/run.sh install.sh githooks/pre-commit.template
       - run: ./tests/run.sh

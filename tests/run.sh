@@ -314,6 +314,70 @@ echo 'Console.log("ok");' >comp.ts
 git add comp.ts
 assert_passes "case-sensitive: Console.log not flagged as console.log"
 
+# 27. Deleting the secrets config in the same commit must not silently disable
+#     the scanner — the hook refuses a staged deletion of .forbidden-patterns/*.txt.
+git rm -q .forbidden-patterns/secrets.txt
+assert_rejects "deleting forbidden-pattern config is refused" "disabling the scanner"
+
+# 28. scaffold-allow only exempts when it follows a comment leader; the bare
+#     substring inside a string literal must NOT whitelist a real secret.
+echo 'note = "scaffold-allow AKIA''IOSFODNN7EXAMPLE"' >sneaky2.txt
+git add sneaky2.txt
+assert_rejects "scaffold-allow in a string does not exempt a secret" "AWS access key"
+
+# 29. A config line with no TAB separator is skipped with a warning (not promoted
+#     to a whole-line pattern); a valid pattern on another line still scans.
+printf 'this line has no tab separator at all\n' >>.forbidden-patterns/backend.txt
+echo 'pri''nt("debug")' >hastab.py
+git add .forbidden-patterns/backend.txt hastab.py
+if .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ missing-TAB config — accepted, expected reject (print should still scan)"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "no TAB separator" "$HOOK_OUT"; then
+  echo "  ✓ missing-TAB config line skipped with warning, valid pattern still scans"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ missing-TAB config — rejected but no warning emitted"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
+# 30. CI mode fails CLOSED when secrets.txt is absent (it would otherwise pass
+#     silently — disabling the scanner). Exercises the --ci code path directly.
+rm -f .forbidden-patterns/secrets.txt
+if printf '' | .githooks/lib/check-secrets --ci >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ --ci absent-config — exited 0, expected fail-closed"
+  FAIL=$((FAIL + 1))
+elif grep -qF "secret scanner is disabled" "$HOOK_OUT"; then
+  echo "  ✓ --ci fails closed when secrets.txt is missing"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ --ci absent-config — failed without the expected message"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
+# 31. ReDoS guard: a line over MAX_LINE_LENGTH is dropped before the combined
+#     ERE (which can hang superlinearly on a long line), while a secret on a
+#     normal line is still caught. Long line is benign filler; AKIA split.
+{
+  echo "AKIA""IOSFODNN7EXAMPLE"
+  head -c 60000 /dev/zero | tr '\0' a
+  echo
+} >redos.txt
+git add redos.txt
+if .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ ReDoS guard — accepted, expected reject (secret on the normal line)"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "AWS access key" "$HOOK_OUT" && grep -qF "chars dropped from the scan" "$HOOK_OUT"; then
+  echo "  ✓ over-long line dropped with warning; secret on normal line still caught"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ ReDoS guard — rejected but missing the secret hit or the drop warning"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
 echo ""
 echo "Result: $PASS passed, $FAIL failed"
 exit $FAIL
