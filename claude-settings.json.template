@@ -1,0 +1,43 @@
+{
+  "//": "ai-coding-rules-scaffold — OPT-IN agent-runtime guardrails for Claude Code (the scaffold's deferred 'layer three'). Copy to your project as .claude/settings.json, or merge these keys into an existing one. Two parts: a permissions deny-list (the agent can't read credential files or run a few catastrophic commands) and a PreToolUse hook that scans content the agent is about to write against .forbidden-patterns/secrets.txt — the same patterns the commit-time scanner uses. Trim the deny-list to taste; paths use gitignore-style matching.",
+
+  "permissions": {
+    "deny": [
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(**/id_rsa)",
+      "Read(**/id_ed25519)",
+      "Read(**/id_ecdsa)",
+      "Read(**/id_dsa)",
+      "Read(**/credentials)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.config/gcloud/**)",
+      "Read(~/.kube/config)",
+      "Read(~/.netrc)",
+      "Read(~/.npmrc)",
+      "Bash(rm -rf /:*)",
+      "Bash(rm -rf ~:*)",
+      "Bash(rm -rf /*:*)",
+      "Bash(sudo rm:*)"
+    ],
+    "//deny": "The .env globs exempt the conventional .env.example/.sample/.template safe files only because those names match neither .env nor .env.<stack>; if you keep real secrets in an oddly-named file, add it here. A denied Read also stops the agent pulling the file into context to exfiltrate.",
+    "//ask": "Prefer 'ask' over 'deny' for anything you sometimes need (e.g. 'Bash(git push:*)') — deny is absolute, ask just prompts you."
+  },
+
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.githooks/lib/agent-precheck"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# .githooks/lib/check-hygiene — repo-hygiene guards that aren't secret- or
+# pattern-specific. Reads NUL-separated file paths on stdin (produced by
+# `git ... -z`). Two checks:
+#
+#   1. Merge-conflict markers. A committed `<<<<<<<` / `|||||||` / `>>>>>>>`
+#      marker means an unresolved conflict shipped — it breaks the build and is
+#      pure accident. Scans the STAGED/INDEXED BLOB via `git show ":0:<path>"`
+#      (like check-secrets/check-patterns), so symlinks, NUL bytes, and
+#      post-stage edits can't hide the marker. The `=======` middle marker is
+#      deliberately NOT matched on its own — a row of 7+ `=` is a common reST /
+#      Markdown heading underline, and every real conflict already carries the
+#      unambiguous `<<<<<<<` and `>>>>>>>` markers.
+#
+#   2. Case-only filename collisions. Two tracked paths that differ only in case
+#      (`README.md` vs `Readme.md`) coexist on Linux but collide on a
+#      case-insensitive filesystem (macOS default, Windows), corrupting the
+#      checkout. In the hook the list is the staged files; in CI it's every
+#      tracked file, which catches a collision against an already-committed file.
+#
+# A `scaffold-allow` marker (after a comment leader) exempts a conflict-marker
+# line, for the rare doc that shows one on purpose.
+#
+# Output: human-readable on tty; ::error file=...:: when --ci is passed.
+# Exit:   0 if all OK, 1 if any violation.
+
+set -euo pipefail
+
+CI_MODE=0
+[ "${1:-}" = "--ci" ] && CI_MODE=1
+
+# Escape a value for a GitHub workflow command (see check-secrets).
+ghesc() {
+  local s=$2
+  s=${s//'%'/%25}; s=${s//$'\r'/%0D}; s=${s//$'\n'/%0A}
+  if [ "$1" = prop ]; then s=${s//:/%3A}; s=${s//,/%2C}; fi
+  printf '%s' "$s"
+}
+
+emit() {
+  local file=$1 message=$2
+  if [ "$CI_MODE" -eq 1 ]; then
+    echo "::error file=$(ghesc prop "$file")::$(ghesc data "$message")"
+  else
+    echo "✗ $file: $message"
+  fi
+}
+
+# Same per-line length cap as check-secrets/check-patterns — keep a pathological
+# minified blob from being slurped whole, even though the marker regex is
+# anchored and linear.
+MAX_LINE_LENGTH=${MAX_LINE_LENGTH:-50000}
+case "$MAX_LINE_LENGTH" in
+  ''|*[!0-9]*) echo "error: MAX_LINE_LENGTH must be a positive integer, got: $MAX_LINE_LENGTH" >&2; exit 2 ;;
+esac
+[ "$MAX_LINE_LENGTH" -gt 0 ] || { echo "error: MAX_LINE_LENGTH must be > 0" >&2; exit 2; }
+
+FILES=()
+while IFS= read -r -d '' f; do
+  [ -n "$f" ] && FILES+=("$f")
+done
+
+[ ${#FILES[@]} -eq 0 ] && exit 0
+
+FAILED=0
+
+# --- 1. merge-conflict markers ---------------------------------------------
+CONFLICT_RE='^(<{7}|>{7}|\|{7})( |$)'
+for file in "${FILES[@]}"; do
+  cap_rc=0
+  content=$(git show ":0:$file" 2>/dev/null | awk -v n="$MAX_LINE_LENGTH" 'length > n { next } { print }') || cap_rc=$?
+  [ "$cap_rc" -eq 0 ] || true
+  [ -n "$content" ] || continue
+  m=$(grep -anE -- "$CONFLICT_RE" <<<"$content" | grep -ivE '(#|//|/\*|<!--|--)[[:space:]]*scaffold-allow' || true)
+  if [ -n "$m" ]; then
+    emit "$file" "merge-conflict marker — resolve the conflict before committing"
+    printf '%s\n' "$m" | head -3 | sed 's/^/    /' >&2 || true
+    FAILED=1
+  fi
+done
+
+# --- 2. case-only filename collisions --------------------------------------
+# bash 3.2 (macOS) has no associative arrays and no ${var,,}, so lowercase each
+# path once with tr into a parallel array, then compare pairwise (O(n^2) string
+# compares, no subprocess in the inner loop). NUL-delimited input means a path
+# may legitimately contain a newline, so we never split on newlines here.
+LOWER=()
+for f in "${FILES[@]}"; do
+  LOWER+=("$(printf '%s' "$f" | tr '[:upper:]' '[:lower:]')")
+done
+
+n=${#FILES[@]}
+for ((i = 0; i < n; i++)); do
+  for ((j = i + 1; j < n; j++)); do
+    if [ "${LOWER[$i]}" = "${LOWER[$j]}" ] && [ "${FILES[$i]}" != "${FILES[$j]}" ]; then
+      emit "${FILES[$j]}" "case-only filename collision with '${FILES[$i]}' — breaks case-insensitive checkouts (macOS/Windows)"
+      FAILED=1
+    fi
+  done
+done
+
+exit $FAILED

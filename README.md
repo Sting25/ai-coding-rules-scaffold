@@ -65,8 +65,12 @@ The script auto-detects Python (`pyproject.toml` / `requirements.txt` / `setup.p
 ./install.sh --both         # both stacks
 ./install.sh --force        # overwrite existing files
 ./install.sh --no-verify    # skip the post-install linter check
+./install.sh --claude       # also install opt-in Claude Code agent guardrails
+./install.sh --commit-msg   # also install the Conventional-Commits commit-msg hook
 ./install.sh --help         # show usage
 ```
+
+See [Opt-in layers](#opt-in-layers) for what `--claude` and `--commit-msg` add.
 
 At the end, `install.sh` verifies that `ruff` and/or `eslint` are installed and that their configs load. If either is missing, it prints the install command.
 
@@ -198,6 +202,8 @@ Commit + CI-breaking (pre-commit hook + `lint.yml`):
 | TODO/FIXME without ticket ref | regex (opt-in; commented in template) |
 | Secret / credential leaks (AWS keys, GitHub tokens, private keys, URLs with embedded credentials, hardcoded password=/token= assignments) | regex (case-insensitive). Scans **every** tracked file's staged blob as text (no extension allowlist, so renaming a payload can't skip it); NUL bytes are stripped so they can't hide content, and a single line longer than `MAX_LINE_LENGTH` (50000) is dropped so a minified/binary blob can't hang the scan |
 | Committed `.env` / `*.pem` / SSH private keys (`id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`) | filename check (`.env.example` / `.env.sample` / `.env.template` allowed) |
+| Merge-conflict markers (`<<<<<<<` / `\|\|\|\|\|\|\|` / `>>>>>>>`) left in a file | `check-hygiene` (staged-blob scan) |
+| Case-only filename collisions (`Readme.md` vs `README.md`) that break macOS/Windows checkouts | `check-hygiene` (path scan; CI checks all tracked paths) |
 
 ### Per-line escape valve
 
@@ -212,6 +218,39 @@ unaffected. See `forbidden-patterns/README.md` for examples.
 suppressing a guardrail.** Treat new markers like new `# noqa`s — confirm
 the suppression is justified before approving. Audit the full set with
 `git grep -i scaffold-allow`.
+
+## Opt-in layers
+
+Beyond the always-on hook + CI mirror, three extras are available. They're off
+by default so the scaffold stays minimal; turn them on per project.
+
+- **Agent-runtime guardrails (`install.sh --claude`).** The deferred "layer
+  three" — catching bad input *before* the agent writes it, not at commit time.
+  Installs a `.claude/settings.json` that denies the agent reading credential
+  files (`.env`, `*.pem`, `*.key`, `~/.ssh/**`, `~/.aws/**`, …) and a
+  `PreToolUse` hook (`.githooks/lib/agent-precheck`) that scans Write/Edit/Bash
+  content against the *same* `.forbidden-patterns/secrets.txt` the commit-time
+  scanner uses — one rule set across agent → commit → CI. Needs `jq` (fails open
+  without it). Works with Claude Code; the deny-list pattern ports to Cursor /
+  Gemini equivalents. See [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md).
+
+- **Conventional-Commits `commit-msg` hook (`install.sh --commit-msg`).**
+  Rejects commit subjects that don't match `type(scope): description` (merge /
+  revert / fixup commits exempt). Commit format is exactly the kind of
+  convention agents drift on across sessions. Zero dependencies.
+
+- **gitleaks CI backstop (`.github/workflows/gitleaks.yml.template`).** Copy it
+  in to add a broad, entropy-based secret scanner as a *separate* CI job. The
+  built-in `check-secrets` is a narrow offline regex gate (the specific token
+  shapes in `secrets.txt`); gitleaks' ~150 maintained rules catch provider
+  tokens the hand-written list can't enumerate. Not auto-installed — it adds a
+  third-party action dependency. Pinned to a commit SHA; bump via Dependabot.
+
+Two smaller hardening changes are **on by default**: `install.sh` now also
+drops a `.github/dependabot.yml` (weekly grouped bumps of the SHA-pinned
+Actions — delete it if you don't want the PRs), and the CI frontend job uses a
+frozen-lockfile install (`npm ci` when a lockfile exists, hard-failing on drift
+instead of silently mutating it).
 
 ## Verify it works
 

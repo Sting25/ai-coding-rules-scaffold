@@ -1,0 +1,43 @@
+name: gitleaks
+
+# OPT-IN secret-scanning backstop. Copy to your project as
+# `.github/workflows/gitleaks.yml`. NOT installed by install.sh — it adds a
+# third-party action dependency, so opt in deliberately.
+#
+# Why this exists alongside check-secrets:
+#   The scaffold's `check-secrets` is a NARROW, offline regex gate — it catches
+#   the specific token shapes listed in .forbidden-patterns/secrets.txt and
+#   nothing else, by design (it is a commit-time hygiene tool, not a security
+#   boundary). gitleaks is the BROAD backstop: ~150 maintained provider rules
+#   plus entropy scoring, so it flags high-entropy credentials and provider
+#   tokens the hand-written list can't enumerate. Run both — the regex gate at
+#   commit time for instant feedback, gitleaks in CI for depth.
+#
+# Actions are pinned to a full commit SHA (supply-chain hardening); the trailing
+# comment records the human-readable tag. Bump via Dependabot (see
+# dependabot.yml.template).
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          # Full history so gitleaks scans every commit on a push, not just the
+          # tip. On pull_request the action scans the PR's commit range.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e  # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # gitleaks-action is free for personal accounts and public repos. For
+          # an ORGANIZATION it requires a (free) license key — set it as a repo
+          # secret and uncomment:
+          # GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}

@@ -67,11 +67,17 @@ force_remove() {
 remove_if_unmodified "ruff.toml"                     "$SCAFFOLD_DIR/ruff.toml.template"
 remove_if_unmodified "eslint.config.js"              "$SCAFFOLD_DIR/eslint.config.js.template"
 remove_if_unmodified ".githooks/pre-commit"          "$SCAFFOLD_DIR/githooks/pre-commit.template"
-for check in check-size check-patterns check-filenames check-secrets; do
+for check in check-size check-patterns check-filenames check-secrets check-hygiene; do
   remove_if_unmodified ".githooks/lib/${check}" "$SCAFFOLD_DIR/githooks/lib/${check}.template"
 done
 remove_if_unmodified ".github/workflows/lint.yml"    "$SCAFFOLD_DIR/.github/workflows/lint.yml.template"
+remove_if_unmodified ".github/dependabot.yml"        "$SCAFFOLD_DIR/.github/dependabot.yml.template"
 remove_if_unmodified "CLAUDE.md"                     "$SCAFFOLD_DIR/CLAUDE.md.pointer"
+# Opt-in Claude Code guardrails (only present if installed with --claude).
+remove_if_unmodified ".githooks/lib/agent-precheck"  "$SCAFFOLD_DIR/githooks/lib/agent-precheck.template"
+remove_if_unmodified ".claude/settings.json"         "$SCAFFOLD_DIR/claude-settings.json.template"
+# Opt-in commit-msg hook (only present if installed with --commit-msg).
+remove_if_unmodified ".githooks/commit-msg"          "$SCAFFOLD_DIR/githooks/commit-msg.template"
 
 # Likely-customized files — only with --all
 if [ "$REMOVE_ALL" -eq 1 ]; then
@@ -82,7 +88,7 @@ if [ "$REMOVE_ALL" -eq 1 ]; then
 fi
 
 # Clean up empty dirs the installer created
-for dir in .githooks/lib .githooks .github/workflows .github; do
+for dir in .githooks/lib .githooks .github/workflows .github .claude; do
   [ -d "$dir" ] || continue
   if rmdir "$dir" 2>/dev/null; then
     echo "removed empty: $dir"

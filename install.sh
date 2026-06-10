@@ -8,6 +8,8 @@
 #   install.sh --both       # install both stacks
 #   install.sh --force      # overwrite existing files
 #   install.sh --no-verify  # skip the post-install linter smoke test
+#   install.sh --claude     # also install opt-in Claude Code agent guardrails
+#   install.sh --commit-msg # also install the Conventional-Commits commit-msg hook
 #   install.sh --help       # show this help
 
 set -euo pipefail
@@ -16,15 +18,19 @@ SCAFFOLD_DIR="$(cd "$(dirname "$0")" && pwd)"
 MODE="auto"
 FORCE=0
 VERIFY=1
+CLAUDE=0
+COMMIT_MSG=0
 
 for arg in "$@"; do
   case "$arg" in
-    --python)    MODE="python" ;;
-    --frontend)  MODE="frontend" ;;
-    --both)      MODE="both" ;;
-    --force)     FORCE=1 ;;
-    --no-verify) VERIFY=0 ;;
-    --help|-h)   sed -n '2,11p' "$0"; exit 0 ;;
+    --python)     MODE="python" ;;
+    --frontend)   MODE="frontend" ;;
+    --both)       MODE="both" ;;
+    --force)      FORCE=1 ;;
+    --no-verify)  VERIFY=0 ;;
+    --claude)     CLAUDE=1 ;;
+    --commit-msg) COMMIT_MSG=1 ;;
+    --help|-h)    sed -n '2,13p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -72,11 +78,12 @@ cp_safe "$SCAFFOLD_DIR/AGENTS.md.template" "AGENTS.md"
 cp_safe "$SCAFFOLD_DIR/CLAUDE.md.pointer" "CLAUDE.md"
 cp_safe "$SCAFFOLD_DIR/githooks/pre-commit.template" ".githooks/pre-commit"
 chmod +x .githooks/pre-commit
-for check in check-size check-patterns check-filenames check-secrets; do
+for check in check-size check-patterns check-filenames check-secrets check-hygiene; do
   cp_safe "$SCAFFOLD_DIR/githooks/lib/${check}.template" ".githooks/lib/${check}"
   chmod +x ".githooks/lib/${check}"
 done
 cp_safe "$SCAFFOLD_DIR/.github/workflows/lint.yml.template" ".github/workflows/lint.yml"
+cp_safe "$SCAFFOLD_DIR/.github/dependabot.yml.template" ".github/dependabot.yml"
 cp_safe "$SCAFFOLD_DIR/forbidden-patterns/secrets.txt.template" ".forbidden-patterns/secrets.txt"
 cp_safe "$SCAFFOLD_DIR/forbidden-patterns/shell.txt.template" ".forbidden-patterns/shell.txt"
 
@@ -90,6 +97,26 @@ fi
 if [ "$MODE" = "frontend" ] || [ "$MODE" = "both" ]; then
   cp_safe "$SCAFFOLD_DIR/eslint.config.js.template" "eslint.config.js"
   cp_safe "$SCAFFOLD_DIR/forbidden-patterns/frontend.txt.template" ".forbidden-patterns/frontend.txt"
+fi
+
+# Claude Code agent-runtime guardrails (opt-in: --claude). Installs a PreToolUse
+# precheck hook (reuses .forbidden-patterns/secrets.txt) plus a settings.json
+# with a credential-file deny-list. An existing .claude/settings.json is left
+# alone by cp_safe — merge the template's keys in by hand.
+if [ "$CLAUDE" -eq 1 ]; then
+  cp_safe "$SCAFFOLD_DIR/githooks/lib/agent-precheck.template" ".githooks/lib/agent-precheck"
+  chmod +x ".githooks/lib/agent-precheck"
+  cp_safe "$SCAFFOLD_DIR/claude-settings.json.template" ".claude/settings.json"
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "warning: jq not found — the PreToolUse precheck needs jq (it fails open without it): https://jqlang.github.io/jq/"
+  fi
+fi
+
+# Conventional-Commits commit-msg hook (opt-in: --commit-msg). Active the moment
+# it lands in core.hooksPath, so it's off by default to avoid surprising users.
+if [ "$COMMIT_MSG" -eq 1 ]; then
+  cp_safe "$SCAFFOLD_DIR/githooks/commit-msg.template" ".githooks/commit-msg"
+  chmod +x ".githooks/commit-msg"
 fi
 
 # Wire the hook — preserve existing core.hooksPath if already set (e.g. Husky).

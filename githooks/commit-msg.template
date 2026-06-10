@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# .githooks/commit-msg — enforce Conventional Commits on the subject line.
+# OPT-IN: installed only with `install.sh --commit-msg`. Once present in
+# core.hooksPath it runs on every `git commit`. Agents drift on commit format
+# across sessions; this pins it. Zero dependencies.
+#
+# Git passes the path to the commit-message file as $1.
+# Exit: 0 if the subject is valid (or an exempt merge/revert/fixup), 1 otherwise.
+
+set -euo pipefail
+
+MSG_FILE=${1:?commit-msg hook expects the message file path as $1}
+
+# First non-blank, non-comment line is the subject. `[[:space:]]` (not `\s`) so
+# this works under BSD grep on macOS as well as GNU grep.
+subject=$(grep -vE '^[[:space:]]*#' "$MSG_FILE" | grep -vE '^[[:space:]]*$' | head -1 || true)
+
+# Exempt git's own auto-generated subjects.
+case "$subject" in
+  "Merge "*|"Revert "*|"fixup! "*|"squash! "*|"Reapply "*) exit 0 ;;
+esac
+
+# <type>(<optional scope>)<optional !>: <description>
+CC_RE='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: .+'
+
+if printf '%s' "$subject" | grep -qE "$CC_RE"; then
+  exit 0
+fi
+
+{
+  echo "✗ commit message does not follow Conventional Commits:"
+  echo "    ${subject:-<empty subject>}"
+  echo "  Expected: <type>(<scope>)?: <description>   e.g. 'feat(api): add pagination'"
+  echo "  Types: feat fix docs style refactor perf test build ci chore revert"
+  echo "  See https://www.conventionalcommits.org/"
+} >&2
+exit 1

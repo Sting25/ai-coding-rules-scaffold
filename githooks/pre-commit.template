@@ -93,6 +93,7 @@ FAILED=0
 "$LIB/check-patterns"  <"$STAGED_LIST" || FAILED=1
 "$LIB/check-filenames" <"$STAGED_LIST" || FAILED=1
 "$LIB/check-secrets"   <"$STAGED_LIST" || FAILED=1
+"$LIB/check-hygiene"   <"$STAGED_LIST" || FAILED=1
 
 # Lint staged files with ruff / eslint when configs exist and the tool is
 # installed. CI is the source of truth — running here just shortens the
