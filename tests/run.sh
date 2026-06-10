@@ -378,6 +378,41 @@ else
 fi
 reset_repo
 
+# 32. Rename bypass: a secret-bearing TEXT file given a binary extension is
+#     still scanned. Binary is decided by CONTENT (a NUL byte), not by the name,
+#     so .png/.zip/etc. no longer smuggle a plaintext secret past the scan.
+echo "AKIA""IOSFODNN7EXAMPLE" >logo.png
+git add logo.png
+assert_rejects "secret renamed to .png is still scanned" "AWS access key"
+
+# 33. Same rename bypass via a lockfile name the old extension list skipped.
+echo "AKIA""IOSFODNN7EXAMPLE" >package-lock.json
+git add package-lock.json
+assert_rejects "secret in package-lock.json is still scanned" "AWS access key"
+
+# 34. Defense in depth: a secret in a file with BOTH a binary extension AND a
+#     NUL byte is still caught. We skip nothing by name, and a NUL never marks a
+#     blob "binary, skip" (that would reopen the NUL-byte bypass) — so combining
+#     the two evasions still fails. \000 writes the NUL; AKIA literal split.
+printf 'AKIA''IOSFODNN7EXAMPLE\000trailing\n' >payload.png
+git add payload.png
+assert_rejects "secret with NUL + binary extension is still scanned" "AWS access key"
+
+# 35. --ci annotation escaping: a filename containing ':' and ',' is
+#     percent-encoded in the ::error property (%3A / %2C) so a crafted name
+#     can't forge or truncate the annotation. Exercises the --ci path directly.
+echo "AKIA""IOSFODNN7EXAMPLE" >'weird:name,x.txt'
+git add 'weird:name,x.txt'
+printf '%s\0' 'weird:name,x.txt' | .githooks/lib/check-secrets --ci >"$HOOK_OUT" 2>&1 || true
+if grep -qF 'file=weird%3Aname%2Cx.txt' "$HOOK_OUT"; then
+  echo "  ✓ --ci ::error escapes : and , in the filename property"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ --ci ::error escaping — expected percent-encoded filename, got:"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
 echo ""
 echo "Result: $PASS passed, $FAIL failed"
 exit $FAIL

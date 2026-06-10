@@ -60,6 +60,25 @@ jobs:
   guardrails:
     # File size, forbidden patterns, blocked filenames, secret scan —
     # the same lib/check-* scripts the pre-commit hook calls.
+    #
+    # Two limitations to know about (both inherent to how this job is wired,
+    # not bugs you can patch in the script):
+    #
+    #   1. Runs the check scripts AND pattern configs from the PR head. On a
+    #      `pull_request` build the checked-out tree is the PR's own content, so
+    #      a PR can weaken the very scanner meant to gate it (edit a check-*
+    #      script, delete a pattern from .forbidden-patterns/*). This is a
+    #      defense-in-depth backstop, NOT a trust boundary against a hostile
+    #      contributor — pair it with branch protection / required review, and
+    #      for untrusted forks gate merges on a scan run from the BASE ref
+    #      (e.g. check out `${{ github.base_ref }}`'s .githooks + configs and
+    #      run those against the PR's files).
+    #
+    #   2. Scans the committed blob (`git show :0:<path>`). For a Git-LFS- or
+    #      clean/smudge-filtered file the committed blob is the POINTER, not the
+    #      real content, so LFS-tracked text is not meaningfully scanned here.
+    #      If your repo keeps scannable text in LFS, add `lfs: true` to the
+    #      checkout below and scan the smudged working tree for those paths.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2

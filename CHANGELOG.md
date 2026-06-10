@@ -6,6 +6,36 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+- **Rename-to-skipped-extension secret bypass (audit HIGH).** `check-secrets`
+  skipped files by extension (`*.png`, `*.zip`, `package-lock.json`, …), so a
+  plaintext secret renamed to a skipped name passed the scan in both the hook
+  and CI. The extension allowlist is removed: every tracked file's staged blob
+  is now scanned as text. NUL bytes are still stripped (so they can't hide
+  content — a NUL-based "binary, skip" sniff was deliberately rejected because
+  it would reopen that bypass), and the existing `MAX_LINE_LENGTH` line-drop
+  keeps a minified/binary blob from hanging the scan. New harness fixtures
+  cover `secret.png`, `secret in package-lock.json`, and NUL+binary-extension.
+- **`::error` annotation injection (audit LOW).** All four `lib/check-*`
+  scripts now percent-encode the `file=` property (`%`, CR, LF, `:`, `,`) and
+  the message body (`%`, CR, LF) per GitHub's workflow-command rules, so a
+  crafted filename or description can't forge or truncate a CI annotation.
+
+### Documented
+- **`lint.yml.template` guardrails job: two inherent limitations** now spelled
+  out in-file — it runs check scripts/configs from the PR head (defense in
+  depth, not a trust boundary against hostile forks; pair with branch
+  protection / scan from the base ref), and it scans the committed blob, so a
+  Git-LFS pointer is scanned rather than the LFS content (add `lfs: true` if
+  you keep scannable text in LFS).
+
+### Fixed
+- **`README.md` stale claims.** The size check is the staged blob's line count
+  (`git show :0:<path>`), not `wc -l`; the secret scan covers *every* tracked
+  file (no extension allowlist), not a vague "all files"; and the
+  hook-vs-CI file-scope asymmetry (changed-only vs all-tracked) is now noted
+  for all four checks, not just size.
+
 ## [v0.5.2] — 2026-05-25
 
 ### Fixed
