@@ -7,6 +7,14 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **2025 provider-token shapes + JWT in `secrets.txt` (default-on).** Prefix-
+  specific, low-FP additions the offline gate was missing: OpenAI
+  service-account/admin (`sk-svcacct-`/`sk-admin-`), Hugging Face (`hf_`), GitLab
+  (`glpat-`), npm (`npm_`), PyPI upload (`pypi-…`), Stripe live/restricted
+  (`sk_live_`/`rk_live_`), Slack webhook URLs, DigitalOcean (`dop_v1_`),
+  Databricks (`dapi…`, boundary-anchored), Perplexity (`pplx-`), plus a
+  structural **JWT** pattern (two `eyJ…` segments) for leaked long-lived service
+  keys. +8 fixtures incl. a `scaffold-allow` negative for an expired demo JWT.
 - **TLS-verification-disable deny-patterns (`frontend.txt`, default-on).**
   `NODE_TLS_REJECT_UNAUTHORIZED` and `rejectUnauthorized: false` — the canonical
   AI-agent shortcut when a request fails against a self-signed cert, which
