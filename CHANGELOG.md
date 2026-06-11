@@ -7,6 +7,11 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Commit-subject length cap (opt-in `--commit-msg`).** The Conventional-Commits
+  hook now also rejects subjects over 100 chars (commitlint `config-conventional`
+  `header-max-length` parity) — runaway subjects wrap in `git log` / GitHub and
+  break changelog tooling. Independent guard, merge/revert/fixup still exempt.
+  +1 fixture.
 - **Agent-runtime layer extended (opt-in `--claude`).** `agent-precheck` now
   also scans **Bash** tool calls against `.forbidden-patterns/shell.txt` (a
   separate case-sensitive pass matching commit-time semantics) — blocking
@@ -161,6 +166,11 @@ versioning follows [SemVer](https://semver.org/).
   +13 harness fixtures (a reject + a look-alike negative per language).
 
 ### Changed
+- **`coding-rules.md` rule 12** now prefers the W3C `traceparent` header
+  (OpenTelemetry's auto-propagated default) over `X-Request-Id` (the 2018-era
+  norm, kept as the lighter fallback) — an agent following the old text would
+  hand-roll request-id plumbing that collides with what OTel SDKs already
+  propagate. Substance (one correlation ID across all log lines) unchanged.
 - **CI uses a frozen-lockfile install.** The frontend job runs `npm ci` when a
   lockfile is present (hard-failing on lockfile drift instead of silently
   mutating it) and falls back to `npm install` only when no lockfile exists.

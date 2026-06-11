@@ -291,8 +291,11 @@ by default so the scaffold stays minimal; turn them on per project.
 
 - **Conventional-Commits `commit-msg` hook (`install.sh --commit-msg`).**
   Rejects commit subjects that don't match `type(scope): description` (merge /
-  revert / fixup commits exempt). Commit format is exactly the kind of
-  convention agents drift on across sessions. Zero dependencies.
+  revert / fixup commits exempt) and caps the subject at 100 chars (commitlint
+  `config-conventional` `header-max-length` parity — runaway subjects wrap in
+  `git log` / the GitHub UI and break changelog tooling). Commit format is
+  exactly the kind of convention agents drift on across sessions. Zero
+  dependencies.
 
 - **gitleaks CI backstop (`.github/workflows/gitleaks.yml.template`).** Copy it
   in to add a broad, entropy-based secret scanner as a *separate* CI job. The

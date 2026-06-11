@@ -744,6 +744,16 @@ if bash "$CMHOOK" "$mf" >"$HOOK_OUT" 2>&1; then
 else
   echo "  ✗ commit-msg rejected a merge commit"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
+# A valid-shape subject over 100 chars is rejected for length (commitlint parity).
+printf 'feat(api): %s\n' "$(printf 'a%.0s' $(seq 1 100))" >"$mf"
+if bash "$CMHOOK" "$mf" >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ commit-msg accepted a >100-char subject"; FAIL=$((FAIL + 1))
+elif grep -qF "exceeds 100 chars" "$HOOK_OUT"; then
+  echo "  ✓ commit-msg rejects a subject over 100 chars"; PASS=$((PASS + 1))
+else
+  echo "  ✗ commit-msg rejected >100-char subject without the expected message"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
 rm -f "$mf"
 reset_repo
 

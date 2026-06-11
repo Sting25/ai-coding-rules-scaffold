@@ -40,7 +40,7 @@ Stack-specific deny patterns live in `.forbidden-patterns/*.txt` (one per langua
 
 11. **Event names are `snake_case_verbs`**, not prose. Example: `request_received`, `cog_written`, `gpu_lock_acquired`. They must be filterable strings — log handlers, alerting rules, and grep all depend on stable identifiers. Prose like "the request came in fine" is not a log event name.
 
-12. **Bind a request correlation ID to log context** when running multiple services. Propagate via `X-Request-Id` HTTP header (or equivalent) — echo incoming, generate if missing. Every log line emitted during the request carries the same ID, so a single grep finds the full cross-service trace.
+12. **Bind a request correlation ID to log context** when running multiple services. Prefer the W3C `traceparent` header — it's the cross-service standard and OpenTelemetry SDK middleware propagates it for you; `X-Request-Id` is an acceptable lighter-weight fallback. Either way: echo incoming, generate if missing, bind to log context. Every log line emitted during the request carries the same ID, so a single grep finds the full cross-service trace.
 
 ## Versioning
 
