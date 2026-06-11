@@ -14,6 +14,14 @@ os\.path\.join	Use pathlib.Path(), not os.path.join
 (^|[^A-Za-z_])pdb\.set_trace[[:space:]]*\(	Remove pdb.set_trace() before committing
 (^|[^A-Za-z_])ipdb\.set_trace[[:space:]]*\(	Remove ipdb.set_trace() before committing
 \.utcnow[[:space:]]*\(	datetime.utcnow() is deprecated (3.12+) — use datetime.now(datetime.UTC)
+\.utcfromtimestamp[[:space:]]*\(	datetime.utcfromtimestamp() is deprecated (3.12+) — use datetime.fromtimestamp(ts, tz=datetime.UTC)
+
+# Optional: asyncio.get_event_loop() raises RuntimeError on 3.14+ when called with
+# no running loop. OFF by default: inside a coroutine/callback it correctly returns
+# the running loop and is legitimate, and library code targeting 3.9–3.13 uses it
+# deliberately — a name-anchored ban over-fires on correct code. Enable for app
+# code that should standardize on asyncio.run()/get_running_loop().
+# asyncio\.get_event_loop[[:space:]]*\(	Use asyncio.run() or asyncio.get_running_loop(), not get_event_loop()
 
 # Optional: 12-factor config (III). Mirror of the active frontend.txt rule, but
 # OFF by default here because Python test clients legitimately target localhost

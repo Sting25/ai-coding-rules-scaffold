@@ -6,7 +6,61 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.6.0] — 2026-06-11
+
+Multi-language enforcement (PHP/Go/Rust/Java/Kotlin/Ruby), broadened TypeScript
+type-aware linting, a per-project `.scaffold.toml` override layer, opt-in
+agent-runtime hooks (Claude + Cursor), 2025-26 supply-chain / secret-scanning
+hardening, and a delta round of modern-practice deny-patterns.
+
 ### Added
+- **`preserve-caught-error` (`eslint.config.js`, default-on).**
+  `catch (e) { throw new Error('failed') }` destroys the original error
+  cause/stack — a signature AI-agent pattern that makes production failures
+  undiagnosable (fix: `new Error(msg, { cause: e })`). The rule entered
+  `eslint:recommended` only in ESLint v10 (Feb 2026); pinning it explicitly gives
+  v9.35+ users the same guard and removes the v9/v10 fork. (Requires ESLint
+  ≥ 9.35 — the rule does not exist before that.) `no-useless-assignment` was
+  evaluated alongside it and deliberately **not** added: it has open
+  false-positives on TS `satisfies` and Vue SFCs, the scaffold's core audience.
+- **`git --no-verify` block (`shell.txt`, default-on).** Converts an existing
+  *prose-only* rule (`AGENTS.md` git discipline + `coding-rules.md` rule 9 + the
+  README "`--no-verify` doesn't become the escape hatch" invariant) into a
+  machine check at the agent action boundary — `agent-precheck` already feeds
+  `shell.txt` to Claude `PreToolUse` and Cursor `beforeShellExecution`. Stops an
+  agent from skipping the gate locally (a documented behavior: claude-code#40117).
+  Scoped to a git subcommand within one pipeline segment, so a non-git
+  `--no-verify` flag (e.g. `install.sh --no-verify`) doesn't match; a genuine
+  agent-driven uninstall can use `scaffold-allow`. CI remains the unskippable
+  backstop. +2 fixtures.
+- **Svelte `{@html}` XSS deny-pattern + `.svelte` coverage (`frontend.txt`,
+  default-on).** Same untrusted-HTML-injection bug class as the already-banned
+  `dangerouslySetInnerHTML` (React) and `v-html` (Vue); agents reach for
+  `{@html data}` the same way when told to "render this markdown." The required
+  trailing space after `@html` keeps the rule off prose/`{expr}` interpolation.
+  Adding `svelte` to the `# scaffold-extensions:` header also closes a silent
+  gap — `.svelte` was in no header, so `console.log` / `.only` / `@ts-ignore` /
+  `localhost` / TLS rules were all un-scanned inside component files. +2 fixtures.
+- **Four 2025-26 secret/token shapes in `secrets.txt` (default-on).** Prefix-
+  specific, low-FP additions the offline gate was missing: **AWS Bedrock** API
+  keys (`ABSK…`, a 22-char anchor that is the base64 of `BedrockAPIKey` — not
+  matched by the `AKIA`/`ASIA` rule), **Supabase** secret keys (`sb_secret_`, the
+  new opaque RLS-bypassing format that replaced the JWT `service_role` key, so
+  the `eyJ` rule no longer catches it), **OpenRouter** keys (`sk-or-v1-` — the
+  embedded dashes terminate the alphanumeric run, so the legacy `sk-…{48}` rule
+  provably misses them), and the **GitLab** non-PAT token family
+  (`gloas-`/`gldt-`/`glrt-`/`glrtr-`/`glptt-`/`glagent-`/`glsoat-`/`glffct-`/
+  `glimt-`/`glft-`/`glwt-` — OAuth/deploy/runner/trigger/agent/SCIM/feed tokens,
+  all documented CI supply-chain entry points; the scaffold previously covered
+  only `glpat-`). All prefixes verified against official provider docs. +4 fixtures.
+- **`datetime.utcfromtimestamp()` deny-pattern (`backend.txt`, default-on).**
+  CPython 3.12 deprecated `utcfromtimestamp()` in the *same* change as
+  `utcnow()` (already banned) — same naive-"UTC" bug class. A steered agent that
+  drops `utcnow()` can still emit this and pass the hook; the always-on regex now
+  covers it (use `datetime.fromtimestamp(ts, tz=datetime.UTC)`). A commented
+  opt-in `asyncio.get_event_loop()` line is added too (OFF by default — inside a
+  running coroutine it legitimately returns the running loop, so a name-anchored
+  ban over-fires; enable for app code standardizing on `asyncio.run()`). +1 fixture.
 - **Commit-subject length cap (opt-in `--commit-msg`).** The Conventional-Commits
   hook now also rejects subjects over 100 chars (commitlint `config-conventional`
   `header-max-length` parity) — runaway subjects wrap in `git log` / GitHub and

