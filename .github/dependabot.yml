@@ -8,6 +8,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Wait 7 days before proposing a new release — long enough that a
+    # compromised-and-yanked version (chalk/debug, Shai-Hulud) is gone before we
+    # ever see the PR. Security updates bypass the cooldown.
+    cooldown:
+      default-days: 7
     groups:
       github-actions:
         patterns: ["*"]

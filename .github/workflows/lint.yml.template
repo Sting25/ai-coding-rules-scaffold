@@ -24,6 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false  # don't leave GITHUB_TOKEN in .git/config
       - id: detect
         run: |
           if [ -f ruff.toml ] || [ -f pyproject.toml ]; then
@@ -43,6 +45,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false  # don't leave GITHUB_TOKEN in .git/config
       - id: detect
         run: |
           if [ -f eslint.config.js ] || [ -f package.json ]; then
@@ -58,13 +62,23 @@ jobs:
         # hard-fails on lockfile drift instead of silently mutating it like
         # `npm install`). Falls back to `npm install` only when there's no
         # lockfile, so a lockfile-less repo still works. pnpm/yarn equivalents:
-        # `pnpm install --frozen-lockfile` / `yarn install --immutable`.
+        # `pnpm install --frozen-lockfile --ignore-scripts` /
+        # `yarn install --immutable --mode=skip-build`.
+        #
+        # --ignore-scripts: eslint and tsc are pure JS, so the lint job never
+        # needs a dependency's install hooks — and this runner holds GITHUB_TOKEN
+        # and repo/org secrets, the exact target the Shai-Hulud 2.0 preinstall
+        # worm went after. Not executing arbitrary pre/postinstall scripts is
+        # cheap CI hardening. Escape hatch: if a dep your lint chain genuinely
+        # needs builds a native binary in a lifecycle script (esbuild, @swc/core,
+        # sharp, cypress), add a follow-up `npm rebuild <pkg>` step rather than
+        # dropping the flag.
         run: |
           if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
-            npm ci
+            npm ci --ignore-scripts
           else
             echo "no package-lock.json — using npm install (add a lockfile for reproducible CI)"
-            npm install
+            npm install --ignore-scripts
           fi
       - if: steps.detect.outputs.present == 'true'
         run: npx eslint .
@@ -87,6 +101,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false  # don't leave GITHUB_TOKEN in .git/config
       - id: detect
         run: |
           if [ -f composer.json ] || git ls-files '*.php' '*.phtml' | grep -q .; then
@@ -119,6 +135,8 @@ jobs:
   #   runs-on: ubuntu-latest
   #   steps:
   #     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+  #       with:
+  #         persist-credentials: false
   #     - id: detect
   #       run: '[ -f go.mod ] && echo "present=true" >> "$GITHUB_OUTPUT" || true'
   #     - if: steps.detect.outputs.present == 'true'
@@ -134,6 +152,8 @@ jobs:
   #   runs-on: ubuntu-latest
   #   steps:
   #     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+  #       with:
+  #         persist-credentials: false
   #     - id: detect
   #       run: '[ -f Cargo.toml ] && echo "present=true" >> "$GITHUB_OUTPUT" || true'
   #     - if: steps.detect.outputs.present == 'true'
@@ -147,6 +167,8 @@ jobs:
   #   runs-on: ubuntu-latest
   #   steps:
   #     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+  #       with:
+  #         persist-credentials: false
   #     - id: detect
   #       run: '{ [ -f pom.xml ] || [ -f build.gradle ] || [ -f build.gradle.kts ]; } && echo "present=true" >> "$GITHUB_OUTPUT" || true'
   #     - if: steps.detect.outputs.present == 'true'
@@ -163,6 +185,8 @@ jobs:
   #   runs-on: ubuntu-latest
   #   steps:
   #     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+  #       with:
+  #         persist-credentials: false
   #     - id: detect
   #       run: '[ -f Gemfile ] && echo "present=true" >> "$GITHUB_OUTPUT" || true'
   #     - if: steps.detect.outputs.present == 'true'
@@ -203,6 +227,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false  # don't leave GITHUB_TOKEN in .git/config
       - name: Show active rule overrides (.scaffold.toml)
         # Print every per-project override into the log so a disabled or
         # downgraded rule is visible in review, not silent. Informational only.

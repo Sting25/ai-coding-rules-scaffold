@@ -300,11 +300,15 @@ by default so the scaffold stays minimal; turn them on per project.
   tokens the hand-written list can't enumerate. Not auto-installed — it adds a
   third-party action dependency. Pinned to a commit SHA; bump via Dependabot.
 
-Two smaller hardening changes are **on by default**: `install.sh` now also
-drops a `.github/dependabot.yml` (weekly grouped bumps of the SHA-pinned
-Actions — delete it if you don't want the PRs), and the CI frontend job uses a
-frozen-lockfile install (`npm ci` when a lockfile exists, hard-failing on drift
-instead of silently mutating it).
+Supply-chain hardening is **on by default** in the shipped CI + Dependabot
+config: `install.sh` drops a `.github/dependabot.yml` (weekly grouped bumps of
+the SHA-pinned Actions, with a **7-day `cooldown`** so a compromised-and-yanked
+release is gone before the PR ever appears — delete the file if you don't want
+the PRs); the CI frontend job uses a frozen-lockfile install that also passes
+**`--ignore-scripts`** (lint/type-check never need a dependency's install hooks,
+and the runner holds `GITHUB_TOKEN`); and every `actions/checkout` sets
+**`persist-credentials: false`** so the token isn't left in `.git/config` for a
+later step or compromised action to read.
 
 ## Verify it works
 

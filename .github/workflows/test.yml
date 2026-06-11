@@ -21,6 +21,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: "3.12"
@@ -37,5 +39,21 @@ jobs:
           # SHA is rhysd/actionlint tag v1.7.12.
           bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/914e7df21a07ef503a81201c76d2b11c789d3fca/scripts/download-actionlint.bash) 1.7.12 "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Static-audit our own workflows (zizmor)
+        # Machine-verifies the CI hardening the scaffold claims — SHA-pinned
+        # actions, persist-credentials: false, least-privilege permissions — so a
+        # regression (an unpinned action, a re-introduced credential persist)
+        # fails the build instead of rotting silently. Pinned version; --offline
+        # keeps it hermetic (no GITHUB_TOKEN, only the static audits). zizmor only
+        # accepts .yml/.yaml, so the *.yml.template files are rendered into a temp
+        # dir first. Maintainer CI only — NOT installed into consumer repos.
+        run: |
+          pip install zizmor==1.25.2
+          render="$RUNNER_TEMP/wf"
+          mkdir -p "$render"
+          for f in .github/workflows/*.yml.template; do
+            cp "$f" "$render/$(basename "$f" .template)"
+          done
+          zizmor --offline --persona regular .github/workflows/*.yml "$render"/*.yml
       - run: chmod +x tests/run.sh install.sh githooks/pre-commit.template
       - run: ./tests/run.sh

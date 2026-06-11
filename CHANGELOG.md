@@ -7,6 +7,17 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **CI / supply-chain hardening (default-on).** Post-Shai-Hulud / tj-actions
+  mitigations across the shipped workflows + Dependabot config: a **7-day
+  Dependabot `cooldown`** (a yanked malicious release is gone before the PR
+  appears; security updates bypass it), **`npm ci --ignore-scripts`** in the CI
+  frontend job (lint/tsc never need a dep's install hooks; documents a
+  `npm rebuild` escape hatch for native deps), and **`persist-credentials: false`**
+  on every `actions/checkout` (don't leave `GITHUB_TOKEN` in `.git/config`).
+  The scaffold's own `test.yml` gains a pinned, offline **zizmor** static audit
+  of all workflows (incl. rendered templates) — maintainer CI only, not shipped
+  to consumers — so a re-introduced unpinned action or credential-persist fails
+  the build. Two `SECURITY_AUDIT.md` Low items move Open → Partial.
 - **2025 provider-token shapes + JWT in `secrets.txt` (default-on).** Prefix-
   specific, low-FP additions the offline gate was missing: OpenAI
   service-account/admin (`sk-svcacct-`/`sk-admin-`), Hugging Face (`hf_`), GitLab

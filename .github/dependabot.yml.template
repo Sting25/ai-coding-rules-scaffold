@@ -15,8 +15,25 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Wait 7 days before proposing a new release — long enough that a
+    # compromised-and-yanked version (chalk/debug, Shai-Hulud) is gone before you
+    # ever see the PR. Security updates bypass the cooldown. (Dependabot-native
+    # since 2025-07.)
+    cooldown:
+      default-days: 7
     groups:
       github-actions:
         patterns: ["*"]
     commit-message:
       prefix: ci
+  # Example npm block with the same cooldown — uncomment if you want dependency
+  # PRs. For MANUAL installs (not Dependabot), npm >= 11.10 supports
+  # `min-release-age` in .npmrc for the equivalent quarantine window.
+  # - package-ecosystem: npm
+  #   directory: /
+  #   schedule:
+  #     interval: weekly
+  #   cooldown:
+  #     default-days: 7
+  #   commit-message:
+  #     prefix: deps
