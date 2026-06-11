@@ -61,6 +61,15 @@ export default tseslint.config(
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/no-misused-promises': 'error',
 
+      // Exhaustiveness (type-aware) — the one widely-recommended typed rule no
+      // preset (incl. strictTypeChecked) turns on. Fails the build when a switch
+      // over a discriminated union / enum misses a member: the classic bug where
+      // an agent adds a variant and updates some switch sites but not all, and
+      // tsc stays silent because a default or void-return swallows it.
+      // considerDefaultExhaustiveForUnions treats an existing default as
+      // exhaustive, which kills the main false-positive source.
+      '@typescript-eslint/switch-exhaustiveness-check': ['error', { considerDefaultExhaustiveForUnions: true }],
+
       // TypeScript discipline
       '@typescript-eslint/no-explicit-any': ['error', { ignoreRestArgs: false }],
       '@typescript-eslint/explicit-module-boundary-types': 'error',
@@ -88,12 +97,34 @@ export default tseslint.config(
   // of TypeScript projects (Node services, libraries, Vue) aren't React.
   // Add at the top with the other imports:
   //   import reactHooks from 'eslint-plugin-react-hooks';
+  // The v6 plugin ships flat-config presets — use the preset, don't hand-wire:
+  //   { ...reactHooks.configs.flat.recommended, files: ['**/*.{jsx,tsx}'] },
+  //     // ^ stable: rules-of-hooks + exhaustive-deps + classic correctness
+  // Or opt into the React Compiler-powered rules (set-state-in-render, mutation,
+  // purity) — higher signal, but newer/experimental:
+  //   { ...reactHooks.configs.flat['recommended-latest'], files: ['**/*.{jsx,tsx}'] },
+
+  // ── OPT-IN: accessibility (React/JSX) ─────────────────────────────────────
+  // Uncomment + `npm i -D eslint-plugin-jsx-a11y`. Catches a11y issues AI-
+  // generated JSX commonly ships: unlabeled inputs, missing alt text, click
+  // handlers on non-interactive elements — invisible to tsc and unit tests.
+  //   import jsxA11y from 'eslint-plugin-jsx-a11y';
+  //   { files: ['**/*.{jsx,tsx}'], ...jsxA11y.flatConfigs.recommended },
+
+  // ── OPT-IN: erasable-syntax discipline ────────────────────────────────────
+  // Uncomment if you run .ts files directly via Node type-stripping or build
+  // with --erasableSyntaxOnly. `enum` and parameter properties are non-erasable
+  // syntax (they emit runtime code), so they break `node file.ts`. Not default-on
+  // because enums compile fine under tsc/bundlers and parameter properties are
+  // the standard NestJS/DI idiom. (Projects with their own tsconfig can instead
+  // set "erasableSyntaxOnly": true for the compiler-level equivalent.)
   // {
-  //   files: ['**/*.{jsx,tsx}'],
-  //   plugins: { 'react-hooks': reactHooks },
+  //   files: ['**/*.ts'],
   //   rules: {
-  //     'react-hooks/rules-of-hooks': 'error',     // the two most common
-  //     'react-hooks/exhaustive-deps': 'error',    // React correctness bugs
+  //     'no-restricted-syntax': ['error',
+  //       { selector: 'TSEnumDeclaration', message: 'Use a const object + union type — enum is non-erasable syntax (breaks Node type-stripping).' },
+  //       { selector: 'TSParameterProperty', message: 'Declare class fields explicitly — parameter properties are non-erasable syntax.' },
+  //     ],
   //   },
   // },
 

@@ -7,6 +7,19 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **`switch-exhaustiveness-check` (default-on, type-aware).** The one widely-
+  recommended typed `eslint` rule no preset (incl. `strictTypeChecked`) enables.
+  Fails the build when a `switch` over a discriminated union / enum misses a
+  member — the classic bug where an agent adds a variant and updates some switch
+  sites but not all, while `tsc` stays silent. `considerDefaultExhaustiveForUnions`
+  treats an existing `default` as exhaustive, suppressing the main false-positive.
+- **`eslint.config.js` opt-in blocks refreshed/added (all commented, inert).**
+  The React-hooks block now uses the `eslint-plugin-react-hooks` **v6** flat
+  presets (`flat.recommended`, with `recommended-latest` documented as the
+  experimental React-Compiler upgrade) instead of the stale v5 hand-wired snippet.
+  New commented `eslint-plugin-jsx-a11y` block (a11y issues AI-generated JSX
+  ships) and an erasable-syntax block banning `enum` / parameter properties for
+  teams running `.ts` via Node type-stripping.
 - **More `ruff` rule groups, turning advice into enforcement.** `ASYNC`
   (flake8-async) fails the build on a blocking HTTP/file/subprocess call inside
   an `async def` — backing `coding-rules.md` rule 6 on the Python side (its TS

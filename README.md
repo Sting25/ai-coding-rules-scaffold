@@ -200,6 +200,7 @@ Build-breaking (`ruff` / `eslint`, on every lint + commit + in CI):
 | Unsorted / unused imports | `ruff I`, `F401`; `eslint import-x/order`, `unused-imports/no-unused-imports` |
 | `any` in TypeScript without comment | `@typescript-eslint/no-explicit-any` |
 | Floating / misused promises (TS) | `@typescript-eslint/no-floating-promises`, `no-misused-promises` (type-aware) |
+| Non-exhaustive `switch` over a union/enum (missing member) | `@typescript-eslint/switch-exhaustiveness-check` (type-aware) |
 | TypeScript type errors | `tsc --noEmit` (hook + CI, when `tsconfig.json` present) |
 
 Commit + CI-breaking (pre-commit hook + `lint.yml`):
