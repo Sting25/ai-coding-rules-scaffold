@@ -314,6 +314,14 @@ by default so the scaffold stays minimal; turn them on per project.
   tokens the hand-written list can't enumerate. Not auto-installed — it adds a
   third-party action dependency. Pinned to a commit SHA; bump via Dependabot.
 
+- **dependency-review CI gate (`.github/workflows/dependency-review.yml.template`).**
+  Copy it in to block a PR that introduces a dependency with a known
+  vulnerability or a malicious/yanked package (the chalk-debug / Shai-Hulud
+  class) — the PR-time complement to Dependabot's freshness bumps. Not
+  auto-installed; pinned to a commit SHA. **Needs GitHub's Dependency Graph:**
+  on by default for public repos, requires GitHub Advanced Security for private
+  repos (caveat documented in the template header).
+
 Supply-chain hardening is **on by default** in the shipped CI + Dependabot
 config: `install.sh` drops a `.github/dependabot.yml` (weekly grouped bumps of
 the SHA-pinned Actions, with a **7-day `cooldown`** so a compromised-and-yanked
