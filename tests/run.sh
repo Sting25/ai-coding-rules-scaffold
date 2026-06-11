@@ -116,6 +116,15 @@ EOF
 git add app.py
 assert_passes "clean Python file"
 
+# 6b. deprecated datetime.utcnow() is rejected (backend.txt regex; the AST DTZ
+#     group is deliberately NOT enabled — naive-datetime policy is high-FP).
+{
+  echo 'import datetime'
+  echo 'created = datetime.datetime.utcnow()'
+} >stamp.py
+git add stamp.py
+assert_rejects "deprecated datetime.utcnow() is rejected" "deprecated"
+
 # 7. hardcoded credential — exercises the alternation branch in secrets.txt.
 #    Split `pass`+`word` so this file's source doesn't itself trip the scan,
 #    same trick as the AKIA fixture above.

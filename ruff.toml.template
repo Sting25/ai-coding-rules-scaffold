@@ -16,6 +16,10 @@ select = [
     "SIM",   # flake8-simplify (collapsible ifs, ternaries, early returns)
     "PTH",   # enforce pathlib over os.path
     "ANN",   # type annotations
+    "ASYNC", # flake8-async (blocking HTTP/file/subprocess inside async def — ASYNC2xx; backs coding-rules.md rule 6)
+    "FAST",  # FastAPI (Annotated deps, unused path params) — no-ops on non-FastAPI code; backs rule 4
+    "G",     # flake8-logging-format (no f-string/%/format() in log calls — backs rules 10-11)
+    "LOG",   # flake8-logging (stdlib logging anti-patterns: .warn(), root logger, getLogger(__file__))
     "BLE",   # no blind except
     "C90",   # mccabe complexity
     "PL",    # pylint subset (branches, statements)
@@ -23,8 +27,26 @@ select = [
     "RUF",   # ruff-specific rules
 ]
 
+# A CURATED flake8-bandit subset (not the whole "S" category — S603/S607/S404/
+# S608/S310 are high-false-positive on subprocess/SQL/urllib and would fight an
+# expert). These cover AST-level security shapes the regex secret-scanner can't
+# see. Legit cases use a `# noqa: S602` etc. (ruff's escape valve, not
+# scaffold-allow, which is for the commit-time regex layer).
+extend-select = [
+    "S301",  # pickle / unsafe deserialization
+    "S307",  # eval / exec
+    "S113",  # requests call without a timeout
+    "S324",  # weak hash (md5/sha1) for security
+    "S602",  # subprocess with shell=True
+    "S605",  # os.system / shell injection
+    "S701",  # jinja2 autoescape disabled (XSS)
+    "S105",  # hardcoded password string
+    "S106",  # hardcoded password function arg
+]
+
 ignore = [
     "ANN401",  # Any sometimes unavoidable
+    "S311",    # not-cryptographic random is fine for non-security use
 ]
 
 [lint.mccabe]
@@ -35,7 +57,8 @@ max-branches = 12
 max-statements = 80
 
 [lint.per-file-ignores]
-"tests/**/*.py" = ["ANN", "PLR2004"]  # tests may have magic values, looser annotations
+# tests may have magic values, looser annotations, assert, and dummy credentials
+"tests/**/*.py" = ["ANN", "PLR2004", "S101", "S105", "S106"]
 
 [format]
 quote-style = "double"

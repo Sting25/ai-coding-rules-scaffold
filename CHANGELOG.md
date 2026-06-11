@@ -7,6 +7,24 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **More `ruff` rule groups, turning advice into enforcement.** `ASYNC`
+  (flake8-async) fails the build on a blocking HTTP/file/subprocess call inside
+  an `async def` — backing `coding-rules.md` rule 6 on the Python side (its TS
+  twin `no-floating-promises` was already enforced). `FAST` (FastAPI) catches
+  non-`Annotated` dependencies and unused path params, no-op on non-FastAPI code,
+  backing rule 4. `G`/`LOG` (flake8-logging) fail on f-string/`%`/`.format()`
+  inside log calls, backing rules 10-11; the idiomatic `logger.info("event",
+  key=val)` form is not flagged. A **curated** flake8-bandit `S` subset
+  (`S301/307/113/324/602/605/701/105/106`) adds AST-level security checks the
+  regex secret-scanner can't see — deliberately NOT the whole `S` category
+  (`S603/607/404/608/310` are FP-noisy on subprocess/SQL/urllib). `S311` is
+  ignored; tests exempt `S101/105/106`.
+- **Deprecated `datetime.utcnow()` deny-pattern (`backend.txt`).** Caught by the
+  always-on regex layer (no `ruff` dependency); the AST `DTZ` group is
+  deliberately not enabled — flagging every naive `datetime` is timezone *policy*
+  with a high false-positive rate, and the deprecated idiom is fully covered by
+  the one regex. A commented opt-in 12-factor `localhost`-URL line is added too
+  (off by default — Python test clients legitimately target localhost).
 - **Per-project rule overrides (`.scaffold.toml`).** A first-class, committed,
   auditable config layer the `check-*` scripts consume via a new pure-bash/awk
   reader (`lib/scaffold-config`, no python/jq dependency). A team can: raise the

@@ -192,6 +192,10 @@ Build-breaking (`ruff` / `eslint`, on every lint + commit + in CI):
 | Missing public-API return types | `ruff ANN201` |
 | Function size > 80 statements (Python) / 80 lines (TS/JS) | `ruff PLR0915` (`max-statements`), `eslint max-lines-per-function` |
 | Too many branches in a function | `ruff PLR0912` (`max-branches`) |
+| Blocking HTTP/file/subprocess call inside `async def` | `ruff ASYNC210-230` |
+| Non-`Annotated` FastAPI dependency / unused path param | `ruff FAST002`, `FAST003` |
+| f-string / `%` / `.format()` in a logging call; `.warn()` / root logger | `ruff G002 G004 G010 LOG` |
+| `shell=True` / `eval` / unsafe deserialization (`pickle`) / weak hash | `ruff S` (curated flake8-bandit subset) |
 | Line length > 100 | `ruff E501` |
 | Unsorted / unused imports | `ruff I`, `F401`; `eslint import-x/order`, `unused-imports/no-unused-imports` |
 | `any` in TypeScript without comment | `@typescript-eslint/no-explicit-any` |

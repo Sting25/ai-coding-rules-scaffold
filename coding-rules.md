@@ -12,7 +12,7 @@ Short rule set. Most discipline is enforced by the linter (`ruff` / `eslint`) an
 3. **Before creating a new file, check for extension candidates.** Search the codebase for existing modules that could absorb the new logic. When you do create, state in the commit or PR body what you considered and why it couldn't extend.
 4. **FastAPI endpoints return Pydantic response models**, not raw dicts. Applies if the project uses FastAPI.
 5. **SQLAlchemy 2.0 style only** (`Mapped[]`, `mapped_column()`). No `declarative_base` or pre-2.0 patterns. Applies if the project uses SQLAlchemy.
-6. **`asyncio.to_thread()` for blocking CPU work** in async paths. Never block the event loop. *(TypeScript)* Never leave a promise floating — `await` it or handle it explicitly. `eslint`'s `no-floating-promises` / `no-misused-promises` fail the build on the most common silent-async bug; they need type-aware linting (a `tsconfig.json`), which the shipped `eslint.config.js` enables by default.
+6. **`asyncio.to_thread()` for blocking CPU work** in async paths. Never block the event loop. `ruff`'s `ASYNC2xx` rules fail the build when a blocking HTTP / file / subprocess call is detected inside an `async def`, so this is now tool-enforced on the Python side (not just advice). *(TypeScript)* Never leave a promise floating — `await` it or handle it explicitly. `eslint`'s `no-floating-promises` / `no-misused-promises` fail the build on the most common silent-async bug; they need type-aware linting (a `tsconfig.json`), which the shipped `eslint.config.js` enables by default.
 
 ## Pattern files
 
@@ -36,7 +36,7 @@ Stack-specific deny patterns live in `.forbidden-patterns/*.txt` (one per langua
 
 ## Observability
 
-10. **Structured logging library**, picked per stack. Output JSON, not plain text — downstream tools (alerting, dashboards, log search) all depend on parseable structure. Defaults: Python — `structlog`. TypeScript — `pino` or `winston`. New stacks pick equivalents.
+10. **Structured logging library**, picked per stack. Output JSON, not plain text — downstream tools (alerting, dashboards, log search) all depend on parseable structure. Defaults: Python — `structlog`. TypeScript — `pino` or `winston`. New stacks pick equivalents. On Python, `ruff`'s `G`/`LOG` rules fail the build on f-string/`%`/`.format()` formatting inside a log call (it defeats deferred/structured rendering) — pass fields as arguments. The idiomatic structured form `logger.info("event_name", key=val)` is not flagged.
 
 11. **Event names are `snake_case_verbs`**, not prose. Example: `request_received`, `cog_written`, `gpu_lock_acquired`. They must be filterable strings — log handlers, alerting rules, and grep all depend on stable identifiers. Prose like "the request came in fine" is not a log event name.
 
