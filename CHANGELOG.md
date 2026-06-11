@@ -7,6 +7,18 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Four 2025-26 secret/token shapes in `secrets.txt` (default-on).** Prefix-
+  specific, low-FP additions the offline gate was missing: **AWS Bedrock** API
+  keys (`ABSK…`, a 22-char anchor that is the base64 of `BedrockAPIKey` — not
+  matched by the `AKIA`/`ASIA` rule), **Supabase** secret keys (`sb_secret_`, the
+  new opaque RLS-bypassing format that replaced the JWT `service_role` key, so
+  the `eyJ` rule no longer catches it), **OpenRouter** keys (`sk-or-v1-` — the
+  embedded dashes terminate the alphanumeric run, so the legacy `sk-…{48}` rule
+  provably misses them), and the **GitLab** non-PAT token family
+  (`gloas-`/`gldt-`/`glrt-`/`glrtr-`/`glptt-`/`glagent-`/`glsoat-`/`glffct-`/
+  `glimt-`/`glft-`/`glwt-` — OAuth/deploy/runner/trigger/agent/SCIM/feed tokens,
+  all documented CI supply-chain entry points; the scaffold previously covered
+  only `glpat-`). All prefixes verified against official provider docs. +4 fixtures.
 - **`datetime.utcfromtimestamp()` deny-pattern (`backend.txt`, default-on).**
   CPython 3.12 deprecated `utcfromtimestamp()` in the *same* change as
   `utcnow()` (already banned) — same naive-"UTC" bug class. A steered agent that

