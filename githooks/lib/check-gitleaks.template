@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# .githooks/lib/check-gitleaks — OPT-IN local gitleaks pass.
+#
+# Installed ONLY by `install.sh --gitleaks-hook`; its mere presence is the
+# opt-in signal (pre-commit calls it behind an `[ -x ]` guard, so a project that
+# didn't opt in never runs it). Kept OPT-IN on purpose: a local scan only fires
+# on machines that have the gitleaks binary, so making it default-on would mean
+# two developers on the same repo get different commit-time behavior. Pair it
+# with the CI job (.github/workflows/gitleaks.yml.template), which is the
+# unskippable, machine-independent boundary; this hook is just the fast local
+# echo of it.
+#
+# Relationship to check-secrets: check-secrets is the always-on NARROW offline
+# regex gate (the shapes in .forbidden-patterns/secrets.txt). gitleaks is the
+# BROAD entropy + ~150-rule backstop. Running both locally is belt-and-braces;
+# check-secrets stays the one that every clone always runs.
+#
+# Exit: 0 = clean (or gitleaks absent — fail-OPEN so a missing binary never
+# bricks commits; CI is the real gate), 1 = a secret was found / gitleaks errored.
+
+set -euo pipefail
+
+# The orchestrator pipes the NUL-delimited staged-file list to every check on
+# stdin. gitleaks discovers the staged changes itself, so just drain it.
+cat >/dev/null 2>&1 || true
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "note: gitleaks not installed — skipping local secret scan." >&2
+  echo "      The CI gitleaks job is the authoritative gate; install the binary" >&2
+  echo "      for local feedback: https://github.com/gitleaks/gitleaks#installing" >&2
+  exit 0
+fi
+
+# Scan ONLY the staged changes — this is the invocation gitleaks ships in its
+# own official pre-commit hook (.pre-commit-hooks.yaml): `git --pre-commit
+# --staged`. --redact keeps the secret out of the terminal/log; --no-banner
+# drops the ASCII banner so hook output stays terse.
+if ! gitleaks git --pre-commit --staged --redact --no-banner; then
+  echo "" >&2
+  echo "✗ gitleaks flagged a potential secret in the staged changes (value redacted above)." >&2
+  echo "  Remove it (and rotate it if it ever hit disk), then re-commit." >&2
+  echo "  'git commit --no-verify' overrides — don't, unless it's a confirmed false positive." >&2
+  exit 1
+fi
+
+exit 0

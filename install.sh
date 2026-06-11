@@ -9,7 +9,9 @@
 #   install.sh --force      # overwrite existing files
 #   install.sh --no-verify  # skip the post-install linter smoke test
 #   install.sh --claude     # also install opt-in Claude Code agent guardrails
+#   install.sh --cursor     # also install opt-in Cursor agent guardrails (.cursor/hooks.json)
 #   install.sh --commit-msg # also install the Conventional-Commits commit-msg hook
+#   install.sh --gitleaks-hook # also install opt-in local gitleaks pre-commit pass
 #   install.sh --all-langs  # install every language's forbidden-pattern file
 #   install.sh --help       # show this help
 
@@ -20,7 +22,9 @@ MODE="auto"
 FORCE=0
 VERIFY=1
 CLAUDE=0
+CURSOR=0
 COMMIT_MSG=0
+GITLEAKS_HOOK=0
 ALL_LANGS=0
 
 for arg in "$@"; do
@@ -31,9 +35,11 @@ for arg in "$@"; do
     --force)      FORCE=1 ;;
     --no-verify)  VERIFY=0 ;;
     --claude)     CLAUDE=1 ;;
+    --cursor)     CURSOR=1 ;;
     --commit-msg) COMMIT_MSG=1 ;;
+    --gitleaks-hook) GITLEAKS_HOOK=1 ;;
     --all-langs)  ALL_LANGS=1 ;;
-    --help|-h)    sed -n '2,14p' "$0"; exit 0 ;;
+    --help|-h)    sed -n '2,16p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -128,17 +134,27 @@ for L in $LANGS; do
   cp_safe "$SCAFFOLD_DIR/forbidden-patterns/${L}.txt.template" ".forbidden-patterns/${L}.txt"
 done
 
-# Claude Code agent-runtime guardrails (opt-in: --claude). Installs a PreToolUse
-# precheck hook (reuses .forbidden-patterns/secrets.txt) plus a settings.json
-# with a credential-file deny-list. An existing .claude/settings.json is left
-# alone by cp_safe — merge the template's keys in by hand.
-if [ "$CLAUDE" -eq 1 ]; then
+# Agent-runtime guardrails (opt-in: --claude / --cursor). Both runtimes share
+# one precheck script (it auto-detects the Claude vs Cursor payload shape), so
+# install it once if either flag is set, then drop each runtime's config. An
+# existing .claude/settings.json or .cursor/hooks.json is left alone by cp_safe —
+# merge the template's keys in by hand.
+if [ "$CLAUDE" -eq 1 ] || [ "$CURSOR" -eq 1 ]; then
   cp_safe "$SCAFFOLD_DIR/githooks/lib/agent-precheck.template" ".githooks/lib/agent-precheck"
   chmod +x ".githooks/lib/agent-precheck"
-  cp_safe "$SCAFFOLD_DIR/claude-settings.json.template" ".claude/settings.json"
   if ! command -v jq >/dev/null 2>&1; then
-    echo "warning: jq not found — the PreToolUse precheck needs jq (it fails open without it): https://jqlang.github.io/jq/"
+    echo "warning: jq not found — the agent precheck needs jq (it fails open without it): https://jqlang.github.io/jq/"
   fi
+fi
+# Claude Code: settings.json adds a credential-file read deny-list plus the
+# PreToolUse hook (matcher Write|Edit|MultiEdit|Bash).
+if [ "$CLAUDE" -eq 1 ]; then
+  cp_safe "$SCAFFOLD_DIR/claude-settings.json.template" ".claude/settings.json"
+fi
+# Cursor: hooks.json wires the same precheck to beforeShellExecution. Cursor has
+# no before-write hook, so only the shell-command scan is portable here.
+if [ "$CURSOR" -eq 1 ]; then
+  cp_safe "$SCAFFOLD_DIR/cursor-hooks.json.template" ".cursor/hooks.json"
 fi
 
 # Conventional-Commits commit-msg hook (opt-in: --commit-msg). Active the moment
@@ -146,6 +162,19 @@ fi
 if [ "$COMMIT_MSG" -eq 1 ]; then
   cp_safe "$SCAFFOLD_DIR/githooks/commit-msg.template" ".githooks/commit-msg"
   chmod +x ".githooks/commit-msg"
+fi
+
+# Local gitleaks pre-commit pass (opt-in: --gitleaks-hook). The pre-commit
+# orchestrator runs lib/check-gitleaks only when the file exists, so installing
+# it here is what turns it on. Kept opt-in because a local scan only fires where
+# the gitleaks binary is present; pair it with gitleaks.yml.template in CI.
+if [ "$GITLEAKS_HOOK" -eq 1 ]; then
+  cp_safe "$SCAFFOLD_DIR/githooks/lib/check-gitleaks.template" ".githooks/lib/check-gitleaks"
+  chmod +x ".githooks/lib/check-gitleaks"
+  if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "warning: gitleaks not found — the local pass fails open (skips) until you install it: https://github.com/gitleaks/gitleaks#installing"
+  fi
+  echo "note: --gitleaks-hook is the LOCAL echo only. Add .github/workflows/gitleaks.yml (see gitleaks.yml.template) for the unskippable CI gate."
 fi
 
 # Wire the hook — preserve existing core.hooksPath if already set (e.g. Husky).

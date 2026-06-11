@@ -66,7 +66,9 @@ The script auto-detects Python (`pyproject.toml` / `requirements.txt` / `setup.p
 ./install.sh --force        # overwrite existing files
 ./install.sh --no-verify    # skip the post-install linter check
 ./install.sh --claude       # also install opt-in Claude Code agent guardrails
+./install.sh --cursor       # also install opt-in Cursor agent guardrails
 ./install.sh --commit-msg   # also install the Conventional-Commits commit-msg hook
+./install.sh --gitleaks-hook # also install opt-in local gitleaks pre-commit pass
 ./install.sh --all-langs    # install every language's forbidden-pattern file
 ./install.sh --help         # show usage
 ```
@@ -74,7 +76,7 @@ The script auto-detects Python (`pyproject.toml` / `requirements.txt` / `setup.p
 Language pattern files are auto-installed when their manifest is detected
 (`go.mod`, `Cargo.toml`, `composer.json`, `pom.xml`/`build.gradle`, `Gemfile`,
 …); `--all-langs` installs them all. See [Opt-in layers](#opt-in-layers) for
-what `--claude` and `--commit-msg` add.
+what `--claude`, `--cursor`, and `--commit-msg` add.
 
 At the end, `install.sh` verifies that `ruff` and/or `eslint` are installed and that their configs load. If either is missing, it prints the install command.
 
@@ -286,8 +288,16 @@ by default so the scaffold stays minimal; turn them on per project.
   `PreToolUse` hook (`.githooks/lib/agent-precheck`) that scans Write/Edit/Bash
   content against the *same* `.forbidden-patterns/secrets.txt` the commit-time
   scanner uses — one rule set across agent → commit → CI. Needs `jq` (fails open
-  without it). Works with Claude Code; the deny-list pattern ports to Cursor /
-  Gemini equivalents. See [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md).
+  without it). See [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md).
+
+- **Cursor agent guardrails (`install.sh --cursor`).** The same `agent-precheck`
+  wired to Cursor's `beforeShellExecution` hook via `.cursor/hooks.json`, so a
+  `curl | bash` / `rm -rf /` / `chmod 777` the agent is about to run is scanned
+  against `.forbidden-patterns/shell.txt` and blocked (exit 2 = Cursor deny).
+  Cursor has no before-write hook, so unlike `--claude` the secret-on-write scan
+  and credential read deny-list aren't portable — the shell-command scan is the
+  high-ROI piece that is. `--claude` and `--cursor` can be combined; they share
+  the one precheck script.
 
 - **Conventional-Commits `commit-msg` hook (`install.sh --commit-msg`).**
   Rejects commit subjects that don't match `type(scope): description` (merge /
@@ -304,6 +314,23 @@ by default so the scaffold stays minimal; turn them on per project.
   shapes in `secrets.txt`); gitleaks' ~150 maintained rules catch provider
   tokens the hand-written list can't enumerate. Not auto-installed — it adds a
   third-party action dependency. Pinned to a commit SHA; bump via Dependabot.
+
+- **Local gitleaks pass (`install.sh --gitleaks-hook`).** The fast local echo of
+  the gitleaks CI job: a `lib/check-gitleaks` that runs `gitleaks git
+  --pre-commit --staged --redact` (gitleaks' own official pre-commit invocation)
+  over the staged changes. Opt-in, not default-on: a local scan only fires where
+  the `gitleaks` binary is installed, so default-on would give two developers
+  different commit-time behavior. Fails open (skips with a note) when the binary
+  is absent — always pair it with the CI workflow above, which is the
+  machine-independent boundary.
+
+- **dependency-review CI gate (`.github/workflows/dependency-review.yml.template`).**
+  Copy it in to block a PR that introduces a dependency with a known
+  vulnerability or a malicious/yanked package (the chalk-debug / Shai-Hulud
+  class) — the PR-time complement to Dependabot's freshness bumps. Not
+  auto-installed; pinned to a commit SHA. **Needs GitHub's Dependency Graph:**
+  on by default for public repos, requires GitHub Advanced Security for private
+  repos (caveat documented in the template header).
 
 Supply-chain hardening is **on by default** in the shipped CI + Dependabot
 config: `install.sh` drops a `.github/dependabot.yml` (weekly grouped bumps of

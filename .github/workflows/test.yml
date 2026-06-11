@@ -55,5 +55,24 @@ jobs:
             cp "$f" "$render/$(basename "$f" .template)"
           done
           zizmor --offline --persona regular .github/workflows/*.yml "$render"/*.yml
+      - name: Check action pins agree across real workflows and templates
+        # Dependabot bumps SHA pins only in real *.yml workflows — it never parses
+        # *.yml.template, so the templates silently rot one checkout-bump behind
+        # (the v6.0.2/v6.0.3 drift that prompted this guard). Assert every action
+        # resolves to a SINGLE SHA across both real and template files; if one
+        # appears with two distinct SHAs, the templates need a manual catch-up.
+        # Maintainer CI only — NOT installed into consumer repos.
+        run: |
+          drift="$(grep -rhoE 'uses: [A-Za-z0-9_./-]+@[0-9a-f]{40}' \
+                     .github/workflows/*.yml .github/workflows/*.yml.template \
+                   | sed -E 's/^uses: //' | sort -u | sed -E 's/@.*//' | sort | uniq -d)"
+          if [ -n "$drift" ]; then
+            echo "::error::Action pin drift — these actions have differing SHAs between"
+            echo "real workflows and *.yml.template files (Dependabot only bumps the"
+            echo "real *.yml; bump the templates to match):"
+            echo "$drift" | sed 's/^/  - /'
+            exit 1
+          fi
+          echo "All action pins agree across real workflows and templates."
       - run: chmod +x tests/run.sh install.sh githooks/pre-commit.template
       - run: ./tests/run.sh

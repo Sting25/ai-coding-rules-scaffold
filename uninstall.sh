@@ -79,8 +79,12 @@ remove_if_unmodified "CLAUDE.md"                     "$SCAFFOLD_DIR/CLAUDE.md.po
 # Opt-in Claude Code guardrails (only present if installed with --claude).
 remove_if_unmodified ".githooks/lib/agent-precheck"  "$SCAFFOLD_DIR/githooks/lib/agent-precheck.template"
 remove_if_unmodified ".claude/settings.json"         "$SCAFFOLD_DIR/claude-settings.json.template"
+# Opt-in Cursor guardrails (only present if installed with --cursor).
+remove_if_unmodified ".cursor/hooks.json"            "$SCAFFOLD_DIR/cursor-hooks.json.template"
 # Opt-in commit-msg hook (only present if installed with --commit-msg).
 remove_if_unmodified ".githooks/commit-msg"          "$SCAFFOLD_DIR/githooks/commit-msg.template"
+# Opt-in local gitleaks pass (only present if installed with --gitleaks-hook).
+remove_if_unmodified ".githooks/lib/check-gitleaks"  "$SCAFFOLD_DIR/githooks/lib/check-gitleaks.template"
 
 # Likely-customized files — only with --all
 if [ "$REMOVE_ALL" -eq 1 ]; then
@@ -91,7 +95,7 @@ if [ "$REMOVE_ALL" -eq 1 ]; then
 fi
 
 # Clean up empty dirs the installer created
-for dir in .githooks/lib .githooks .github/workflows .github .claude; do
+for dir in .githooks/lib .githooks .github/workflows .github .claude .cursor; do
   [ -d "$dir" ] || continue
   if rmdir "$dir" 2>/dev/null; then
     echo "removed empty: $dir"

@@ -1,0 +1,16 @@
+{
+  "//": "ai-coding-rules-scaffold — OPT-IN agent-runtime guardrails for Cursor (the Cursor sibling of claude-settings.json). Installed by `install.sh --cursor` to .cursor/hooks.json, or merge the `hooks` key into an existing one. The beforeShellExecution hook runs the SAME .githooks/lib/agent-precheck script Claude Code uses, scanning the command the agent is about to run against .forbidden-patterns/shell.txt (curl|bash, rm -rf /, chmod 777, …). agent-precheck exits 2 to block, which Cursor treats as a deny.",
+
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "//": "Path is relative to the project root (Cursor's convention for project hooks). CURSOR_PROJECT_DIR also holds the workspace root if you prefer an absolute path. failClosed stays false to match the scaffold's fail-OPEN philosophy for this advisory layer — a crashed/missing precheck must never brick the session; the pre-commit hook and CI are the fail-CLOSED backstops. A clean exit-2 BLOCK still works regardless of failClosed.",
+        "command": ".githooks/lib/agent-precheck",
+        "failClosed": false
+      }
+    ]
+  },
+
+  "//note": "Cursor has no before-WRITE hook that can block, so unlike the Claude setup the secret-on-write scan and the credential-file read deny-list are not portable here; beforeShellExecution is the high-ROI piece that is. The pre-commit secret scanner still catches a hardcoded credential at commit time on either runtime."
+}

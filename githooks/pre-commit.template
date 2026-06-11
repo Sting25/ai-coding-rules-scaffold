@@ -94,6 +94,12 @@ FAILED=0
 "$LIB/check-filenames" <"$STAGED_LIST" || FAILED=1
 "$LIB/check-secrets"   <"$STAGED_LIST" || FAILED=1
 "$LIB/check-hygiene"   <"$STAGED_LIST" || FAILED=1
+# Opt-in only: present iff installed with `install.sh --gitleaks-hook`. The
+# existence guard is the opt-in switch — a project that didn't opt in has no
+# such file and skips it entirely.
+if [ -x "$LIB/check-gitleaks" ]; then
+  "$LIB/check-gitleaks" <"$STAGED_LIST" || FAILED=1
+fi
 
 # Lint staged files with ruff / eslint when configs exist and the tool is
 # installed. CI is the source of truth — running here just shortens the
