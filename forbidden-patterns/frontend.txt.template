@@ -1,5 +1,5 @@
 # Forbidden patterns for TS/JS/Vue files. Applied by .githooks/pre-commit.
-# scaffold-extensions: ts tsx js jsx vue
+# scaffold-extensions: ts tsx js jsx vue svelte
 # Format: <regex><TAB><description>   (one per line; # comments ignored)
 # Separator is TAB — patterns can contain literal `|` for ERE alternation.
 # Patterns are case-SENSITIVE, scanned against the staged blob. Copy to your
@@ -22,6 +22,7 @@
 # --- Security ---
 dangerouslySetInnerHTML	dangerouslySetInnerHTML is an XSS vector — sanitize or render as text
 (^|[^A-Za-z-])v-html[[:space:]]*=	Vue v-html is an XSS vector — sanitize or render with {{ }}/text
+\{@html[[:space:]]	Svelte {@html} is an XSS vector — sanitize (DOMPurify) or render as text
 https?://(localhost|127\.0\.0\.1)	No hardcoded localhost/127.0.0.1 URLs — read from config/env
 NODE_TLS_REJECT_UNAUTHORIZED	Never disable TLS certificate validation — fix the cert/CA instead (MITM risk)
 rejectUnauthorized[[:space:]]*:[[:space:]]*false	rejectUnauthorized: false disables TLS validation — add the CA to the trust store instead

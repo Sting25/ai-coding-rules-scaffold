@@ -7,6 +7,14 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Svelte `{@html}` XSS deny-pattern + `.svelte` coverage (`frontend.txt`,
+  default-on).** Same untrusted-HTML-injection bug class as the already-banned
+  `dangerouslySetInnerHTML` (React) and `v-html` (Vue); agents reach for
+  `{@html data}` the same way when told to "render this markdown." The required
+  trailing space after `@html` keeps the rule off prose/`{expr}` interpolation.
+  Adding `svelte` to the `# scaffold-extensions:` header also closes a silent
+  gap — `.svelte` was in no header, so `console.log` / `.only` / `@ts-ignore` /
+  `localhost` / TLS rules were all un-scanned inside component files. +2 fixtures.
 - **Four 2025-26 secret/token shapes in `secrets.txt` (default-on).** Prefix-
   specific, low-FP additions the offline gate was missing: **AWS Bedrock** API
   keys (`ABSK…`, a 22-char anchor that is the base64 of `BedrockAPIKey` — not

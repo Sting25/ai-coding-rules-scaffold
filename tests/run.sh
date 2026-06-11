@@ -531,6 +531,19 @@ echo 'const agent = new https.Agent({ rejectUnauthorized: true });' >tlsok.ts
 git add tlsok.ts
 assert_passes "rejectUnauthorized: true is not flagged"
 
+# 40d. Svelte {@html} is rejected — same XSS bug class as dangerouslySetInnerHTML
+#      (React) / v-html (Vue). Also proves .svelte is now in the extensions header:
+#      if it weren't scanned, this would not reject.
+echo '<p>{@html post.body}</p>' >Card.svelte
+git add Card.svelte
+assert_rejects "Svelte {@html} is rejected" "XSS vector"
+
+# 40e. NEGATIVE: ordinary Svelte interpolation ({expr}, not {@html}) must pass —
+#      the required space after @html keeps the rule off normal markup and prose.
+echo '<h1>{post.title}</h1>' >Ok.svelte
+git add Ok.svelte
+assert_passes "ordinary Svelte {expr} interpolation is not flagged"
+
 # 41. NEGATIVE: console.warn / console.error are allowed (only console.log is
 #     banned) and a clean .ts file with no tsconfig.json passes — proving the
 #     new tsc block silently skips when TypeScript isn't configured.
