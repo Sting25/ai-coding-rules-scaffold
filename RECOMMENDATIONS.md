@@ -55,3 +55,63 @@ _Added 2026-04-22._
 - **AWS keys / credentials in any text file** — `check-secrets` already scans **every** tracked file's staged blob as text (no extension allowlist), so a key in Markdown / YAML / JSON is caught.
 
 **Still open:** a general-purpose `common.txt` for *project-defined* cross-language deny patterns (e.g. an internal hostname that should never appear in any file type). Held back pending demand — `check-patterns` could gain a `common.txt` consumed across all extensions if a concrete need appears.
+
+---
+
+## `ruff` FURB (refurb) rule group
+
+_Added 2026-06-11._
+
+**Adopt if:** your team wants idiom-level modernization beyond the `UP` / `SIM` / `PTH` groups the scaffold already ships, and is willing to triage FURB's more opinionated rewrites (operator reimplementation, comprehension / `starmap` rewrites, read-whole-file).
+
+**What it is.** `FURB` (flake8-refurb, stabilized in 2025 ruff releases) flags outdated idioms with modern stdlib replacements. It overlaps the deterministic, high-value slice the scaffold's selected `UP`/`SIM`/`PTH` groups already cover; the marginal additions skew toward style preference rather than a new bug class, which is why it's not default-on (it would raise the false-positive / "preachy refactor" rate an expert pushes back on). Add `"FURB"` to `[lint] select` in `ruff.toml` and tune `ignore` per project. `PERF` (perflint) stays out entirely.
+
+---
+
+## Commit-time Python type-check (`ty` / `pyrefly`)
+
+_Added 2026-06-11._
+
+**Adopt if:** `ty` reaches 1.0 stable (0.0.x beta as of mid-2026) **and** type errors are reaching CI more than ~1/week from agent sessions.
+
+**What it is.** `coding-rules.md` rule 9 wires `tsc --noEmit` into the pre-commit hook for TypeScript but defers Python type-checking (`pyright`/`mypy`) to CI because they're too slow for a hook. The Rust-based `ty` / `pyrefly` remove the speed objection (10–60× faster). When `ty` is stable, the hook can gain `ty check` behind the same guard as `tsc` — run only when the binary is on PATH and a config is present, silently skip otherwise, CI stays authoritative. Rule 8's `pyright`/`mypy` remain the conformance reference and stay unchanged. Docs-only until then — no change to any `check-*` script.
+
+---
+
+## `Biome` / `oxlint` instead of (or in front of) ESLint
+
+_Added 2026-06-11._
+
+**Adopt if:** `npx eslint .` in CI exceeds ~2–3 min, **or** editor feedback is laggy at monorepo scale, **or** the team wants formatter + linter in one tool and accepts weaker typed-rule coverage.
+
+**Why ESLint stays the default.** The shipped `eslint.config.js` exists for its type-aware tier (`no-floating-promises`, `no-misused-promises`, `await-thenable`), and typed rules need real compiler types — which only typescript-eslint covers today. The Rust-based linters are dramatically faster but trade away (most of) that typed coverage. **Re-evaluate when:** the `oxlint` + `eslint-plugin-oxlint` hybrid (fast linter for the untyped bulk, ESLint for typed rules only) or `tsgolint` closes the typed-rule gap.
+
+---
+
+## Pin the CI `ruff` version
+
+_Added 2026-06-11._
+
+**Adopt if:** you depend on hook/CI lint parity being byte-reproducible across runs, or you treat CI PyPI installs as a supply-chain surface.
+
+**What it is.** `lint.yml`'s `pip install ruff` pulls whatever PyPI serves that day, so lint behavior can shift between runs. Pin it: `pip install ruff==X.Y.Z  # bump manually on upgrades`. **Honest caveat:** Dependabot's `pip` ecosystem scans manifests (`requirements`/`pyproject`), **not** a version literal embedded in workflow YAML — so a `ruff==X` pin in `lint.yml` is maintained by hand, or by pinning `ruff` in the project's own `pyproject`/`requirements` and installing from there. (This is the corrected scope of the `SECURITY_AUDIT.md` "ruff/eslint are unshared, unpinned" Low finding.)
+
+---
+
+## SLSA provenance / trusted publishing (npm / PyPI)
+
+_Added 2026-06-11._
+
+**Adopt if:** your repo publishes to npm / PyPI / RubyGems.
+
+**What it is.** Switch the publish workflow to OIDC **trusted publishing** — there is no long-lived registry token to steal or worm-propagate (Shai-Hulud spread specifically by republishing packages with harvested npm tokens). On npm this also auto-signs Sigstore build provenance. Advice-only: the scaffold's primary audience is app teams that never publish a package, and there's no machine check here. npm trusted publishing went GA 2025-07; see npm trusted-publishers docs, PyPI trusted publishers, and the SLSA spec.
+
+---
+
+## Automated SemVer releases from Conventional Commits (release-please)
+
+_Added 2026-06-11._
+
+**Adopt if:** you publish a versioned package or tagged releases **and** already run `install.sh --commit-msg`. Skip for internal deploy-from-`main` services.
+
+**What it is.** `release-please` maintains a release PR that bumps SemVer from your commit types, writes `CHANGELOG.md`, and tags the release — the natural payoff of the Conventional-Commits hook the scaffold already ships opt-in. **Why not in the scaffold:** it adds a third-party action dependency and sits downstream of the scaffold's enforcement boundary. If you adopt it, SHA-pin the action like the existing workflows and let Dependabot bump it.

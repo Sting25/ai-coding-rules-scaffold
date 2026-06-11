@@ -295,7 +295,8 @@ by default so the scaffold stays minimal; turn them on per project.
   `config-conventional` `header-max-length` parity — runaway subjects wrap in
   `git log` / the GitHub UI and break changelog tooling). Commit format is
   exactly the kind of convention agents drift on across sessions. Zero
-  dependencies.
+  dependencies. (Pairs with `release-please` for automated SemVer releases —
+  see [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md).)
 
 - **gitleaks CI backstop (`.github/workflows/gitleaks.yml.template`).** Copy it
   in to add a broad, entropy-based secret scanner as a *separate* CI job. The

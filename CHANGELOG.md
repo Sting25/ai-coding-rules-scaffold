@@ -165,6 +165,15 @@ versioning follows [SemVer](https://semver.org/).
   uncomment, SHA-pinned CI job stubs added for Go/Rust/Java/Kotlin/Ruby linters.
   +13 harness fixtures (a reject + a look-alike negative per language).
 
+### Documented
+- **Six new `RECOMMENDATIONS.md` entries** (dated, with explicit "adopt if"
+  triggers, per the file's convention — deliberate omissions, not shipped
+  features): `ruff` FURB group; commit-time Python type-check via `ty`/`pyrefly`;
+  Biome/oxlint vs ESLint tradeoffs; pinning the CI `ruff` version (with the
+  honest note that Dependabot won't bump a workflow-embedded literal);
+  SLSA/OIDC trusted publishing; and `release-please` for automated SemVer
+  releases (cross-linked from the `--commit-msg` opt-in bullet).
+
 ### Changed
 - **`coding-rules.md` rule 12** now prefers the W3C `traceparent` header
   (OpenTelemetry's auto-propagated default) over `X-Request-Id` (the 2018-era
