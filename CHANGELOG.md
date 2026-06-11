@@ -7,6 +7,14 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **`datetime.utcfromtimestamp()` deny-pattern (`backend.txt`, default-on).**
+  CPython 3.12 deprecated `utcfromtimestamp()` in the *same* change as
+  `utcnow()` (already banned) — same naive-"UTC" bug class. A steered agent that
+  drops `utcnow()` can still emit this and pass the hook; the always-on regex now
+  covers it (use `datetime.fromtimestamp(ts, tz=datetime.UTC)`). A commented
+  opt-in `asyncio.get_event_loop()` line is added too (OFF by default — inside a
+  running coroutine it legitimately returns the running loop, so a name-anchored
+  ban over-fires; enable for app code standardizing on `asyncio.run()`). +1 fixture.
 - **Commit-subject length cap (opt-in `--commit-msg`).** The Conventional-Commits
   hook now also rejects subjects over 100 chars (commitlint `config-conventional`
   `header-max-length` parity) — runaway subjects wrap in `git log` / GitHub and

@@ -125,6 +125,16 @@ assert_passes "clean Python file"
 git add stamp.py
 assert_rejects "deprecated datetime.utcnow() is rejected" "deprecated"
 
+# 6c. datetime.utcfromtimestamp() — deprecated in the SAME 3.12 change as utcnow()
+#     and the same naive-UTC bug class; a steered agent that drops utcnow() can
+#     still emit this. Name-anchored regex, near-zero FP.
+{
+  echo 'import datetime'
+  echo 'when = datetime.datetime.utcfromtimestamp(ts)'
+} >fromts.py
+git add fromts.py
+assert_rejects "deprecated datetime.utcfromtimestamp() is rejected" "deprecated"
+
 # 7. hardcoded credential — exercises the alternation branch in secrets.txt.
 #    Split `pass`+`word` so this file's source doesn't itself trip the scan,
 #    same trick as the AKIA fixture above.
