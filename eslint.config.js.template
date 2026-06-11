@@ -89,6 +89,15 @@ export default tseslint.config(
         groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index'],
       }],
       'import-x/no-duplicates': 'error',
+
+      // Error-context preservation. `catch (e) { throw new Error('failed') }`
+      // discards the original cause/stack — the #1 AI-agent diagnosability bug;
+      // the fix is `new Error(msg, { cause: e })` (an editor suggestion, not a
+      // safe autofix). The rule exists since ESLint v9.35.0 but only entered
+      // `eslint:recommended` in v10.0.0, so pinning it here gives v9.35+ users
+      // the same guardrail and removes the v9/v10 behaviour fork. (Requires
+      // ESLint ≥ 9.35 — earlier 9.x will error on the unknown rule name.)
+      'preserve-caught-error': 'error',
     },
   },
 

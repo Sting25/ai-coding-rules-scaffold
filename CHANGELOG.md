@@ -7,6 +7,15 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **`preserve-caught-error` (`eslint.config.js`, default-on).**
+  `catch (e) { throw new Error('failed') }` destroys the original error
+  cause/stack — a signature AI-agent pattern that makes production failures
+  undiagnosable (fix: `new Error(msg, { cause: e })`). The rule entered
+  `eslint:recommended` only in ESLint v10 (Feb 2026); pinning it explicitly gives
+  v9.35+ users the same guard and removes the v9/v10 fork. (Requires ESLint
+  ≥ 9.35 — the rule does not exist before that.) `no-useless-assignment` was
+  evaluated alongside it and deliberately **not** added: it has open
+  false-positives on TS `satisfies` and Vue SFCs, the scaffold's core audience.
 - **`git --no-verify` block (`shell.txt`, default-on).** Converts an existing
   *prose-only* rule (`AGENTS.md` git discipline + `coding-rules.md` rule 9 + the
   README "`--no-verify` doesn't become the escape hatch" invariant) into a
