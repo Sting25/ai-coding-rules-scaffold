@@ -1,0 +1,25 @@
+# Forbidden patterns for Ruby files (*.rb, *.rake). Applied by .githooks/pre-commit.
+# scaffold-extensions: rb rake
+# Format: <regex><TAB><description>   (one per line; # comments ignored)
+# Separator is TAB - patterns can contain literal `|` for ERE alternation.
+# Patterns are case-SENSITIVE, scanned against the staged blob. Copy to your
+# project as `.forbidden-patterns/ruby.txt`.
+# Targets debugger breakpoints (binding.pry/irb, byebug, debugger) and pp.
+# Rails.logger and raise are intentionally NOT banned. puts/p are FP-prone
+# for CLI tools and ship commented below.
+# The `debugger` pattern excludes a trailing `:` so the `debugger:` keyword/hash
+# key is allowed; only the bare breakpoint statement is caught.
+
+(^|[^A-Za-z_])binding\.pry($|[^A-Za-z0-9_])	Remove binding.pry breakpoint before committing
+(^|[^A-Za-z_])binding\.irb($|[^A-Za-z0-9_])	Remove binding.irb breakpoint before committing
+(^|[^A-Za-z_])byebug($|[^A-Za-z0-9_])	Remove byebug breakpoint before committing
+(^|[^A-Za-z_])debugger($|[^A-Za-z0-9_:])	Remove debugger breakpoint before committing
+(^|[^A-Za-z_])require[[:space:]]+.(pry-byebug|byebug|pry|debug)('|")	Don't commit a require of a debug gem (pry/byebug/debug)
+(^|[^A-Za-z_])save_and_open_(page|screenshot)($|[^A-Za-z0-9_])	Remove Capybara save_and_open_page/screenshot debug call before committing
+(^|[^A-Za-z_.])pp([[:space:]]+[^[:space:]=]|[[:space:]]*\()	Remove pp() pretty-print debug call; use the logger instead
+
+# Optional (opt-in) — uncomment a line to enable it:
+# (^|[^A-Za-z_.])puts[[:space:]]*[\( ]	puts is common legitimate CLI output - enable only if your app uses a logger exclusively
+# (^|[^A-Za-z_.])p[[:space:]]+[^[:space:]=]	p is FP-prone (single-letter, also a common local var) - opt in with care
+# (^|[^A-Za-z_])(TODO|FIXME|XXX)($|[^A-Za-z0-9_])	TODO/FIXME/XXX not allowed - open a ticket instead
+# (^|[^A-Za-z_])(binding\.remote_pry|PryRemote)($|[^A-Za-z0-9_])	Remove remote-pry breakpoint before committing

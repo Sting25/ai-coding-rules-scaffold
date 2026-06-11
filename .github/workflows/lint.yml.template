@@ -81,6 +81,98 @@ jobs:
             echo "tsconfig.json or typescript missing — skipping tsc type-check"
           fi
 
+  php:
+    # Same detect-in-a-step pattern as `python` / `frontend`. No-ops on repos
+    # with no PHP, so it's safe to leave enabled in a polyglot org.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - id: detect
+        run: |
+          if [ -f composer.json ] || git ls-files '*.php' '*.phtml' | grep -q .; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.detect.outputs.present == 'true'
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240  # 2.37.2
+        with:
+          php-version: "8.3"
+          tools: composer
+      - name: Lint PHP (php -l syntax; phpcs when configured)
+        if: steps.detect.outputs.present == 'true'
+        run: |
+          fail=0
+          git ls-files -z '*.php' '*.phtml' | xargs -0 -r -n1 php -l >/dev/null || fail=1
+          if [ -f composer.json ] && [ -f composer.lock ]; then
+            composer install --no-interaction --no-progress --prefer-dist || true
+          fi
+          if [ -x vendor/bin/phpcs ]; then vendor/bin/phpcs || fail=1; fi
+          exit $fail
+
+  # ── OPT-IN linter jobs for other languages ────────────────────────────────
+  # The forbidden-pattern + secret + size + hygiene guardrails below already run
+  # for EVERY language. These jobs add each language's real linter/type-checker.
+  # Uncomment the ones your team uses (actions are pinned to a commit SHA; the
+  # trailing comment is the version — bump via Dependabot). Each no-ops on repos
+  # that don't use that language.
+  #
+  # go:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+  #     - id: detect
+  #       run: '[ -f go.mod ] && echo "present=true" >> "$GITHUB_OUTPUT" || true'
+  #     - if: steps.detect.outputs.present == 'true'
+  #       uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6.4.0
+  #       with:
+  #         go-version: stable
+  #     - if: steps.detect.outputs.present == 'true'
+  #       run: go vet ./...
+  #     - if: steps.detect.outputs.present == 'true'
+  #       uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee  # v9.2.1
+  #
+  # rust:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+  #     - id: detect
+  #       run: '[ -f Cargo.toml ] && echo "present=true" >> "$GITHUB_OUTPUT" || true'
+  #     - if: steps.detect.outputs.present == 'true'
+  #       uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+  #       with:
+  #         components: clippy
+  #     - if: steps.detect.outputs.present == 'true'
+  #       run: cargo clippy --all-targets -- -D warnings
+  #
+  # java:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+  #     - id: detect
+  #       run: '{ [ -f pom.xml ] || [ -f build.gradle ] || [ -f build.gradle.kts ]; } && echo "present=true" >> "$GITHUB_OUTPUT" || true'
+  #     - if: steps.detect.outputs.present == 'true'
+  #       uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654  # v5.2.0
+  #       with:
+  #         distribution: temurin
+  #         java-version: "21"
+  #     # Wire your build's check goal, e.g. `mvn -B checkstyle:check` or
+  #     # `./gradlew check` (Gradle picks up ktlint/spotless/detekt for Kotlin).
+  #     - if: steps.detect.outputs.present == 'true'
+  #       run: echo "add your build's lint/check task here (mvn checkstyle:check / ./gradlew check)"
+  #
+  # ruby:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+  #     - id: detect
+  #       run: '[ -f Gemfile ] && echo "present=true" >> "$GITHUB_OUTPUT" || true'
+  #     - if: steps.detect.outputs.present == 'true'
+  #       uses: ruby/setup-ruby@12fd324f1d0b43274fdc8130f6980590a667c455  # v1.312.0
+  #       with:
+  #         ruby-version: "3.3"
+  #         bundler-cache: true
+  #     - if: steps.detect.outputs.present == 'true'
+  #       run: bundle exec rubocop
+
   guardrails:
     # File size, forbidden patterns, blocked filenames, secret scan —
     # the same lib/check-* scripts the pre-commit hook calls.

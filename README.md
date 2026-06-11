@@ -67,10 +67,14 @@ The script auto-detects Python (`pyproject.toml` / `requirements.txt` / `setup.p
 ./install.sh --no-verify    # skip the post-install linter check
 ./install.sh --claude       # also install opt-in Claude Code agent guardrails
 ./install.sh --commit-msg   # also install the Conventional-Commits commit-msg hook
+./install.sh --all-langs    # install every language's forbidden-pattern file
 ./install.sh --help         # show usage
 ```
 
-See [Opt-in layers](#opt-in-layers) for what `--claude` and `--commit-msg` add.
+Language pattern files are auto-installed when their manifest is detected
+(`go.mod`, `Cargo.toml`, `composer.json`, `pom.xml`/`build.gradle`, `Gemfile`,
+…); `--all-langs` installs them all. See [Opt-in layers](#opt-in-layers) for
+what `--claude` and `--commit-msg` add.
 
 At the end, `install.sh` verifies that `ruff` and/or `eslint` are installed and that their configs load. If either is missing, it prints the install command.
 

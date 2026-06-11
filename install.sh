@@ -10,6 +10,7 @@
 #   install.sh --no-verify  # skip the post-install linter smoke test
 #   install.sh --claude     # also install opt-in Claude Code agent guardrails
 #   install.sh --commit-msg # also install the Conventional-Commits commit-msg hook
+#   install.sh --all-langs  # install every language's forbidden-pattern file
 #   install.sh --help       # show this help
 
 set -euo pipefail
@@ -20,6 +21,7 @@ FORCE=0
 VERIFY=1
 CLAUDE=0
 COMMIT_MSG=0
+ALL_LANGS=0
 
 for arg in "$@"; do
   case "$arg" in
@@ -30,7 +32,8 @@ for arg in "$@"; do
     --no-verify)  VERIFY=0 ;;
     --claude)     CLAUDE=1 ;;
     --commit-msg) COMMIT_MSG=1 ;;
-    --help|-h)    sed -n '2,13p' "$0"; exit 0 ;;
+    --all-langs)  ALL_LANGS=1 ;;
+    --help|-h)    sed -n '2,14p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -98,6 +101,26 @@ if [ "$MODE" = "frontend" ] || [ "$MODE" = "both" ]; then
   cp_safe "$SCAFFOLD_DIR/eslint.config.js.template" "eslint.config.js"
   cp_safe "$SCAFFOLD_DIR/forbidden-patterns/frontend.txt.template" ".forbidden-patterns/frontend.txt"
 fi
+
+# Additional language pattern files (config-driven check-patterns). Each ships a
+# `<lang>.txt` with a `# scaffold-extensions:` header that check-patterns auto-
+# discovers — so adding a language is just dropping a file. Installed when the
+# language's manifest is detected, or all of them with --all-langs.
+LANGS=""
+add_lang() { case " $LANGS " in *" $1 "*) ;; *) LANGS="$LANGS $1" ;; esac; }
+if [ "$ALL_LANGS" -eq 1 ]; then
+  for L in php go rust java kotlin ruby; do add_lang "$L"; done
+else
+  if [ -f composer.json ]; then add_lang php; fi
+  if [ -f go.mod ]; then add_lang go; fi
+  if [ -f Cargo.toml ]; then add_lang rust; fi
+  if [ -f pom.xml ] || [ -f build.gradle ]; then add_lang java; fi
+  if [ -f build.gradle.kts ] || ls -1 ./*.kt >/dev/null 2>&1; then add_lang kotlin; fi
+  if [ -f Gemfile ] || ls -1 ./*.gemspec >/dev/null 2>&1; then add_lang ruby; fi
+fi
+for L in $LANGS; do
+  cp_safe "$SCAFFOLD_DIR/forbidden-patterns/${L}.txt.template" ".forbidden-patterns/${L}.txt"
+done
 
 # Claude Code agent-runtime guardrails (opt-in: --claude). Installs a PreToolUse
 # precheck hook (reuses .forbidden-patterns/secrets.txt) plus a settings.json

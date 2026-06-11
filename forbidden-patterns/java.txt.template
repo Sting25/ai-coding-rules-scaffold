@@ -1,0 +1,16 @@
+# Forbidden patterns for Java files (*.java). Applied by .githooks/pre-commit.
+# scaffold-extensions: java
+# Format: <regex><TAB><description>   (one per line; # comments ignored)
+# Separator is TAB - patterns can contain literal `|` for ERE alternation.
+# Patterns are POSIX ERE, matched case-sensitively with `grep -anE`.
+# Bans console debug output; keeps logger.info/warn/error intact.
+# printStackTrace ban is no-arg only; printStackTrace(writer) is allowed (logging idiom).
+# Copy to your project as `.forbidden-patterns/java.txt`.
+
+(^|[^A-Za-z_])System\.out\.print(ln)?[[:space:]]*\(	Use a logger (slf4j/Log4j), not System.out.print/println
+(^|[^A-Za-z_])System\.err\.print(ln|f)?[[:space:]]*\(	Use logger.error(), not System.err.print/println/printf
+\.printStackTrace[[:space:]]*\([[:space:]]*\)	Log the exception via the logger, not e.printStackTrace(); pass a PrintWriter to capture it instead
+
+# Optional (opt-in) — uncomment a line to enable it:
+# (^|[^A-Za-z_])(TODO|FIXME|XXX)($|[^A-Za-z0-9_])	TODO/FIXME/XXX not allowed - open a ticket instead
+# (^|[^A-Za-z_])System\.out\.printf[[:space:]]*\(	Use a logger, not System.out.printf (FP-prone in CLI tools)

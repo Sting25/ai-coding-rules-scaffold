@@ -67,7 +67,7 @@ echo '{"name":"test"}' >package.json
 echo 'name = "test"' >pyproject.toml
 git add . && git commit --quiet -m "fixture" --no-verify
 
-"$SCAFFOLD_DIR/install.sh" --both --no-verify >/dev/null
+"$SCAFFOLD_DIR/install.sh" --both --all-langs --no-verify >/dev/null
 git add . && git commit --quiet -m "install scaffold" --no-verify
 
 echo "Hook test cases:"
@@ -511,6 +511,62 @@ else
   sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 reset_repo
+
+# --- Multi-language forbidden patterns (config-driven check-patterns) -------
+# Each language file declares its extensions via a `# scaffold-extensions:`
+# header and is auto-discovered by check-patterns. Samples come from the
+# adversarially-FP-reviewed pattern set; each pair proves an active pattern
+# rejects and a look-alike legitimate construct passes.
+
+# PHP — dd() debug call vs ->dd() method call ($-vars are literal PHP source)
+# shellcheck disable=SC2016
+echo '<?php dd($user, $order);' >leak.php
+git add leak.php
+assert_rejects "PHP dd() debug call rejected" "dump-and-die"
+# shellcheck disable=SC2016
+echo '<?php $q = $builder->dd()->paginate();' >ok.php
+git add ok.php
+assert_passes "PHP ->dd() method call is not flagged"
+
+# Go — fmt.Println debug vs fmt.Errorf
+echo 'fmt.Println("user:", u)' >leak.go
+git add leak.go
+assert_rejects "Go fmt.Println debug rejected" "fmt.Print"
+echo 'return fmt.Errorf("load config: %w", err)' >ok.go
+git add ok.go
+assert_passes "Go fmt.Errorf is not flagged"
+
+# Rust — dbg!() macro vs format!()
+echo 'dbg!(payload);' >leak.rs
+git add leak.rs
+assert_rejects "Rust dbg!() macro rejected" "dbg!"
+echo 'let n = format!("{}-{}", a, b);' >ok.rs
+git add ok.rs
+assert_passes "Rust format!() is not flagged"
+
+# Java — System.out.println vs logger
+echo 'System.out.println("debug");' >Leak.java
+git add Leak.java
+assert_rejects "Java System.out.println rejected" "System.out"
+echo 'logger.info("started");' >Ok.java
+git add Ok.java
+assert_passes "Java logger.info is not flagged"
+
+# Kotlin — println vs logger
+echo 'println("debug")' >Leak.kt
+git add Leak.kt
+assert_rejects "Kotlin println rejected" "println"
+echo 'logger.info("started")' >Ok.kt
+git add Ok.kt
+assert_passes "Kotlin logger.info is not flagged"
+
+# Ruby — binding.pry debug vs puts (puts is opt-in, off by default)
+echo 'binding.pry' >leak.rb
+git add leak.rb
+assert_rejects "Ruby binding.pry rejected" "binding.pry"
+echo 'puts "ok"' >ok.rb
+git add ok.rb
+assert_passes "Ruby puts is opt-in (not flagged by default)"
 
 # 46-48. agent-precheck — the opt-in Claude Code PreToolUse hook. Invoked
 #     directly (it's not a git hook) with CLAUDE_PROJECT_DIR pointed at this

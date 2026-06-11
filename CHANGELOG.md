@@ -51,6 +51,21 @@ versioning follows [SemVer](https://semver.org/).
   default). Weekly grouped bumps of the SHA-pinned GitHub Actions so the pins
   don't rot.
 
+- **Multi-language forbidden patterns (config-driven).** `check-patterns` now
+  auto-discovers every `.forbidden-patterns/*.txt` and reads a
+  `# scaffold-extensions:` header from each, so adding a language is just
+  dropping a file — no script edit. Ships tuned, adversarially FP-reviewed
+  pattern files for **PHP, Go, Rust, Java, Kotlin, Ruby** (plus `*.vue` + Vue
+  `v-html` on the frontend set); FP-prone rules (Rust `.unwrap()`, Ruby `puts`,
+  PHP `die/exit`, …) ship commented as opt-in. `install.sh` auto-installs a
+  language's file when it detects the manifest (`go.mod`, `Cargo.toml`,
+  `composer.json`, `pom.xml`/`build.gradle`, `Gemfile`), or all of them with
+  `--all-langs`. backend/frontend/shell keep a built-in fallback mapping.
+- **PHP linting.** `php -l` (syntax) + `phpcs` (when configured) wired into the
+  pre-commit hook and a new `php` CI job (`setup-php` SHA-pinned). Ready-to-
+  uncomment, SHA-pinned CI job stubs added for Go/Rust/Java/Kotlin/Ruby linters.
+  +13 harness fixtures (a reject + a look-alike negative per language).
+
 ### Changed
 - **CI uses a frozen-lockfile install.** The frontend job runs `npm ci` when a
   lockfile is present (hard-failing on lockfile drift instead of silently

@@ -1,0 +1,22 @@
+# Forbidden patterns for Kotlin files (*.kt, *.kts). Applied by .githooks/pre-commit.
+# scaffold-extensions: kt kts
+# Format: <regex><TAB><description>   (one per line; # comments ignored)
+# Separator is TAB - patterns can contain literal `|` for ERE alternation; no literal TAB.
+# Copy to your project as `.forbidden-patterns/kotlin.txt`.
+# Note: *.kts are Gradle/script files where println() is idiomatic; flagging it there
+# still catches stray debug output, but expect to scaffold-allow legitimate cases.
+# print/println/TODO anchors exclude a preceding `.` so member calls like writer.println(),
+# document.print(), and obj.TODO() do NOT match - only the unqualified kotlin.io builtins do.
+
+(^|[^A-Za-z0-9_.])println[[:space:]]*\(	Use the project's logger (e.g. slf4j/kotlin-logging), not println()
+(^|[^A-Za-z0-9_.])print[[:space:]]*\(	Use the project's logger, not print()
+System\.(out|err)\.print(ln)?[[:space:]]*\(	Use the project's logger, not System.out/System.err.print(ln)
+(^|[^A-Za-z0-9_])printStackTrace[[:space:]]*\(	Log the exception via the project's logger, not printStackTrace()
+(^|[^A-Za-z0-9_.])TODO[[:space:]]*\(	kotlin.TODO() throws NotImplementedError at runtime - finish the impl or open a ticket
+
+# Optional (opt-in) — uncomment a line to enable it:
+# (^|[^A-Za-z_])(TODO|FIXME|XXX)($|[^A-Za-z0-9_])	TODO/FIXME/XXX comment not allowed - open a ticket instead (FP-prone in comments/strings)
+# @Disabled($|[^A-Za-z0-9_])	Disabled JUnit5 test committed - re-enable or delete (may be intentional)
+# (^|[^A-Za-z_])(it|i)gnore[[:space:]]*=[[:space:]]*true	Ignored test annotation - re-enable or delete (FP-prone; matches config flags)
+# !![[:space:]]*($|[^=])	Avoid the !! not-null assertion - use safe calls or requireNotNull (very FP-prone)
+# GlobalScope\.	Avoid GlobalScope - use a structured-concurrency CoroutineScope (some scripts legitimately use it)

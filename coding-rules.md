@@ -16,7 +16,7 @@ Short rule set. Most discipline is enforced by the linter (`ruff` / `eslint`) an
 
 ## Pattern files
 
-Stack-specific deny patterns live in `.forbidden-patterns/{backend,frontend,secrets}.txt`. Add deprecated import paths, old service names, banned API keys, etc. — the hook scans them on every commit and so does CI. Format is `<regex><TAB><description>` per line; see `forbidden-patterns/README.md` for the full reference.
+Stack-specific deny patterns live in `.forbidden-patterns/*.txt` (one per language — `backend.txt`, `frontend.txt`, `php.txt`, `go.txt`, `rust.txt`, `java.txt`, `kotlin.txt`, `ruby.txt`, `shell.txt` — plus the language-agnostic `secrets.txt`). Add deprecated import paths, old service names, banned API keys, etc. — the hook scans them on every commit and so does CI. Format is `<regex><TAB><description>` per line; each file declares the extensions it scans with a `# scaffold-extensions:` header, so adding a language is just dropping a file. See `forbidden-patterns/README.md` for the full reference.
 
 ## Communication
 

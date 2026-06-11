@@ -1,7 +1,11 @@
 # Forbidden patterns for Python files (*.py). Applied by .githooks/pre-commit.
+# scaffold-extensions: py
 # Format: <regex><TAB><description>   (one per line; # comments ignored)
 # Separator is TAB — patterns can contain literal `|` for ERE alternation
 # (e.g. `(TODO|FIXME|XXX)`). Patterns cannot contain a literal TAB.
+# The `scaffold-extensions:` header above tells check-patterns which file
+# extensions these rules scan — drop a new <lang>.txt with its own header to
+# add a language; see forbidden-patterns/README.md.
 # Copy to your project as `.forbidden-patterns/backend.txt`.
 
 (^|[^A-Za-z_])print[[:space:]]*\(	Use structlog (or the project's logger), not print()

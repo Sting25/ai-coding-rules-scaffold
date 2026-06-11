@@ -1,4 +1,5 @@
-# Forbidden patterns for TS/JS files (*.ts, *.tsx, *.js, *.jsx). Applied by .githooks/pre-commit.
+# Forbidden patterns for TS/JS/Vue files. Applied by .githooks/pre-commit.
+# scaffold-extensions: ts tsx js jsx vue
 # Format: <regex><TAB><description>   (one per line; # comments ignored)
 # Separator is TAB — patterns can contain literal `|` for ERE alternation.
 # Patterns are case-SENSITIVE, scanned against the staged blob. Copy to your
@@ -20,6 +21,7 @@
 
 # --- Security ---
 dangerouslySetInnerHTML	dangerouslySetInnerHTML is an XSS vector — sanitize or render as text
+(^|[^A-Za-z-])v-html[[:space:]]*=	Vue v-html is an XSS vector — sanitize or render with {{ }}/text
 https?://(localhost|127\.0\.0\.1)	No hardcoded localhost/127.0.0.1 URLs — read from config/env
 
 # Optional: forbid TODO/FIXME/XXX in one line via regex alternation.

@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # .githooks/lib/check-patterns — forbidden-pattern scan for source files.
-# Reads NUL-separated file paths on stdin (produced by `git ... -z`). Scans .py
-# against backend.txt, TS/JS against frontend.txt, and shell against shell.txt.
+# Reads NUL-separated file paths on stdin (produced by `git ... -z`). Auto-
+# discovers every `.forbidden-patterns/*.txt` (except secrets.txt, which is
+# check-secrets' domain) and scans the files whose extension the pattern file
+# claims. A pattern file declares its extensions with a header line:
+#   # scaffold-extensions: py
+#   # scaffold-extensions: ts tsx js jsx vue
+# so a new language is added by dropping `<lang>.txt` with that header — no edit
+# to this script. backend.txt / frontend.txt / shell.txt have a built-in
+# fallback mapping for backward compatibility.
 # Pattern format: <regex><TAB><description>
 # (TAB is the field separator so regex can use literal `|` alternation.)
 #
@@ -156,9 +163,38 @@ scan() {
   done
 }
 
+# Resolve which file extensions a pattern file applies to. An explicit
+#   # scaffold-extensions: ext1 ext2 ...
+# header (first matching comment line) wins, so a new language is added by just
+# dropping a `<lang>.txt` with that header — no edit to this script. The three
+# original files have a built-in fallback so an older copy without the header
+# keeps working.
+exts_for() {
+  local cfg=$1 hdr
+  hdr=$(grep -m1 -E '^#[[:space:]]*scaffold-extensions:' "$cfg" 2>/dev/null \
+          | sed -E 's/^#[[:space:]]*scaffold-extensions:[[:space:]]*//; s/[[:space:]]+$//')
+  if [ -n "$hdr" ]; then printf '%s' "$hdr"; return; fi
+  case "$(basename "$cfg")" in
+    backend.txt)  printf 'py' ;;
+    frontend.txt) printf 'ts tsx js jsx vue' ;;
+    shell.txt)    printf 'sh bash' ;;
+    *)            printf '' ;;
+  esac
+}
+
 FAILED=0
-scan ".forbidden-patterns/backend.txt" py
-scan ".forbidden-patterns/frontend.txt" ts tsx js jsx
-scan ".forbidden-patterns/shell.txt" sh bash
+# Auto-discover every pattern file. secrets.txt is check-secrets' domain (it
+# scans all files, not by extension), so skip it here.
+for cfg in .forbidden-patterns/*.txt; do
+  [ -e "$cfg" ] || continue   # no glob match → literal string; skip
+  case "$(basename "$cfg")" in secrets.txt) continue ;; esac
+  cfg_exts=$(exts_for "$cfg")
+  if [ -z "$cfg_exts" ]; then
+    echo "warning: $cfg: no '# scaffold-extensions:' header and no built-in mapping — skipped" >&2
+    continue
+  fi
+  # shellcheck disable=SC2086  # word-splitting $cfg_exts into separate args is intentional
+  scan "$cfg" $cfg_exts
+done
 
 exit $FAILED
