@@ -6,6 +6,13 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.6.0] — 2026-06-11
+
+Multi-language enforcement (PHP/Go/Rust/Java/Kotlin/Ruby), broadened TypeScript
+type-aware linting, a per-project `.scaffold.toml` override layer, opt-in
+agent-runtime hooks (Claude + Cursor), 2025-26 supply-chain / secret-scanning
+hardening, and a delta round of modern-practice deny-patterns.
+
 ### Added
 - **`preserve-caught-error` (`eslint.config.js`, default-on).**
   `catch (e) { throw new Error('failed') }` destroys the original error

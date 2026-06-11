@@ -5,7 +5,7 @@
 
 **Two-layer enforcement (pre-commit hook + CI mirror) for small teams using AI agents** — catches debug leaks (`print`, `console.log`, `breakpoint`, `pdb`), unbounded file growth, nested-if hell, silenced exceptions, hardcoded secrets/tokens, and stray `.env` or private-key files before they merge. The same `lib/check-*` scripts run in both layers, so the hook and CI can't drift apart and `--no-verify` doesn't become the escape hatch.
 
-Agent-agnostic: works with Cursor, Claude Code, Copilot, Cline, Aider, or no AI at all. Built for Python/FastAPI + optional TypeScript/React projects; adapt freely for other stacks.
+Agent-agnostic: works with Cursor, Claude Code, Copilot, Cline, Aider, or no AI at all. Python/FastAPI + TypeScript/React are first-class, with deny-pattern coverage for Vue, Svelte, PHP, Go, Rust, Java, Kotlin, Ruby, and shell — see [Supported stacks](#supported-stacks).
 
 ## Why this exists
 
@@ -36,7 +36,26 @@ Enforcement runs in two places, sharing the same scripts:
 - **Pre-commit hook** — blocks the commit locally. Fast feedback, skippable with `--no-verify`.
 - **CI workflow** — blocks the PR server-side. Unskippable.
 
-Both invoke the same four `lib/check-*` scripts (`check-size`, `check-patterns`, `check-filenames`, `check-secrets`). The hook and CI can't drift apart because there's nothing to keep in sync — they call the same code. Each script is also runnable on its own (`git ls-files | .githooks/lib/check-secrets`), so you can wire it into Husky, lefthook, or any other orchestrator without rewriting the logic.
+Both invoke the same `lib/check-*` scripts (`check-size`, `check-patterns`, `check-filenames`, `check-secrets`, `check-hygiene`). The hook and CI can't drift apart because there's nothing to keep in sync — they call the same code. Each script is also runnable on its own (`git ls-files | .githooks/lib/check-secrets`), so you can wire it into Husky, lefthook, or any other orchestrator without rewriting the logic.
+
+## Supported stacks
+
+Two always-on enforcement layers (pre-commit hook + CI mirror) plus optional agent-runtime hooks. What each stack gets:
+
+- **Python** — `ruff` (annotations, complexity, `pathlib`, no-blind-except, async-safety `ASYNC`, FastAPI `FAST`, logging `G`/`LOG`, a curated `flake8-bandit` security subset) **+** a `backend.txt` regex deny-list: `print()`, `breakpoint()`/`pdb`/`ipdb`, `os.path.join`, deprecated `datetime.utcnow()` / `utcfromtimestamp()`. FastAPI (Pydantic responses) and SQLAlchemy-2.0 conventions live in `coding-rules.md`.
+- **TypeScript / JavaScript** — type-aware `eslint` (`strictTypeChecked`: floating/misused promises, `switch-exhaustiveness-check`, `preserve-caught-error`, `no-explicit-any`, import sort + unused-import removal) **+** `tsc --noEmit` **+** a `frontend.txt` deny-list: `console.log`/`debugger`/`alert`, focused tests (`.only`), `@ts-ignore`/`@ts-nocheck`, hardcoded `localhost`, and TLS-verification-disable (`NODE_TLS_REJECT_UNAUTHORIZED`, `rejectUnauthorized: false`).
+  - **React** — `dangerouslySetInnerHTML` (XSS); opt-in `react-hooks` + `jsx-a11y` blocks.
+  - **Vue** — `.vue` scanned; `v-html` (XSS).
+  - **Svelte** — `.svelte` scanned; `{@html}` (XSS).
+- **PHP** — `php -l` syntax + `phpcs` (when configured) **+** `php.txt`: `var_dump`/`print_r`, `->dd()`/`dump()`, `die`/`exit` (opt-in).
+- **Go** — `go.txt`: `fmt.Println`/`Printf` debug, `panic`/`print` (opt-in); ready-to-uncomment golangci-lint CI job.
+- **Rust** — `rust.txt`: `dbg!`, `println!`, `.unwrap()`/`.expect()` (opt-in); clippy CI job stub.
+- **Java / Kotlin** — `java.txt` / `kotlin.txt`: `System.out.println`, `println`, `printStackTrace`; setup-java/Gradle CI stubs.
+- **Ruby** — `ruby.txt`: `binding.pry`, `puts` (opt-in); setup-ruby CI stub.
+- **Shell** (`*.sh`/`*.bash`) — `shell.txt`: `curl | bash`, `rm -rf /`, `chmod 777`, `git --no-verify` (hook-bypass).
+- **Every language / all files** — `secrets.txt` token shapes (AWS `AKIA`/Bedrock, GCP, GitHub, GitLab PAT + runner/deploy/agent tokens, Slack, OpenAI/Anthropic, Stripe, Supabase, OpenRouter, HuggingFace, structural JWTs, private keys, URL-embedded creds), credential-file blocking (`.env`, `*.pem`, SSH keys), the 500-line file-size cap, merge-conflict markers, case-only filename collisions, and hidden-Unicode (Trojan-Source) scanning.
+
+Language pattern files auto-install when their manifest is detected (`go.mod`, `Cargo.toml`, `composer.json`, `pom.xml`/`build.gradle`, `Gemfile`), or install them all with `--all-langs`. Anything not listed still gets the always-on cross-language layers (secrets, file size, filenames, hygiene). Adding a new language is just dropping a `.forbidden-patterns/<lang>.txt` with a `# scaffold-extensions:` header — no script changes.
 
 ## Install
 
@@ -44,7 +63,7 @@ Clone the scaffold somewhere stable:
 
 ```sh
 # Recommended: pin to a tagged release for reproducibility
-git clone --branch v0.5.2 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
+git clone --branch v0.6.0 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
 # Or track main if you want the latest changes
 git clone https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
 ```
@@ -203,18 +222,21 @@ Build-breaking (`ruff` / `eslint`, on every lint + commit + in CI):
 | `any` in TypeScript without comment | `@typescript-eslint/no-explicit-any` |
 | Floating / misused promises (TS) | `@typescript-eslint/no-floating-promises`, `no-misused-promises` (type-aware) |
 | Non-exhaustive `switch` over a union/enum (missing member) | `@typescript-eslint/switch-exhaustiveness-check` (type-aware) |
+| Re-throwing in `catch` while discarding the original error cause/stack | `eslint preserve-caught-error` (needs ESLint ≥ 9.35) |
 | TypeScript type errors | `tsc --noEmit` (hook + CI, when `tsconfig.json` present) |
 
 Commit + CI-breaking (pre-commit hook + `lint.yml`):
 
 | Concern | Check |
 |---|---|
-| `print()`, `breakpoint()`, `pdb.set_trace()`, `ipdb.set_trace()` in Python files | regex |
-| `console.log` / `debugger` / `alert` in TS/JS | regex |
-| Focused tests (`.only`), `@ts-ignore` / `@ts-nocheck`, `dangerouslySetInnerHTML`, hardcoded `localhost`/`127.0.0.1` URLs | regex (frontend.txt) |
+| `print()`, `breakpoint()`, `pdb`/`ipdb.set_trace()`, `os.path.join`, deprecated `datetime.utcnow()`/`utcfromtimestamp()` in Python files | regex (backend.txt) |
+| `console.log` / `debugger` / `alert` in TS/JS | regex (frontend.txt) |
+| XSS sinks — `dangerouslySetInnerHTML` (React), `v-html` (Vue, `.vue`), `{@html}` (Svelte, `.svelte`) | regex (frontend.txt) |
+| Focused tests (`.only`), `@ts-ignore` / `@ts-nocheck`, hardcoded `localhost`/`127.0.0.1` URLs, TLS-verification-disable (`NODE_TLS_REJECT_UNAUTHORIZED`, `rejectUnauthorized: false`) | regex (frontend.txt) |
+| Dangerous shell in `*.sh`/`*.bash` — `curl \| bash`, `rm -rf /`, `chmod 777`, `git --no-verify` (hook bypass) | regex (shell.txt) |
 | File size > 500 lines | line count of the staged blob (`git show :0:<path>`, counting a final line with no trailing newline) |
 | TODO/FIXME without ticket ref | regex (opt-in; commented in template) |
-| Secret / credential leaks (AWS keys, GitHub tokens, private keys, URLs with embedded credentials, hardcoded password=/token= assignments) | regex (case-insensitive). Scans **every** tracked file's staged blob as text (no extension allowlist, so renaming a payload can't skip it); NUL bytes are stripped so they can't hide content, and a single line longer than `MAX_LINE_LENGTH` (50000) is dropped so a minified/binary blob can't hang the scan |
+| Secret / credential leaks (AWS `AKIA`/Bedrock, GitHub/GitLab tokens, Stripe, Supabase, OpenRouter, OpenAI/Anthropic, structural JWTs, private keys, URLs with embedded credentials, hardcoded `password=`/`token=` assignments) | regex (case-insensitive). Scans **every** tracked file's staged blob as text (no extension allowlist, so renaming a payload can't skip it); NUL bytes are stripped so they can't hide content, and a single line longer than `MAX_LINE_LENGTH` (50000) is dropped so a minified/binary blob can't hang the scan |
 | Committed `.env` / `*.pem` / SSH private keys (`id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`) | filename check (`.env.example` / `.env.sample` / `.env.template` allowed) |
 | Merge-conflict markers (`<<<<<<<` / `\|\|\|\|\|\|\|` / `>>>>>>>`) left in a file | `check-hygiene` (staged-blob scan) |
 | Case-only filename collisions (`Readme.md` vs `README.md`) that break macOS/Windows checkouts | `check-hygiene` (path scan; CI checks all tracked paths) |
@@ -357,8 +379,8 @@ git commit -m "should be rejected"
 
 - **`coding-rules.md`** — short by design. Add a "Project-specific" section at the bottom for stack rules (SQLAlchemy column quirks, import conventions, architectural constraints).
 - **`AGENTS.md`** — the `Project` section is meant to be edited: stack, entry points, gotchas. Keep it tight; agents reread it on every turn.
-- **`.forbidden-patterns/*.txt`** — simple `regex|description` lines. Add deprecated import paths, old service names, etc. Lines starting with `#` are comments; an opt-in TODO/FIXME pattern is pre-seeded as a comment.
-- **`ruff.toml`** — enables `E,F,I,W,B,UP,SIM,PTH,ANN,BLE,C90,PL,PT,RUF`. Trim `ignore = [...]` if a rule fights your style.
+- **`.forbidden-patterns/*.txt`** — TAB-separated `<regex>\t<description>` lines (one per language, auto-discovered via each file's `# scaffold-extensions:` header). Add deprecated import paths, old service names, etc. Lines starting with `#` are comments; an opt-in TODO/FIXME pattern is pre-seeded as a comment.
+- **`ruff.toml`** — enables `E,F,I,W,B,UP,SIM,PTH,ANN,ASYNC,FAST,G,LOG,BLE,C90,PL,PT,RUF` plus a curated `flake8-bandit` `S` security subset. Trim `ignore = [...]` if a rule fights your style.
 - **Pre-commit hook** — `MAX_LINES=500` by default. Override per-invocation: `MAX_LINES=800 git commit`. Edit the hook to change permanently. The CI workflow reads the same env var.
 - **Adopting on an existing codebase** — the local hook scans only the files in a given commit, but the CI job scans *all* tracked files (size, patterns, filenames, and secrets alike), not just changed ones. So the first PR after adoption surfaces pre-existing debt: a file already over 500 lines, an existing `print()`, or a secret already in history all fail in CI even if the PR didn't touch them. For the size case, extract the offenders first (preferred — this is the debt the rule is meant to catch) or set `MAX_LINES` higher temporarily in both the hook and CI, then ratchet it down as you refactor.
 
