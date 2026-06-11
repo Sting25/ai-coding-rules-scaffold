@@ -66,6 +66,7 @@ The script auto-detects Python (`pyproject.toml` / `requirements.txt` / `setup.p
 ./install.sh --force        # overwrite existing files
 ./install.sh --no-verify    # skip the post-install linter check
 ./install.sh --claude       # also install opt-in Claude Code agent guardrails
+./install.sh --cursor       # also install opt-in Cursor agent guardrails
 ./install.sh --commit-msg   # also install the Conventional-Commits commit-msg hook
 ./install.sh --all-langs    # install every language's forbidden-pattern file
 ./install.sh --help         # show usage
@@ -74,7 +75,7 @@ The script auto-detects Python (`pyproject.toml` / `requirements.txt` / `setup.p
 Language pattern files are auto-installed when their manifest is detected
 (`go.mod`, `Cargo.toml`, `composer.json`, `pom.xml`/`build.gradle`, `Gemfile`,
 …); `--all-langs` installs them all. See [Opt-in layers](#opt-in-layers) for
-what `--claude` and `--commit-msg` add.
+what `--claude`, `--cursor`, and `--commit-msg` add.
 
 At the end, `install.sh` verifies that `ruff` and/or `eslint` are installed and that their configs load. If either is missing, it prints the install command.
 
@@ -286,8 +287,16 @@ by default so the scaffold stays minimal; turn them on per project.
   `PreToolUse` hook (`.githooks/lib/agent-precheck`) that scans Write/Edit/Bash
   content against the *same* `.forbidden-patterns/secrets.txt` the commit-time
   scanner uses — one rule set across agent → commit → CI. Needs `jq` (fails open
-  without it). Works with Claude Code; the deny-list pattern ports to Cursor /
-  Gemini equivalents. See [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md).
+  without it). See [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md).
+
+- **Cursor agent guardrails (`install.sh --cursor`).** The same `agent-precheck`
+  wired to Cursor's `beforeShellExecution` hook via `.cursor/hooks.json`, so a
+  `curl | bash` / `rm -rf /` / `chmod 777` the agent is about to run is scanned
+  against `.forbidden-patterns/shell.txt` and blocked (exit 2 = Cursor deny).
+  Cursor has no before-write hook, so unlike `--claude` the secret-on-write scan
+  and credential read deny-list aren't portable — the shell-command scan is the
+  high-ROI piece that is. `--claude` and `--cursor` can be combined; they share
+  the one precheck script.
 
 - **Conventional-Commits `commit-msg` hook (`install.sh --commit-msg`).**
   Rejects commit subjects that don't match `type(scope): description` (merge /

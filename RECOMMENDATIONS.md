@@ -10,7 +10,7 @@ Entries are dated. If one has gone untouched for over a year, delete it (or move
 
 ## Agent-runtime hooks (Claude Code `PreToolUse`, Cursor `beforeShellExecution`, Gemini `BeforeTool`)
 
-_Added 2026-04-23. **Minimal version shipped 2026-06-10** — `install.sh --claude` installs a `.claude/settings.json` deny-list plus a `PreToolUse` precheck (`.githooks/lib/agent-precheck`) that scans Write/Edit/Bash content against the same `.forbidden-patterns/secrets.txt` the commit-time scanner uses. The full framework below remains out of scope._
+_Added 2026-04-23. **Minimal version shipped 2026-06-10** — `install.sh --claude` installs a `.claude/settings.json` deny-list plus a `PreToolUse` precheck (`.githooks/lib/agent-precheck`) that scans Write/Edit/Bash content against the same `.forbidden-patterns/secrets.txt` the commit-time scanner uses. **Cursor support added 2026-06-11** — `install.sh --cursor` wires the same precheck to Cursor's `beforeShellExecution` via `.cursor/hooks.json` (shell-command scan only; Cursor has no before-write hook). The full framework below remains out of scope._
 
 **Adopt if:** you have ≥3 concurrent agents, OR CI is rejecting more than ~1 violation/week that the agent could have caught at write-time, OR a single security incident from agent-issued shell commands has happened.
 
@@ -18,7 +18,7 @@ _Added 2026-04-23. **Minimal version shipped 2026-06-10** — `install.sh --clau
 
 | Layer | Catches | This scaffold has it? |
 |---|---|---|
-| Agent hooks (pre-tool-use) | Agent about to exfiltrate a secret, run `curl \| bash`, edit outside scope | Yes — opt-in (`install.sh --claude`) |
+| Agent hooks (pre-tool-use) | Agent about to exfiltrate a secret, run `curl \| bash`, edit outside scope | Yes — opt-in (`install.sh --claude` / `--cursor`) |
 | Linters (`ruff`, `eslint`) | Code quality once code is written | Yes |
 | Git pre-commit | Debug leaks, file size, forbidden patterns at commit | Yes |
 | CI mirror | All of the above, server-side, unskippable | Yes |

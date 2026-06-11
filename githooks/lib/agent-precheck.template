@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
-# .githooks/lib/agent-precheck — Claude Code PreToolUse hook (scaffold "layer
-# three": block bad content the moment an agent writes it, before commit time).
+# .githooks/lib/agent-precheck — agent PreToolUse hook (scaffold "layer three":
+# block bad content the moment an agent writes it, before commit time).
+#
+# Wired for two agent runtimes that both deliver the event as JSON on stdin and
+# both treat EXIT 2 as "block this action":
+#   - Claude Code  (.claude/settings.json PreToolUse, matcher Write|Edit|Bash) —
+#     command lives under .tool_input.command, tool name under .tool_name.
+#   - Cursor       (.cursor/hooks.json beforeShellExecution)                   —
+#     command lives at the TOP LEVEL .command, with NO .tool_name field.
+# The extraction below is written to cover both shapes; see the two notes inline.
 #
 # Scans the content a Write/Edit is about to introduce — and the text of a Bash
 # command — against the SAME patterns the commit-time scanner uses. One source
@@ -12,9 +20,8 @@
 #     refused before the agent runs them. RECOMMENDATIONS.md calls this the
 #     single highest-ROI agent hook.
 #
-# Wired via .claude/settings.json (PreToolUse, matcher "Write|Edit|Bash"). The
-# hook event arrives as JSON on stdin. It BLOCKS by exiting 2 — Claude Code
-# feeds the stderr text back to the model so it can correct course.
+# The hook BLOCKS by exiting 2; both runtimes feed the stderr text back to the
+# model so it can correct course.
 #
 # Requires `jq`. If jq is missing, or no secrets.txt is present, it exits 0
 # (fail-OPEN) — an agent helper must never brick the session; the pre-commit
@@ -35,11 +42,14 @@ ROOT=${CLAUDE_PROJECT_DIR:-}
 
 tool=$(jq -r '.tool_name // empty' <<<"$payload" 2>/dev/null || true)
 
-# Pull every string value out of tool_input regardless of the tool's field names
-# (Write.content, Edit.new_string, MultiEdit edits[].new_string, Bash.command,
-# …). `.. | strings` walks the whole subtree, so this stays correct even if a
-# tool's schema changes.
-content=$(jq -r '[.tool_input | .. | strings] | join("\n")' <<<"$payload" 2>/dev/null || true)
+# Pull every string value out of the event regardless of the tool's field names
+# (Claude: Write.content, Edit.new_string, MultiEdit edits[].new_string,
+# Bash.command; Cursor: top-level .command). `(.tool_input // .)` walks
+# .tool_input when present (Claude) and otherwise the whole payload (Cursor,
+# which has no .tool_input) — so a Cursor command at the top level is still
+# scanned instead of silently failing open. `.. | strings` then walks the whole
+# subtree, staying correct even if a tool's schema changes.
+content=$(jq -r '[(.tool_input // .) | .. | strings] | join("\n")' <<<"$payload" 2>/dev/null || true)
 [ -n "$content" ] || exit 0
 
 # Drop pathologically long lines (a minified bundle pasted into a Write) so the
@@ -100,8 +110,14 @@ scan_against() {
 scan_against "$ROOT/.forbidden-patterns/secrets.txt" i \
   "this content matches a secret pattern — don't hardcode credentials; read them from an env var or secret manager"
 
-# Shell: Bash tool calls only, case-sensitive (commit-time semantics).
-[ "$tool" = "Bash" ] && scan_against "$ROOT/.forbidden-patterns/shell.txt" "" \
-  "this command matches a dangerous shell pattern (e.g. curl|bash, rm -rf /, chmod 777) — don't run it"
+# Shell: command executions only, case-sensitive (commit-time semantics).
+# Claude reports tool_name "Bash"; Cursor's beforeShellExecution has no
+# tool_name but carries the command at the top-level .command — gate on either,
+# or the scan would silently skip every Cursor shell call (fail-open).
+shellcmd=$(jq -r '.command // empty' <<<"$payload" 2>/dev/null || true)
+if [ "$tool" = "Bash" ] || [ -n "$shellcmd" ]; then
+  scan_against "$ROOT/.forbidden-patterns/shell.txt" "" \
+    "this command matches a dangerous shell pattern (e.g. curl|bash, rm -rf /, chmod 777) — don't run it"
+fi
 
 exit 0
