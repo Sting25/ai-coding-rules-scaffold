@@ -183,12 +183,17 @@ jobs:
     #   1. Runs the check scripts AND pattern configs from the PR head. On a
     #      `pull_request` build the checked-out tree is the PR's own content, so
     #      a PR can weaken the very scanner meant to gate it (edit a check-*
-    #      script, delete a pattern from .forbidden-patterns/*). This is a
+    #      script, delete a pattern from .forbidden-patterns/*, or add a
+    #      `.scaffold.toml` that disables/downgrades a rule). The override file
+    #      is committed and the "active rule overrides" step below prints it into
+    #      the log, so a weakened rule is visible in review — but treat changes
+    #      to .scaffold.toml and .githooks/** as security-relevant. This is a
     #      defense-in-depth backstop, NOT a trust boundary against a hostile
     #      contributor — pair it with branch protection / required review, and
     #      for untrusted forks gate merges on a scan run from the BASE ref
     #      (e.g. check out `${{ github.base_ref }}`'s .githooks + configs and
-    #      run those against the PR's files).
+    #      run those against the PR's files). Note: secrets/credential-filename
+    #      blocking is NOT overridable by .scaffold.toml, by design.
     #
     #   2. Scans the committed blob (`git show :0:<path>`). For a Git-LFS- or
     #      clean/smudge-filtered file the committed blob is the POINTER, not the
@@ -198,9 +203,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - name: Show active rule overrides (.scaffold.toml)
+        # Print every per-project override into the log so a disabled or
+        # downgraded rule is visible in review, not silent. Informational only.
+        run: |
+          chmod +x .githooks/lib/scaffold-audit 2>/dev/null || true
+          if [ -x .githooks/lib/scaffold-audit ]; then .githooks/lib/scaffold-audit; fi
       - name: Run scaffold checks
         run: |
-          chmod +x .githooks/lib/check-*
+          chmod +x .githooks/lib/* 2>/dev/null || true
           # -z (NUL-delimited) so a filename containing a newline, tab, or
           # quote can't split the list and slip a file past the scan. The
           # check scripts read each file's committed blob (git show ":0:<path>"),

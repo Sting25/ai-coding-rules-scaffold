@@ -67,9 +67,12 @@ force_remove() {
 remove_if_unmodified "ruff.toml"                     "$SCAFFOLD_DIR/ruff.toml.template"
 remove_if_unmodified "eslint.config.js"              "$SCAFFOLD_DIR/eslint.config.js.template"
 remove_if_unmodified ".githooks/pre-commit"          "$SCAFFOLD_DIR/githooks/pre-commit.template"
-for check in check-size check-patterns check-filenames check-secrets check-hygiene; do
+for check in check-size check-patterns check-filenames check-secrets check-hygiene scaffold-config scaffold-audit; do
   remove_if_unmodified ".githooks/lib/${check}" "$SCAFFOLD_DIR/githooks/lib/${check}.template"
 done
+# Per-project override file — removed only if still byte-identical to the
+# shipped (empty) template; a team that has recorded overrides keeps it.
+remove_if_unmodified ".scaffold.toml"                "$SCAFFOLD_DIR/.scaffold.toml.template"
 remove_if_unmodified ".github/workflows/lint.yml"    "$SCAFFOLD_DIR/.github/workflows/lint.yml.template"
 remove_if_unmodified ".github/dependabot.yml"        "$SCAFFOLD_DIR/.github/dependabot.yml.template"
 remove_if_unmodified "CLAUDE.md"                     "$SCAFFOLD_DIR/CLAUDE.md.pointer"

@@ -81,7 +81,10 @@ cp_safe "$SCAFFOLD_DIR/AGENTS.md.template" "AGENTS.md"
 cp_safe "$SCAFFOLD_DIR/CLAUDE.md.pointer" "CLAUDE.md"
 cp_safe "$SCAFFOLD_DIR/githooks/pre-commit.template" ".githooks/pre-commit"
 chmod +x .githooks/pre-commit
-for check in check-size check-patterns check-filenames check-secrets check-hygiene; do
+# scaffold-config + scaffold-audit are the per-project override layer
+# (.scaffold.toml): the check-* scripts source the former for per-rule
+# disable / severity / per-path size caps; the latter lists active overrides.
+for check in check-size check-patterns check-filenames check-secrets check-hygiene scaffold-config scaffold-audit; do
   cp_safe "$SCAFFOLD_DIR/githooks/lib/${check}.template" ".githooks/lib/${check}"
   chmod +x ".githooks/lib/${check}"
 done
@@ -89,6 +92,9 @@ cp_safe "$SCAFFOLD_DIR/.github/workflows/lint.yml.template" ".github/workflows/l
 cp_safe "$SCAFFOLD_DIR/.github/dependabot.yml.template" ".github/dependabot.yml"
 cp_safe "$SCAFFOLD_DIR/forbidden-patterns/secrets.txt.template" ".forbidden-patterns/secrets.txt"
 cp_safe "$SCAFFOLD_DIR/forbidden-patterns/shell.txt.template" ".forbidden-patterns/shell.txt"
+# Per-project override file — ships empty (all examples commented), so it
+# enforces nothing until a team uncomments an entry. See scaffold-config.
+cp_safe "$SCAFFOLD_DIR/.scaffold.toml.template" ".scaffold.toml"
 
 # Python
 if [ "$MODE" = "python" ] || [ "$MODE" = "both" ]; then
