@@ -381,6 +381,20 @@ echo "rm -rf /tmp/build-cache" >cleanup.sh
 git add cleanup.sh
 assert_passes "scoped rm -rf /tmp/... is not flagged"
 
+# 25b. `git ... --no-verify` is rejected — it bypasses the pre-commit/commit-msg
+#      gate. Consumed by agent-precheck (Claude/Cursor) at the action boundary;
+#      this scans the committed shell file too. `gi`+`t` split so this harness
+#      file carries no live pattern in the new fixture line.
+echo "gi""t commit -m 'wip' --no-verify" >skip.sh
+git add skip.sh
+assert_rejects "git --no-verify is rejected" "bypasses the pre-commit"
+
+# 25c. NEGATIVE: a non-git `--no-verify` flag (e.g. an installer) must NOT match —
+#      the rule is scoped to a git subcommand within one pipeline segment.
+echo "./install.sh --no-verify --both" >setup.sh
+git add setup.sh
+assert_passes "non-git --no-verify (installer flag) is not flagged"
+
 # 26. NEGATIVE: pattern scan is case-SENSITIVE — `Console.log` (capital C) is a
 #     different identifier and must pass, not be flagged as `console.log`.
 echo 'Console.log("ok");' >comp.ts

@@ -7,6 +7,16 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **`git --no-verify` block (`shell.txt`, default-on).** Converts an existing
+  *prose-only* rule (`AGENTS.md` git discipline + `coding-rules.md` rule 9 + the
+  README "`--no-verify` doesn't become the escape hatch" invariant) into a
+  machine check at the agent action boundary — `agent-precheck` already feeds
+  `shell.txt` to Claude `PreToolUse` and Cursor `beforeShellExecution`. Stops an
+  agent from skipping the gate locally (a documented behavior: claude-code#40117).
+  Scoped to a git subcommand within one pipeline segment, so a non-git
+  `--no-verify` flag (e.g. `install.sh --no-verify`) doesn't match; a genuine
+  agent-driven uninstall can use `scaffold-allow`. CI remains the unskippable
+  backstop. +2 fixtures.
 - **Svelte `{@html}` XSS deny-pattern + `.svelte` coverage (`frontend.txt`,
   default-on).** Same untrusted-HTML-injection bug class as the already-banned
   `dangerouslySetInnerHTML` (React) and `v-html` (Vue); agents reach for
