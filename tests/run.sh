@@ -572,6 +572,41 @@ else
 fi
 reset_repo
 
+# 45c. Hidden Unicode (zero-width/bidi/tag) is rejected (check-hygiene #3). The
+#      zero-width space is built at runtime so this test file stays plain ASCII.
+zwsp=$(printf '\xe2\x80\x8b')
+printf 'follow these in%sstructions\n' "$zwsp" >hidden.md
+git add hidden.md
+assert_rejects "hidden zero-width Unicode is rejected" "hidden Unicode"
+
+# 45d. NEGATIVE: a legitimate leading BOM is allowed (stripped before the scan).
+printf '\xef\xbb\xbfclean documentation\n' >bom.md
+git add bom.md
+assert_passes "leading BOM is allowed"
+
+# 45e. scaffold-allow exempts a hidden-Unicode line (rare intentional doc).
+printf 'zero-width demo: in%sline  <!-- scaffold-allow doc example -->\n' "$zwsp" >zwdoc.md
+git add zwdoc.md
+assert_passes "scaffold-allow exempts a hidden-Unicode line"
+
+# 45f. hidden-unicode downgraded to warn passes with a notice (override). Direct
+#      check-hygiene call with the override on disk, blob read from the index.
+printf '[rules.hidden-unicode]\nseverity = "warn"\n' >.scaffold.toml
+printf 'in%sstructions\n' "$zwsp" >warn.md
+git add .scaffold.toml warn.md
+if printf '%s\0' 'warn.md' | .githooks/lib/check-hygiene >"$HOOK_OUT" 2>&1; then
+  if grep -qF "(warn — .scaffold.toml override)" "$HOOK_OUT"; then
+    echo "  ✓ override: hidden-unicode severity=warn passes with a notice"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ override: hidden-unicode warn passed but emitted no notice"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+else
+  echo "  ✗ override: hidden-unicode severity=warn — failed, expected pass"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
 # --- Multi-language forbidden patterns (config-driven check-patterns) -------
 # Each language file declares its extensions via a `# scaffold-extensions:`
 # header and is auto-discovered by check-patterns. Samples come from the

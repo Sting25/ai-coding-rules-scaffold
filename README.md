@@ -216,6 +216,7 @@ Commit + CI-breaking (pre-commit hook + `lint.yml`):
 | Committed `.env` / `*.pem` / SSH private keys (`id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`) | filename check (`.env.example` / `.env.sample` / `.env.template` allowed) |
 | Merge-conflict markers (`<<<<<<<` / `\|\|\|\|\|\|\|` / `>>>>>>>`) left in a file | `check-hygiene` (staged-blob scan) |
 | Case-only filename collisions (`Readme.md` vs `README.md`) that break macOS/Windows checkouts | `check-hygiene` (path scan; CI checks all tracked paths) |
+| Hidden Unicode — bidi controls (Trojan Source), zero-width, tag block — in a staged text file | `check-hygiene` (LC_ALL=C byte scan; leading BOM allowed, binary skipped) |
 
 ### Per-line escape valve
 

@@ -7,6 +7,17 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Hidden-Unicode guard in `check-hygiene` (default-on).** A third hygiene
+  check scans each staged text blob for invisible control characters: bidi
+  overrides (CVE-2021-42574 "Trojan Source"), zero-width chars, and the Unicode
+  tag block — the vectors behind the Feb-2025 "Rules File Backdoor", which
+  weaponizes invisible Unicode inside the very agent-read files this scaffold
+  ships (`AGENTS.md`, `coding-rules.md`, `.forbidden-patterns/*`). Matched as
+  UTF-8 byte sequences under `LC_ALL=C` (BSD-grep / bash-3.2 safe); binary blobs
+  are skipped, a legitimate leading BOM is allowed, findings are hex-sanitized so
+  the raw invisible bytes never hit the log, and `scaffold-allow` exempts a line.
+  New `hidden-unicode` override id (disable / `warn` for legit RTL repos). +4
+  fixtures. `check-hygiene` added to the maintainer shellcheck CI list.
 - **CI / supply-chain hardening (default-on).** Post-Shai-Hulud / tj-actions
   mitigations across the shipped workflows + Dependabot config: a **7-day
   Dependabot `cooldown`** (a yanked malicious release is gone before the PR
