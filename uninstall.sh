@@ -83,6 +83,8 @@ remove_if_unmodified ".claude/settings.json"         "$SCAFFOLD_DIR/claude-setti
 remove_if_unmodified ".cursor/hooks.json"            "$SCAFFOLD_DIR/cursor-hooks.json.template"
 # Opt-in commit-msg hook (only present if installed with --commit-msg).
 remove_if_unmodified ".githooks/commit-msg"          "$SCAFFOLD_DIR/githooks/commit-msg.template"
+# Opt-in local gitleaks pass (only present if installed with --gitleaks-hook).
+remove_if_unmodified ".githooks/lib/check-gitleaks"  "$SCAFFOLD_DIR/githooks/lib/check-gitleaks.template"
 
 # Likely-customized files — only with --all
 if [ "$REMOVE_ALL" -eq 1 ]; then

@@ -11,6 +11,7 @@
 #   install.sh --claude     # also install opt-in Claude Code agent guardrails
 #   install.sh --cursor     # also install opt-in Cursor agent guardrails (.cursor/hooks.json)
 #   install.sh --commit-msg # also install the Conventional-Commits commit-msg hook
+#   install.sh --gitleaks-hook # also install opt-in local gitleaks pre-commit pass
 #   install.sh --all-langs  # install every language's forbidden-pattern file
 #   install.sh --help       # show this help
 
@@ -23,6 +24,7 @@ VERIFY=1
 CLAUDE=0
 CURSOR=0
 COMMIT_MSG=0
+GITLEAKS_HOOK=0
 ALL_LANGS=0
 
 for arg in "$@"; do
@@ -35,8 +37,9 @@ for arg in "$@"; do
     --claude)     CLAUDE=1 ;;
     --cursor)     CURSOR=1 ;;
     --commit-msg) COMMIT_MSG=1 ;;
+    --gitleaks-hook) GITLEAKS_HOOK=1 ;;
     --all-langs)  ALL_LANGS=1 ;;
-    --help|-h)    sed -n '2,15p' "$0"; exit 0 ;;
+    --help|-h)    sed -n '2,16p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -159,6 +162,19 @@ fi
 if [ "$COMMIT_MSG" -eq 1 ]; then
   cp_safe "$SCAFFOLD_DIR/githooks/commit-msg.template" ".githooks/commit-msg"
   chmod +x ".githooks/commit-msg"
+fi
+
+# Local gitleaks pre-commit pass (opt-in: --gitleaks-hook). The pre-commit
+# orchestrator runs lib/check-gitleaks only when the file exists, so installing
+# it here is what turns it on. Kept opt-in because a local scan only fires where
+# the gitleaks binary is present; pair it with gitleaks.yml.template in CI.
+if [ "$GITLEAKS_HOOK" -eq 1 ]; then
+  cp_safe "$SCAFFOLD_DIR/githooks/lib/check-gitleaks.template" ".githooks/lib/check-gitleaks"
+  chmod +x ".githooks/lib/check-gitleaks"
+  if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "warning: gitleaks not found — the local pass fails open (skips) until you install it: https://github.com/gitleaks/gitleaks#installing"
+  fi
+  echo "note: --gitleaks-hook is the LOCAL echo only. Add .github/workflows/gitleaks.yml (see gitleaks.yml.template) for the unskippable CI gate."
 fi
 
 # Wire the hook — preserve existing core.hooksPath if already set (e.g. Husky).

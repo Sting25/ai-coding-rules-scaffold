@@ -888,6 +888,43 @@ else
 fi
 reset_repo
 
+# 60-62. check-gitleaks — opt-in local gitleaks pass (install.sh --gitleaks-hook).
+#     Exercised with a FAKE gitleaks on an isolated PATH so the suite needs no
+#     real binary and stays deterministic. The dirs are symlinked with the few
+#     externals the script needs (bash to launch it, cat to drain stdin) so a
+#     PATH-scoped run can't accidentally find a system gitleaks.
+CG="$SCAFFOLD_DIR/githooks/lib/check-gitleaks.template"
+mk_glbin() { local d=$1; ln -sf "$(command -v bash)" "$d/bash"; ln -sf "$(command -v cat)" "$d/cat"; }
+# (60) gitleaks absent → fail-OPEN: exit 0 with a "not installed" note.
+NOGL=$(mktemp -d); mk_glbin "$NOGL"
+if PATH="$NOGL" bash "$CG" </dev/null >"$HOOK_OUT" 2>&1 && grep -qF "gitleaks not installed" "$HOOK_OUT"; then
+  echo "  ✓ check-gitleaks fails open (exit 0 + note) when the binary is absent"; PASS=$((PASS + 1))
+else
+  echo "  ✗ check-gitleaks — expected clean skip when gitleaks is absent"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+# (61) gitleaks present and reports a leak (exit 1) → check-gitleaks blocks.
+GLBIN=$(mktemp -d); mk_glbin "$GLBIN"
+printf '#!/bin/sh\nexit 1\n' >"$GLBIN/gitleaks"; chmod +x "$GLBIN/gitleaks"
+if PATH="$GLBIN" bash "$CG" </dev/null >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ check-gitleaks — allowed a commit when gitleaks reported a leak"; FAIL=$((FAIL + 1))
+elif grep -qF "gitleaks flagged a potential secret" "$HOOK_OUT"; then
+  echo "  ✓ check-gitleaks blocks when gitleaks reports a leak"; PASS=$((PASS + 1))
+else
+  echo "  ✗ check-gitleaks — blocked but missing the expected message"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+# (62) gitleaks present and clean (exit 0) → check-gitleaks allows.
+printf '#!/bin/sh\nexit 0\n' >"$GLBIN/gitleaks"
+if PATH="$GLBIN" bash "$CG" </dev/null >"$HOOK_OUT" 2>&1; then
+  echo "  ✓ check-gitleaks allows a clean staged scan"; PASS=$((PASS + 1))
+else
+  echo "  ✗ check-gitleaks — blocked a clean scan, expected allow"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$NOGL" "$GLBIN"
+reset_repo
+
 echo ""
 echo "Result: $PASS passed, $FAIL failed"
 exit $FAIL

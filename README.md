@@ -68,6 +68,7 @@ The script auto-detects Python (`pyproject.toml` / `requirements.txt` / `setup.p
 ./install.sh --claude       # also install opt-in Claude Code agent guardrails
 ./install.sh --cursor       # also install opt-in Cursor agent guardrails
 ./install.sh --commit-msg   # also install the Conventional-Commits commit-msg hook
+./install.sh --gitleaks-hook # also install opt-in local gitleaks pre-commit pass
 ./install.sh --all-langs    # install every language's forbidden-pattern file
 ./install.sh --help         # show usage
 ```
@@ -313,6 +314,15 @@ by default so the scaffold stays minimal; turn them on per project.
   shapes in `secrets.txt`); gitleaks' ~150 maintained rules catch provider
   tokens the hand-written list can't enumerate. Not auto-installed — it adds a
   third-party action dependency. Pinned to a commit SHA; bump via Dependabot.
+
+- **Local gitleaks pass (`install.sh --gitleaks-hook`).** The fast local echo of
+  the gitleaks CI job: a `lib/check-gitleaks` that runs `gitleaks git
+  --pre-commit --staged --redact` (gitleaks' own official pre-commit invocation)
+  over the staged changes. Opt-in, not default-on: a local scan only fires where
+  the `gitleaks` binary is installed, so default-on would give two developers
+  different commit-time behavior. Fails open (skips with a note) when the binary
+  is absent — always pair it with the CI workflow above, which is the
+  machine-independent boundary.
 
 - **dependency-review CI gate (`.github/workflows/dependency-review.yml.template`).**
   Copy it in to block a PR that introduces a dependency with a known
