@@ -1,4 +1,5 @@
 # Forbidden patterns for shell scripts (*.sh, *.bash). See forbidden-patterns/README.md.
+# scaffold-extensions: sh bash
 # Copy to your project as `.forbidden-patterns/shell.txt`.
 
 (^|[^A-Za-z_])(curl|wget)([[:space:]]+[^|]*)?\|[[:space:]]*(sudo[[:space:]]+)?(bash|sh|zsh)([[:space:]]|$)	Piping remote download to a shell — review the script and run it as a separate step

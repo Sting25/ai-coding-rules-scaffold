@@ -1,0 +1,15 @@
+# Forbidden patterns for Go files (*.go). Applied by .githooks/pre-commit.
+# scaffold-extensions: go
+# Format: <regex><TAB><description>   (one per line; # comments ignored)
+# Separator is TAB - patterns can contain literal `|` for ERE alternation.
+# Case-sensitive ERE (grep -anE). Copy to your project as `.forbidden-patterns/go.txt`.
+# Active rules flag leftover debug output; panic/log.Fatal live in optional below.
+
+(^|[^A-Za-z_.])fmt\.Print(ln|f)?[[:space:]]*\(	Remove fmt.Print/Println/Printf debug output - use the project logger
+(^|[^A-Za-z_.])println[[:space:]]*\(	Remove the builtin println() before committing
+(^|[^A-Za-z_.])spew\.Dump[[:space:]]*\(	Remove spew.Dump() debug dump before committing
+
+# Optional (opt-in) — uncomment a line to enable it:
+# (^|[^A-Za-z_.])print[[:space:]]*\(	Remove the builtin print() before committing (off by default: 'print' is a plausible method/field name)
+# (^|[^A-Za-z_])panic[[:space:]]*\(	Avoid panic() in library code - return an error (off by default: legitimate in main/init and tests)
+# (^|[^A-Za-z_])log\.(Fatal|Panic)(f|ln)?[[:space:]]*\(	Avoid log.Fatal/log.Panic in library code - return an error (off by default: legitimate in main)

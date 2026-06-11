@@ -67,7 +67,7 @@ echo '{"name":"test"}' >package.json
 echo 'name = "test"' >pyproject.toml
 git add . && git commit --quiet -m "fixture" --no-verify
 
-"$SCAFFOLD_DIR/install.sh" --both --no-verify >/dev/null
+"$SCAFFOLD_DIR/install.sh" --both --all-langs --no-verify >/dev/null
 git add . && git commit --quiet -m "install scaffold" --no-verify
 
 echo "Hook test cases:"
@@ -512,6 +512,62 @@ else
 fi
 reset_repo
 
+# --- Multi-language forbidden patterns (config-driven check-patterns) -------
+# Each language file declares its extensions via a `# scaffold-extensions:`
+# header and is auto-discovered by check-patterns. Samples come from the
+# adversarially-FP-reviewed pattern set; each pair proves an active pattern
+# rejects and a look-alike legitimate construct passes.
+
+# PHP — dd() debug call vs ->dd() method call ($-vars are literal PHP source)
+# shellcheck disable=SC2016
+echo '<?php dd($user, $order);' >leak.php
+git add leak.php
+assert_rejects "PHP dd() debug call rejected" "dump-and-die"
+# shellcheck disable=SC2016
+echo '<?php $q = $builder->dd()->paginate();' >ok.php
+git add ok.php
+assert_passes "PHP ->dd() method call is not flagged"
+
+# Go — fmt.Println debug vs fmt.Errorf
+echo 'fmt.Println("user:", u)' >leak.go
+git add leak.go
+assert_rejects "Go fmt.Println debug rejected" "fmt.Print"
+echo 'return fmt.Errorf("load config: %w", err)' >ok.go
+git add ok.go
+assert_passes "Go fmt.Errorf is not flagged"
+
+# Rust — dbg!() macro vs format!()
+echo 'dbg!(payload);' >leak.rs
+git add leak.rs
+assert_rejects "Rust dbg!() macro rejected" "dbg!"
+echo 'let n = format!("{}-{}", a, b);' >ok.rs
+git add ok.rs
+assert_passes "Rust format!() is not flagged"
+
+# Java — System.out.println vs logger
+echo 'System.out.println("debug");' >Leak.java
+git add Leak.java
+assert_rejects "Java System.out.println rejected" "System.out"
+echo 'logger.info("started");' >Ok.java
+git add Ok.java
+assert_passes "Java logger.info is not flagged"
+
+# Kotlin — println vs logger
+echo 'println("debug")' >Leak.kt
+git add Leak.kt
+assert_rejects "Kotlin println rejected" "println"
+echo 'logger.info("started")' >Ok.kt
+git add Ok.kt
+assert_passes "Kotlin logger.info is not flagged"
+
+# Ruby — binding.pry debug vs puts (puts is opt-in, off by default)
+echo 'binding.pry' >leak.rb
+git add leak.rb
+assert_rejects "Ruby binding.pry rejected" "binding.pry"
+echo 'puts "ok"' >ok.rb
+git add ok.rb
+assert_passes "Ruby puts is opt-in (not flagged by default)"
+
 # 46-48. agent-precheck — the opt-in Claude Code PreToolUse hook. Invoked
 #     directly (it's not a git hook) with CLAUDE_PROJECT_DIR pointed at this
 #     temp repo, which has .forbidden-patterns/secrets.txt installed. Needs jq.
@@ -575,6 +631,104 @@ else
   echo "  ✗ commit-msg rejected a merge commit"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -f "$mf"
+reset_repo
+
+# --- .scaffold.toml per-project overrides (lib/scaffold-config) -------------
+# A STAGED .scaffold.toml is what the checks read: the hook stashes unstaged
+# changes (--keep-index), so only the indexed copy is on disk during the scan —
+# matching how overrides ship (committed). Fixtures use ruff-clean comment
+# bodies / bare `print` so the linters don't independently fail an assert_passes
+# case (ruff doesn't enable T20; eslint's no-console is why these avoid .ts).
+
+# 52. [size] per-glob cap raises the limit: a 501-line file under the matching
+#     glob passes where the default 500 would reject.
+printf '[size]\n"legacy/**" = 700\n' >.scaffold.toml
+mkdir -p legacy
+seq 1 501 | sed 's/^/# /' >legacy/big.py
+git add .scaffold.toml legacy/big.py
+assert_passes "override: [size] per-glob cap raises the limit"
+
+# 53. [rules.size] disabled turns the size cap off entirely.
+printf '[rules.size]\ndisabled = true\n' >.scaffold.toml
+seq 1 501 | sed 's/^/# /' >big2.py
+git add .scaffold.toml big2.py
+assert_passes "override: [rules.size] disabled skips the size cap"
+
+# 54. A disabled forbidden-pattern rule lets its match through.
+cat >.scaffold.toml <<'EOF'
+[rules."backend/Use structlog (or the project's logger), not print()"]
+disabled = true
+reason   = "test"
+by       = "test"
+EOF
+echo 'print("debug")' >app.py
+git add .scaffold.toml app.py
+assert_passes "override: disabled pattern rule lets the match through"
+
+# 55. severity = "warn" reports the match but does NOT fail the build.
+cat >.scaffold.toml <<'EOF'
+[rules."backend/Use structlog (or the project's logger), not print()"]
+severity = "warn"
+EOF
+echo 'print("debug")' >app.py
+git add .scaffold.toml app.py
+if .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  if grep -qF "(warn — .scaffold.toml override)" "$HOOK_OUT"; then
+    echo "  ✓ override: severity=warn reports without failing"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ override: severity=warn passed but emitted no warn notice"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+else
+  echo "  ✗ override: severity=warn — hook failed, expected pass-with-warning"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
+# 56. Hygiene rule downgrade: case-collision as a warning still passes. Feed the
+#     NUL-delimited path list to check-hygiene directly (a real case-variant pair
+#     can't coexist on a case-insensitive FS), with the override on disk.
+printf '[rules.case-collision]\nseverity = "warn"\n' >.scaffold.toml
+if printf '%s\0' 'Collide.txt' 'collide.txt' | .githooks/lib/check-hygiene >"$HOOK_OUT" 2>&1; then
+  if grep -qF "(warn — .scaffold.toml override)" "$HOOK_OUT"; then
+    echo "  ✓ override: case-collision severity=warn passes with a notice"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ override: case-collision warn passed but emitted no notice"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+else
+  echo "  ✗ override: case-collision severity=warn — failed, expected pass"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
+# 57. FAIL SAFE: an unparseable .scaffold.toml disables nothing — print() is
+#     still rejected (a config can only weaken via a clean, explicit entry).
+printf 'this is { not ] valid toml at all\n' >.scaffold.toml
+echo 'print("debug")' >app.py
+git add .scaffold.toml app.py
+assert_rejects "override: malformed config fails safe (rule still enforced)" "structlog"
+
+# 58. SECURITY BOUNDARY: .scaffold.toml cannot disable the secret scanner —
+#     check-secrets never consults it, so the AKIA key is still caught.
+cat >.scaffold.toml <<'EOF'
+[rules."secrets/AWS access key ID (AKIA) or temporary session key (ASIA) — rotate immediately"]
+disabled = true
+EOF
+echo "AKIA""IOSFODNN7EXAMPLE" >creds.txt
+git add .scaffold.toml creds.txt
+assert_rejects "override: secret scanner is NOT disablable via .scaffold.toml" "AWS access key"
+
+# 59. scaffold-audit (installed by install.sh) lists active overrides. The CI
+#     guardrails job runs this so a disabled rule is visible in the build log.
+printf '[rules."backend/Use structlog (or the project'\''s logger), not print()"]\ndisabled = true\n' >.scaffold.toml
+if .githooks/lib/scaffold-audit >"$HOOK_OUT" 2>&1 \
+   && grep -qF "DISABLED" "$HOOK_OUT" && grep -qF "backend/Use structlog" "$HOOK_OUT"; then
+  echo "  ✓ scaffold-audit lists active overrides"; PASS=$((PASS + 1))
+else
+  echo "  ✗ scaffold-audit — did not list the disabled rule"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
 reset_repo
 
 echo ""

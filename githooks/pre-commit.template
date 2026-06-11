@@ -101,11 +101,13 @@ FAILED=0
 # stays usable on machines that haven't run `pip install ruff` yet.
 STAGED_PY=()
 STAGED_JS=()
+STAGED_PHP=()
 while IFS= read -r -d '' f; do
   [ -z "$f" ] && continue
   case "$f" in
     *.py)                  STAGED_PY+=("$f") ;;
-    *.ts|*.tsx|*.js|*.jsx) STAGED_JS+=("$f") ;;
+    *.ts|*.tsx|*.js|*.jsx|*.vue) STAGED_JS+=("$f") ;;
+    *.php|*.phtml)         STAGED_PHP+=("$f") ;;
   esac
 done <"$STAGED_LIST"
 
@@ -133,6 +135,20 @@ if [ ${#STAGED_JS[@]} -gt 0 ] \
    && command -v npx >/dev/null 2>&1 \
    && npx --no-install tsc --version >/dev/null 2>&1; then
   npx --no-install tsc --noEmit || FAILED=1
+fi
+
+# PHP: zero-config syntax check (`php -l`) on each staged file when php is on
+# PATH, plus phpcs when a ruleset/composer project is present and phpcs is
+# installed. Silently skipped otherwise, like the linters above.
+if [ ${#STAGED_PHP[@]} -gt 0 ] && command -v php >/dev/null 2>&1; then
+  for f in "${STAGED_PHP[@]}"; do
+    php -l "$f" >/dev/null 2>&1 || { echo "✗ $f: PHP syntax error (php -l)"; FAILED=1; }
+  done
+fi
+if [ ${#STAGED_PHP[@]} -gt 0 ] \
+   && { [ -f phpcs.xml ] || [ -f phpcs.xml.dist ] || [ -f composer.json ]; } \
+   && command -v phpcs >/dev/null 2>&1; then
+  phpcs -- "${STAGED_PHP[@]}" || FAILED=1
 fi
 
 if [ "$FAILED" -ne 0 ]; then

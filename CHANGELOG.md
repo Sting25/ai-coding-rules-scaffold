@@ -7,6 +7,20 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Per-project rule overrides (`.scaffold.toml`).** A first-class, committed,
+  auditable config layer the `check-*` scripts consume via a new pure-bash/awk
+  reader (`lib/scaffold-config`, no python/jq dependency). A team can: raise the
+  size cap globally or per glob (`[size]`), disable a forbidden-pattern or
+  hygiene rule entirely, or downgrade any of them `error → warn` (still emitted
+  as a CI `::warning::`, never silent). Rules are keyed
+  `"<patternfile-stem>/<description>"`, plus `conflict-marker` / `case-collision`
+  / `size`. Modifying a pattern's regex stays an edit to the `.forbidden-patterns`
+  file you own (no duplicated regexes). A malformed config **fails safe** —
+  rules stay fully enforced. **Security boundary:** `check-secrets` and
+  `check-filenames` ignore `.scaffold.toml` by design, so secret/credential-file
+  blocking cannot be disabled per-project. `lib/scaffold-audit` lists every
+  active override and the CI guardrails job echoes it into the build log;
+  `install.sh` ships an empty, fully-commented `.scaffold.toml`.
 - **TypeScript enforcement, broadened (P0).** The shipped `eslint.config.js`
   now extends typescript-eslint's **`strictTypeChecked`** tier with
   `projectService` auto-discovery, so type-aware rules actually fire. Pinned
@@ -50,6 +64,21 @@ versioning follows [SemVer](https://semver.org/).
 - **Dependabot** (`.github/dependabot.yml` + consumer template, installed by
   default). Weekly grouped bumps of the SHA-pinned GitHub Actions so the pins
   don't rot.
+
+- **Multi-language forbidden patterns (config-driven).** `check-patterns` now
+  auto-discovers every `.forbidden-patterns/*.txt` and reads a
+  `# scaffold-extensions:` header from each, so adding a language is just
+  dropping a file — no script edit. Ships tuned, adversarially FP-reviewed
+  pattern files for **PHP, Go, Rust, Java, Kotlin, Ruby** (plus `*.vue` + Vue
+  `v-html` on the frontend set); FP-prone rules (Rust `.unwrap()`, Ruby `puts`,
+  PHP `die/exit`, …) ship commented as opt-in. `install.sh` auto-installs a
+  language's file when it detects the manifest (`go.mod`, `Cargo.toml`,
+  `composer.json`, `pom.xml`/`build.gradle`, `Gemfile`), or all of them with
+  `--all-langs`. backend/frontend/shell keep a built-in fallback mapping.
+- **PHP linting.** `php -l` (syntax) + `phpcs` (when configured) wired into the
+  pre-commit hook and a new `php` CI job (`setup-php` SHA-pinned). Ready-to-
+  uncomment, SHA-pinned CI job stubs added for Go/Rust/Java/Kotlin/Ruby linters.
+  +13 harness fixtures (a reject + a look-alike negative per language).
 
 ### Changed
 - **CI uses a frozen-lockfile install.** The frontend job runs `npm ci` when a

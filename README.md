@@ -67,10 +67,14 @@ The script auto-detects Python (`pyproject.toml` / `requirements.txt` / `setup.p
 ./install.sh --no-verify    # skip the post-install linter check
 ./install.sh --claude       # also install opt-in Claude Code agent guardrails
 ./install.sh --commit-msg   # also install the Conventional-Commits commit-msg hook
+./install.sh --all-langs    # install every language's forbidden-pattern file
 ./install.sh --help         # show usage
 ```
 
-See [Opt-in layers](#opt-in-layers) for what `--claude` and `--commit-msg` add.
+Language pattern files are auto-installed when their manifest is detected
+(`go.mod`, `Cargo.toml`, `composer.json`, `pom.xml`/`build.gradle`, `Gemfile`,
+…); `--all-langs` installs them all. See [Opt-in layers](#opt-in-layers) for
+what `--claude` and `--commit-msg` add.
 
 At the end, `install.sh` verifies that `ruff` and/or `eslint` are installed and that their configs load. If either is missing, it prints the install command.
 
@@ -104,8 +108,11 @@ Either way, the four `lib/check-*` scripts in `.githooks/lib/` are also runnable
 | `operational-rules.md` | `operational-rules.md` | Process and collaboration rules — failure modes that no linter can catch |
 | `ruff.toml.template` | `ruff.toml` | Python lint config |
 | `eslint.config.js.template` | `eslint.config.js` | TS/JS lint config (flat config, ESLint 9+) |
-| `githooks/pre-commit.template` | `.githooks/pre-commit` | Hook orchestrator — invokes the four `lib/check-*` scripts |
-| `githooks/lib/check-{size,patterns,filenames,secrets}.template` | `.githooks/lib/check-{size,patterns,filenames,secrets}` | Reusable check scripts; the same scripts run from CI so hook and CI can't drift |
+| `githooks/pre-commit.template` | `.githooks/pre-commit` | Hook orchestrator — invokes the five `lib/check-*` scripts |
+| `githooks/lib/check-{size,patterns,filenames,secrets,hygiene}.template` | `.githooks/lib/check-{size,patterns,filenames,secrets,hygiene}` | Reusable check scripts; the same scripts run from CI so hook and CI can't drift |
+| `githooks/lib/scaffold-config.template` | `.githooks/lib/scaffold-config` | Reads per-project rule overrides from `.scaffold.toml` (per-path size caps, per-rule disable / severity) |
+| `githooks/lib/scaffold-audit.template` | `.githooks/lib/scaffold-audit` | Lists every active override in `.scaffold.toml`; run locally and echoed by CI |
+| `.scaffold.toml.template` | `.scaffold.toml` | Per-project rule overrides — ships empty (commented), enforces nothing until edited |
 | `.github/workflows/lint.yml.template` | `.github/workflows/lint.yml` | CI mirror — invokes the same `lib/check-*` scripts as the hook |
 | `forbidden-patterns/backend.txt.template` | `.forbidden-patterns/backend.txt` | Python patterns consumed by hook + CI |
 | `forbidden-patterns/frontend.txt.template` | `.forbidden-patterns/frontend.txt` | TS/JS patterns consumed by hook + CI |
@@ -218,6 +225,48 @@ unaffected. See `forbidden-patterns/README.md` for examples.
 suppressing a guardrail.** Treat new markers like new `# noqa`s — confirm
 the suppression is justified before approving. Audit the full set with
 `git grep -i scaffold-allow`.
+
+### Per-project rule overrides (`.scaffold.toml`)
+
+`scaffold-allow` exempts a single *line*. When a team disagrees with a rule
+*as a whole* — or needs a bigger size budget for a legacy tree — record that
+decision once, durably and auditably, in a repo-root `.scaffold.toml`. It
+ships empty (all examples commented), so it changes nothing until you edit it.
+
+```toml
+[size]
+default     = 800          # raise the project-wide line cap (default 500)
+"legacy/**" = 2000         # most-specific matching glob wins
+
+[rules."php/var_dump( or print_r( left in code"]
+disabled = true            # turn a forbidden-pattern rule off entirely
+reason   = "legacy reporting module, JIRA-1234"
+by       = "alex 2026-06-11"
+
+[rules."frontend/console.log left in code"]
+severity = "warn"          # error (default) → warn: still reported, doesn't fail
+
+[rules.case-collision]     # hygiene ids: conflict-marker, case-collision
+severity = "warn"
+```
+
+- **Rule ids.** Forbidden-pattern rules are keyed `"<patternfile-stem>/<description>"`
+  (the text after the TAB in `.forbidden-patterns/<lang>.txt`). Hygiene rules
+  use `conflict-marker` / `case-collision`; the size cap uses `size`.
+- **Disable vs downgrade.** `disabled = true` turns the rule off; `severity =
+  "warn"` keeps emitting the finding (a CI `::warning::`) without failing the
+  build — a relaxed rule stays visible, never silent.
+- **Modifying a pattern's regex/description** is just editing the
+  `.forbidden-patterns/<lang>.txt` you already own; git history is the audit
+  trail. `.scaffold.toml` owns disable + severity, so a regex never lives in two
+  places.
+- **What you cannot override.** The secret scanner and the credential-filename
+  check (`check-secrets` / `check-filenames`) ignore `.scaffold.toml` entirely
+  — secret/key-file blocking is non-negotiable and can't be turned off
+  per-project.
+- **Audit.** `.githooks/lib/scaffold-audit` lists every active override; the CI
+  guardrails job prints it into the build log. Treat changes to `.scaffold.toml`
+  as security-relevant in review, the same as edits to `.githooks/**`.
 
 ## Opt-in layers
 

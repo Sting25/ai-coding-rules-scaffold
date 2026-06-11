@@ -1,14 +1,35 @@
 # forbidden-patterns/
 
 Pattern files consumed by `.githooks/lib/check-patterns` and
-`.githooks/lib/check-secrets`. Three files, same format, different scope:
+`.githooks/lib/check-secrets`. Same format, different scope:
 
 | File           | Scans                                              | Case-sensitive |
 |----------------|----------------------------------------------------|----------------|
 | `backend.txt`  | `*.py`                                             | yes            |
-| `frontend.txt` | `*.ts`, `*.tsx`, `*.js`, `*.jsx`                   | yes            |
+| `frontend.txt` | `*.ts`, `*.tsx`, `*.js`, `*.jsx`, `*.vue`         | yes            |
 | `shell.txt`    | `*.sh`, `*.bash`                                   | yes            |
+| `php.txt`      | `*.php`, `*.phtml`, …                              | yes            |
+| `go.txt`       | `*.go`                                             | yes            |
+| `rust.txt`     | `*.rs`                                             | yes            |
+| `java.txt`     | `*.java`                                           | yes            |
+| `kotlin.txt`   | `*.kt`, `*.kts`                                    | yes            |
+| `ruby.txt`     | `*.rb`, `*.rake`                                   | yes            |
 | `secrets.txt`  | all tracked text files (binaries / lockfiles excluded) | no         |
+
+`check-patterns` **auto-discovers** every `*.txt` here (except `secrets.txt`,
+which is `check-secrets`' domain). Each file declares which extensions it
+applies to with a header line:
+
+```
+# scaffold-extensions: go
+```
+
+so the table above isn't wired into any script — a file's own header is the
+source of truth. `backend.txt` / `frontend.txt` / `shell.txt` also have a
+built-in fallback mapping, so an older copy without the header still works.
+`install.sh` copies a language's file when it detects that language's manifest
+(`go.mod`, `Cargo.toml`, `composer.json`, `pom.xml`/`build.gradle`, `Gemfile`,
+…), or all of them with `--all-langs`.
 
 ## Format
 
@@ -79,14 +100,28 @@ marker — those rules are file-level, not line-level. Audit usage with
 
 ## Adding a pattern
 
-1. Pick the right file (backend / frontend / secrets).
+1. Pick the right file for the language.
 2. Test the regex first: `echo 'sample' | grep -E 'your-pattern'` (add
    `-i` for the secrets file).
 3. Insert a single TAB between regex and description.
 4. Run `./tests/run.sh` from the scaffold root — the harness exercises
    each pattern type.
 
-## Why three files
+## Adding a language
+
+No script edit required — that's the point of the `scaffold-extensions` header:
+
+1. Create `.forbidden-patterns/<lang>.txt`.
+2. First non-pattern line: `# scaffold-extensions: ext1 ext2` (the file
+   extensions to scan, space-separated, no dots).
+3. Add `<regex><TAB><description>` lines. Keep active patterns low-false-
+   positive — a blocked legitimate commit erodes trust fast. Ship FP-prone
+   ones (e.g. Rust `.unwrap()`, Ruby `puts`) commented as opt-in.
+4. `check-patterns` picks it up automatically on the next run. Add a fixture
+   to `tests/run.sh` and, optionally, a CI linter job (see the commented
+   stubs in `.github/workflows/lint.yml`).
+
+## Why split by language
 
 Splitting by language keeps regexes precise: a pattern targeting Python
 function calls (`(^|[^A-Za-z_])print[[:space:]]*\(`) shouldn't run against

@@ -1,0 +1,20 @@
+# Forbidden patterns for PHP files. Applied by .githooks/pre-commit.
+# scaffold-extensions: php phtml php3 php4 php5 php7 php8
+# Format: <regex><TAB><description>   (one per line; # comments ignored)
+# Separator is TAB; patterns can contain literal | for ERE alternation.
+# Patterns are case-SENSITIVE, scanned against the staged blob. Copy to
+# your project as `.forbidden-patterns/php.txt`.
+# error_log() is intentionally NOT banned - it is legitimate logging.
+# die()/exit() are common control flow and live in optionalPatterns.
+
+(^|[^A-Za-z_])var_dump[[:space:]]*\(	Remove var_dump() before committing - dumps to stdout
+(^|[^A-Za-z_>])dd[[:space:]]*\(	Remove dd() (dump-and-die) before committing - it is a debug call
+(^|[^A-Za-z_>])dump[[:space:]]*\(	Remove dump() (var-dumper/Laravel/Symfony) before committing
+(^|[^A-Za-z_])xdebug_break[[:space:]]*\(	Remove xdebug_break() before committing
+
+# Optional (opt-in) — uncomment a line to enable it:
+# (^|[^A-Za-z_])print_r[[:space:]]*\(	print_r() leaks to stdout unless 2nd arg is true - opt in if your app never returns its output
+# (^|[^A-Za-z_])var_export[[:space:]]*\(	var_export() leaks to stdout unless 2nd arg is true - opt in if your app never returns its output
+# (^|[^A-Za-z_])(die|exit)[[:space:]]*\(	die()/exit() - often legitimate control flow; opt in if your codebase forbids it
+# (^|[^A-Za-z_])(TODO|FIXME|XXX)($|[^A-Za-z0-9_])	TODO/FIXME/XXX not allowed - open a ticket instead
+# (^|[^A-Za-z_.>:])(eval|assert)[[:space:]]*\(	Avoid eval()/assert(string) - arbitrary-code-execution risk; excludes ->assert and ::assert test calls

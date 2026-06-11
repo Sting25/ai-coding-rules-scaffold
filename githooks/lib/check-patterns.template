@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # .githooks/lib/check-patterns — forbidden-pattern scan for source files.
-# Reads NUL-separated file paths on stdin (produced by `git ... -z`). Scans .py
-# against backend.txt, TS/JS against frontend.txt, and shell against shell.txt.
+# Reads NUL-separated file paths on stdin (produced by `git ... -z`). Auto-
+# discovers every `.forbidden-patterns/*.txt` (except secrets.txt, which is
+# check-secrets' domain) and scans the files whose extension the pattern file
+# claims. A pattern file declares its extensions with a header line:
+#   # scaffold-extensions: py
+#   # scaffold-extensions: ts tsx js jsx vue
+# so a new language is added by dropping `<lang>.txt` with that header — no edit
+# to this script. backend.txt / frontend.txt / shell.txt have a built-in
+# fallback mapping for backward compatibility.
 # Pattern format: <regex><TAB><description>
 # (TAB is the field separator so regex can use literal `|` alternation.)
 #
@@ -31,6 +38,36 @@ ghesc() {
   printf '%s' "$s"
 }
 
+# Per-project overrides (.scaffold.toml via the sibling scaffold-config helper).
+# `cfg` fails open to empty output when the helper is missing (older install);
+# the caller then treats every rule as fully enforced (fail safe).
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+CONFIG_BIN="$SELF_DIR/scaffold-config"
+cfg() { [ -x "$CONFIG_BIN" ] || return 0; "$CONFIG_BIN" "$@" 2>/dev/null || true; }
+
+# Emit one finding at the resolved severity. `warn` reports without failing the
+# build (a deliberate, audited downgrade); `error` fails. FAILED is the global
+# set below; this is only ever called after it exists.
+report() {
+  local state=$1 file=$2 desc=$3 matches=$4
+  if [ "$state" = warn ]; then
+    if [ "$CI_MODE" -eq 1 ]; then
+      echo "::warning file=$(ghesc prop "$file")::$(ghesc data "$desc")"
+    else
+      echo "! $file: $desc (warn — .scaffold.toml override)"
+      printf '%s\n' "$matches" | head -3 | sed 's/^/    /' || true
+    fi
+  else
+    if [ "$CI_MODE" -eq 1 ]; then
+      echo "::error file=$(ghesc prop "$file")::$(ghesc data "$desc")"
+    else
+      echo "✗ $file: $desc"
+      printf '%s\n' "$matches" | head -3 | sed 's/^/    /' || true
+    fi
+    FAILED=1
+  fi
+}
+
 # Cap the maximum scanned LINE length (see check-secrets): one very long line
 # can make the combined ERE hang the hook/CI. Over-long lines are dropped with
 # a warning. Linear awk length check; the ERE on a long line is not linear.
@@ -51,6 +88,11 @@ scan() {
   local exts=("$@")
   [ -f "$config" ] || return 0
   [ ${#FILES[@]} -eq 0 ] && return 0
+
+  # Rule-id prefix for .scaffold.toml lookups: the pattern file's stem, e.g.
+  # `php` for php.txt. A rule's full id is "<stem>/<description>".
+  local stem
+  stem=$(basename "$config" .txt)
 
   local raw_patterns=() raw_descs=()
   local line pattern description
@@ -145,20 +187,48 @@ scan() {
       # Exempt only a comment-anchored marker (see check-secrets).
       m=$(grep -anE -- "$pat" <<<"$content" | grep -ivE '(#|//|/\*|<!--|--)[[:space:]]*scaffold-allow' || true)
       [ -n "$m" ] || continue
-      if [ "$CI_MODE" -eq 1 ]; then
-        echo "::error file=$(ghesc prop "$file")::$(ghesc data "$desc")"
-      else
-        echo "✗ $file: $desc"
-        printf '%s\n' "$m" | head -3 | sed 's/^/    /' || true
-      fi
-      FAILED=1
+      # Per-rule override: `disabled` skips the rule, `warn` reports without
+      # failing, anything else (incl. missing config) enforces as `error`.
+      local state
+      state=$(cfg rule-state "$stem/$desc"); [ -n "$state" ] || state=error
+      [ "$state" = disabled ] && continue
+      report "$state" "$file" "$desc" "$m"
     done
   done
 }
 
+# Resolve which file extensions a pattern file applies to. An explicit
+#   # scaffold-extensions: ext1 ext2 ...
+# header (first matching comment line) wins, so a new language is added by just
+# dropping a `<lang>.txt` with that header — no edit to this script. The three
+# original files have a built-in fallback so an older copy without the header
+# keeps working.
+exts_for() {
+  local cfg=$1 hdr
+  hdr=$(grep -m1 -E '^#[[:space:]]*scaffold-extensions:' "$cfg" 2>/dev/null \
+          | sed -E 's/^#[[:space:]]*scaffold-extensions:[[:space:]]*//; s/[[:space:]]+$//')
+  if [ -n "$hdr" ]; then printf '%s' "$hdr"; return; fi
+  case "$(basename "$cfg")" in
+    backend.txt)  printf 'py' ;;
+    frontend.txt) printf 'ts tsx js jsx vue' ;;
+    shell.txt)    printf 'sh bash' ;;
+    *)            printf '' ;;
+  esac
+}
+
 FAILED=0
-scan ".forbidden-patterns/backend.txt" py
-scan ".forbidden-patterns/frontend.txt" ts tsx js jsx
-scan ".forbidden-patterns/shell.txt" sh bash
+# Auto-discover every pattern file. secrets.txt is check-secrets' domain (it
+# scans all files, not by extension), so skip it here.
+for cfg in .forbidden-patterns/*.txt; do
+  [ -e "$cfg" ] || continue   # no glob match → literal string; skip
+  case "$(basename "$cfg")" in secrets.txt) continue ;; esac
+  cfg_exts=$(exts_for "$cfg")
+  if [ -z "$cfg_exts" ]; then
+    echo "warning: $cfg: no '# scaffold-extensions:' header and no built-in mapping — skipped" >&2
+    continue
+  fi
+  # shellcheck disable=SC2086  # word-splitting $cfg_exts into separate args is intentional
+  scan "$cfg" $cfg_exts
+done
 
 exit $FAILED

@@ -1,0 +1,26 @@
+# Forbidden patterns for Rust files (*.rs). Applied by .githooks/pre-commit.
+# scaffold-extensions: rs
+# Format: <regex><TAB><description>   (one per line; # comments ignored)
+# Separator is TAB - patterns can contain literal `|` for ERE alternation.
+# Patterns are case-SENSITIVE, scanned against the staged blob. Copy to your
+# project as `.forbidden-patterns/rust.txt`.
+# Each macro pattern requires an opening delimiter ( [ { after the `!` so it
+# only fires on a real invocation, not an identifier or a comment mention, and
+# to stay portable across GNU grep and ugrep.
+# Delimiter class is [([{] - bracket expressions take literal chars, no backslashes.
+
+(^|[^A-Za-z_])dbg![[:space:]]*[([{]	Remove dbg!() debug macro before committing
+(^|[^A-Za-z_])println![[:space:]]*[([{]	Use the project logger (log/tracing), not println!()
+(^|[^A-Za-z_])print![[:space:]]*[([{]	Use the project logger (log/tracing), not print!()
+(^|[^A-Za-z_])eprintln![[:space:]]*[([{]	Use the project logger (log/tracing), not eprintln!()
+(^|[^A-Za-z_])eprint![[:space:]]*[([{]	Use the project logger (log/tracing), not eprint!()
+(^|[^A-Za-z_])todo![[:space:]]*[([{]	Unfinished code: todo!() left in - implement or open a ticket
+(^|[^A-Za-z_])unimplemented![[:space:]]*[([{]	Unfinished code: unimplemented!() left in - implement before committing
+(^|[^A-Za-z_])unreachable![[:space:]]*[([{]	unreachable!() panics in prod if hit - prove it or return a Result
+
+# Optional (opt-in) — uncomment a line to enable it:
+# (^|[^A-Za-z_])panic![[:space:]]*[([{]	panic!() aborts the thread - prefer returning a Result (opt-in: noisy)
+# \.unwrap[[:space:]]*\(	.unwrap() panics on None/Err - prefer ? or expect() (opt-in: very FP-heavy)
+# \.expect[[:space:]]*\(	.expect() panics on None/Err - prefer ? or proper handling (opt-in: very FP-heavy)
+# (^|[^A-Za-z_])(TODO|FIXME|XXX)($|[^A-Za-z0-9_])	TODO/FIXME/XXX not allowed - open a ticket instead (opt-in)
+# #\[allow\(	An #[allow(...)] suppresses a lint - justify in review, not silently (opt-in: common)
