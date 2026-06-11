@@ -7,6 +7,12 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **TLS-verification-disable deny-patterns (`frontend.txt`, default-on).**
+  `NODE_TLS_REJECT_UNAUTHORIZED` and `rejectUnauthorized: false` — the canonical
+  AI-agent shortcut when a request fails against a self-signed cert, which
+  silently disables MITM protection for every subsequent connection. It's an
+  option *value*, not syntax, so no `eslint` rule catches it. +3 fixtures
+  (incl. a negative proving `rejectUnauthorized: true` passes).
 - **`switch-exhaustiveness-check` (default-on, type-aware).** The one widely-
   recommended typed `eslint` rule no preset (incl. `strictTypeChecked`) enables.
   Fails the build when a `switch` over a discriminated union / enum misses a

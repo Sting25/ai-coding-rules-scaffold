@@ -452,6 +452,21 @@ echo 'const api = "http://localhost:8080/v1";' >localhost.ts
 git add localhost.ts
 assert_rejects "hardcoded localhost URL is rejected" "hardcoded localhost"
 
+# 40b. Disabling TLS verification is rejected (frontend.txt Security). Both the
+#      env-var form and the rejectUnauthorized:false option form.
+echo 'const agent = new https.Agent({ rejectUnauthorized: false });' >tls.ts
+git add tls.ts
+assert_rejects "rejectUnauthorized: false is rejected" "TLS validation"
+
+echo 'process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";' >tls2.ts
+git add tls2.ts
+assert_rejects "NODE_TLS_REJECT_UNAUTHORIZED is rejected" "TLS certificate validation"
+
+# 40c. NEGATIVE: rejectUnauthorized: true (the safe value) must NOT be flagged.
+echo 'const agent = new https.Agent({ rejectUnauthorized: true });' >tlsok.ts
+git add tlsok.ts
+assert_passes "rejectUnauthorized: true is not flagged"
+
 # 41. NEGATIVE: console.warn / console.error are allowed (only console.log is
 #     banned) and a clean .ts file with no tsconfig.json passes — proving the
 #     new tsc block silently skips when TypeScript isn't configured.
