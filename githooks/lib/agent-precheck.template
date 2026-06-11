@@ -3,9 +3,14 @@
 # three": block bad content the moment an agent writes it, before commit time).
 #
 # Scans the content a Write/Edit is about to introduce — and the text of a Bash
-# command — against the SAME secret patterns the commit-time scanner uses
-# (.forbidden-patterns/secrets.txt). One source of truth: a credential the
-# agent tries to hardcode is refused at write time, not discovered later in CI.
+# command — against the SAME patterns the commit-time scanner uses. One source
+# of truth across agent -> commit -> CI:
+#   - .forbidden-patterns/secrets.txt  (all tool calls, case-insensitive) — a
+#     credential the agent tries to hardcode is refused at write time.
+#   - .forbidden-patterns/shell.txt    (Bash tool calls only, case-sensitive to
+#     match the commit-time semantics) — curl|bash, rm -rf /, chmod 777 etc. are
+#     refused before the agent runs them. RECOMMENDATIONS.md calls this the
+#     single highest-ROI agent hook.
 #
 # Wired via .claude/settings.json (PreToolUse, matcher "Write|Edit|Bash"). The
 # hook event arrives as JSON on stdin. It BLOCKS by exiting 2 — Claude Code
@@ -27,8 +32,8 @@ payload=$(cat)
 # event reports, then to ".".
 ROOT=${CLAUDE_PROJECT_DIR:-}
 [ -n "$ROOT" ] || ROOT=$(jq -r '.cwd // "."' <<<"$payload" 2>/dev/null || echo .)
-CONFIG="$ROOT/.forbidden-patterns/secrets.txt"
-[ -f "$CONFIG" ] || exit 0
+
+tool=$(jq -r '.tool_name // empty' <<<"$payload" 2>/dev/null || true)
 
 # Pull every string value out of tool_input regardless of the tool's field names
 # (Write.content, Edit.new_string, MultiEdit edits[].new_string, Bash.command,
@@ -43,48 +48,60 @@ MAX_LINE_LENGTH=${MAX_LINE_LENGTH:-50000}
 content=$(printf '%s\n' "$content" | awk -v n="$MAX_LINE_LENGTH" 'length > n { next } { print }')
 [ -n "$content" ] || exit 0
 
-# Load + validate patterns from secrets.txt (mirror of check-secrets' parsing).
-PATTERNS=()
-while IFS= read -r line || [ -n "$line" ]; do
-  line=${line%$'\r'}
-  [ -z "$line" ] && continue
-  case "$line" in \#*) continue ;; esac
-  case "$line" in *$'\t'*) ;; *) continue ;; esac
-  pattern=${line%%$'\t'*}
-  [ -z "$pattern" ] && continue
-  # Skip an invalid ERE rather than letting it poison the combined regex.
-  # `printf '' | grep -E p` writes to stderr only when p is invalid.
-  p_err=$(printf '' | grep -E -- "$pattern" 2>&1 1>/dev/null || true)
-  [ -z "$p_err" ] || continue
-  PATTERNS+=("$pattern")
-done <"$CONFIG"
+# scan_against <patternfile> <i|""> <advice line>
+#   Loads + validates patterns (mirror of check-secrets' parsing), builds the
+#   combined ERE, scans $content. On a match (minus scaffold-allow lines) it
+#   prints a BLOCKED message naming the file and EXITS 2. The case flag is `i`
+#   for secrets (case-insensitive) and "" for shell (case-sensitive — matches
+#   the commit-time check-patterns semantics). A missing file or an unparseable
+#   pattern set returns cleanly (fail-OPEN: this is an advisory pre-check, not
+#   the security boundary — commit + CI are the fail-closed backstops).
+scan_against() {
+  local pfile=$1 iflag=$2 advice=$3
+  [ -f "$pfile" ] || return 0
+  local patterns=() line pattern p_err combined p hit
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line%$'\r'}
+    [ -z "$line" ] && continue
+    case "$line" in \#*) continue ;; esac
+    case "$line" in *$'\t'*) ;; *) continue ;; esac
+    pattern=${line%%$'\t'*}
+    [ -z "$pattern" ] && continue
+    # `printf '' | grep -E p` writes to stderr only when p is invalid — drop it.
+    p_err=$(printf '' | grep -E -- "$pattern" 2>&1 1>/dev/null || true)
+    [ -z "$p_err" ] || continue
+    patterns+=("$pattern")
+  done <"$pfile"
+  [ ${#patterns[@]} -eq 0 ] && return 0
 
-[ ${#PATTERNS[@]} -eq 0 ] && exit 0
+  combined=""
+  for p in "${patterns[@]}"; do
+    if [ -z "$combined" ]; then combined="(${p})"; else combined="${combined}|(${p})"; fi
+  done
+  p_err=$(printf '' | grep -E -- "$combined" 2>&1 1>/dev/null || true)
+  [ -z "$p_err" ] || return 0
 
-COMBINED=""
-for p in "${PATTERNS[@]}"; do
-  if [ -z "$COMBINED" ]; then COMBINED="(${p})"; else COMBINED="${COMBINED}|(${p})"; fi
-done
-# If the combined ERE is somehow invalid, fail OPEN (this is an advisory
-# pre-check, not the security boundary) rather than erroring out of the call.
-c_err=$(printf '' | grep -E -- "$COMBINED" 2>&1 1>/dev/null || true)
-[ -z "$c_err" ] || exit 0
+  # A comment-anchored `scaffold-allow` exempts a line, exactly like the scanners.
+  hit=$(printf '%s\n' "$content" | grep -an"${iflag}"E -- "$combined" \
+          | grep -ivE '(#|//|/\*|<!--|--)[[:space:]]*scaffold-allow' || true)
+  [ -n "$hit" ] || return 0
 
-# A comment-anchored `scaffold-allow` exempts a line, exactly like the scanners.
-hit=$(printf '%s\n' "$content" | grep -aniE -- "$COMBINED" \
-        | grep -ivE '(#|//|/\*|<!--|--)[[:space:]]*scaffold-allow' || true)
-
-if [ -n "$hit" ]; then
   {
-    echo "BLOCKED by agent-precheck: this content matches a secret pattern in"
-    echo ".forbidden-patterns/secrets.txt. Do not hardcode credentials — read"
-    echo "them from an environment variable or a secret manager instead."
-    echo "If this is a deliberate fixture/example, append a comment containing"
-    echo "'scaffold-allow' on the matching line."
+    echo "BLOCKED by agent-precheck: $advice"
+    echo "(${pfile#"$ROOT"/}). If this is deliberate and safe, append a comment"
+    echo "containing 'scaffold-allow' on the matching line."
     echo "Matched:"
     printf '%s\n' "$hit" | head -3
   } >&2
   exit 2
-fi
+}
+
+# Secrets: every tool call, case-insensitive.
+scan_against "$ROOT/.forbidden-patterns/secrets.txt" i \
+  "this content matches a secret pattern — don't hardcode credentials; read them from an env var or secret manager"
+
+# Shell: Bash tool calls only, case-sensitive (commit-time semantics).
+[ "$tool" = "Bash" ] && scan_against "$ROOT/.forbidden-patterns/shell.txt" "" \
+  "this command matches a dangerous shell pattern (e.g. curl|bash, rm -rf /, chmod 777) — don't run it"
 
 exit 0

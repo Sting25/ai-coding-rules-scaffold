@@ -128,7 +128,7 @@ Scripts (stay in the scaffold repo):
 
 ## AI agent integration
 
-The scaffold follows the cross-tool **`AGENTS.md` convention** — a single file at the project root that multiple agents already read (Cursor, Aider, and others). For tools that read a different filename, `install.sh` or a one-line pointer handles it:
+The scaffold follows the cross-tool **`AGENTS.md` standard** ([agents.md](https://agents.md)) — a single file at the project root that multiple agents already read (Cursor, Aider, Codex, and others). For tools that read a different filename, `install.sh` or a one-line pointer handles it:
 
 - **Cursor** — reads `AGENTS.md` natively. Nothing else needed.
 - **Claude Code** — reads `CLAUDE.md`. `install.sh` drops a one-line `CLAUDE.md` containing `@AGENTS.md`, which pulls `AGENTS.md` into context.
@@ -161,7 +161,7 @@ No `install.sh`, no hooks, no CI — the docs are useful in isolation. The full 
 
 ### Scaling context across a large codebase
 
-Root-level `AGENTS.md` is reread on every turn, so its token cost is paid for every prompt. For codebases over ~50 files, drop a `CLAUDE.md` in each major directory (`app/api/`, `app/web/`, `lib/`) with area-specific gotchas. Claude Code reads the nearest one walking up from the file being edited — root-level context stays small, area context stays relevant. Same applies to Cursor's nested `.cursorrules`.
+Root-level `AGENTS.md` is reread on every turn, so its token cost is paid for every prompt. For codebases over ~50 files, drop a nested `AGENTS.md` in each major directory (`app/api/`, `app/web/`, `lib/`) with area-specific gotchas — the standard specifies closest-file-wins, so agents read the nearest one walking up from the file being edited, keeping root-level context small and area context relevant. For Claude Code, a nested `CLAUDE.md` works the same way.
 
 For parallel agent sessions, use `git worktree add ../proj-feat-x -b feat-x` so each session has an isolated working tree on its own branch. Two agents in the same checkout will overwrite each other.
 
@@ -192,10 +192,15 @@ Build-breaking (`ruff` / `eslint`, on every lint + commit + in CI):
 | Missing public-API return types | `ruff ANN201` |
 | Function size > 80 statements (Python) / 80 lines (TS/JS) | `ruff PLR0915` (`max-statements`), `eslint max-lines-per-function` |
 | Too many branches in a function | `ruff PLR0912` (`max-branches`) |
+| Blocking HTTP/file/subprocess call inside `async def` | `ruff ASYNC210-230` |
+| Non-`Annotated` FastAPI dependency / unused path param | `ruff FAST002`, `FAST003` |
+| f-string / `%` / `.format()` in a logging call; `.warn()` / root logger | `ruff G002 G004 G010 LOG` |
+| `shell=True` / `eval` / unsafe deserialization (`pickle`) / weak hash | `ruff S` (curated flake8-bandit subset) |
 | Line length > 100 | `ruff E501` |
 | Unsorted / unused imports | `ruff I`, `F401`; `eslint import-x/order`, `unused-imports/no-unused-imports` |
 | `any` in TypeScript without comment | `@typescript-eslint/no-explicit-any` |
 | Floating / misused promises (TS) | `@typescript-eslint/no-floating-promises`, `no-misused-promises` (type-aware) |
+| Non-exhaustive `switch` over a union/enum (missing member) | `@typescript-eslint/switch-exhaustiveness-check` (type-aware) |
 | TypeScript type errors | `tsc --noEmit` (hook + CI, when `tsconfig.json` present) |
 
 Commit + CI-breaking (pre-commit hook + `lint.yml`):
@@ -211,6 +216,7 @@ Commit + CI-breaking (pre-commit hook + `lint.yml`):
 | Committed `.env` / `*.pem` / SSH private keys (`id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`) | filename check (`.env.example` / `.env.sample` / `.env.template` allowed) |
 | Merge-conflict markers (`<<<<<<<` / `\|\|\|\|\|\|\|` / `>>>>>>>`) left in a file | `check-hygiene` (staged-blob scan) |
 | Case-only filename collisions (`Readme.md` vs `README.md`) that break macOS/Windows checkouts | `check-hygiene` (path scan; CI checks all tracked paths) |
+| Hidden Unicode — bidi controls (Trojan Source), zero-width, tag block — in a staged text file | `check-hygiene` (LC_ALL=C byte scan; leading BOM allowed, binary skipped) |
 
 ### Per-line escape valve
 
@@ -285,8 +291,12 @@ by default so the scaffold stays minimal; turn them on per project.
 
 - **Conventional-Commits `commit-msg` hook (`install.sh --commit-msg`).**
   Rejects commit subjects that don't match `type(scope): description` (merge /
-  revert / fixup commits exempt). Commit format is exactly the kind of
-  convention agents drift on across sessions. Zero dependencies.
+  revert / fixup commits exempt) and caps the subject at 100 chars (commitlint
+  `config-conventional` `header-max-length` parity — runaway subjects wrap in
+  `git log` / the GitHub UI and break changelog tooling). Commit format is
+  exactly the kind of convention agents drift on across sessions. Zero
+  dependencies. (Pairs with `release-please` for automated SemVer releases —
+  see [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md).)
 
 - **gitleaks CI backstop (`.github/workflows/gitleaks.yml.template`).** Copy it
   in to add a broad, entropy-based secret scanner as a *separate* CI job. The
@@ -295,11 +305,15 @@ by default so the scaffold stays minimal; turn them on per project.
   tokens the hand-written list can't enumerate. Not auto-installed — it adds a
   third-party action dependency. Pinned to a commit SHA; bump via Dependabot.
 
-Two smaller hardening changes are **on by default**: `install.sh` now also
-drops a `.github/dependabot.yml` (weekly grouped bumps of the SHA-pinned
-Actions — delete it if you don't want the PRs), and the CI frontend job uses a
-frozen-lockfile install (`npm ci` when a lockfile exists, hard-failing on drift
-instead of silently mutating it).
+Supply-chain hardening is **on by default** in the shipped CI + Dependabot
+config: `install.sh` drops a `.github/dependabot.yml` (weekly grouped bumps of
+the SHA-pinned Actions, with a **7-day `cooldown`** so a compromised-and-yanked
+release is gone before the PR ever appears — delete the file if you don't want
+the PRs); the CI frontend job uses a frozen-lockfile install that also passes
+**`--ignore-scripts`** (lint/type-check never need a dependency's install hooks,
+and the runner holds `GITHUB_TOKEN`); and every `actions/checkout` sets
+**`persist-credentials: false`** so the token isn't left in `.git/config` for a
+later step or compromised action to read.
 
 ## Verify it works
 

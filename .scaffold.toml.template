@@ -33,8 +33,8 @@
 # ── Per-rule overrides ────────────────────────────────────────────────────────
 # Key a forbidden-pattern rule by "<patternfile-stem>/<description>", where the
 # description is the text after the TAB in the .forbidden-patterns/<lang>.txt
-# rule. Hygiene rules use the bare ids `conflict-marker` and `case-collision`.
-# The size cap as a whole uses the id `size`.
+# rule. Hygiene rules use the bare ids `conflict-marker`, `case-collision`, and
+# `hidden-unicode`. The size cap as a whole uses the id `size`.
 #
 # Each [rules."..."] table accepts:
 #   disabled = true            # turn the rule off entirely (still auditable)
@@ -61,3 +61,8 @@
 # severity = "warn"
 # reason   = "monorepo intentionally ships Readme.md beside README.md"
 # by       = "jo 2026-06-11"
+#
+# [rules.hidden-unicode]
+# severity = "warn"
+# reason   = "this repo legitimately ships RTL/bidi content in localized docs"
+# by       = "rî 2026-06-11"

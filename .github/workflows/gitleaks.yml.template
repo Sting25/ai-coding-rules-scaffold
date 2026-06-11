@@ -34,6 +34,7 @@ jobs:
           # Full history so gitleaks scans every commit on a push, not just the
           # tip. On pull_request the action scans the PR's commit range.
           fetch-depth: 0
+          persist-credentials: false  # don't leave GITHUB_TOKEN in .git/config
       - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e  # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

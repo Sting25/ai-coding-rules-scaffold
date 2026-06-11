@@ -1,12 +1,25 @@
 # AGENTS.md
 
-Instructions for AI coding agents working in this repo. `AGENTS.md` is an emerging cross-tool convention — Cursor, Aider, and others read it directly. For Claude Code, a thin `CLAUDE.md` pointer is installed alongside this file. Copy to your project root as `AGENTS.md` and edit the **Project** section.
+Instructions for AI coding agents working in this repo. `AGENTS.md` is an open cross-tool standard (see [agents.md](https://agents.md)) read natively by Cursor, Aider, Codex, and others; the standard specifies nested `AGENTS.md` files with closest-file-wins precedence. For Claude Code, a thin `CLAUDE.md` pointer is installed alongside this file. Copy to your project root as `AGENTS.md` and edit the **Project** section.
 
 ## Coding rules
 
 See [`coding-rules.md`](./coding-rules.md), `ruff.toml`, and `eslint.config.js`. Tool-enforced on every commit via `.githooks/pre-commit` and on every PR via `.github/workflows/lint.yml`.
 
 The file-size ceiling (500 lines) is non-negotiable — never raise it.
+
+## Checks
+
+The same checks CI runs — pass these locally and you pass the PR gate. Run them
+against **staged** content (stage your work first, or run the
+`.githooks/lib/check-*` scripts directly — the hook scans the index, not the
+working tree):
+
+```sh
+ruff check .                       # Python  (when ruff.toml / pyproject.toml present)
+npx eslint . && npx tsc --noEmit   # TS/JS   (tsc when tsconfig.json present)
+git hook run pre-commit            # size / pattern / secret / hygiene / filename guards
+```
 
 ## Operational rules
 
@@ -41,8 +54,9 @@ Per `coding-rules.md` rule 3: search the codebase for an existing module that co
 
 <!-- Replace this section with project-specific context. Hard rule: keep it ≤ 30 lines.
      This file is reread on every turn — every line costs context window for every prompt.
-     For deeper area-specific context, drop a CLAUDE.md (or .cursorrules) inside that
-     directory; agents read the nearest one walking up from the file being edited. -->
+     For deeper area-specific context, drop a nested AGENTS.md inside that directory
+     (the standard's closest-file-wins precedence); for Claude Code, a nested CLAUDE.md.
+     Agents read the nearest one walking up from the file being edited. -->
 
 - Stack: _(e.g. FastAPI + SQLAlchemy 2.0 + React/TS)_
 - Entry points: _(e.g. `app/main.py`, `web/src/index.tsx`)_

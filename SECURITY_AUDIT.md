@@ -314,8 +314,8 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 | Status | Title | Location |
 |---|---|---|
-| ⬜ Open | Distributed lint.yml frontend job executes attacker-controlled lifecycle scripts and eslint config from fork P… | `lint.yml.template:41-58` |
-| ⬜ Open | All workflows trigger on bare `pull_request` with no concurrency control or runner hardening notes | `lint.yml.template:8-14` |
+| 🟡 Partial | Distributed lint.yml frontend job executes attacker-controlled lifecycle scripts and eslint config from fork P… (now `npm ci --ignore-scripts` blocks pre/postinstall execution; eslint-config execution from PR head remains) | `lint.yml.template:41-58` |
+| 🟡 Partial | All workflows trigger on bare `pull_request` with no concurrency control or runner hardening notes (now `persist-credentials: false` on every checkout; concurrency control still open) | `lint.yml.template:8-14` |
 | ⬜ Open | actionlint binary downloaded via curl\|bash from a mutable git tag with no checksum/signature verification | `test.yml:33-36` |
 | ✅ Fixed | README claims size check uses `wc -l`, but code uses `grep -c ''` (stale doc, contradicts CHANGELOG) | `README.md:186` |
 | ✅ Fixed | Secrets-scan docs overstate coverage: README says 'all files', but lockfiles/binaries are skipped (now every tracked file IS scanned; doc corrected) | `README.md:188` |

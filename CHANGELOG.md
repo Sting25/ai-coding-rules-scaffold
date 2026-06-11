@@ -7,6 +7,91 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Commit-subject length cap (opt-in `--commit-msg`).** The Conventional-Commits
+  hook now also rejects subjects over 100 chars (commitlint `config-conventional`
+  `header-max-length` parity) — runaway subjects wrap in `git log` / GitHub and
+  break changelog tooling. Independent guard, merge/revert/fixup still exempt.
+  +1 fixture.
+- **Agent-runtime layer extended (opt-in `--claude`).** `agent-precheck` now
+  also scans **Bash** tool calls against `.forbidden-patterns/shell.txt` (a
+  separate case-sensitive pass matching commit-time semantics) — blocking
+  `curl|bash`, `rm -rf /`, `chmod 777` before the agent runs them, the
+  highest-ROI agent hook the docs already named but didn't ship. The bundled
+  `.claude/settings.json` now also sets `enableAllProjectMcpServers: false` +
+  empty `enabledMcpjsonServers`, so a cloned repo's `.mcp.json` can't
+  auto-approve an exfiltrating MCP server (CVE-2026-21852). +2 fixtures.
+- **`AGENTS.md` docs corrected.** `AGENTS.md` is now described as the open
+  cross-tool standard (agents.md) and the nested-file guidance points to nested
+  `AGENTS.md` (closest-file-wins) rather than per-tool files; a new `## Checks`
+  section lists the runnable commands an AGENTS.md-compliant agent self-verifies
+  with (`ruff check .`, `eslint`/`tsc`, `git hook run pre-commit`).
+- **Hidden-Unicode guard in `check-hygiene` (default-on).** A third hygiene
+  check scans each staged text blob for invisible control characters: bidi
+  overrides (CVE-2021-42574 "Trojan Source"), zero-width chars, and the Unicode
+  tag block — the vectors behind the Feb-2025 "Rules File Backdoor", which
+  weaponizes invisible Unicode inside the very agent-read files this scaffold
+  ships (`AGENTS.md`, `coding-rules.md`, `.forbidden-patterns/*`). Matched as
+  UTF-8 byte sequences under `LC_ALL=C` (BSD-grep / bash-3.2 safe); binary blobs
+  are skipped, a legitimate leading BOM is allowed, findings are hex-sanitized so
+  the raw invisible bytes never hit the log, and `scaffold-allow` exempts a line.
+  New `hidden-unicode` override id (disable / `warn` for legit RTL repos). +4
+  fixtures. `check-hygiene` added to the maintainer shellcheck CI list.
+- **CI / supply-chain hardening (default-on).** Post-Shai-Hulud / tj-actions
+  mitigations across the shipped workflows + Dependabot config: a **7-day
+  Dependabot `cooldown`** (a yanked malicious release is gone before the PR
+  appears; security updates bypass it), **`npm ci --ignore-scripts`** in the CI
+  frontend job (lint/tsc never need a dep's install hooks; documents a
+  `npm rebuild` escape hatch for native deps), and **`persist-credentials: false`**
+  on every `actions/checkout` (don't leave `GITHUB_TOKEN` in `.git/config`).
+  The scaffold's own `test.yml` gains a pinned, offline **zizmor** static audit
+  of all workflows (incl. rendered templates) — maintainer CI only, not shipped
+  to consumers — so a re-introduced unpinned action or credential-persist fails
+  the build. Two `SECURITY_AUDIT.md` Low items move Open → Partial.
+- **2025 provider-token shapes + JWT in `secrets.txt` (default-on).** Prefix-
+  specific, low-FP additions the offline gate was missing: OpenAI
+  service-account/admin (`sk-svcacct-`/`sk-admin-`), Hugging Face (`hf_`), GitLab
+  (`glpat-`), npm (`npm_`), PyPI upload (`pypi-…`), Stripe live/restricted
+  (`sk_live_`/`rk_live_`), Slack webhook URLs, DigitalOcean (`dop_v1_`),
+  Databricks (`dapi…`, boundary-anchored), Perplexity (`pplx-`), plus a
+  structural **JWT** pattern (two `eyJ…` segments) for leaked long-lived service
+  keys. +8 fixtures incl. a `scaffold-allow` negative for an expired demo JWT.
+- **TLS-verification-disable deny-patterns (`frontend.txt`, default-on).**
+  `NODE_TLS_REJECT_UNAUTHORIZED` and `rejectUnauthorized: false` — the canonical
+  AI-agent shortcut when a request fails against a self-signed cert, which
+  silently disables MITM protection for every subsequent connection. It's an
+  option *value*, not syntax, so no `eslint` rule catches it. +3 fixtures
+  (incl. a negative proving `rejectUnauthorized: true` passes).
+- **`switch-exhaustiveness-check` (default-on, type-aware).** The one widely-
+  recommended typed `eslint` rule no preset (incl. `strictTypeChecked`) enables.
+  Fails the build when a `switch` over a discriminated union / enum misses a
+  member — the classic bug where an agent adds a variant and updates some switch
+  sites but not all, while `tsc` stays silent. `considerDefaultExhaustiveForUnions`
+  treats an existing `default` as exhaustive, suppressing the main false-positive.
+- **`eslint.config.js` opt-in blocks refreshed/added (all commented, inert).**
+  The React-hooks block now uses the `eslint-plugin-react-hooks` **v6** flat
+  presets (`flat.recommended`, with `recommended-latest` documented as the
+  experimental React-Compiler upgrade) instead of the stale v5 hand-wired snippet.
+  New commented `eslint-plugin-jsx-a11y` block (a11y issues AI-generated JSX
+  ships) and an erasable-syntax block banning `enum` / parameter properties for
+  teams running `.ts` via Node type-stripping.
+- **More `ruff` rule groups, turning advice into enforcement.** `ASYNC`
+  (flake8-async) fails the build on a blocking HTTP/file/subprocess call inside
+  an `async def` — backing `coding-rules.md` rule 6 on the Python side (its TS
+  twin `no-floating-promises` was already enforced). `FAST` (FastAPI) catches
+  non-`Annotated` dependencies and unused path params, no-op on non-FastAPI code,
+  backing rule 4. `G`/`LOG` (flake8-logging) fail on f-string/`%`/`.format()`
+  inside log calls, backing rules 10-11; the idiomatic `logger.info("event",
+  key=val)` form is not flagged. A **curated** flake8-bandit `S` subset
+  (`S301/307/113/324/602/605/701/105/106`) adds AST-level security checks the
+  regex secret-scanner can't see — deliberately NOT the whole `S` category
+  (`S603/607/404/608/310` are FP-noisy on subprocess/SQL/urllib). `S311` is
+  ignored; tests exempt `S101/105/106`.
+- **Deprecated `datetime.utcnow()` deny-pattern (`backend.txt`).** Caught by the
+  always-on regex layer (no `ruff` dependency); the AST `DTZ` group is
+  deliberately not enabled — flagging every naive `datetime` is timezone *policy*
+  with a high false-positive rate, and the deprecated idiom is fully covered by
+  the one regex. A commented opt-in 12-factor `localhost`-URL line is added too
+  (off by default — Python test clients legitimately target localhost).
 - **Per-project rule overrides (`.scaffold.toml`).** A first-class, committed,
   auditable config layer the `check-*` scripts consume via a new pure-bash/awk
   reader (`lib/scaffold-config`, no python/jq dependency). A team can: raise the
@@ -80,7 +165,21 @@ versioning follows [SemVer](https://semver.org/).
   uncomment, SHA-pinned CI job stubs added for Go/Rust/Java/Kotlin/Ruby linters.
   +13 harness fixtures (a reject + a look-alike negative per language).
 
+### Documented
+- **Six new `RECOMMENDATIONS.md` entries** (dated, with explicit "adopt if"
+  triggers, per the file's convention — deliberate omissions, not shipped
+  features): `ruff` FURB group; commit-time Python type-check via `ty`/`pyrefly`;
+  Biome/oxlint vs ESLint tradeoffs; pinning the CI `ruff` version (with the
+  honest note that Dependabot won't bump a workflow-embedded literal);
+  SLSA/OIDC trusted publishing; and `release-please` for automated SemVer
+  releases (cross-linked from the `--commit-msg` opt-in bullet).
+
 ### Changed
+- **`coding-rules.md` rule 12** now prefers the W3C `traceparent` header
+  (OpenTelemetry's auto-propagated default) over `X-Request-Id` (the 2018-era
+  norm, kept as the lighter fallback) — an agent following the old text would
+  hand-roll request-id plumbing that collides with what OTel SDKs already
+  propagate. Substance (one correlation ID across all log lines) unchanged.
 - **CI uses a frozen-lockfile install.** The frontend job runs `npm ci` when a
   lockfile is present (hard-failing on lockfile drift instead of silently
   mutating it) and falls back to `npm install` only when no lockfile exists.

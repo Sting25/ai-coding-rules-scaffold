@@ -20,6 +20,18 @@ case "$subject" in
   "Merge "*|"Revert "*|"fixup! "*|"squash! "*|"Reapply "*) exit 0 ;;
 esac
 
+# Length cap (commitlint config-conventional parity: header-max-length=100).
+# Runaway subjects wrap in git log / the GitHub UI and break changelog tooling.
+# Independent of the CC shape check below so it applies to any non-exempt subject.
+if [ "${#subject}" -gt 100 ]; then
+  {
+    echo "✗ commit subject exceeds 100 chars (${#subject}) — keep it short:"
+    echo "    ${subject}"
+    echo "  100 matches commitlint's config-conventional header-max-length."
+  } >&2
+  exit 1
+fi
+
 # <type>(<optional scope>)<optional !>: <description>
 CC_RE='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: .+'
 

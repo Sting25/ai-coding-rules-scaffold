@@ -13,6 +13,13 @@ os\.path\.join	Use pathlib.Path(), not os.path.join
 (^|[^A-Za-z_])breakpoint[[:space:]]*\(	Remove breakpoint() before committing
 (^|[^A-Za-z_])pdb\.set_trace[[:space:]]*\(	Remove pdb.set_trace() before committing
 (^|[^A-Za-z_])ipdb\.set_trace[[:space:]]*\(	Remove ipdb.set_trace() before committing
+\.utcnow[[:space:]]*\(	datetime.utcnow() is deprecated (3.12+) — use datetime.now(datetime.UTC)
+
+# Optional: 12-factor config (III). Mirror of the active frontend.txt rule, but
+# OFF by default here because Python test clients legitimately target localhost
+# (httpx.AsyncClient(base_url="http://localhost"), Starlette TestClient). Enable
+# it for multi-service backends; mark deliberate test lines with `scaffold-allow`.
+# https?://(localhost|127\.0\.0\.1)	No hardcoded localhost/127.0.0.1 URLs — read from config/env
 
 # Optional: forbid TODO/FIXME/XXX in one line via regex alternation.
 # (^|[^A-Za-z_])(TODO|FIXME|XXX)($|[^A-Za-z0-9_])	TODO/FIXME/XXX not allowed — open a ticket instead

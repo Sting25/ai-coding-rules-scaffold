@@ -27,6 +27,10 @@
     "//ask": "Prefer 'ask' over 'deny' for anything you sometimes need (e.g. 'Bash(git push:*)') — deny is absolute, ask just prompts you."
   },
 
+  "//mcp": "Never set enableAllProjectMcpServers to true — it auto-approves every MCP server a repo declares in .mcp.json, so a cloned/forked repo can exfiltrate source or env with no approval prompt (CVE-2026-21852). Keep it false and allowlist named servers in enabledMcpjsonServers instead; an un-allowlisted server then triggers an explicit approval prompt.",
+  "enableAllProjectMcpServers": false,
+  "enabledMcpjsonServers": [],
+
   "hooks": {
     "PreToolUse": [
       {
