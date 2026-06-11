@@ -488,12 +488,29 @@ assert_rejects "merge-conflict marker is rejected" "merge-conflict marker"
 git add doc.rst
 assert_passes "heading underline (=======) is not flagged as a conflict"
 
-# 45. Case-only filename collision is rejected — two paths differing only in
-#     case break a case-insensitive checkout (macOS/Windows).
-echo 'one' >Collide.txt
-echo 'two' >collide.txt
-git add Collide.txt collide.txt
-assert_rejects "case-only filename collision is rejected" "case-only filename collision"
+# 45. Case-only filename collision is rejected. A real two-file fixture can't
+#     exist on a case-insensitive filesystem (macOS default, where Collide.txt
+#     and collide.txt are the same file), so feed check-hygiene the NUL-delimited
+#     path list directly — the same way case #35 exercises check-secrets --ci.
+if printf '%s\0' 'Collide.txt' 'collide.txt' | .githooks/lib/check-hygiene >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ case-only filename collision — accepted, expected reject"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "case-only filename collision" "$HOOK_OUT"; then
+  echo "  ✓ case-only filename collision is rejected"; PASS=$((PASS + 1))
+else
+  echo "  ✗ case-only filename collision — rejected without expected message"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
+# 45b. NEGATIVE: distinct filenames (not a case variant) do not collide.
+if printf '%s\0' 'a.txt' 'b.txt' 'README.md' | .githooks/lib/check-hygiene >"$HOOK_OUT" 2>&1; then
+  echo "  ✓ distinct filenames are not flagged as a collision"; PASS=$((PASS + 1))
+else
+  echo "  ✗ distinct filenames — flagged as a collision, expected pass"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
 
 # 46-48. agent-precheck — the opt-in Claude Code PreToolUse hook. Invoked
 #     directly (it's not a git hook) with CLAUDE_PROJECT_DIR pointed at this
