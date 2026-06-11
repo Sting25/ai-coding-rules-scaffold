@@ -7,6 +7,19 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Agent-runtime layer extended (opt-in `--claude`).** `agent-precheck` now
+  also scans **Bash** tool calls against `.forbidden-patterns/shell.txt` (a
+  separate case-sensitive pass matching commit-time semantics) — blocking
+  `curl|bash`, `rm -rf /`, `chmod 777` before the agent runs them, the
+  highest-ROI agent hook the docs already named but didn't ship. The bundled
+  `.claude/settings.json` now also sets `enableAllProjectMcpServers: false` +
+  empty `enabledMcpjsonServers`, so a cloned repo's `.mcp.json` can't
+  auto-approve an exfiltrating MCP server (CVE-2026-21852). +2 fixtures.
+- **`AGENTS.md` docs corrected.** `AGENTS.md` is now described as the open
+  cross-tool standard (agents.md) and the nested-file guidance points to nested
+  `AGENTS.md` (closest-file-wins) rather than per-tool files; a new `## Checks`
+  section lists the runnable commands an AGENTS.md-compliant agent self-verifies
+  with (`ruff check .`, `eslint`/`tsc`, `git hook run pre-commit`).
 - **Hidden-Unicode guard in `check-hygiene` (default-on).** A third hygiene
   check scans each staged text blob for invisible control characters: bidi
   overrides (CVE-2021-42574 "Trojan Source"), zero-width chars, and the Unicode
