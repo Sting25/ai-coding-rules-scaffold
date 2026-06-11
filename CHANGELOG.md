@@ -6,6 +6,63 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **TypeScript enforcement, broadened (P0).** The shipped `eslint.config.js`
+  now extends typescript-eslint's **`strictTypeChecked`** tier with
+  `projectService` auto-discovery, so type-aware rules actually fire. Pinned
+  `no-floating-promises` + `no-misused-promises` (the #1 silent-async bug),
+  added import sorting / unused-import removal (`import-x/order`,
+  `unused-imports`) as parity with `ruff`'s `I` / `F401`, and shipped an
+  opt-in `react-hooks` block (rules-of-hooks + exhaustive-deps). Plain JS and
+  test files get `disableTypeChecked` / loosened overrides. Header documents an
+  escape hatch back to `strict` for projects without a `tsconfig.json`.
+- **`tsc --noEmit` wired into both layers.** The pre-commit hook and the CI
+  `lint.yml` frontend job now run a project-wide TypeScript type-check, guarded
+  on `tsconfig.json` presence + TypeScript being installed (silently skipped
+  otherwise, like the linters). Resolves the contradiction where
+  `coding-rules.md` mandated a type-checker that ran nowhere.
+- **Broader `frontend.txt` deny patterns.** Focused tests (`.only`, which
+  silently skips the suite), `@ts-ignore` / `@ts-nocheck`,
+  `dangerouslySetInnerHTML` (XSS), and hardcoded `localhost`/`127.0.0.1` URLs.
+  New harness fixtures cover each, plus negatives proving `console.warn` and an
+  ordinary `it(...)` test still pass. Opt-in commented patterns added for
+  `eval`/`new Function` and an auth-bypass-flag guard.
+- **New `check-hygiene` guard (hook + CI).** A fifth `lib/check-*` script that
+  flags merge-conflict markers left in a staged blob (`<<<<<<<` / `|||||||` /
+  `>>>>>>>`, but not a bare `=======` heading underline) and case-only filename
+  collisions that corrupt case-insensitive checkouts (macOS/Windows). bash-3.2
+  safe, fail-closed, same NUL-safe blob scan and `scaffold-allow` semantics as
+  the other checks. +3 fixtures incl. a negative for reST underlines.
+- **Agent-runtime guardrails — the deferred "layer three" (opt-in,
+  `install.sh --claude`).** Ships a `.claude/settings.json` deny-list (the agent
+  can't read `.env` / `*.pem` / `*.key` / `~/.ssh` / `~/.aws` or run a few
+  catastrophic `rm -rf` commands) plus a `PreToolUse` hook
+  (`.githooks/lib/agent-precheck`) that scans Write/Edit/Bash content against the
+  same `.forbidden-patterns/secrets.txt` the commit-time scanner uses — blocking
+  a hardcoded secret the moment the agent writes it. Needs `jq`; fails open
+  without it (commit + CI remain the fail-closed backstops). +3 fixtures.
+- **Conventional-Commits `commit-msg` hook (opt-in, `install.sh --commit-msg`).**
+  Rejects subjects that don't match `type(scope): description`; merge / revert /
+  fixup commits exempt. BSD-grep safe, zero dependencies. +3 fixtures.
+- **gitleaks CI backstop template** (`.github/workflows/gitleaks.yml.template`,
+  not auto-installed). SHA-pinned broad secret scanner as a separate CI job — the
+  entropy-based complement to the narrow regex `check-secrets` gate.
+- **Dependabot** (`.github/dependabot.yml` + consumer template, installed by
+  default). Weekly grouped bumps of the SHA-pinned GitHub Actions so the pins
+  don't rot.
+
+### Changed
+- **CI uses a frozen-lockfile install.** The frontend job runs `npm ci` when a
+  lockfile is present (hard-failing on lockfile drift instead of silently
+  mutating it) and falls back to `npm install` only when no lockfile exists.
+
+### Fixed
+- **Docs/enforcement reconciliation.** `coding-rules.md` rule 6 now covers TS
+  floating-promise discipline and rule 9 describes what actually runs at commit
+  time vs CI; the README "What the tooling enforces" matrix gains rows for
+  type-aware async rules, `tsc`, the new frontend patterns, and ESLint import
+  hygiene.
+
 ### Security
 - **Rename-to-skipped-extension secret bypass (audit HIGH).** `check-secrets`
   skipped files by extension (`*.png`, `*.zip`, `package-lock.json`, …), so a

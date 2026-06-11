@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# .githooks/lib/agent-precheck — Claude Code PreToolUse hook (scaffold "layer
+# three": block bad content the moment an agent writes it, before commit time).
+#
+# Scans the content a Write/Edit is about to introduce — and the text of a Bash
+# command — against the SAME secret patterns the commit-time scanner uses
+# (.forbidden-patterns/secrets.txt). One source of truth: a credential the
+# agent tries to hardcode is refused at write time, not discovered later in CI.
+#
+# Wired via .claude/settings.json (PreToolUse, matcher "Write|Edit|Bash"). The
+# hook event arrives as JSON on stdin. It BLOCKS by exiting 2 — Claude Code
+# feeds the stderr text back to the model so it can correct course.
+#
+# Requires `jq`. If jq is missing, or no secrets.txt is present, it exits 0
+# (fail-OPEN) — an agent helper must never brick the session; the pre-commit
+# hook and CI are the authoritative fail-CLOSED backstops.
+#
+# Exit: 0 = allow, 2 = block (stderr shown to the model).
+
+set -euo pipefail
+
+command -v jq >/dev/null 2>&1 || exit 0
+
+payload=$(cat)
+
+# Project root: Claude Code exports CLAUDE_PROJECT_DIR. Fall back to the cwd the
+# event reports, then to ".".
+ROOT=${CLAUDE_PROJECT_DIR:-}
+[ -n "$ROOT" ] || ROOT=$(jq -r '.cwd // "."' <<<"$payload" 2>/dev/null || echo .)
+CONFIG="$ROOT/.forbidden-patterns/secrets.txt"
+[ -f "$CONFIG" ] || exit 0
+
+# Pull every string value out of tool_input regardless of the tool's field names
+# (Write.content, Edit.new_string, MultiEdit edits[].new_string, Bash.command,
+# …). `.. | strings` walks the whole subtree, so this stays correct even if a
+# tool's schema changes.
+content=$(jq -r '[.tool_input | .. | strings] | join("\n")' <<<"$payload" 2>/dev/null || true)
+[ -n "$content" ] || exit 0
+
+# Drop pathologically long lines (a minified bundle pasted into a Write) so the
+# combined ERE can't be made to hang — same guard as check-secrets.
+MAX_LINE_LENGTH=${MAX_LINE_LENGTH:-50000}
+content=$(printf '%s\n' "$content" | awk -v n="$MAX_LINE_LENGTH" 'length > n { next } { print }')
+[ -n "$content" ] || exit 0
+
+# Load + validate patterns from secrets.txt (mirror of check-secrets' parsing).
+PATTERNS=()
+while IFS= read -r line || [ -n "$line" ]; do
+  line=${line%$'\r'}
+  [ -z "$line" ] && continue
+  case "$line" in \#*) continue ;; esac
+  case "$line" in *$'\t'*) ;; *) continue ;; esac
+  pattern=${line%%$'\t'*}
+  [ -z "$pattern" ] && continue
+  # Skip an invalid ERE rather than letting it poison the combined regex.
+  # `printf '' | grep -E p` writes to stderr only when p is invalid.
+  p_err=$(printf '' | grep -E -- "$pattern" 2>&1 1>/dev/null || true)
+  [ -z "$p_err" ] || continue
+  PATTERNS+=("$pattern")
+done <"$CONFIG"
+
+[ ${#PATTERNS[@]} -eq 0 ] && exit 0
+
+COMBINED=""
+for p in "${PATTERNS[@]}"; do
+  if [ -z "$COMBINED" ]; then COMBINED="(${p})"; else COMBINED="${COMBINED}|(${p})"; fi
+done
+# If the combined ERE is somehow invalid, fail OPEN (this is an advisory
+# pre-check, not the security boundary) rather than erroring out of the call.
+c_err=$(printf '' | grep -E -- "$COMBINED" 2>&1 1>/dev/null || true)
+[ -z "$c_err" ] || exit 0
+
+# A comment-anchored `scaffold-allow` exempts a line, exactly like the scanners.
+hit=$(printf '%s\n' "$content" | grep -aniE -- "$COMBINED" \
+        | grep -ivE '(#|//|/\*|<!--|--)[[:space:]]*scaffold-allow' || true)
+
+if [ -n "$hit" ]; then
+  {
+    echo "BLOCKED by agent-precheck: this content matches a secret pattern in"
+    echo ".forbidden-patterns/secrets.txt. Do not hardcode credentials — read"
+    echo "them from an environment variable or a secret manager instead."
+    echo "If this is a deliberate fixture/example, append a comment containing"
+    echo "'scaffold-allow' on the matching line."
+    echo "Matched:"
+    printf '%s\n' "$hit" | head -3
+  } >&2
+  exit 2
+fi
+
+exit 0

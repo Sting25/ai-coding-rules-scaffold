@@ -93,6 +93,7 @@ FAILED=0
 "$LIB/check-patterns"  <"$STAGED_LIST" || FAILED=1
 "$LIB/check-filenames" <"$STAGED_LIST" || FAILED=1
 "$LIB/check-secrets"   <"$STAGED_LIST" || FAILED=1
+"$LIB/check-hygiene"   <"$STAGED_LIST" || FAILED=1
 
 # Lint staged files with ruff / eslint when configs exist and the tool is
 # installed. CI is the source of truth — running here just shortens the
@@ -121,6 +122,17 @@ if [ ${#STAGED_JS[@]} -gt 0 ] \
    && command -v npx >/dev/null 2>&1 \
    && npx --no-install eslint --version >/dev/null 2>&1; then
   npx --no-install eslint -- "${STAGED_JS[@]}" || FAILED=1
+fi
+
+# Type-check with tsc when a tsconfig.json exists and TypeScript is installed.
+# Run PROJECT-WIDE (no file args) — passing individual files makes tsc ignore
+# tsconfig.json and its compiler options. Silently skipped when absent, like
+# the linters above; CI is the authoritative backstop.
+if [ ${#STAGED_JS[@]} -gt 0 ] \
+   && [ -f tsconfig.json ] \
+   && command -v npx >/dev/null 2>&1 \
+   && npx --no-install tsc --version >/dev/null 2>&1; then
+  npx --no-install tsc --noEmit || FAILED=1
 fi
 
 if [ "$FAILED" -ne 0 ]; then

@@ -413,6 +413,170 @@ else
 fi
 reset_repo
 
+# 36. Focused test (.only) is rejected — a green CI that ran almost nothing is
+#     the single most dangerous frontend commit.
+echo 'it.only("smoke", () => {});' >focused.test.ts
+git add focused.test.ts
+assert_rejects "focused test (.only) is rejected" "Focused test"
+
+# 37. NEGATIVE: an ordinary test (no .only) must pass — the .only regex must not
+#     fire on a plain it(...)/test(...) call.
+echo 'it("does a thing", () => { expect(1).toBe(1); });' >ok.test.ts
+git add ok.test.ts
+assert_passes "ordinary it(...) test is not flagged as .only"
+
+# 38. @ts-ignore is rejected — use @ts-expect-error with a justification.
+{
+  echo '// @ts-ignore'
+  echo 'const x: number = "nope";'
+} >tsignore.ts
+git add tsignore.ts
+assert_rejects "@ts-ignore is rejected" "@ts-expect-error"
+
+# 39. dangerouslySetInnerHTML is rejected as an XSS vector.
+echo 'const el = <div dangerouslySetInnerHTML={{ __html: userInput }} />;' >xss.tsx
+git add xss.tsx
+assert_rejects "dangerouslySetInnerHTML is rejected" "XSS vector"
+
+# 40. hardcoded localhost URL is rejected — config/env instead.
+echo 'const api = "http://localhost:8080/v1";' >localhost.ts
+git add localhost.ts
+assert_rejects "hardcoded localhost URL is rejected" "hardcoded localhost"
+
+# 41. NEGATIVE: console.warn / console.error are allowed (only console.log is
+#     banned) and a clean .ts file with no tsconfig.json passes — proving the
+#     new tsc block silently skips when TypeScript isn't configured.
+{
+  echo 'console.warn("heads up");'
+  echo 'export const value = 42;'
+} >clean.ts
+git add clean.ts
+assert_passes "console.warn allowed; clean .ts with no tsconfig passes"
+
+# 42. tsc type-error rejection — only runs where TypeScript is resolvable in the
+#     temp repo (it isn't, by default: no node_modules), so this is normally a
+#     skip. Documents intent and exercises the path on machines that have a
+#     project-local tsc. The hook runs `tsc --noEmit` project-wide when a
+#     tsconfig.json exists.
+if npx --no-install tsc --version >/dev/null 2>&1; then
+  echo '{"compilerOptions":{"strict":true,"noEmit":true}}' >tsconfig.json
+  echo 'const n: number = "definitely not a number";' >typeerr.ts
+  git add tsconfig.json typeerr.ts
+  assert_rejects "tsc --noEmit rejects a type error"
+else
+  echo "  - skipped tsc test (typescript not installed in temp repo)"
+fi
+
+# 43. Merge-conflict markers are rejected (check-hygiene).
+{
+  echo '<<<<<<< HEAD'
+  echo 'our change'
+  echo '======='
+  echo 'their change'
+  echo '>>>>>>> feature-branch'
+} >conflict.txt
+git add conflict.txt
+assert_rejects "merge-conflict marker is rejected" "merge-conflict marker"
+
+# 44. NEGATIVE: a reST/Markdown heading underline of 7+ `=` is NOT a conflict
+#     marker — only <<<<<<< / >>>>>>> / ||||||| are. Must pass.
+{
+  echo 'Section title'
+  echo '============='
+  echo 'Body.'
+} >doc.rst
+git add doc.rst
+assert_passes "heading underline (=======) is not flagged as a conflict"
+
+# 45. Case-only filename collision is rejected. A real two-file fixture can't
+#     exist on a case-insensitive filesystem (macOS default, where Collide.txt
+#     and collide.txt are the same file), so feed check-hygiene the NUL-delimited
+#     path list directly — the same way case #35 exercises check-secrets --ci.
+if printf '%s\0' 'Collide.txt' 'collide.txt' | .githooks/lib/check-hygiene >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ case-only filename collision — accepted, expected reject"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "case-only filename collision" "$HOOK_OUT"; then
+  echo "  ✓ case-only filename collision is rejected"; PASS=$((PASS + 1))
+else
+  echo "  ✗ case-only filename collision — rejected without expected message"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
+# 45b. NEGATIVE: distinct filenames (not a case variant) do not collide.
+if printf '%s\0' 'a.txt' 'b.txt' 'README.md' | .githooks/lib/check-hygiene >"$HOOK_OUT" 2>&1; then
+  echo "  ✓ distinct filenames are not flagged as a collision"; PASS=$((PASS + 1))
+else
+  echo "  ✗ distinct filenames — flagged as a collision, expected pass"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
+# 46-48. agent-precheck — the opt-in Claude Code PreToolUse hook. Invoked
+#     directly (it's not a git hook) with CLAUDE_PROJECT_DIR pointed at this
+#     temp repo, which has .forbidden-patterns/secrets.txt installed. Needs jq.
+if command -v jq >/dev/null 2>&1; then
+  PRECHECK="$SCAFFOLD_DIR/githooks/lib/agent-precheck.template"
+  akia="AKIA""IOSFODNN7EXAMPLE"   # split so this file carries no real-looking key
+  # (46) a Write introducing a secret is blocked (exit 2 + message)
+  pc=$(printf '{"tool_name":"Write","tool_input":{"file_path":"x.py","content":"AWS=%s"}}' "$akia")
+  if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1; then
+    echo "  ✗ agent-precheck — allowed a secret Write, expected block"; FAIL=$((FAIL + 1))
+  elif grep -qF "BLOCKED by agent-precheck" "$HOOK_OUT"; then
+    echo "  ✓ agent-precheck blocks a secret-bearing Write"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — blocked but missing expected message"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  # (47) clean content is allowed (exit 0)
+  pc='{"tool_name":"Write","tool_input":{"file_path":"x.ts","content":"export const x = 1;"}}'
+  if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1; then
+    echo "  ✓ agent-precheck allows clean content"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — blocked clean content, expected allow"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  # (48) a comment-anchored scaffold-allow marker exempts the line (exit 0)
+  pc=$(printf '{"tool_name":"Write","tool_input":{"file_path":"x.md","content":"key = %s  # scaffold-allow docs example"}}' "$akia")
+  if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1; then
+    echo "  ✓ agent-precheck honors scaffold-allow"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — scaffold-allow not honored, expected allow"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+else
+  echo "  - skipped agent-precheck tests (jq not installed)"
+fi
+reset_repo
+
+# 49-51. commit-msg hook — Conventional-Commits subject enforcement. Invoked
+#     directly with a message file (it's installed only with --commit-msg).
+CMHOOK="$SCAFFOLD_DIR/githooks/commit-msg.template"
+mf=$(mktemp)
+printf 'feat(api): add pagination\n' >"$mf"
+if bash "$CMHOOK" "$mf" >"$HOOK_OUT" 2>&1; then
+  echo "  ✓ commit-msg accepts a Conventional Commit subject"; PASS=$((PASS + 1))
+else
+  echo "  ✗ commit-msg rejected a valid subject"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+printf 'fixed a bug\n' >"$mf"
+if bash "$CMHOOK" "$mf" >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ commit-msg accepted a non-conforming subject"; FAIL=$((FAIL + 1))
+elif grep -qF "Conventional Commits" "$HOOK_OUT"; then
+  echo "  ✓ commit-msg rejects a non-conforming subject"; PASS=$((PASS + 1))
+else
+  echo "  ✗ commit-msg rejected but without the expected message"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+printf 'Merge branch main into feature\n' >"$mf"
+if bash "$CMHOOK" "$mf" >"$HOOK_OUT" 2>&1; then
+  echo "  ✓ commit-msg exempts a merge commit"; PASS=$((PASS + 1))
+else
+  echo "  ✗ commit-msg rejected a merge commit"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -f "$mf"
+reset_repo
+
 echo ""
 echo "Result: $PASS passed, $FAIL failed"
 exit $FAIL

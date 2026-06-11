@@ -1,0 +1,22 @@
+# Copy to your project as `.github/dependabot.yml`. Keeps the SHA-pinned GitHub
+# Actions in your workflows (lint.yml, gitleaks.yml) fresh — SHA pins are a
+# supply-chain best practice but don't auto-update, so without this they rot.
+# Dependabot reads a `uses: owner/action@<sha>  # vX.Y.Z` pin natively and bumps
+# the SHA + the trailing version comment together in one grouped weekly PR.
+#
+# Generates PRs — if you don't want that, don't install this file (it's the one
+# piece of the scaffold that adds outbound automation). Renovate users: enable
+# the `helpers:pinGitHubActionDigests` preset for the equivalent.
+#
+# Add `npm` / `pip` ecosystem blocks below if you also want dependency PRs.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci

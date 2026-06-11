@@ -1,11 +1,33 @@
 # Forbidden patterns for TS/JS files (*.ts, *.tsx, *.js, *.jsx). Applied by .githooks/pre-commit.
 # Format: <regex><TAB><description>   (one per line; # comments ignored)
 # Separator is TAB — patterns can contain literal `|` for ERE alternation.
-# Copy to your project as `.forbidden-patterns/frontend.txt`.
+# Patterns are case-SENSITIVE, scanned against the staged blob. Copy to your
+# project as `.forbidden-patterns/frontend.txt`.
 
+# --- Debug leaks ---
 (^|[^A-Za-z_])console\.log[[:space:]]*\(	Use the project logger, not console.log
 (^|[^A-Za-z_])debugger($|[^A-Za-z0-9_])	Remove debugger statement before committing
 (^|[^A-Za-z_])alert[[:space:]]*\(	Don't ship alert() calls — use a proper UI dialog
 
+# --- Test discipline ---
+# A focused test silently skips the rest of the suite — CI goes green while
+# almost nothing ran. The single most dangerous thing to commit in a test file.
+(^|[^A-Za-z_.])(describe|it|test|context)\.only[[:space:]]*\(	Focused test (.only) silently skips the suite — remove before committing
+
+# --- Type-checker escape hatches ---
+@ts-ignore	Use @ts-expect-error with a justification, not @ts-ignore
+@ts-nocheck	Do not disable type-checking for a whole file (@ts-nocheck)
+
+# --- Security ---
+dangerouslySetInnerHTML	dangerouslySetInnerHTML is an XSS vector — sanitize or render as text
+https?://(localhost|127\.0\.0\.1)	No hardcoded localhost/127.0.0.1 URLs — read from config/env
+
 # Optional: forbid TODO/FIXME/XXX in one line via regex alternation.
 # (^|[^A-Za-z_])(TODO|FIXME|XXX)($|[^A-Za-z0-9_])	TODO/FIXME/XXX not allowed — open a ticket instead
+
+# Optional: forbid dynamic code execution (eval / new Function).
+# (^|[^A-Za-z_.])(eval|Function)[[:space:]]*\(	Avoid eval()/new Function() — arbitrary-code-execution risk
+
+# Optional (opt-in): never commit an enabled auth-bypass flag. Generic
+# alternation — adjust the flag names to your project.
+# (BYPASS_AUTH|DISABLE_AUTH|SKIP_AUTH|AUTH_DISABLED)[[:space:]]*[:=][[:space:]]*(true|1)	Auth-bypass flag enabled — never commit a true value
