@@ -1,0 +1,12 @@
+# Copy to project root as `pytest.ini` (install.sh does this for Python stacks
+# when no pytest config already exists in pyproject.toml/pytest.ini/tox.ini).
+# Minimal, standalone — like ruff.toml, it does not edit your pyproject.toml.
+#
+# A runner forces nothing on its own. The opt-in patch-coverage gate
+# (`.github/workflows/coverage.yml`, `install.sh --coverage-gate`) is what
+# fails the build when CHANGED lines ship untested. See RECOMMENDATIONS.md.
+[pytest]
+testpaths = tests
+python_files = test_*.py *_test.py
+# -ra prints a summary of skips/xfails so silently-skipped tests stay visible.
+addopts = -ra

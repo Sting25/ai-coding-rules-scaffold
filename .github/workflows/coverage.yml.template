@@ -1,0 +1,99 @@
+name: coverage
+
+# OPT-IN patch-coverage gate. Copy to your project as
+# `.github/workflows/coverage.yml` (or `install.sh --coverage-gate`).
+#
+# WHAT THIS DOES — and what it cannot do.
+# It fails the PR when lines you ADDED OR CHANGED in this PR are not executed by
+# any test (diff-cover, default threshold 100% of changed lines). It deliberately
+# does NOT gate on whole-repo coverage %, which lets old untested code mask new
+# gaps. The honest ceiling: this forces changed lines to be EXECUTED by a test,
+# never VERIFIED by one — an assertion-free test still "covers" a line. Pair it
+# with required human review and, for real test-quality signal, mutation testing
+# (see RECOMMENDATIONS.md, "forcing tests"). A green check here is necessary, not
+# sufficient.
+#
+# Runs on pull_request only — patch coverage is defined relative to the PR base.
+# Actions are pinned to a commit SHA (trailing comment = version); the SHAs match
+# lint.yml so Dependabot bumps them together. Tune DIFF_COVER_FAIL_UNDER below.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  # Percent of changed lines that must be covered. 100 = every line you touched
+  # needs a test exercising it. Lower it (e.g. 80) to ease adoption on an
+  # existing codebase, then ratchet up.
+  DIFF_COVER_FAIL_UNDER: "100"
+
+jobs:
+  patch-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          # diff-cover compares against the PR base, so it needs full history.
+          fetch-depth: 0
+          persist-credentials: false  # don't leave GITHUB_TOKEN in .git/config
+
+      # ── Detect stacks (step output, not job-level if: — see lint.yml) ──────
+      - id: detect
+        run: |
+          if [ -f pyproject.toml ] || [ -f pytest.ini ] || [ -f setup.py ]; then
+            echo "python=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -f package.json ]; then
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── Python: pytest + coverage → coverage.xml (Cobertura) ──────────────
+      - if: steps.detect.outputs.python == 'true'
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Run Python tests with coverage
+        if: steps.detect.outputs.python == 'true'
+        # `|| true` so a no-tests-collected exit doesn't mask the diff-cover
+        # verdict below; diff-cover reads coverage.xml and is the gate.
+        run: |
+          pip install pytest pytest-cov
+          pytest --cov --cov-report=xml || true
+
+      # ── Frontend: vitest V8 coverage → coverage/cobertura-coverage.xml ────
+      - if: steps.detect.outputs.frontend == 'true'
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: "20"
+      - name: Run frontend tests with coverage
+        if: steps.detect.outputs.frontend == 'true'
+        # --ignore-scripts: same supply-chain hardening as lint.yml. Vitest +
+        # @vitest/coverage-v8 are pure JS. Jest projects: swap for your
+        # `jest --coverage` command emitting cobertura.
+        run: |
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            npm ci --ignore-scripts
+          else
+            npm install --ignore-scripts
+          fi
+          npx --no-install vitest run --coverage || true
+
+      # ── Gate: every changed line must be covered ──────────────────────────
+      - name: Enforce patch coverage (diff-cover)
+        run: |
+          pip install diff-cover
+          git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
+          REPORTS=""
+          [ -f coverage.xml ] && REPORTS="$REPORTS coverage.xml"
+          [ -f coverage/cobertura-coverage.xml ] && REPORTS="$REPORTS coverage/cobertura-coverage.xml"
+          if [ -z "$REPORTS" ]; then
+            echo "No coverage report produced (coverage.xml / cobertura-coverage.xml)."
+            echo "Add tests that emit coverage, or this gate cannot run."
+            exit 1
+          fi
+          # shellcheck disable=SC2086  # REPORTS is a deliberate space-split list
+          diff-cover $REPORTS \
+            --compare-branch "origin/$GITHUB_BASE_REF" \
+            --fail-under "$DIFF_COVER_FAIL_UNDER"

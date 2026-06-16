@@ -70,6 +70,17 @@ git add . && git commit --quiet -m "fixture" --no-verify
 "$SCAFFOLD_DIR/install.sh" --both --all-langs --no-verify >/dev/null
 git add . && git commit --quiet -m "install scaffold" --no-verify
 
+# The scaffold now ships tsconfig.json / prettier / vitest configs by stack.
+# Those gate the OPTIONAL tsc + prettier hook steps, which would otherwise fire
+# on the synthetic .ts fixtures below (and on vitest.config.ts) wherever a global
+# tsc/prettier is on PATH — e.g. GitHub's ubuntu runner — failing the regex unit
+# tests for the wrong reason. Remove them here so the pattern/secret cases stay
+# isolated to the layer they test; config DELIVERY is verified in its own fresh
+# install near the end, and the dedicated tsc test (case 42) makes its own
+# tsconfig.json on demand.
+git rm -q tsconfig.json .prettierrc.json .prettierignore vitest.config.ts
+git commit --quiet -m "isolate hook unit tests from optional tsc/prettier steps" --no-verify
+
 echo "Hook test cases:"
 
 # 1. file size cap
@@ -978,6 +989,77 @@ else
   sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$NOGL" "$GLBIN"
+reset_repo
+
+# --- toolchain config delivery + detect/offer ------------------------------
+# Fresh install (the bootstrap repo removed some of these to isolate the hook
+# unit tests). A --both install must drop every auto-by-stack config.
+cd "$WORK"
+DTMP=$(mktemp -d)
+( cd "$DTMP" && git init --quiet && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
+  && "$SCAFFOLD_DIR/install.sh" --both --no-verify ) >"$HOOK_OUT" 2>&1
+for f in tsconfig.json .prettierrc.json .prettierignore vitest.config.ts pytest.ini .coveragerc; do
+  if [ -f "$DTMP/$f" ]; then
+    echo "  ✓ install ships $f (auto by stack)"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ install did not ship $f"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+done
+rm -rf "$DTMP"
+
+# (T) coverage.yml.template is a valid GitHub Actions workflow (opt-in gate).
+if command -v actionlint >/dev/null 2>&1; then
+  CTMP=$(mktemp -d); mkdir -p "$CTMP/.github/workflows"
+  cp "$SCAFFOLD_DIR/.github/workflows/coverage.yml.template" "$CTMP/.github/workflows/coverage.yml"
+  if ( cd "$CTMP" && actionlint -shellcheck= -pyflakes= .github/workflows/coverage.yml ) >"$HOOK_OUT" 2>&1; then
+    echo "  ✓ coverage.yml.template is a valid GitHub Actions workflow"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ coverage.yml.template failed actionlint"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  rm -rf "$CTMP"
+else
+  echo "  - skipped coverage.yml validation (actionlint not installed)"
+fi
+
+# (T) detect/offer is PRINT-ONLY and non-mutating under non-interactive stdin:
+#     no TTY → never auto-runs a package manager, never prompts, never hangs.
+OFFTMP=$(mktemp -d)
+( cd "$OFFTMP" && git init --quiet && echo '{"name":"x"}' >package.json \
+  && "$SCAFFOLD_DIR/install.sh" --frontend </dev/null ) >"$HOOK_OUT" 2>&1
+if grep -q "not installed — run:" "$HOOK_OUT" \
+   && ! grep -q "install now with" "$HOOK_OUT" \
+   && [ ! -d "$OFFTMP/node_modules" ]; then
+  echo "  ✓ detect/offer is print-only + non-mutating without a TTY"; PASS=$((PASS + 1))
+else
+  echo "  ✗ detect/offer — expected print-only run-hints, no prompt, no install"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$OFFTMP"
+
+# (T) Vitest config is NOT shipped when the project already uses Jest.
+JTMP=$(mktemp -d)
+( cd "$JTMP" && git init --quiet && echo '{"name":"x","devDependencies":{"jest":"^29"}}' >package.json \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
+if [ ! -f "$JTMP/vitest.config.ts" ] && grep -q "Jest detected" "$HOOK_OUT"; then
+  echo "  ✓ vitest.config.ts skipped when Jest is present"; PASS=$((PASS + 1))
+else
+  echo "  ✗ vitest.config.ts — should be skipped for a Jest project"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$JTMP"
+
+# (T) pytest.ini is NOT shipped when pyproject.toml already configures pytest.
+PTMP=$(mktemp -d)
+( cd "$PTMP" && git init --quiet \
+  && printf '[tool.pytest.ini_options]\naddopts = "-q"\n' >pyproject.toml \
+  && "$SCAFFOLD_DIR/install.sh" --python --no-verify ) >"$HOOK_OUT" 2>&1
+if [ ! -f "$PTMP/pytest.ini" ] && grep -q "pytest config exists" "$HOOK_OUT"; then
+  echo "  ✓ pytest.ini skipped when pyproject configures pytest"; PASS=$((PASS + 1))
+else
+  echo "  ✗ pytest.ini — should be skipped when pyproject has [tool.pytest.ini_options]"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$PTMP"
 reset_repo
 
 echo ""

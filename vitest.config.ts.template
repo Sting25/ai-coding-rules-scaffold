@@ -1,0 +1,30 @@
+// Copy to project root as `vitest.config.ts` (install.sh does this for frontend
+// stacks unless the project already uses Jest). Vitest is the default runner:
+// Vite-native, ESM-first, near-zero config. Swap for Jest if your stack already
+// standardized on it — the scaffold won't fight an existing choice.
+//
+// A test runner does NOT force tests to exist or to assert anything. The
+// opt-in patch-coverage gate (`.github/workflows/coverage.yml`,
+// `install.sh --coverage-gate`) is what makes the build fail when CHANGED lines
+// ship untested — and even that forces lines to be EXECUTED by a test, not
+// verified by one. See RECOMMENDATIONS.md ("forcing tests") for the ceiling.
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    // Glob mirrors the eslint test-file override so the same files are "tests"
+    // to both tools.
+    include: ['**/*.{test,spec}.{ts,tsx}'],
+    coverage: {
+      // V8 is built in (no extra dep). `json` + `cobertura` reporters feed the
+      // patch-coverage gate; `text` prints a summary locally.
+      provider: 'v8',
+      reporter: ['text', 'json', 'cobertura'],
+      reportsDirectory: 'coverage',
+      // Source under test — adjust `src` to your layout. Excludes keep config
+      // and the tests themselves out of the denominator.
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['**/*.{test,spec}.{ts,tsx}', '**/*.d.ts'],
+    },
+  },
+});

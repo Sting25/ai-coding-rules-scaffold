@@ -65,7 +65,13 @@ force_remove() {
 
 # Generated configs — removed only if unchanged
 remove_if_unmodified "ruff.toml"                     "$SCAFFOLD_DIR/ruff.toml.template"
+remove_if_unmodified "pytest.ini"                    "$SCAFFOLD_DIR/pytest.ini.template"
+remove_if_unmodified ".coveragerc"                   "$SCAFFOLD_DIR/.coveragerc.template"
 remove_if_unmodified "eslint.config.js"              "$SCAFFOLD_DIR/eslint.config.js.template"
+remove_if_unmodified "tsconfig.json"                 "$SCAFFOLD_DIR/tsconfig.json.template"
+remove_if_unmodified ".prettierrc.json"              "$SCAFFOLD_DIR/.prettierrc.json.template"
+remove_if_unmodified ".prettierignore"               "$SCAFFOLD_DIR/.prettierignore.template"
+remove_if_unmodified "vitest.config.ts"              "$SCAFFOLD_DIR/vitest.config.ts.template"
 remove_if_unmodified ".githooks/pre-commit"          "$SCAFFOLD_DIR/githooks/pre-commit.template"
 for check in check-size check-patterns check-filenames check-secrets check-hygiene scaffold-config scaffold-audit; do
   remove_if_unmodified ".githooks/lib/${check}" "$SCAFFOLD_DIR/githooks/lib/${check}.template"
@@ -85,6 +91,8 @@ remove_if_unmodified ".cursor/hooks.json"            "$SCAFFOLD_DIR/cursor-hooks
 remove_if_unmodified ".githooks/commit-msg"          "$SCAFFOLD_DIR/githooks/commit-msg.template"
 # Opt-in local gitleaks pass (only present if installed with --gitleaks-hook).
 remove_if_unmodified ".githooks/lib/check-gitleaks"  "$SCAFFOLD_DIR/githooks/lib/check-gitleaks.template"
+# Opt-in CI patch-coverage gate (only present if installed with --coverage-gate).
+remove_if_unmodified ".github/workflows/coverage.yml" "$SCAFFOLD_DIR/.github/workflows/coverage.yml.template"
 
 # Likely-customized files — only with --all
 if [ "$REMOVE_ALL" -eq 1 ]; then

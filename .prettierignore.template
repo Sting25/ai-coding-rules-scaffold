@@ -1,0 +1,13 @@
+# Copy to project root as `.prettierignore`. Prettier formats code only;
+# eslint owns correctness (the two don't overlap — strictTypeChecked ships no
+# stylistic rules, so there is intentionally NO eslint-config-prettier).
+# Keep generated / vendored / lockfile content out of formatting.
+node_modules
+dist
+build
+coverage
+*.min.js
+*.min.css
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
