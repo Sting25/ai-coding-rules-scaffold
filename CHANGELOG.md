@@ -6,6 +6,46 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.7.0] — 2026-06-16
+
+Toolchain setup: the scaffold now ships the tool *configs* its enforcement
+already assumed (strict `tsconfig.json`, Prettier, Vitest, pytest+coverage),
+detects and offers to install the *binaries* (safe auto-run only on an
+interactive TTY), enforces `prettier --check` in the hook + CI, and adds an
+opt-in CI patch-coverage gate that fails a PR when changed lines ship untested.
+
+### Added
+- **Toolchain setup (configs auto-installed by stack + detect/offer).** The
+  scaffold now ships the configs its enforcement already assumed but never
+  provided: a strict `tsconfig.json` (the type-aware eslint rules + `tsc
+  --noEmit` depend on it), `.prettierrc.json` + `.prettierignore` (Prettier runs
+  separately from eslint — `strictTypeChecked` has no stylistic rules, so there
+  is intentionally no `eslint-config-prettier`), `vitest.config.ts` (skipped when
+  the project already uses Jest), and `pytest.ini` + `.coveragerc` for Python
+  (pytest.ini skipped when pyproject/tox already configures pytest). All install
+  by stack like `ruff.toml` / `eslint.config.js`; `cp_safe` won't clobber
+  existing files.
+- **`prettier --check` in the pre-commit hook + CI**, guarded like ruff/eslint
+  (runs only when a prettier config is present and prettier is installed,
+  silently skipped otherwise; `prettier --write` fixes).
+- **Detect → offer toolchain step (replaces the post-install linter smoke
+  test).** `install.sh` now checks for `ruff`/`pytest` and
+  `eslint`/`tsc`/`prettier`/`vitest`, and offers to install anything missing.
+  Auto-install runs ONLY when safe — interactive TTY, not `--no-verify`, not in
+  CI (`$CI`), and not `--no-install`; otherwise it prints the command, so CI and
+  piped runs never mutate the environment. Package manager detected from
+  lockfiles (`npm`/`pnpm`/`yarn`, `pip`/`uv`). New flag: `--no-install`.
+- **Opt-in CI patch-coverage gate (`install.sh --coverage-gate` →
+  `.github/workflows/coverage.yml`).** Fails a PR when changed lines ship
+  untested (`diff-cover`, default 100% of changed lines, tunable via
+  `DIFF_COVER_FAIL_UNDER`). Covers both stacks via Cobertura XML. It gates
+  *execution* of changed lines, not assertion quality — documented ceiling, with
+  mutation testing as the deferred follow-up in `RECOMMENDATIONS.md` ("Forcing
+  tests"). Action SHAs match `lint.yml` so the pin-drift guard stays green.
+- **+10 tests** (119 total): config delivery by stack, Jest/pytest skip paths,
+  `coverage.yml` actionlint validity, and a regression guard that the detect/
+  offer step is print-only and non-mutating without a TTY.
+
 ## [v0.6.0] — 2026-06-11
 
 Multi-language enforcement (PHP/Go/Rust/Java/Kotlin/Ruby), broadened TypeScript

@@ -1,0 +1,17 @@
+# Copy to project root as `.coveragerc` (install.sh does this for Python
+# stacks). Configures coverage.py for the patch-coverage gate; pair with
+# `pytest --cov --cov-report=xml` (the coverage.yml CI job runs exactly that).
+[run]
+branch = True
+# Adjust to your package layout (e.g. `src`). The gate measures CHANGED lines,
+# so this just scopes what counts as "your code".
+source = .
+omit =
+    */tests/*
+    */test_*.py
+    */.venv/*
+    */venv/*
+
+[report]
+# Surface partially-covered branches in the local report.
+show_missing = True

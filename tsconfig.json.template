@@ -1,0 +1,44 @@
+{
+  // Copy to project root as `tsconfig.json` (install.sh does this for frontend
+  // stacks). This is the type-checker config that `eslint.config.js`'s
+  // type-aware rules (`strictTypeChecked`) AND the `tsc --noEmit` step in the
+  // pre-commit hook + CI both rely on — without it, the highest-value async-
+  // safety rules silently degrade. tsconfig.json is JSONC: comments are allowed.
+  //
+  // Tuned for type-CHECKING, not building (`noEmit: true`). If you compile with
+  // tsc, a bundler, or a framework (Next/Vite/etc.), keep your build's own
+  // tsconfig and let this layer the strictness on via `extends`, or merge the
+  // `compilerOptions` below into yours. The flags here are the ones that turn
+  // whole classes of "compiles but wrong" into build failures.
+  "compilerOptions": {
+    // --- Strictness: the point of the file ---------------------------------
+    "strict": true,                       // the strict family (null checks, implicit-any, etc.)
+    "noUncheckedIndexedAccess": true,     // arr[i] / obj[k] is T | undefined — kills the #1 silent runtime crash
+    "exactOptionalPropertyTypes": true,   // `{ x?: T }` ≠ `{ x: T | undefined }`; stops accidental undefined writes
+    "noImplicitOverride": true,           // an override must say `override` — catches base-method renames
+    "noFallthroughCasesInSwitch": true,   // a case that falls through must be intentional
+    "noImplicitReturns": true,            // every code path returns, or none do
+    "noUnusedLocals": true,               // dead locals (eslint covers imports; this covers the rest)
+    "noUnusedParameters": true,           // prefix with _ to keep an intentionally-unused param
+    "forceConsistentCasingInFileNames": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+
+    // --- Module / target: modern defaults; adjust per runtime --------------
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",        // "NodeNext" if you run under Node without a bundler
+    "moduleDetection": "force",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,              // per-file transpile safety (esbuild/swc/Vite)
+    "verbatimModuleSyntax": true,         // explicit `import type` — required by isolatedModules for type-only imports
+
+    // --- Type-check only; your build owns emit ----------------------------
+    "noEmit": true,
+    "skipLibCheck": true,                 // don't type-check node_modules .d.ts (speed; standard)
+    "lib": ["ES2022"]                     // add "DOM", "DOM.Iterable" for browser code
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules", "dist", "build", "coverage"]
+}

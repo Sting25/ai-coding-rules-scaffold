@@ -78,6 +78,23 @@ _Added 2026-06-11._
 
 ---
 
+## Forcing tests (patch coverage + mutation testing)
+
+_Added 2026-06-16. **Patch-coverage gate shipped 2026-06-16** — `install.sh --coverage-gate` installs `.github/workflows/coverage.yml`, a `diff-cover` job that fails a PR when changed lines aren't covered. Mutation testing below remains out of scope._
+
+**Adopt mutation testing if:** a coverage gate is already in place **and** assertion-free / trivially-passing tests are getting through review (a signature agent pattern when coverage is the target).
+
+**What you can and can't machine-force.** You cannot force *meaningful* tests with a build gate — only mechanical proxies, every one gameable, most of all by an agent optimizing to pass the gate. The proxies, weakest to strongest:
+
+- **"source changed ⇒ a test file changed"** — trivially satisfied by touching a test; high false-positive on refactors/docs. Not worth shipping.
+- **Whole-repo coverage threshold** (`≥ 80%`) — old untested code masks new gaps. Weak for a scaffold.
+- **Patch / diff coverage** (changed lines must be covered) — the strongest *defensible* gate, and what the scaffold ships (`--coverage-gate`). The honest ceiling: it forces changed lines to be **executed** by a test, never **verified** by one. An assertion-free test that just calls the function gives 100% patch coverage.
+- **Mutation testing** (`Stryker` for TS/JS, `mutmut` / `cosmic-ray` for Python) — the only tool that measures test *quality*: it injects faults and checks the tests catch them. It closes the assertion-free hole, but it's slow, needs tuning, and still requires tests to exist first. Gate on mutation score for the changed files only.
+
+**Why mutation testing stays deferred.** Default-on mutation testing makes CI minutes-to-tens-of-minutes slower and is flaky on some code shapes — too heavy to impose by default. Wire it as a separate opt-in job (or a nightly run) over the diff, not the whole tree. Until then this is docs-only; the patch-coverage gate plus required human review is the shipped answer to "how do we force tests."
+
+---
+
 ## `Biome` / `oxlint` instead of (or in front of) ESLint
 
 _Added 2026-06-11._

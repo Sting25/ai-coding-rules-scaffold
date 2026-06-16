@@ -132,6 +132,18 @@ if [ ${#STAGED_JS[@]} -gt 0 ] \
   npx --no-install eslint -- "${STAGED_JS[@]}" || FAILED=1
 fi
 
+# Prettier formats; eslint checks correctness — they don't overlap (the eslint
+# config ships no stylistic rules, so there's no eslint-config-prettier). Run
+# --check on staged files when a prettier config exists and prettier is
+# installed. Silently skipped otherwise, like the linters above. `prettier
+# --write` is the fix.
+if [ ${#STAGED_JS[@]} -gt 0 ] \
+   && { [ -f .prettierrc ] || [ -f .prettierrc.json ] || [ -f .prettierrc.js ] || [ -f prettier.config.js ] || grep -qs '"prettier"' package.json; } \
+   && command -v npx >/dev/null 2>&1 \
+   && npx --no-install prettier --version >/dev/null 2>&1; then
+  npx --no-install prettier --check -- "${STAGED_JS[@]}" || FAILED=1
+fi
+
 # Type-check with tsc when a tsconfig.json exists and TypeScript is installed.
 # Run PROJECT-WIDE (no file args) — passing individual files makes tsc ignore
 # tsconfig.json and its compiler options. Silently skipped when absent, like

@@ -43,10 +43,11 @@ Both invoke the same `lib/check-*` scripts (`check-size`, `check-patterns`, `che
 Two always-on enforcement layers (pre-commit hook + CI mirror) plus optional agent-runtime hooks. What each stack gets:
 
 - **Python** — `ruff` (annotations, complexity, `pathlib`, no-blind-except, async-safety `ASYNC`, FastAPI `FAST`, logging `G`/`LOG`, a curated `flake8-bandit` security subset) **+** a `backend.txt` regex deny-list: `print()`, `breakpoint()`/`pdb`/`ipdb`, `os.path.join`, deprecated `datetime.utcnow()` / `utcfromtimestamp()`. FastAPI (Pydantic responses) and SQLAlchemy-2.0 conventions live in `coding-rules.md`.
-- **TypeScript / JavaScript** — type-aware `eslint` (`strictTypeChecked`: floating/misused promises, `switch-exhaustiveness-check`, `preserve-caught-error`, `no-explicit-any`, import sort + unused-import removal) **+** `tsc --noEmit` **+** a `frontend.txt` deny-list: `console.log`/`debugger`/`alert`, focused tests (`.only`), `@ts-ignore`/`@ts-nocheck`, hardcoded `localhost`, and TLS-verification-disable (`NODE_TLS_REJECT_UNAUTHORIZED`, `rejectUnauthorized: false`).
+- **TypeScript / JavaScript** — type-aware `eslint` (`strictTypeChecked`: floating/misused promises, `switch-exhaustiveness-check`, `preserve-caught-error`, `no-explicit-any`, import sort + unused-import removal) **+** `tsc --noEmit` (against a shipped strict `tsconfig.json`) **+** `prettier --check` (formatting, run separately from eslint) **+** a `frontend.txt` deny-list: `console.log`/`debugger`/`alert`, focused tests (`.only`), `@ts-ignore`/`@ts-nocheck`, hardcoded `localhost`, and TLS-verification-disable (`NODE_TLS_REJECT_UNAUTHORIZED`, `rejectUnauthorized: false`).
   - **React** — `dangerouslySetInnerHTML` (XSS); opt-in `react-hooks` + `jsx-a11y` blocks.
   - **Vue** — `.vue` scanned; `v-html` (XSS).
   - **Svelte** — `.svelte` scanned; `{@html}` (XSS).
+- **Testing** — a runner config ships per stack (`vitest.config.ts` for TS/JS unless the project already uses Jest; `pytest.ini` + `.coveragerc` for Python). A runner alone forces nothing; the **opt-in patch-coverage gate** (`--coverage-gate`) fails a PR when *changed* lines ship untested. It gates execution of changed lines, not assertion quality — see [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) on why you can't fully machine-force meaningful tests.
 - **PHP** — `php -l` syntax + `phpcs` (when configured) **+** `php.txt`: `var_dump`/`print_r`, `->dd()`/`dump()`, `die`/`exit` (opt-in).
 - **Go** — `go.txt`: `fmt.Println`/`Printf` debug, `panic`/`print` (opt-in); ready-to-uncomment golangci-lint CI job.
 - **Rust** — `rust.txt`: `dbg!`, `println!`, `.unwrap()`/`.expect()` (opt-in); clippy CI job stub.
@@ -63,7 +64,7 @@ Clone the scaffold somewhere stable:
 
 ```sh
 # Recommended: pin to a tagged release for reproducibility
-git clone --branch v0.6.0 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
+git clone --branch v0.7.0 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
 # Or track main if you want the latest changes
 git clone https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
 ```
@@ -83,12 +84,14 @@ The script auto-detects Python (`pyproject.toml` / `requirements.txt` / `setup.p
 ./install.sh --frontend     # TS/JS only
 ./install.sh --both         # both stacks
 ./install.sh --force        # overwrite existing files
-./install.sh --no-verify    # skip the post-install linter check
+./install.sh --no-verify    # skip the post-install toolchain check (no detect/offer)
 ./install.sh --claude       # also install opt-in Claude Code agent guardrails
 ./install.sh --cursor       # also install opt-in Cursor agent guardrails
 ./install.sh --commit-msg   # also install the Conventional-Commits commit-msg hook
 ./install.sh --gitleaks-hook # also install opt-in local gitleaks pre-commit pass
 ./install.sh --all-langs    # install every language's forbidden-pattern file
+./install.sh --coverage-gate # also install the opt-in CI patch-coverage gate
+./install.sh --no-install   # detect missing tools but never auto-run a package manager
 ./install.sh --help         # show usage
 ```
 
@@ -97,13 +100,22 @@ Language pattern files are auto-installed when their manifest is detected
 …); `--all-langs` installs them all. See [Opt-in layers](#opt-in-layers) for
 what `--claude`, `--cursor`, and `--commit-msg` add.
 
-At the end, `install.sh` verifies that `ruff` and/or `eslint` are installed and that their configs load. If either is missing, it prints the install command.
+**The scaffold ships configs + enforcement; the tools themselves are project
+deps.** At the end, `install.sh` runs a **detect → offer** pass: it checks for
+each tool its configs assume (`ruff`, `pytest`+coverage / `eslint`, `tsc`,
+`prettier`, `vitest`) and, for anything missing, offers to install it. The
+auto-install only runs when it's **safe** — an interactive terminal, not
+`--no-verify`, not inside CI (`$CI`), and not `--no-install`. In any
+non-interactive context it falls back to just printing the command, so CI and
+piped/scripted runs never mutate your `package.json` or environment. The
+package manager is detected from your lockfiles (`npm`/`pnpm`/`yarn`,
+`pip`/`uv`).
 
-Install the linters:
+To install the linters by hand instead:
 
 ```sh
-pip install ruff                                   # Python
-npm i -D eslint @eslint/js typescript-eslint       # TS/JS
+pip install ruff pytest pytest-cov                                      # Python
+npm i -D eslint @eslint/js typescript-eslint typescript prettier vitest # TS/JS
 ```
 
 ### Pairing with Husky / lefthook
@@ -128,7 +140,13 @@ Either way, the four `lib/check-*` scripts in `.githooks/lib/` are also runnable
 | `coding-rules.md` | `coding-rules.md` | Short list of code-level rules that aren't tool-enforceable |
 | `operational-rules.md` | `operational-rules.md` | Process and collaboration rules — failure modes that no linter can catch |
 | `ruff.toml.template` | `ruff.toml` | Python lint config |
+| `pytest.ini.template` | `pytest.ini` | Python test-runner config (skipped if pyproject/tox already configures pytest) |
+| `.coveragerc.template` | `.coveragerc` | coverage.py config for the patch-coverage gate |
 | `eslint.config.js.template` | `eslint.config.js` | TS/JS lint config (flat config, ESLint 9+) |
+| `tsconfig.json.template` | `tsconfig.json` | Strict TS config the type-aware eslint rules + `tsc --noEmit` assume |
+| `.prettierrc.json.template` | `.prettierrc.json` | Prettier formatting config (runs separately from eslint) |
+| `.prettierignore.template` | `.prettierignore` | Paths Prettier should not format |
+| `vitest.config.ts.template` | `vitest.config.ts` | Vitest runner + V8 coverage config (skipped if the project uses Jest) |
 | `githooks/pre-commit.template` | `.githooks/pre-commit` | Hook orchestrator — invokes the five `lib/check-*` scripts |
 | `githooks/lib/check-{size,patterns,filenames,secrets,hygiene}.template` | `.githooks/lib/check-{size,patterns,filenames,secrets,hygiene}` | Reusable check scripts; the same scripts run from CI so hook and CI can't drift |
 | `githooks/lib/scaffold-config.template` | `.githooks/lib/scaffold-config` | Reads per-project rule overrides from `.scaffold.toml` (per-path size caps, per-rule disable / severity) |
@@ -144,7 +162,7 @@ Scripts (stay in the scaffold repo):
 
 | Script | Purpose |
 |---|---|
-| `install.sh` | Copy templates into your project, wire `core.hooksPath`, verify linters |
+| `install.sh` | Copy templates into your project, wire `core.hooksPath`, detect/offer the toolchain |
 | `uninstall.sh` | Remove unmodified scaffold files, unwire the hook |
 
 ## AI agent integration
@@ -189,11 +207,12 @@ For parallel agent sessions, use `git worktree add ../proj-feat-x -b feat-x` so 
 ## What the tooling enforces
 
 The pre-commit hook now invokes `ruff` / `eslint` against staged files
-when their configs are present and the tool is on PATH — and, for
-TypeScript, `tsc --noEmit` when a `tsconfig.json` is present — so most of
-the build-breaking rules below also fire at commit time, not only in CI.
-Linters and the type-checker are silently skipped if not installed; CI is
-the authoritative backstop.
+when their configs are present and the tool is on PATH — plus, for
+TypeScript, `tsc --noEmit` (against the shipped strict `tsconfig.json`) and
+`prettier --check` when a prettier config is present — so most of the
+build-breaking rules below also fire at commit time, not only in CI.
+Linters, the type-checker, and the formatter are silently skipped if not
+installed; CI is the authoritative backstop.
 
 The shipped `eslint.config.js` extends typescript-eslint's
 **`strictTypeChecked`** tier (type-aware linting), wires import sorting and
@@ -224,6 +243,8 @@ Build-breaking (`ruff` / `eslint`, on every lint + commit + in CI):
 | Non-exhaustive `switch` over a union/enum (missing member) | `@typescript-eslint/switch-exhaustiveness-check` (type-aware) |
 | Re-throwing in `catch` while discarding the original error cause/stack | `eslint preserve-caught-error` (needs ESLint ≥ 9.35) |
 | TypeScript type errors | `tsc --noEmit` (hook + CI, when `tsconfig.json` present) |
+| Unformatted TS/JS | `prettier --check` (hook + CI, when a prettier config is present; `prettier --write` fixes) |
+| Changed lines shipped without a test (opt-in) | `diff-cover` patch-coverage gate (`--coverage-gate`, CI) |
 
 Commit + CI-breaking (pre-commit hook + `lint.yml`):
 
@@ -354,6 +375,19 @@ by default so the scaffold stays minimal; turn them on per project.
   on by default for public repos, requires GitHub Advanced Security for private
   repos (caveat documented in the template header).
 
+- **Patch-coverage gate (`install.sh --coverage-gate` →
+  `.github/workflows/coverage.yml`).** The one mechanism here that *forces tests
+  to be written*: it fails a PR when lines you **added or changed** aren't
+  executed by any test (`diff-cover`, default 100% of changed lines; lower the
+  `DIFF_COVER_FAIL_UNDER` env to ease adoption, then ratchet up). It deliberately
+  does **not** gate on whole-repo coverage %, which lets old untested code mask
+  new gaps. Honest ceiling: it forces changed lines to be **executed** by a test,
+  never **verified** by one — an assertion-free test still counts as covered.
+  Pair it with required human review; for real test-*quality* signal, layer on
+  mutation testing (see [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md), "Forcing
+  tests"). Opt-in because forcing tests on new code is a policy a team must
+  choose deliberately.
+
 Supply-chain hardening is **on by default** in the shipped CI + Dependabot
 config: `install.sh` drops a `.github/dependabot.yml` (weekly grouped bumps of
 the SHA-pinned Actions, with a **7-day `cooldown`** so a compromised-and-yanked
@@ -416,8 +450,8 @@ Safe mode only removes files whose content matches the current scaffold template
 |---|---|
 | Architecture / module boundaries | Your project spec or design doc |
 | Framework-specific rules (React Query, specific import paths) | `coding-rules.md` "Project-specific" section |
-| Test coverage thresholds, logging conventions | Per-project decision |
-| Formatter enforcement (`ruff format`, `prettier`) | Drop-in if you want; the scaffold stays opinion-light here |
+| Logging conventions, whole-repo coverage % | Per-project decision (the shipped gate measures *patch* coverage, not a global threshold) |
+| `ruff format` (Python formatting) | Drop-in if you want; Python formatting stays opinion-light (TS/JS formatting now ships via Prettier) |
 | Spec-first workflow templates (`SPEC.md`) | Out of scope — see [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) |
 | Claude Code agent-runtime hooks (`.claude/settings.json` `PreToolUse`) | Deferred — see [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) for design space and tradeoffs |
 | `git worktree` orchestration for parallel agent sessions | Documented in `AGENTS.md`; not automated |

@@ -13,6 +13,8 @@
 #   install.sh --commit-msg # also install the Conventional-Commits commit-msg hook
 #   install.sh --gitleaks-hook # also install opt-in local gitleaks pre-commit pass
 #   install.sh --all-langs  # install every language's forbidden-pattern file
+#   install.sh --coverage-gate # also install the opt-in CI patch-coverage gate
+#   install.sh --no-install # detect missing tools but never auto-run a package manager
 #   install.sh --help       # show this help
 
 set -euo pipefail
@@ -26,6 +28,8 @@ CURSOR=0
 COMMIT_MSG=0
 GITLEAKS_HOOK=0
 ALL_LANGS=0
+COVERAGE_GATE=0
+NO_INSTALL=0
 
 for arg in "$@"; do
   case "$arg" in
@@ -39,7 +43,9 @@ for arg in "$@"; do
     --commit-msg) COMMIT_MSG=1 ;;
     --gitleaks-hook) GITLEAKS_HOOK=1 ;;
     --all-langs)  ALL_LANGS=1 ;;
-    --help|-h)    sed -n '2,16p' "$0"; exit 0 ;;
+    --coverage-gate) COVERAGE_GATE=1 ;;
+    --no-install) NO_INSTALL=1 ;;
+    --help|-h)    sed -n '2,18p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -106,12 +112,35 @@ cp_safe "$SCAFFOLD_DIR/.scaffold.toml.template" ".scaffold.toml"
 if [ "$MODE" = "python" ] || [ "$MODE" = "both" ]; then
   cp_safe "$SCAFFOLD_DIR/ruff.toml.template" "ruff.toml"
   cp_safe "$SCAFFOLD_DIR/forbidden-patterns/backend.txt.template" ".forbidden-patterns/backend.txt"
+  # Test-runner + coverage config (standalone, like ruff.toml — never edits
+  # pyproject.toml). Skip pytest.ini if the project already configures pytest in
+  # pyproject.toml/tox.ini/setup.cfg, since pytest.ini would silently override it.
+  if grep -rqs -e '\[tool.pytest.ini_options\]' -e '\[pytest\]' pyproject.toml tox.ini setup.cfg 2>/dev/null; then
+    echo "skip (pytest config exists): pytest.ini  — merge .coveragerc settings into your existing config"
+  else
+    cp_safe "$SCAFFOLD_DIR/pytest.ini.template" "pytest.ini"
+  fi
+  cp_safe "$SCAFFOLD_DIR/.coveragerc.template" ".coveragerc"
 fi
 
 # Frontend
 if [ "$MODE" = "frontend" ] || [ "$MODE" = "both" ]; then
   cp_safe "$SCAFFOLD_DIR/eslint.config.js.template" "eslint.config.js"
   cp_safe "$SCAFFOLD_DIR/forbidden-patterns/frontend.txt.template" ".forbidden-patterns/frontend.txt"
+  # TypeScript config the eslint type-aware rules + the tsc --noEmit hook/CI
+  # step already assume (closes the gap where they silently degrade if absent).
+  cp_safe "$SCAFFOLD_DIR/tsconfig.json.template" "tsconfig.json"
+  # Formatting: Prettier runs SEPARATELY from eslint by design (strictTypeChecked
+  # ships no stylistic rules, so there is no eslint-config-prettier — see the
+  # header of eslint.config.js).
+  cp_safe "$SCAFFOLD_DIR/.prettierrc.json.template" ".prettierrc.json"
+  cp_safe "$SCAFFOLD_DIR/.prettierignore.template" ".prettierignore"
+  # Test runner: default to Vitest, but don't fight a project already on Jest.
+  if grep -qs '"jest"' package.json 2>/dev/null || ls -1 jest.config.* >/dev/null 2>&1; then
+    echo "skip (Jest detected): vitest.config.ts  — keep Jest; ensure it emits cobertura coverage for the gate"
+  else
+    cp_safe "$SCAFFOLD_DIR/vitest.config.ts.template" "vitest.config.ts"
+  fi
 fi
 
 # Additional language pattern files (config-driven check-patterns). Each ships a
@@ -177,6 +206,16 @@ if [ "$GITLEAKS_HOOK" -eq 1 ]; then
   echo "note: --gitleaks-hook is the LOCAL echo only. Add .github/workflows/gitleaks.yml (see gitleaks.yml.template) for the unskippable CI gate."
 fi
 
+# Opt-in CI patch-coverage gate (--coverage-gate). Fails a PR when CHANGED lines
+# ship untested (diff-cover). Kept opt-in: it forces tests on new code, which is
+# a policy choice a team must make deliberately. It gates EXECUTION of changed
+# lines, not assertion quality — see RECOMMENDATIONS.md.
+if [ "$COVERAGE_GATE" -eq 1 ]; then
+  cp_safe "$SCAFFOLD_DIR/.github/workflows/coverage.yml.template" ".github/workflows/coverage.yml"
+  echo "note: coverage.yml gates patch coverage (default 100% of changed lines)."
+  echo "      It forces changed lines to be RUN by a test, not verified — pair with review."
+fi
+
 # Wire the hook — preserve existing core.hooksPath if already set (e.g. Husky).
 # Use `git rev-parse --git-dir` so this works in worktrees (where .git is a
 # file, not a directory) and submodules.
@@ -196,34 +235,74 @@ fi
 echo ""
 echo "Done (mode: $MODE)."
 
-# Post-install smoke test — confirms linters are installed and configs load.
+# Post-install toolchain check — the scaffold ships CONFIGS and ENFORCEMENT, but
+# the actual tools (ruff/eslint/tsc/prettier/test runner) are project deps. This
+# step detects what's missing and OFFERS to install it. Auto-running a package
+# manager only happens when SAFE: interactive TTY, not --no-verify, not in CI,
+# and --no-install not set. Otherwise it just prints the command (the scaffold's
+# prior, non-mutating behavior) so CI and piped/scripted runs never install.
+CAN_AUTORUN=0
+if [ "$VERIFY" -eq 1 ] && [ "$NO_INSTALL" -eq 0 ] && [ -t 0 ] && [ -z "${CI:-}" ]; then
+  CAN_AUTORUN=1
+fi
+
+# Detect the project's package manager from lockfiles / available binaries.
+js_install_cmd() {
+  if [ -f pnpm-lock.yaml ] && command -v pnpm >/dev/null 2>&1; then echo "pnpm add -D"
+  elif [ -f yarn.lock ] && command -v yarn >/dev/null 2>&1; then echo "yarn add -D"
+  else echo "npm i -D"; fi
+}
+py_install_cmd() {
+  if { [ -f uv.lock ] || grep -qs '\[tool.uv\]' pyproject.toml 2>/dev/null; } && command -v uv >/dev/null 2>&1; then
+    echo "uv add --dev"
+  else echo "pip install"; fi
+}
+
+# offer <label> <presence-test-command> <install-base> <packages>
+# Prints ✓ when present; otherwise offers to install (auto-run only if safe).
+offer() {
+  local label=$1 testcmd=$2 base=$3 pkgs=$4 reply
+  if eval "$testcmd" >/dev/null 2>&1; then
+    echo "  ✓ $label installed"
+    return
+  fi
+  if [ "$CAN_AUTORUN" -eq 1 ]; then
+    printf "  ? %s not installed — install now with '%s %s'? [y/N] " "$label" "$base" "$pkgs"
+    read -r reply || reply=""
+    case "$reply" in
+      [yY]|[yY][eE][sS])
+        # shellcheck disable=SC2086  # word-split the package list deliberately
+        if $base $pkgs; then echo "  ✓ $label installed"; else echo "  ✗ $label install failed — run: $base $pkgs"; fi ;;
+      *) echo "  - skipped — run: $base $pkgs" ;;
+    esac
+  else
+    echo "  ! $label not installed — run: $base $pkgs"
+  fi
+}
+
 if [ "$VERIFY" -eq 1 ]; then
   echo ""
-  echo "Verifying linters:"
+  echo "Checking toolchain (the scaffold configures these; you supply the binaries):"
   case "$MODE" in
     python|both)
+      PYI=$(py_install_cmd)
+      offer "ruff" "command -v ruff" "$PYI" "ruff"
+      # ruff present: also confirm the config actually loads (2+ = config error).
       if command -v ruff >/dev/null 2>&1; then
-        # Explicit exit-code handling so the smoke test actually distinguishes
-        # "config parsed cleanly" from "ruff crashed on a bad config".
-        # ruff: 0 = no issues, 1 = lint issues found, 2+ = config/invocation error.
-        ruff_exit=0
-        ruff check --quiet . >/dev/null 2>&1 || ruff_exit=$?
-        if [ "$ruff_exit" -le 1 ]; then
-          echo "  ✓ ruff installed and config loads"
-        else
-          echo "  ✗ ruff installed but config errored (exit $ruff_exit) — check ruff.toml"
-        fi
-      else
-        echo "  ! ruff not installed — run: pip install ruff"
-      fi ;;
+        ruff_exit=0; ruff check --quiet . >/dev/null 2>&1 || ruff_exit=$?
+        [ "$ruff_exit" -ge 2 ] && echo "  ✗ ruff config errored (exit $ruff_exit) — check ruff.toml"
+      fi
+      offer "pytest + coverage" "command -v pytest" "$PYI" "pytest pytest-cov"
+      ;;
   esac
   case "$MODE" in
     frontend|both)
-      if command -v npx >/dev/null 2>&1 && npx --no-install eslint --version >/dev/null 2>&1; then
-        echo "  ✓ eslint installed"
-      else
-        echo "  ! eslint not installed — run: npm i -D eslint @eslint/js typescript-eslint eslint-plugin-import-x eslint-plugin-unused-imports"
-      fi ;;
+      JSI=$(js_install_cmd)
+      offer "eslint" "npx --no-install eslint --version" "$JSI" "eslint @eslint/js typescript-eslint eslint-plugin-import-x eslint-plugin-unused-imports"
+      offer "typescript (tsc)" "npx --no-install tsc --version" "$JSI" "typescript"
+      offer "prettier" "npx --no-install prettier --version" "$JSI" "prettier"
+      offer "vitest" "npx --no-install vitest --version" "$JSI" "vitest @vitest/coverage-v8"
+      ;;
   esac
 fi
 

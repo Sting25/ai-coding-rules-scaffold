@@ -82,6 +82,18 @@ jobs:
           fi
       - if: steps.detect.outputs.present == 'true'
         run: npx eslint .
+      - name: Format check (prettier --check)
+        if: steps.detect.outputs.present == 'true'
+        # Mirrors the pre-commit hook. Only runs when a prettier config is present
+        # AND prettier is installed — prettier formats, eslint checks correctness,
+        # and the two intentionally don't overlap (no eslint-config-prettier).
+        run: |
+          if { [ -f .prettierrc ] || [ -f .prettierrc.json ] || [ -f .prettierrc.js ] || [ -f prettier.config.js ]; } \
+             && npx --no-install prettier --version >/dev/null 2>&1; then
+            npx --no-install prettier --check .
+          else
+            echo "no prettier config or prettier not installed — skipping format check"
+          fi
       - name: Type-check (tsc --noEmit)
         if: steps.detect.outputs.present == 'true'
         # Project-wide type-check, guarded: only runs when a tsconfig.json is
