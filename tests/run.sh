@@ -1062,6 +1062,74 @@ fi
 rm -rf "$PTMP"
 reset_repo
 
+# --- install never clobbers user-owned files (CLAUDE.md / AGENTS.md) --------
+# Regression guard for the reported data-loss bug: install.sh --force used to
+# overwrite a hand-written CLAUDE.md wholesale with the pointer stub. CLAUDE.md
+# is now merged (import block appended once) and AGENTS.md is never replaced.
+cd "$WORK"
+mk_userproj() {
+  local d; d=$(mktemp -d)
+  ( cd "$d" && git init --quiet && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
+    && printf '# Mine\n\nHAND-WRITTEN-MEMORY\n' >CLAUDE.md \
+    && printf '# AGENTS\n\nCUSTOM-PROJECT-SECTION\n' >AGENTS.md )
+  echo "$d"
+}
+
+# (T) install merges CLAUDE.md: keeps user content AND appends the import.
+UMG=$(mk_userproj)
+( cd "$UMG" && "$SCAFFOLD_DIR/install.sh" --both --no-verify ) >"$HOOK_OUT" 2>&1
+if grep -q 'HAND-WRITTEN-MEMORY' "$UMG/CLAUDE.md" && grep -q '@AGENTS.md' "$UMG/CLAUDE.md"; then
+  echo "  ✓ install merges CLAUDE.md (keeps content + adds import)"; PASS=$((PASS + 1))
+else
+  echo "  ✗ install should merge CLAUDE.md, not replace it"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UMG"
+
+# (T) install --force must NOT clobber CLAUDE.md or a customized AGENTS.md.
+UFC=$(mk_userproj)
+( cd "$UFC" && "$SCAFFOLD_DIR/install.sh" --both --force --no-verify ) >"$HOOK_OUT" 2>&1
+if grep -q 'HAND-WRITTEN-MEMORY' "$UFC/CLAUDE.md" && grep -q 'CUSTOM-PROJECT-SECTION' "$UFC/AGENTS.md"; then
+  echo "  ✓ --force preserves user CLAUDE.md and AGENTS.md"; PASS=$((PASS + 1))
+else
+  echo "  ✗ --force clobbered a user-owned file"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UFC"
+
+# (T) install is idempotent — CLAUDE.md import block appears exactly once.
+UIDEM=$(mk_userproj)
+( cd "$UIDEM" && "$SCAFFOLD_DIR/install.sh" --both --no-verify >/dev/null 2>&1 \
+             && "$SCAFFOLD_DIR/install.sh" --both --no-verify ) >"$HOOK_OUT" 2>&1
+if [ "$(grep -c 'ai-coding-rules-scaffold:begin' "$UIDEM/CLAUDE.md")" = "1" ]; then
+  echo "  ✓ CLAUDE.md import is idempotent (appended once)"; PASS=$((PASS + 1))
+else
+  echo "  ✗ CLAUDE.md import not idempotent"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UIDEM"
+
+# (T) --force backs up a locally-modified scaffold file before replacing it.
+UBK=$(mk_userproj)
+( cd "$UBK" && "$SCAFFOLD_DIR/install.sh" --both --no-verify >/dev/null 2>&1 \
+            && echo '# local edit' >>ruff.toml \
+            && "$SCAFFOLD_DIR/install.sh" --both --force --no-verify ) >"$HOOK_OUT" 2>&1
+if [ -f "$UBK/ruff.toml.scaffold-bak" ] && grep -q 'local edit' "$UBK/ruff.toml.scaffold-bak"; then
+  echo "  ✓ --force backs up changed files to .scaffold-bak"; PASS=$((PASS + 1))
+else
+  echo "  ✗ --force did not back up the changed file"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UBK"
+
+# (T) uninstall strips the scaffold block but keeps the user's CLAUDE.md content.
+UUN=$(mk_userproj)
+( cd "$UUN" && "$SCAFFOLD_DIR/install.sh" --both --no-verify >/dev/null 2>&1 \
+            && "$SCAFFOLD_DIR/uninstall.sh" ) >"$HOOK_OUT" 2>&1
+if grep -q 'HAND-WRITTEN-MEMORY' "$UUN/CLAUDE.md" && ! grep -q 'ai-coding-rules-scaffold:begin' "$UUN/CLAUDE.md"; then
+  echo "  ✓ uninstall strips block, keeps CLAUDE.md content"; PASS=$((PASS + 1))
+else
+  echo "  ✗ uninstall should strip only the block, keep content"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UUN"
+reset_repo
+
 echo ""
 echo "Result: $PASS passed, $FAIL failed"
 exit $FAIL

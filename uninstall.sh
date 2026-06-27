@@ -7,7 +7,7 @@
 #
 # Files considered "likely customized" (AGENTS.md, coding-rules.md,
 # .forbidden-patterns/*.txt) are always left alone unless --all is given.
-# CLAUDE.md is treated as a regenerable pointer and removed if unchanged.
+# CLAUDE.md is user-owned — only a scaffold-created file or our appended block is removed.
 #
 # Usage:
 #   uninstall.sh          # safe mode: only unchanged generated files
@@ -63,6 +63,37 @@ force_remove() {
   fi
 }
 
+# clean_claude_md — CLAUDE.md is user-owned. If we created it wholesale
+# (byte-equal to the pointer template), remove it. If we appended our marked
+# import block to the user's own file, strip ONLY that block and keep the
+# rest. Otherwise leave it entirely alone. Never deletes user content.
+clean_claude_md() {
+  [ -e "CLAUDE.md" ] || return
+  if same_as_template "CLAUDE.md" "$SCAFFOLD_DIR/CLAUDE.md.pointer"; then
+    if [ "$DRY_RUN" -eq 1 ]; then
+      echo "would remove: CLAUDE.md (scaffold-created pointer)"
+    else
+      rm "CLAUDE.md"
+      echo "removed:      CLAUDE.md (scaffold-created pointer)"
+    fi
+    return
+  fi
+  if grep -q 'ai-coding-rules-scaffold:begin' "CLAUDE.md" 2>/dev/null; then
+    if [ "$DRY_RUN" -eq 1 ]; then
+      echo "would strip:  scaffold import block from CLAUDE.md (your content kept)"
+    else
+      # -i.scaffold-tmp works on both GNU and BSD sed; remove the backup after.
+      sed -i.scaffold-tmp \
+        '/<!-- ai-coding-rules-scaffold:begin -->/,/<!-- ai-coding-rules-scaffold:end -->/d' \
+        "CLAUDE.md"
+      rm -f "CLAUDE.md.scaffold-tmp"
+      echo "stripped:     scaffold import block from CLAUDE.md (your content kept)"
+    fi
+    return
+  fi
+  echo "kept:         CLAUDE.md — no scaffold block found, left untouched"
+}
+
 # Generated configs — removed only if unchanged
 remove_if_unmodified "ruff.toml"                     "$SCAFFOLD_DIR/ruff.toml.template"
 remove_if_unmodified "pytest.ini"                    "$SCAFFOLD_DIR/pytest.ini.template"
@@ -81,7 +112,7 @@ done
 remove_if_unmodified ".scaffold.toml"                "$SCAFFOLD_DIR/.scaffold.toml.template"
 remove_if_unmodified ".github/workflows/lint.yml"    "$SCAFFOLD_DIR/.github/workflows/lint.yml.template"
 remove_if_unmodified ".github/dependabot.yml"        "$SCAFFOLD_DIR/.github/dependabot.yml.template"
-remove_if_unmodified "CLAUDE.md"                     "$SCAFFOLD_DIR/CLAUDE.md.pointer"
+clean_claude_md
 # Opt-in Claude Code guardrails (only present if installed with --claude).
 remove_if_unmodified ".githooks/lib/agent-precheck"  "$SCAFFOLD_DIR/githooks/lib/agent-precheck.template"
 remove_if_unmodified ".claude/settings.json"         "$SCAFFOLD_DIR/claude-settings.json.template"

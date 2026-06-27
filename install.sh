@@ -6,7 +6,7 @@
 #   install.sh --python     # Python only
 #   install.sh --frontend   # TS/JS only
 #   install.sh --both       # install both stacks
-#   install.sh --force      # overwrite existing files
+#   install.sh --force      # replace scaffold files (backs each up first; never CLAUDE.md/AGENTS.md)
 #   install.sh --no-verify  # skip the post-install linter smoke test
 #   install.sh --claude     # also install opt-in Claude Code agent guardrails
 #   install.sh --cursor     # also install opt-in Cursor agent guardrails (.cursor/hooks.json)
@@ -77,20 +77,75 @@ fi
 
 cp_safe() {
   local src=$1 dst=$2
-  if [ -e "$dst" ] && [ "$FORCE" -eq 0 ]; then
-    echo "skip (exists): $dst  — use --force to overwrite"
-    return
+  if [ -e "$dst" ]; then
+    if [ "$FORCE" -eq 0 ]; then
+      echo "skip (exists): $dst  — left untouched (use --force to replace)"
+      return
+    fi
+    # --force: back up the existing file before overwriting, but only when it
+    # actually differs — so no edit is ever silently destroyed. Identical
+    # files are a no-op.
+    if cmp -s "$src" "$dst"; then
+      return
+    fi
+    local bak="${dst}.scaffold-bak" n=0
+    while [ -e "$bak" ]; do
+      n=$((n + 1))
+      if [ "$n" -gt 99 ]; then
+        echo "error: too many .scaffold-bak files for $dst — clean some up" >&2
+        return 1
+      fi
+      bak="${dst}.scaffold-bak.${n}"
+    done
+    cp "$dst" "$bak"
+    echo "backed up:    $dst -> $bak"
   fi
   mkdir -p "$(dirname "$dst")"
   cp "$src" "$dst"
   echo "installed:    $dst"
 }
 
+# install_claude_md — CLAUDE.md is USER-OWNED project memory, not a scaffold
+# file. Never replace it (not even with --force). If absent, create it from
+# the pointer template. If present, append a marked block importing AGENTS.md
+# once, and only if no @AGENTS.md import already exists.
+install_claude_md() {
+  if [ ! -e "CLAUDE.md" ]; then
+    cp "$SCAFFOLD_DIR/CLAUDE.md.pointer" "CLAUDE.md"
+    echo "installed:    CLAUDE.md (new — pointer to AGENTS.md)"
+    return
+  fi
+  if grep -q '@AGENTS.md' "CLAUDE.md" 2>/dev/null \
+     || grep -q 'ai-coding-rules-scaffold:begin' "CLAUDE.md" 2>/dev/null; then
+    echo "ok (wired):   CLAUDE.md already imports AGENTS.md — left untouched"
+    return
+  fi
+  {
+    printf '\n<!-- ai-coding-rules-scaffold:begin -->\n'
+    printf 'See [AGENTS.md](./AGENTS.md) — agent + project rules (cross-tool convention).\n\n'
+    printf '@AGENTS.md\n'
+    printf '<!-- ai-coding-rules-scaffold:end -->\n'
+  } >>"CLAUDE.md"
+  echo "merged:       appended @AGENTS.md import to existing CLAUDE.md (your content kept)"
+}
+
+# install_agents_md — AGENTS.md carries a Project section the user fills in,
+# so an existing one is never clobbered (even with --force). Skip if present;
+# create from template only when absent.
+install_agents_md() {
+  if [ -e "AGENTS.md" ]; then
+    echo "skip (exists): AGENTS.md — left untouched (your Project section is safe)"
+    return
+  fi
+  cp "$SCAFFOLD_DIR/AGENTS.md.template" "AGENTS.md"
+  echo "installed:    AGENTS.md"
+}
+
 # Always
 cp_safe "$SCAFFOLD_DIR/coding-rules.md" "coding-rules.md"
 cp_safe "$SCAFFOLD_DIR/operational-rules.md" "operational-rules.md"
-cp_safe "$SCAFFOLD_DIR/AGENTS.md.template" "AGENTS.md"
-cp_safe "$SCAFFOLD_DIR/CLAUDE.md.pointer" "CLAUDE.md"
+install_agents_md   # never clobbers an existing AGENTS.md
+install_claude_md   # merges; never overwrites your CLAUDE.md
 cp_safe "$SCAFFOLD_DIR/githooks/pre-commit.template" ".githooks/pre-commit"
 chmod +x .githooks/pre-commit
 # scaffold-config + scaffold-audit are the per-project override layer

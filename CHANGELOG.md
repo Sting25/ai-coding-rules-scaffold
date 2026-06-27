@@ -6,6 +6,18 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **`install.sh` no longer clobbers user-owned `CLAUDE.md` / `AGENTS.md`.**
+  `CLAUDE.md` is now *merged* — a marked `@AGENTS.md` import block is appended
+  once if missing, and existing content is never replaced, even with `--force`
+  (previously `--force` overwrote it wholesale with the pointer stub,
+  destroying hand-written project memory). An existing `AGENTS.md` is likewise
+  left untouched (its Project section is user-authored). For every other file,
+  `--force` now backs the current copy up to `<file>.scaffold-bak` before
+  replacing it, so no edit is silently destroyed. `uninstall.sh` strips only
+  the marked block from a user's `CLAUDE.md` (or removes the file only when
+  it's an unmodified scaffold-created pointer). +5 tests.
+
 ## [v0.7.0] — 2026-06-16
 
 Toolchain setup: the scaffold now ships the tool *configs* its enforcement
