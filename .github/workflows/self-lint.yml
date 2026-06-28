@@ -1,0 +1,74 @@
+name: self-lint
+
+# The scaffold eats its own dog food: run the SAME lib/check-* guardrails the
+# scaffold ships, against the scaffold's OWN tracked files. This closes the
+# self-application gap — without it the repo could ship a rule (or a file) that
+# violates its own guardrails with no CI signal, which is exactly how
+# tests/run.sh once drifted to 1135 lines (2.27x the 500-line cap) uncaught and
+# why a fix commit needed a documented --no-verify.
+#
+# Maintainer-only — NOT installed into consumer projects (that's
+# lint.yml.template's job). It lives beside shellcheck.yml / test.yml as the
+# scaffold's own server-side mirror of the pre-commit hook.
+#
+# The installable copies (.githooks/, .forbidden-patterns/) are gitignored here
+# (see .gitignore "Accidental installs inside the scaffold repo itself"), so a
+# fresh checkout has only the *.template sources. We materialize the scripts +
+# pattern files from those templates first — exactly as install.sh would — then
+# scan every tracked file's committed blob.
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  guardrails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          persist-credentials: false  # don't leave GITHUB_TOKEN in .git/config
+
+      - name: Materialize check scripts + pattern files from templates
+        # Strip the .template suffix into the same paths install.sh writes, so
+        # the scripts resolve their siblings (scaffold-config) and pattern files
+        # (.forbidden-patterns/*.txt) the same way they do in a real install.
+        run: |
+          mkdir -p .githooks/lib .forbidden-patterns
+          for t in githooks/lib/*.template; do
+            cp "$t" ".githooks/lib/$(basename "$t" .template)"
+          done
+          chmod +x .githooks/lib/*
+          for t in forbidden-patterns/*.txt.template; do
+            cp "$t" ".forbidden-patterns/$(basename "$t" .template)"
+          done
+
+      - name: Show active rule overrides (.scaffold.toml)
+        # Informational: print any per-project override so a disabled/downgraded
+        # rule is visible in review, not silent. (The scaffold ships no
+        # .scaffold.toml of its own, so this is normally empty.)
+        run: |
+          if [ -x .githooks/lib/scaffold-audit ]; then .githooks/lib/scaffold-audit; fi
+
+      - name: Run scaffold guardrails on the scaffold's own files
+        run: |
+          # -z (NUL-delimited) so a filename containing a newline/tab/quote can't
+          # split the list and slip a file past the scan; the check scripts read
+          # each file's committed blob (git show ":0:<path>"). core.quotepath=off
+          # so unicode filenames aren't C-quoted into bypass paths — same fix as
+          # pre-commit.template. A shell var can't hold NUL, so the list goes via
+          # a temp file fed to each check on stdin.
+          STAGED_LIST=$(mktemp)
+          git -c core.quotepath=off ls-files -z >"$STAGED_LIST"
+          FAILED=0
+          .githooks/lib/check-size      --ci <"$STAGED_LIST" || FAILED=1
+          .githooks/lib/check-patterns  --ci <"$STAGED_LIST" || FAILED=1
+          .githooks/lib/check-filenames --ci <"$STAGED_LIST" || FAILED=1
+          .githooks/lib/check-secrets   --ci <"$STAGED_LIST" || FAILED=1
+          .githooks/lib/check-hygiene   --ci <"$STAGED_LIST" || FAILED=1
+          rm -f "$STAGED_LIST"
+          exit $FAILED
