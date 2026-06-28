@@ -78,17 +78,43 @@ clean_claude_md() {
     fi
     return
   fi
-  if grep -q 'ai-coding-rules-scaffold:begin' "CLAUDE.md" 2>/dev/null; then
+  # Strip our marked block ONLY when BOTH delimiters are present. A lone begin
+  # marker (the user edited the block away, or a prior install was interrupted
+  # between the two printfs) would make an open-ended `/begin/,/end/d` delete
+  # run to END OF FILE and silently eat the user's content below it — the exact
+  # data-loss class this scaffold exists to prevent. In that case leave the
+  # file untouched and say so.
+  local has_begin=0 has_end=0
+  if grep -q '<!-- ai-coding-rules-scaffold:begin -->' "CLAUDE.md" 2>/dev/null; then has_begin=1; fi
+  if grep -q '<!-- ai-coding-rules-scaffold:end -->'   "CLAUDE.md" 2>/dev/null; then has_end=1; fi
+  if [ "$has_begin" -eq 1 ] && [ "$has_end" -eq 1 ]; then
     if [ "$DRY_RUN" -eq 1 ]; then
       echo "would strip:  scaffold import block from CLAUDE.md (your content kept)"
     else
-      # -i.scaffold-tmp works on both GNU and BSD sed; remove the backup after.
-      sed -i.scaffold-tmp \
-        '/<!-- ai-coding-rules-scaffold:begin -->/,/<!-- ai-coding-rules-scaffold:end -->/d' \
-        "CLAUDE.md"
-      rm -f "CLAUDE.md.scaffold-tmp"
-      echo "stripped:     scaffold import block from CLAUDE.md (your content kept)"
+      # awk (portable across BSD/GNU) deletes the begin..end block plus the one
+      # immediately-preceding blank line install.sh inserts as a spacer, so a
+      # round-trip leaves no residue. The delete is bounded by the end marker,
+      # never to EOF. Write to a temp and mv only on success — the original is
+      # never edited in place, so a failure can't truncate it.
+      if awk '
+        $0 == "" && !inblock { if (pend) print hold; hold = $0; pend = 1; next }
+        index($0, "<!-- ai-coding-rules-scaffold:begin -->") { inblock = 1; pend = 0; next }
+        index($0, "<!-- ai-coding-rules-scaffold:end -->")   { inblock = 0; next }
+        { if (inblock) next; if (pend) { print hold; pend = 0 } print }
+        END { if (pend) print hold }
+      ' "CLAUDE.md" >"CLAUDE.md.scaffold-tmp"; then
+        mv "CLAUDE.md.scaffold-tmp" "CLAUDE.md"
+        echo "stripped:     scaffold import block from CLAUDE.md (your content kept)"
+      else
+        rm -f "CLAUDE.md.scaffold-tmp"
+        echo "error:        failed to rewrite CLAUDE.md — left untouched" >&2
+        return 1
+      fi
     fi
+    return
+  fi
+  if [ "$has_begin" -eq 1 ]; then
+    echo "kept:         CLAUDE.md — scaffold block incomplete (no end marker), left untouched"
     return
   fi
   echo "kept:         CLAUDE.md — no scaffold block found, left untouched"
