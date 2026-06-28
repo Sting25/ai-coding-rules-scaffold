@@ -7,6 +7,27 @@
 
 Agent-agnostic: works with Cursor, Claude Code, Copilot, Cline, Aider, or no AI at all. Python/FastAPI + TypeScript/React are first-class, with deny-pattern coverage for Vue, Svelte, PHP, Go, Rust, Java, Kotlin, Ruby, and shell — see [Supported stacks](#supported-stacks).
 
+## What it does
+
+Drop-in guardrails that **block bad code from being committed or merged**. One `./install.sh` wires up a local pre-commit hook *and* a matching CI check — both running the same scripts, so nothing slips through and `--no-verify` can't quietly become the team habit.
+
+**What it stops, out of the box:**
+
+- **Debug leftovers** — `print()`, `console.log`, `debugger`, `breakpoint()`, `pdb`/`ipdb`, `dbg!`, `var_dump`, and the per-language equivalents.
+- **Secrets & key files** — AWS / GCP / GitHub / GitLab / OpenAI / Anthropic / Stripe / Slack / Docker tokens, private keys, URL-embedded credentials, and stray `.env` / `*.pem` / SSH-key files.
+- **Runaway file growth** — a hard **500-line cap** that forces a file to be split before it outgrows an agent's context window (the one rule never to raise).
+- **Insecure shortcuts** — `curl | bash`, `rm -rf /`, `chmod 777`, disabled TLS verification (`verify=False`, `curl -k`, `rejectUnauthorized: false`), raw `innerHTML`/XSS sinks, and `git --no-verify` hook bypasses.
+- **Repo-hygiene rot** — leftover merge-conflict markers, case-only filename collisions, and hidden-Unicode (Trojan-Source) tricks.
+- **Lint & type regressions** — `ruff` for Python; type-aware `eslint` + `tsc` + `prettier` for TS/JS; deny-lists for Vue, Svelte, PHP, Go, Rust, Java, Kotlin, Ruby, and shell.
+
+**How it works:**
+
+- **One command to install** — `./install.sh` drops in the hook, the CI workflow, the rule docs, and per-stack configs, auto-detecting Python vs TS/JS.
+- **Two layers, one implementation** — the hook and the CI job call the exact same `lib/check-*` scripts, so they can never drift apart.
+- **Agent-agnostic** — rules live in `AGENTS.md` (with a thin `CLAUDE.md` pointer); Cursor, Claude Code, Aider, and others read them directly.
+- **Tunable, not all-or-nothing** — per-path size caps and per-rule disable/warn via `.scaffold.toml`, plus inline `# scaffold-allow` for the rare legitimate exception.
+- **Cleanly removable** — `./uninstall.sh` reverses everything and never touches the content of your own `CLAUDE.md` / `AGENTS.md`.
+
 ## Why this exists
 
 This scaffold came out of working on a large federated geospatial pipeline — Python/FastAPI backend with TypeScript on the front, agents writing in both. The intended audience is small teams (2–5 devs) using Claude Code or a similar agent, often with the AI filling the senior-engineering role on a real codebase.
@@ -83,7 +104,7 @@ The script auto-detects Python (`pyproject.toml` / `requirements.txt` / `setup.p
 ./install.sh --python       # Python only
 ./install.sh --frontend     # TS/JS only
 ./install.sh --both         # both stacks
-./install.sh --force        # overwrite existing files
+./install.sh --force        # replace scaffold files (each backed up to .scaffold-bak; CLAUDE.md/AGENTS.md never overwritten)
 ./install.sh --no-verify    # skip the post-install toolchain check (no detect/offer)
 ./install.sh --claude       # also install opt-in Claude Code agent guardrails
 ./install.sh --cursor       # also install opt-in Cursor agent guardrails
@@ -420,7 +441,7 @@ git commit -m "should be rejected"
 
 ## Update & uninstall
 
-**Update:** the project's configs are local forks of the templates. `install.sh --force` overwrites them, including any edits. Diff first:
+**Update:** the project's configs are local forks of the templates. `install.sh --force` replaces them, backing up each changed file to `<file>.scaffold-bak` first so no edit is lost — and it never overwrites your `CLAUDE.md` (the import block is merged in once) or `AGENTS.md` (left as-is, since its Project section is yours). Diff first:
 
 ```sh
 diff ~/src/ai-coding-rules-scaffold/ruff.toml.template ruff.toml
