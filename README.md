@@ -85,7 +85,7 @@ Clone the scaffold somewhere stable:
 
 ```sh
 # Recommended: pin to a tagged release for reproducibility
-git clone --branch v0.7.0 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
+git clone --branch v0.8.0 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
 # Or track main if you want the latest changes
 git clone https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
 ```

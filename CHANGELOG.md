@@ -6,7 +6,46 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.8.0] — 2026-06-27
+
+Audit-hardening release. Closes the self-application gap — the scaffold now
+lints its own tracked files in CI — fixes a `CLAUDE.md` data-loss bug in
+`uninstall.sh`, adds four security deny-patterns, and splits the test harness
+back under the 500-line cap it enforces on everyone else. Also includes the
+`install.sh` clobber fix previously sitting unreleased.
+
+### Added
+- **`self-lint.yml` — the scaffold now enforces its own guardrails on itself.**
+  A maintainer-only CI job renders the `*.template` sources (the installable
+  copies are gitignored in this repo) and runs
+  `check-{size,patterns,filenames,secrets,hygiene}` over the repo's own
+  `git ls-files`. Previously only `shellcheck.yml` + `test.yml` ran — neither
+  scanned tracked files with the `check-*` scripts — so the scaffold could ship
+  a file that violated its own rules with no signal (exactly how `tests/run.sh`
+  drifted to 1135 lines, 2.27× the cap, uncaught).
+- **Four new forbidden-patterns**, each functionally validated and test-covered:
+  backend `verify=False` (requests/httpx TLS validation disabled); shell
+  `curl -k`/`--insecure` and `wget --no-check-certificate`; secrets Docker Hub
+  `dckr_pat_` tokens; frontend raw `innerHTML`/`outerHTML` assignment (XSS sink).
+
+### Changed
+- **`tests/run.sh` split under the 500-line cap.** 1135 lines → a 54-line driver
+  + `tests/lib/common.sh` (shared helpers/bootstrap) + nine `tests/cases/*.sh`,
+  all under 500 and sourced into one shell so the pass/fail tally is preserved.
+  `shellcheck.yml` now lints the new files. Suite: 132 passed, 0 failed.
+- **README leads with a scannable "What it does" section** (what it blocks + how
+  it works, in bullets) before the prose rationale, and the `--force` docs now
+  match behavior: each replaced file is backed up to `<file>.scaffold-bak` and
+  `CLAUDE.md` / `AGENTS.md` are never overwritten.
+
 ### Fixed
+- **`uninstall.sh` no longer deletes `CLAUDE.md` content past a lone
+  begin-marker.** `clean_claude_md` ran `/begin/,/end/d`, which deletes to
+  end-of-file when the `:end` marker is absent (a user-edited block, or an
+  install interrupted between the two `printf`s), silently eating user content
+  below it. It now requires **both** markers before stripping and uses a bounded
+  `awk` that also removes the spacer blank line (no round-trip residue).
+  +regression tests.
 - **`install.sh` no longer clobbers user-owned `CLAUDE.md` / `AGENTS.md`.**
   `CLAUDE.md` is now *merged* — a marked `@AGENTS.md` import block is appended
   once if missing, and existing content is never replaced, even with `--force`
