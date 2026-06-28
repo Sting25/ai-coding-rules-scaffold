@@ -15,6 +15,7 @@ os\.path\.join	Use pathlib.Path(), not os.path.join
 (^|[^A-Za-z_])ipdb\.set_trace[[:space:]]*\(	Remove ipdb.set_trace() before committing
 \.utcnow[[:space:]]*\(	datetime.utcnow() is deprecated (3.12+) — use datetime.now(datetime.UTC)
 \.utcfromtimestamp[[:space:]]*\(	datetime.utcfromtimestamp() is deprecated (3.12+) — use datetime.fromtimestamp(ts, tz=datetime.UTC)
+(^|[^A-Za-z_])verify[[:space:]]*=[[:space:]]*False($|[^A-Za-z0-9_])	requests/httpx verify=False disables TLS cert validation (MITM risk) — fix the cert/CA, don't disable verification
 
 # Optional: asyncio.get_event_loop() raises RuntimeError on 3.14+ when called with
 # no running loop. OFF by default: inside a coroutine/callback it correctly returns

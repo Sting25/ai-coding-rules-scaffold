@@ -6,3 +6,5 @@
 (^|[^A-Za-z_])rm[[:space:]]+((-[a-zA-Z]+|--[a-z]+)[[:space:]]+)+["']?(/|/\*|~|~/\*|\$\{?HOME\}?(/\*)?)["']?([[:space:]]|[;&]|$)	`rm -rf /` (or /*, ~, $HOME) detected — refuse to ship; scope to a specific path
 (^|[^A-Za-z_])chmod[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*0?777([[:space:]]|$)	chmod 0?777 — overly permissive; scope to specific user/group bits
 (^|[^A-Za-z_])git[[:space:]][^|;&]*[[:space:]]--no-verify([[:space:]]|[;&]|$)	git --no-verify bypasses the pre-commit/commit-msg hooks — fix the failure, don't skip the gate (mark a genuine uninstall with scaffold-allow)
+(^|[^A-Za-z_])curl[[:space:]]([^|;&]*[[:space:]])?(-[a-zA-Z]*k[a-zA-Z]*|--insecure)([[:space:]]|$)	curl -k/--insecure disables TLS cert validation (MITM risk) — fix the cert/CA instead
+(^|[^A-Za-z_])wget[[:space:]]([^|;&]*[[:space:]])?--no-check-certificate([[:space:]]|$)	wget --no-check-certificate disables TLS cert validation (MITM risk) — fix the cert/CA instead
