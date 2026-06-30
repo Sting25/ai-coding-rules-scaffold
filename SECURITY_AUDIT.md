@@ -1,6 +1,222 @@
 # Security & Code Audit — ai-coding-rules-scaffold
 
-## Audit 2026-06-30 — full-tree re-audit (latest)
+## Audit 2026-06-30 — packaging / release / dev-setup pass (latest)
+
+**Date:** 2026-06-30  ·  **Base:** HEAD of `main` (commit `79fbb91`, v0.9.0 + the
+post-release npm / Homebrew / dev-setup surface added in PRs #34–#36)  ·  **Method:**
+15-dimension multi-agent fan-out → per-finding adversarial reproduction (each candidate
+reproduced in a throwaway git repo under a scratch dir; verifiers never touched the
+tracked tree) → maintainer re-reproduction of both High findings. New packaging/release/CI
+surface was the priority focus; the 2026-06-30 full-tree section below was the no-re-report
+baseline.
+
+**Result:** 17 candidates · **16 survived** (15 CONFIRMED + 1 PARTIAL) · 1 refuted · 10 novel.
+
+| Severity | Count | Novel | Already tracked / by-design |
+|---|---|---|---|
+| high | 2 | 1 (B1) | 1 (B2 — A1 fix never reached check-hygiene) |
+| medium | 4 | 2 (B3, B4) | 2 (B5, B6) |
+| low | 6 | 4 (B8–B11) | 2 (B7 variant, B12) |
+| info / by-design | 1 | 0 | B13 |
+
+> Two High findings are the actionable headline. **B1** is a genuinely new location of the
+> already-fixed A7 symlink class. **B2** shows the A1 "fail-closed on over-cap lines" fix —
+> recorded as FIXED in the section below — was only applied to `check-secrets`/`check-patterns`
+> and **never reached `check-hygiene`'s hidden-Unicode (Trojan Source) branch**, so that gate
+> still fails OPEN. Both were re-reproduced by hand.
+
+### 🟠 High
+
+**B1 — `install_claude_md` / `install_agents_md` write THROUGH a symlink (A7-class, in the two handlers the A7 fix never touched)** — `install.sh:218,233,241` · **NOVEL**
+- **What:** the A7 symlink defense (`[ -e ] || [ -L ]`, `rm -f` before `cp`, `cp -P` backups)
+  lives only in `_cp_replace`/`_backup`/`cp_safe`/`cp_scaffold`/`cp_pattern`. The two bespoke
+  merge handlers still use the pre-A7 `[ -e ]`-only guard around a raw `cp`/`>>` redirect.
+  `[ -e ]` is false for a dangling symlink and follows a live one, so (a) a dangling symlink at
+  `CLAUDE.md`/`AGENTS.md` takes the create branch and writes the file **content to the link's
+  target outside the repo**, leaving the in-repo path a dangling symlink; (b) a live `CLAUDE.md`
+  symlink whose target lacks `@AGENTS.md` takes the append branch and `>>"CLAUDE.md"` appends the
+  scaffold block **through the link** to the outside file. In every case no real file is created,
+  the scaffold rules/import are silently never wired, and the installer reports `installed:`/`merged:`.
+- **Repro (re-reproduced by maintainer):** in a fresh `git init` + `package.json` dir,
+  `ln -s "$OUT" CLAUDE.md` (dangling) then `bash install.sh --frontend --no-verify` → `CLAUDE.md`
+  stays a symlink, no real file, and `head -1 "$OUT"` prints `# CLAUDE.md` (the pointer written
+  outside). **Control:** the same planted dangling symlink at `coding-rules.md` (A7-defended
+  `cp_safe` path) is refused (`skip (exists, symlink)`) and writes nothing outside.
+- **Fix:** give both handlers the A7 treatment — gate on `[ -e ] || [ -L ]`, `rm -f` the path
+  before a create `cp` so a real regular file lands in the repo, and for the `CLAUDE.md` append
+  branch refuse (skip with the "symlink, suspicious" notice) when `[ -L CLAUDE.md ]` rather than
+  redirecting through the link. Add a `tests/cases/09`-style regression for both handlers.
+
+**B2 — `check-hygiene` fails OPEN on over-cap lines: the A1 fail-closed fix never reached the hidden-Unicode (Trojan Source) and conflict-marker branches** — `githooks/lib/check-hygiene.template:106,163` · **already tracked but mis-prioritized + contradicts the A1 "FIXED" claim**
+- **What:** `check-secrets.template:159` carries the A1 fix (`awk '… { d=1; next } … END { exit (d ? 9 : 0) }'`,
+  then reports the un-scannable line and sets `FAILED`). `check-hygiene`'s conflict-marker (`:106`)
+  and hidden-Unicode (`:163`) branches still use the plain `awk 'length > n { next } { print }'`
+  (drop, no signal, no `FAILED`); the `cap_rc=0 … || true` scaffolding at `:105/:107` is dead code
+  (plain awk always exits 0). So any line over `MAX_LINE_LENGTH` (default 50000, reachable via a
+  minified/base64 blob) bypasses the hidden-Unicode scan — the scaffold's named defense against
+  Trojan Source (CVE-2021-42574) and the Rules-File-Backdoor in agent-read files — and rides through
+  with exit 0. This propagates into every consumer repo.
+- **Repro (re-reproduced by maintainer):** a U+202E bidi override on a short line → `✗ … hidden
+  Unicode control char`, exit 1; the **identical bytes** padded past the cap → no output, exit 0,
+  at both `MAX_LINE_LENGTH=100` and the default 50000 (and identically in `--ci`). Conflict-marker
+  variant on an over-cap line: exit 0.
+- **Fix:** bring both hygiene awk passes to parity with `check-secrets` (`END { exit (d ? 9 : 0) }`,
+  capture `cap_rc`, on `cap_rc==9` emit a finding respecting `CI_MODE` and set `FAILED=1` — wiring up
+  the already-present-but-dead `cap_rc`). Add an over-cap hygiene regression (bidi + conflict marker
+  each on a >cap line must be reported and exit non-zero), mirroring `cases/04 #31`. Reconcile the A1
+  "FIXED" summary above, which currently over-claims that `check-hygiene` fails closed.
+
+### 🟡 Medium
+
+**B3 — npm `files` allowlist omits `gitleaks.yml.template` + `dependency-review.yml.template` that README + `install.sh` tell users to copy in; `tests/cases/11` does not catch it** — `package.json:8-32`, `tests/cases/11-npm-bundle.sh:33-37` · **NOVEL** (merges the npm-package, docs-accuracy, and test-harness finders)
+- **What:** the two security-CI templates are git-tracked but absent from the npm `files`
+  allowlist, so `npm pack` ships only `lint.yml.template` + `coverage.yml.template` from
+  `.github/workflows/`. Yet `install.sh:371` prints (on every `--gitleaks-hook` run) `… see
+  gitleaks.yml.template …`, and `README.md:409,425` tell the user to "Copy it in" — files the
+  npm/`npx` consumer does not have (git-clone and Homebrew users do; the formula bundles the whole
+  tree). `tests/cases/11` advertises "every install.sh source file is in the npm bundle" but derives
+  its REQUIRED set only from `$SCAFFOLD_DIR/…` reads + three globbed dirs, so manually-"copy it in"
+  templates are out of scope and the case stays green — a false negative on exactly the bundle-drift
+  guard, for two security gates.
+- **Repro:** `npm pack --dry-run --json | … grep workflows` → only coverage + lint; `test -f
+  package/.github/workflows/gitleaks.yml.template` → MISSING; `tests/cases/11` → `PASS=1 FAIL=0`
+  despite the gap (mutation: removing `coverage.yml.template` from `files` *does* turn it red — that
+  one is in REQUIRED; the gitleaks/dependency-review omission is invisible).
+- **Fix:** add both templates to `package.json` `files`, **and** extend `cases/11`'s REQUIRED set to
+  glob `.github/workflows/*.yml.template` (or any README/`install.sh`-referenced template) so the
+  guard fails closed on documented-but-uncopied files.
+
+**B4 — `scripts/dev-setup.sh` renders scanners with bare `cp`, regressing the A7 symlink write-through fix (arbitrary out-of-repo overwrite)** — `scripts/dev-setup.sh:27-40` · **NOVEL**
+- **What:** `install.sh` writes every scaffold file through `_cp_replace` (`rm -f "$dst"` before
+  `cp`, the A7 fix). `dev-setup.sh` uses bare `cp "$t" ".githooks/lib/…"` with no prior `rm -f`, and
+  `mkdir -p .githooks/lib` follows a symlinked dir. Since `.githooks/`/`.forbidden-patterns/` are
+  gitignored, a leftover/planted symlink there persists across checkouts. A symlink at a rendered
+  scanner path → `cp` overwrites the link's out-of-repo target; a symlinked `.githooks/lib` dir →
+  all ten scanners land outside the repo.
+- **Repro:** plant `ln -s "$VICTIM" .githooks/lib/check-secrets` (victim holds "ORIGINAL"), run
+  `dev-setup.sh` → victim's first line becomes `#!/usr/bin/env bash` (overwritten through the link);
+  the `install.sh --python` control with the same symlink leaves the victim untouched and writes a
+  real file in-tree.
+- **Fix:** `rm -f "$dst"` before each `cp` (and guard the `lib/` dir against a symlink before
+  `mkdir -p`), or source/reuse `install.sh`'s `_cp_replace`. Scope: maintainer-only dogfooding clone,
+  hence medium not high. (`self-lint.yml:43,47` also renders with bare `cp` but runs in an ephemeral
+  runner with no planted symlinks.)
+
+**B5 — Non-dotfile env files (`config.env`, `prod.env`) bypass `check-filenames`; chains with the deferred A5 unquoted-value gap for a dual-layer leak** — `githooks/lib/check-filenames.template:54-59` · **already tracked (stale section, never carried forward)**
+- **What:** the `.env` arm matches only `.env`/`.env.*` (case-folded). `config.env`/`prod.env`/
+  `staging.env` match no arm, so the file commits. With an unquoted `KEY=value` secret it also evades
+  the content scanner (the deliberately-deferred A5 quoted-only rule), so **both** layers pass. This is
+  `SECURITY_AUDIT.md:469` ("`foo.env` and arbitrary env files are not blocked"), recorded ⬜ Open in
+  the *stale* 2026-06-09/10 Info table and never carried into the authoritative 2026-06-30 section
+  (whose only `check-filenames` work was the A4 case-fold). Zero test coverage.
+- **Repro:** `printf 'CONFIG_TOKEN=supersecretvalue12345\n' > config.env`; both `check-filenames` and
+  `check-secrets` exit 0 (hook + `--ci`); end-to-end the commit lands. Control: `.env` is blocked; a
+  *quoted* value in `config.env` IS caught by `check-secrets` (so the filename layer is the only gap
+  for the unquoted case).
+- **Fix:** add a `*.env` case to the env arm (keeping the `.env.example` allowlist); add a
+  `cases/04` fixture asserting `prod.env` is rejected, mutation-proven.
+
+**B6 — `agent-precheck` over-long-line filter still FAILS OPEN (allow): the A1 fail-closed upgrade was never applied to the agent-write layer** — `githooks/lib/agent-precheck.template:58-59,127` · **already tracked** (`SECURITY_AUDIT.md:50`; A1 header listed `:57-59`, fix said "should fail closed on the Bash path")
+- **What:** line 58 drops any line over `MAX_LINE_LENGTH` with the plain `awk 'length > n { next }'`
+  and line 59 (`[ -n "$content" ] || exit 0`) then exits 0 = ALLOW. Both Claude and Cursor treat any
+  non-2 exit as allow. So a secret (Claude `Write` content) or a dangerous shell command (Cursor
+  `.command`, e.g. `curl|bash`) on a single >50000-char line is silently allowed, while the short
+  equivalents block at exit 2.
+- **Repro:** `content = "A"*60000 + " AKIA…<16-char AWS key>"` → exit 0; the short secret → exit 2.
+  Same for `curl|bash` padded past the cap (exit 0) vs short (exit 2). The commit-time `check-secrets`
+  on identical content fails CLOSED (`::error … cannot be scanned`, exit 1), so this is an advisory-
+  layer gap, not an end-to-end secret ship — hence medium, not high.
+- **Fix:** give `:58` the `check-secrets` fail-closed awk, capture `rc`, and on `rc==9` emit a BLOCKED
+  message + `exit 2` instead of the `exit 0` at `:59/:127`. (The A2 SIGPIPE fix on the block path was
+  re-verified holding, and both JSON templates parse.)
+
+### ⚪ Low
+
+**B7 — Binary key/keystore files (`*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.ppk`) bypass the filename block; the content scanner can't backstop binary key material** — `githooks/lib/check-filenames.template:43-64` · **new variant of the existing extension list**
+- **What:** the filename block knows only `*.pem`, `.env*`, and the four `id_*` SSH names. The other
+  ubiquitous private-key/keystore extensions have no arm, and the only key content rule
+  (`secrets.txt.template:43` PEM armor `-----BEGIN … PRIVATE KEY-----`) never matches a binary
+  DER/PKCS#12 blob — so a committed `cert.p12`/`server.key`/`id.pfx` passes BOTH layers. README
+  advertises "private keys / key files" (`:17,78,315`) but only `.pem`-extension keys are caught.
+  Zero `cases/04` coverage. `*.key` is partially covered by the opt-in agent-read deny-list
+  (`claude-settings.json.template:9`), read-time not commit-time; `.p12/.pfx/.jks/.ppk` nowhere.
+- **Repro:** armor-free `cert.p12`/`id.pfx`/`server.key` → `check-filenames` and `check-secrets`
+  both exit 0; the **identical bytes** as `cert.pem` → `✗ … PEM file (likely private key)`, exit 1.
+- **Fix:** add `*.key|*.p12|*.pfx|*.jks|*.ppk` to the case glob (with a "key/keystore — rotate"
+  message) and `cases/04` fixtures; document that binary keystores rely on the filename layer / gitleaks.
+
+**B8 — `package.json` `os: ["darwin","linux"]` hard-blocks native-Windows / Git-Bash npm install, contradicting `cli.js` + README Windows support** — `package.json:36-39` · **NOVEL**
+- **What:** npm enforces `os` as `EBADPLATFORM` (hard exit 1, package not installed) when
+  `process.platform` is not listed. Native Windows (Git Bash and PowerShell) reports `win32`; only WSL
+  reports `linux`. Yet `cli.js:38-41` emits a "run it from Git Bash or WSL" hint and `README.md:93-94,
+  499-500` promise Git Bash "runs it fine". So the Git-Bash user can never reach the hint — npm refuses
+  the install first.
+- **Repro:** `npm install` of a package with `os:["win32"]` on darwin → `npm error code EBADPLATFORM
+  … (current: {"os":"darwin"})`, exit 1, `node_modules` empty — the symmetric mirror of `win32` hitting
+  `["darwin","linux"]`.
+- **Fix:** drop the `os` field (the bash/Windows guidance already lives in `cli.js` + README), or
+  replace the hard gate with a non-fatal guidance check inside `cli.js`. Security-neutral; usability only.
+
+**B9 — `dev-setup.sh` aborts with raw `fatal: not in a git directory` (exit 128) when run before `git init`, unlike `install.sh`'s graceful guard** — `scripts/dev-setup.sh:44` · **NOVEL**
+- **What:** `git config core.hooksPath .githooks` runs unconditionally under `set -euo pipefail`; with
+  no `.git` it exits 128 and `set -e` propagates a hard failure *after* every file is already rendered
+  and chmod'd. `install.sh:387-398` handles the same case with a `git rev-parse --git-dir` guard and an
+  actionable warning (exit 0).
+- **Fix:** mirror `install.sh`'s guard around line 44 (warn + exit 0 with a "run `git init` first" hint).
+
+**B10 — `dev-setup.sh` unconditionally clobbers a pre-existing `core.hooksPath` (e.g. Husky), unlike `install.sh` which preserves it** — `scripts/dev-setup.sh:44` · **NOVEL**
+- **What:** `install.sh:387-398` only sets `core.hooksPath` when unset or already `.githooks`, warning
+  otherwise (deliberate Husky/lefthook protection). `dev-setup.sh` overwrites it unconditionally.
+- **Repro:** `git config core.hooksPath .husky` then `dev-setup.sh` → silently becomes `.githooks`;
+  the `install.sh` block warns and preserves `.husky`.
+- **Fix:** read the existing value and only set when empty/`.githooks`, else warn. Low (repo-local, a
+  maintainer's own scaffold clone) but a genuine parity regression.
+
+**B11 — RELEASING.md release-notes `awk` emits EMPTY notes when the literal `vX.Y.Z` placeholder isn't substituted (ships a blank GitHub Release), and uses an unanchored version guard** — `RELEASING.md:47-48` · **NOVEL**
+- **What:** if the maintainer copy-pastes the line without replacing `vX.Y.Z`, no heading matches, awk
+  emits 0 bytes, and the next command `gh release create … --notes-file /tmp/notes.md` publishes a
+  blank-body Release with no error. Separately, the exit guard `!/vX\.Y\.Z/` is an unanchored substring
+  match, so an adjacent `## [...]` heading containing the version as a substring would leak its body
+  (latent — the project's flat SemVer tags never collide today).
+- **Fix:** anchor the guard to the heading (`!/^## \[vX\.Y\.Z\]/`) and add `[ -s /tmp/notes.md ] || {
+  echo "ERROR: empty release notes" >&2; exit 1; }` before `gh release create`. Maintainer-procedure
+  doc defect, recoverable post-hoc — low.
+
+**B12 — `_backup` >99-cap `return 1` aborts the whole install mid-run with no rollback (a concrete trigger of the already-tracked `set -e` mid-script-abort limitation)** — `install.sh:127` · **already tracked** (`SECURITY_AUDIT.md:45`, Medium, open)
+- **What:** with 100 stale `.scaffold-bak[.N]` files for a destination, `_backup` returns 1; callers do
+  `_backup "$dst" || return 1`; under `set -euo pipefail` the bare top-level `cp_*` call aborts the
+  script. On a first install this happens before the `core.hooksPath` wiring, leaving hooks unwired with
+  no rollback/summary. Fails closed (nothing half-trusted) and is visible (error + exit 1).
+- **Fix:** on the >99 case, warn-and-skip the backup for that one file (`return 0`) instead of `return 1`,
+  or make callers tolerate it; add an EXIT-trap summary of what was/wasn't installed.
+
+### ℹ️ By design / re-confirmed (captured, not new work)
+
+**B13 — Security-grade `shell.txt` rules (`curl|bash`, `rm -rf /`, `chmod 777`, `--no-verify`, TLS-bypass) are disableable via a committed `.scaffold.toml`** — `forbidden-patterns/shell.txt.template:5-10`, `githooks/lib/check-patterns.template:195-196` · **PARTIAL · documented design**
+- The pattern engine has no non-overridable tier; only `check-secrets`/`check-filenames` are locked
+  (`scaffold-config.template:19-23`, README "What you cannot override"). `forbidden-patterns/README.md:85-87`
+  already disclaims the pattern engine as a hostile-committer boundary (the attacker owns the file and can
+  pass `--no-verify`); the CI fork-PR variant + base-ref recommendation are in `lint.yml.template:301-314`
+  and recommendation #3 below. Reproduced (exit 1 → exit 0 for all six rules) but not a new exploit. The
+  only genuinely new angle — it applies on the local hook side too — adds no surface since a local committer
+  is already trusted. *Option, if desired:* add a `# scaffold-locked` / `nonoverridable = true` marker the
+  config refuses to disable, and apply it to the security-grade `shell.txt` rules.
+- **Re-confirmed, already tracked (no new entry):** `uninstall --all` `rm -rf .forbidden-patterns`
+  destroys user-authored pattern files (`uninstall.sh:159`; already at `SECURITY_AUDIT.md:62,462`).
+
+### Checked and clean (finders that returned no surviving findings)
+
+Homebrew formula + tap (the in-repo `.rb` and the `Sting25/homebrew-tap` copy fetched via `gh` matched;
+`Dir["*"] + Dir[".*"]` dotfile bundling and the `test do` block are correct), the CI diff-scoping engine
+(`ci-changed-files` — every fail-open branch widens coverage, never emits a truncated/partial list; the
+`cases/10` locks have teeth), the secret scanner (`check-secrets` — the A1 fail-closed fix is correctly
+wired in both paths here), the CI-workflow security review (lint/self-lint/test/shellcheck — injection,
+token scope, SHA pins, `persist-credentials:false`, `npm ci --ignore-scripts` all sound at audit time),
+and the cross-grep / bash-3.2 portability sweep (no BSD-vs-GNU or bash-4-ism divergences found).
+
+---
+
+## Audit 2026-06-30 — full-tree re-audit
 
 **Date:** 2026-06-30  ·  **Base:** HEAD of `main` (post-v0.8.0, commit `4ad17a9`)  ·  **Method:** 11-dimension multi-agent fan-out (68 agents) → per-finding adversarial verification (each finding reproduced in a throwaway git repo) → maintainer re-reproduction of the critical/high tier.
 
