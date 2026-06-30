@@ -44,6 +44,27 @@ HEAD=$(git -C "$C10" rev-parse feature 2>/dev/null || true)
 BASE=$(git -C "$C10" rev-parse feature^ 2>/dev/null || true)   # base = feature's parent
 ZERO=0000000000000000000000000000000000000000
 
+# A non-zero, well-formed SHA that is ABSENT from this checkout (e.g. a shallow
+# clone that never fetched the PR base) — drives the have()-false fail-open.
+FAKE=$(printf 'd%.0s' {1..40})
+
+# An UNRELATED root: a second history with no merge base with feature. The
+# three-dot diff against it errors ("no merge base"), which drives
+# changed_or_all's *internal* ls-files fallback — distinct from the top-level
+# fail-open. We commit an orphan, capture its SHA, then restore feature so the
+# ls-files used by (5) is unaffected. `set +e` keeps the restore unconditional;
+# the orphan commit object survives branch deletion (cat-file/diff find it by
+# SHA), which is all have()/diff need. `|| true` shields the outer -e.
+ORPH=$(
+  set +e
+  cd "$C10" 2>/dev/null || exit 0
+  git checkout -q --orphan _unrel >/dev/null 2>&1
+  git commit -q -m unrelated --allow-empty --no-verify >/dev/null 2>&1  # scaffold-allow: test fixture
+  git rev-parse HEAD 2>/dev/null
+  git checkout -qf feature >/dev/null 2>&1
+  git branch -D _unrel >/dev/null 2>&1
+) || true
+
 # Print the helper's NUL list as a newline list for an EVENT + (a,b) rev pair.
 # Both PR_* and PUSH_* are set to (a,b); the helper reads only the pair its
 # EVENT selects, so this one shape drives every scenario.
@@ -85,6 +106,37 @@ else
   if in_list "$WD" legacy_big.py; then
     echo "  ✓ ci-changed-files(unknown event) fails open to whole tree"; PASS=$((PASS + 1))
   else echo "  ✗ ci-changed-files(unknown event) did not fail open"; printf '%s\n' "$WD" | sed 's/^/      /'; FAIL=$((FAIL + 1)); fi
+
+  # (6) recognized event but an UNRESOLVABLE base SHA (well-formed, simply not in
+  #     this checkout) → have() fails → top-level fail-open to whole tree. (3)/(4)
+  #     cover the zero-SHA and unknown-event terms of that same guard; this pins
+  #     the have() term.
+  NF=$(changed_list pull_request "$FAKE" "$HEAD")
+  if in_list "$NF" legacy_big.py && in_list "$NF" new_big.py; then
+    echo "  ✓ ci-changed-files(absent PR base) fails open to whole tree"; PASS=$((PASS + 1))
+  else echo "  ✗ ci-changed-files(absent PR base) did not fail open"; printf '%s\n' "$NF" | sed 's/^/      /'; FAIL=$((FAIL + 1)); fi
+
+  # (7) push with a non-zero but absent before-SHA → have() fails → whole tree.
+  #     Distinct from (3), where before==ZERO short-circuits before have() runs.
+  NP=$(changed_list push "$FAKE" "$HEAD")
+  if in_list "$NP" legacy_big.py && in_list "$NP" new_big.py; then
+    echo "  ✓ ci-changed-files(absent push before) fails open to whole tree"; PASS=$((PASS + 1))
+  else echo "  ✗ ci-changed-files(absent push before) did not fail open"; printf '%s\n' "$NP" | sed 's/^/      /'; FAIL=$((FAIL + 1)); fi
+
+  # (8) recognized event + BOTH SHAs resolvable, but the three-dot diff itself
+  #     ERRORS (unrelated histories → no merge base). Both have() guards pass, so
+  #     this is NOT the top-level fail-open of (3)/(4)/(6)/(7) — it exercises
+  #     changed_or_all's *internal* ls-files fallback (the temp-file-buffered path
+  #     that must emit the whole tree, never a partial/empty list). The one gap-5
+  #     branch with isolated teeth: blanking that fallback turns only this red.
+  if [ -n "$ORPH" ]; then
+    DE=$(changed_list pull_request "$ORPH" "$HEAD")
+    if in_list "$DE" legacy_big.py && in_list "$DE" new_big.py; then
+      echo "  ✓ ci-changed-files(diff-error) falls open via changed_or_all"; PASS=$((PASS + 1))
+    else echo "  ✗ ci-changed-files(diff-error) did not fall open"; printf '%s\n' "$DE" | sed 's/^/      /'; FAIL=$((FAIL + 1)); fi
+  else
+    echo "  ✗ ci-changed-files(diff-error) setup failed (no orphan root)"; FAIL=$((FAIL + 1))
+  fi
 
   # (5) INTEGRATION — mirror the guardrails job's two scopes and assert the split.
   (
