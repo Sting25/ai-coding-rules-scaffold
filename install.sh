@@ -16,6 +16,12 @@
 #   install.sh --coverage-gate # also install the opt-in CI patch-coverage gate
 #   install.sh --no-install # detect missing tools but never auto-run a package manager
 #   install.sh --help       # show this help
+#
+# On re-run (upgrade): scaffold-owned code (the hook, .githooks/lib/*, CI
+# workflows) is REFRESHED when it differs from the shipped version, so security
+# fixes reach you just by re-running. User-owned configs are left alone; a
+# drifted .forbidden-patterns/*.txt only prints a notice (use --force to replace
+# it — your customizations are backed up to .scaffold-bak first).
 
 set -euo pipefail
 
@@ -45,7 +51,7 @@ for arg in "$@"; do
     --all-langs)  ALL_LANGS=1 ;;
     --coverage-gate) COVERAGE_GATE=1 ;;
     --no-install) NO_INSTALL=1 ;;
-    --help|-h)    sed -n '2,18p' "$0"; exit 0 ;;
+    --help|-h)    sed -n '2,24p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -75,14 +81,63 @@ if [ "$MODE" = "auto" ]; then
   fi
 fi
 
+# --- file ownership & the install/upgrade model -----------------------------
+# Re-running install.sh is the supported UPGRADE path, so each destination is
+# copied through the policy its OWNERSHIP demands:
+#
+#   cp_scaffold  scaffold-owned CODE — scanners, libs, hooks, CI workflows. These
+#                carry security fixes, so a plain re-run REFRESHES them whenever
+#                they differ from the shipped version (no --force needed); that's
+#                how an upgrader who just re-runs install.sh actually receives the
+#                fixes. The prior bytes are recoverable from git + the scaffold,
+#                so a routine refresh writes no backup (only --force does).
+#   cp_safe      USER-OWNED files — ruff.toml, eslint config, .scaffold.toml,
+#                dependabot.yml, the rules docs, etc. A project customizes these,
+#                so they're never auto-replaced: skip unless --force (which backs
+#                up first). CLAUDE.md / AGENTS.md have their own merge handlers.
+#   cp_pattern   .forbidden-patterns/*.txt — the hard case: scaffold-SHIPPED yet
+#                user-EXTENDED (teams append their own rows). Auto-overwriting
+#                would clobber those rows, so a re-run only NOTIFIES on drift and
+#                keeps the user's file; --force backs up + replaces so the user's
+#                additions survive in .scaffold-bak for manual merge-back.
+#
+# The three policies share one write MECHANISM (_cp_replace) and one backup
+# routine (_backup), so the A7 symlink defenses live in exactly one place.
+
+# _cp_replace SRC DST — the actual write. `[ -e ]` alone is false for a DANGLING
+# symlink and follows a LIVE one, so a pre-existing symlink at a scaffold path
+# used to make `cp` follow it and write the scanner to the link's target OUTSIDE
+# the repo. We `rm -f` the destination first (dropping any symlink) so we always
+# write a real regular file IN the tree, never THROUGH a link.
+_cp_replace() {
+  local src=$1 dst=$2
+  mkdir -p "$(dirname "$dst")"
+  rm -f "$dst"
+  cp "$src" "$dst"
+}
+
+# _backup DST — copy an existing file/symlink aside to <dst>.scaffold-bak[.N]
+# before it is replaced, so no local edit is ever silently destroyed. `-P` backs
+# up a symlink AS the link, never the dereferenced target content.
+_backup() {
+  local dst=$1
+  local bak="${dst}.scaffold-bak" n=0
+  while [ -e "$bak" ] || [ -L "$bak" ]; do
+    n=$((n + 1))
+    if [ "$n" -gt 99 ]; then
+      echo "error: too many .scaffold-bak files for $dst — clean some up" >&2
+      return 1
+    fi
+    bak="${dst}.scaffold-bak.${n}"
+  done
+  cp -P "$dst" "$bak"
+  echo "backed up:    $dst -> $bak"
+}
+
+# cp_safe SRC DST — USER-OWNED file. Install if absent; otherwise leave it alone
+# unless --force (which backs up the differing file, then replaces it).
 cp_safe() {
   local src=$1 dst=$2
-  # `[ -e ]` alone is false for a DANGLING symlink and follows a LIVE one, so a
-  # pre-existing symlink at a scaffold path used to make the `cp` below follow it
-  # and write the scanner to the link's target OUTSIDE the repo, leaving the
-  # installed scanner as a symlink (arbitrary write + scanner substitution). Test
-  # `-L` too so a symlink is always treated as an existing thing to replace, and
-  # we never write THROUGH it (the `rm -f` before the final `cp` guarantees that).
   if [ -e "$dst" ] || [ -L "$dst" ]; then
     if [ "$FORCE" -eq 0 ]; then
       if [ -L "$dst" ]; then
@@ -92,30 +147,60 @@ cp_safe() {
       fi
       return
     fi
-    # --force: back up the existing file before overwriting, but only when it
-    # actually differs — so no edit is ever silently destroyed. A symlink is
-    # never compared through (`-L` short-circuits) and is always replaced.
+    # --force: back up before overwriting, but only when it actually differs. A
+    # symlink is never compared through (`-L` short-circuits) and always replaced.
     if [ ! -L "$dst" ] && cmp -s "$src" "$dst"; then
       return
     fi
-    local bak="${dst}.scaffold-bak" n=0
-    while [ -e "$bak" ] || [ -L "$bak" ]; do
-      n=$((n + 1))
-      if [ "$n" -gt 99 ]; then
-        echo "error: too many .scaffold-bak files for $dst — clean some up" >&2
-        return 1
-      fi
-      bak="${dst}.scaffold-bak.${n}"
-    done
-    # -P: back up a symlink AS the link, never the dereferenced target content.
-    cp -P "$dst" "$bak"
-    echo "backed up:    $dst -> $bak"
+    _backup "$dst" || return 1
   fi
-  mkdir -p "$(dirname "$dst")"
-  # Remove any existing dst first (incl. a symlink) so we write a real regular
-  # file rather than following a link out of the tree.
-  rm -f "$dst"
-  cp "$src" "$dst"
+  _cp_replace "$src" "$dst"
+  echo "installed:    $dst"
+}
+
+# cp_scaffold SRC DST — SCAFFOLD-OWNED code. Refreshes on diff so security fixes
+# reach upgraders on a plain re-run. Identical → silent no-op. A symlink planted
+# at a scaffold-owned path is always replaced with the real scanner (better than
+# leaving a dead link there) and never written through. No backup on a routine
+# refresh — the prior bytes are scaffold code, recoverable from git history and
+# the scaffold repo; --force still backs up first for parity with cp_safe.
+cp_scaffold() {
+  local src=$1 dst=$2
+  if [ -e "$dst" ] || [ -L "$dst" ]; then
+    # Already current? Never compare THROUGH a symlink (A7).
+    if [ ! -L "$dst" ] && cmp -s "$src" "$dst"; then
+      return
+    fi
+    [ "$FORCE" -eq 1 ] && { _backup "$dst" || return 1; }
+    _cp_replace "$src" "$dst"
+    echo "updated:      $dst (refreshed to the shipped version)"
+    return
+  fi
+  _cp_replace "$src" "$dst"
+  echo "installed:    $dst"
+}
+
+# cp_pattern SRC DST — .forbidden-patterns/*.txt. Install if absent; if it drifts
+# from the shipped version, NOTIFY (the user may have added rows; new shipped
+# rules may be worth merging) but keep the user's file. --force backs up + writes
+# the shipped version, so the user's additions survive in .scaffold-bak.
+cp_pattern() {
+  local src=$1 dst=$2
+  if [ -e "$dst" ] || [ -L "$dst" ]; then
+    if [ ! -L "$dst" ] && cmp -s "$src" "$dst"; then
+      return
+    fi
+    if [ "$FORCE" -eq 0 ]; then
+      if [ -L "$dst" ]; then
+        echo "skip (exists, symlink): $dst — left untouched; a scaffold path that is a symlink is suspicious. Replace it with --force."
+      else
+        echo "note (drift):  $dst differs from the shipped patterns — your customizations are kept. Diff against forbidden-patterns/$(basename "$dst").template for new rules to merge, or re-run with --force to replace (backs yours up to .scaffold-bak)."
+      fi
+      return
+    fi
+    _backup "$dst" || return 1
+  fi
+  _cp_replace "$src" "$dst"
   echo "installed:    $dst"
 }
 
@@ -166,21 +251,24 @@ cp_safe "$SCAFFOLD_DIR/coding-rules.md" "coding-rules.md"
 cp_safe "$SCAFFOLD_DIR/operational-rules.md" "operational-rules.md"
 install_agents_md   # never clobbers an existing AGENTS.md
 install_claude_md   # merges; never overwrites your CLAUDE.md
-cp_safe "$SCAFFOLD_DIR/githooks/pre-commit.template" ".githooks/pre-commit"
+cp_scaffold "$SCAFFOLD_DIR/githooks/pre-commit.template" ".githooks/pre-commit"
 mkx .githooks/pre-commit
 # scaffold-config + scaffold-audit are the per-project override layer
 # (.scaffold.toml): the check-* scripts source the former for per-rule
 # disable / severity / per-path size caps; the latter lists active overrides.
 # ci-changed-files scopes the CI quality gates to the PR/push diff (used by
 # lint.yml so a fresh install doesn't retroactively fail pre-existing code).
+# All scaffold-owned code → cp_scaffold so a re-run delivers security fixes.
 for check in check-size check-patterns check-filenames check-secrets check-hygiene scaffold-config scaffold-audit ci-changed-files; do
-  cp_safe "$SCAFFOLD_DIR/githooks/lib/${check}.template" ".githooks/lib/${check}"
+  cp_scaffold "$SCAFFOLD_DIR/githooks/lib/${check}.template" ".githooks/lib/${check}"
   mkx ".githooks/lib/${check}"
 done
-cp_safe "$SCAFFOLD_DIR/.github/workflows/lint.yml.template" ".github/workflows/lint.yml"
+cp_scaffold "$SCAFFOLD_DIR/.github/workflows/lint.yml.template" ".github/workflows/lint.yml"
+# dependabot.yml is user-owned config (teams add their own ecosystems) → cp_safe.
 cp_safe "$SCAFFOLD_DIR/.github/dependabot.yml.template" ".github/dependabot.yml"
-cp_safe "$SCAFFOLD_DIR/forbidden-patterns/secrets.txt.template" ".forbidden-patterns/secrets.txt"
-cp_safe "$SCAFFOLD_DIR/forbidden-patterns/shell.txt.template" ".forbidden-patterns/shell.txt"
+# Pattern files are scaffold-shipped but user-extended → cp_pattern (notify on drift).
+cp_pattern "$SCAFFOLD_DIR/forbidden-patterns/secrets.txt.template" ".forbidden-patterns/secrets.txt"
+cp_pattern "$SCAFFOLD_DIR/forbidden-patterns/shell.txt.template" ".forbidden-patterns/shell.txt"
 # Per-project override file — ships empty (all examples commented), so it
 # enforces nothing until a team uncomments an entry. See scaffold-config.
 cp_safe "$SCAFFOLD_DIR/.scaffold.toml.template" ".scaffold.toml"
@@ -188,7 +276,7 @@ cp_safe "$SCAFFOLD_DIR/.scaffold.toml.template" ".scaffold.toml"
 # Python
 if [ "$MODE" = "python" ] || [ "$MODE" = "both" ]; then
   cp_safe "$SCAFFOLD_DIR/ruff.toml.template" "ruff.toml"
-  cp_safe "$SCAFFOLD_DIR/forbidden-patterns/backend.txt.template" ".forbidden-patterns/backend.txt"
+  cp_pattern "$SCAFFOLD_DIR/forbidden-patterns/backend.txt.template" ".forbidden-patterns/backend.txt"
   # Test-runner + coverage config (standalone, like ruff.toml — never edits
   # pyproject.toml). Skip pytest.ini if the project already configures pytest in
   # pyproject.toml/tox.ini/setup.cfg, since pytest.ini would silently override it.
@@ -203,7 +291,7 @@ fi
 # Frontend
 if [ "$MODE" = "frontend" ] || [ "$MODE" = "both" ]; then
   cp_safe "$SCAFFOLD_DIR/eslint.config.js.template" "eslint.config.js"
-  cp_safe "$SCAFFOLD_DIR/forbidden-patterns/frontend.txt.template" ".forbidden-patterns/frontend.txt"
+  cp_pattern "$SCAFFOLD_DIR/forbidden-patterns/frontend.txt.template" ".forbidden-patterns/frontend.txt"
   # TypeScript config the eslint type-aware rules + the tsc --noEmit hook/CI
   # step already assume (closes the gap where they silently degrade if absent).
   cp_safe "$SCAFFOLD_DIR/tsconfig.json.template" "tsconfig.json"
@@ -237,7 +325,7 @@ else
   if [ -f Gemfile ] || ls -1 ./*.gemspec >/dev/null 2>&1; then add_lang ruby; fi
 fi
 for L in $LANGS; do
-  cp_safe "$SCAFFOLD_DIR/forbidden-patterns/${L}.txt.template" ".forbidden-patterns/${L}.txt"
+  cp_pattern "$SCAFFOLD_DIR/forbidden-patterns/${L}.txt.template" ".forbidden-patterns/${L}.txt"
 done
 
 # Agent-runtime guardrails (opt-in: --claude / --cursor). Both runtimes share
@@ -246,7 +334,7 @@ done
 # existing .claude/settings.json or .cursor/hooks.json is left alone by cp_safe —
 # merge the template's keys in by hand.
 if [ "$CLAUDE" -eq 1 ] || [ "$CURSOR" -eq 1 ]; then
-  cp_safe "$SCAFFOLD_DIR/githooks/lib/agent-precheck.template" ".githooks/lib/agent-precheck"
+  cp_scaffold "$SCAFFOLD_DIR/githooks/lib/agent-precheck.template" ".githooks/lib/agent-precheck"
   mkx ".githooks/lib/agent-precheck"
   if ! command -v jq >/dev/null 2>&1; then
     echo "warning: jq not found — the agent precheck needs jq (it fails open without it): https://jqlang.github.io/jq/"
@@ -266,7 +354,7 @@ fi
 # Conventional-Commits commit-msg hook (opt-in: --commit-msg). Active the moment
 # it lands in core.hooksPath, so it's off by default to avoid surprising users.
 if [ "$COMMIT_MSG" -eq 1 ]; then
-  cp_safe "$SCAFFOLD_DIR/githooks/commit-msg.template" ".githooks/commit-msg"
+  cp_scaffold "$SCAFFOLD_DIR/githooks/commit-msg.template" ".githooks/commit-msg"
   mkx ".githooks/commit-msg"
 fi
 
@@ -275,7 +363,7 @@ fi
 # it here is what turns it on. Kept opt-in because a local scan only fires where
 # the gitleaks binary is present; pair it with gitleaks.yml.template in CI.
 if [ "$GITLEAKS_HOOK" -eq 1 ]; then
-  cp_safe "$SCAFFOLD_DIR/githooks/lib/check-gitleaks.template" ".githooks/lib/check-gitleaks"
+  cp_scaffold "$SCAFFOLD_DIR/githooks/lib/check-gitleaks.template" ".githooks/lib/check-gitleaks"
   mkx ".githooks/lib/check-gitleaks"
   if ! command -v gitleaks >/dev/null 2>&1; then
     echo "warning: gitleaks not found — the local pass fails open (skips) until you install it: https://github.com/gitleaks/gitleaks#installing"
@@ -288,7 +376,7 @@ fi
 # a policy choice a team must make deliberately. It gates EXECUTION of changed
 # lines, not assertion quality — see RECOMMENDATIONS.md.
 if [ "$COVERAGE_GATE" -eq 1 ]; then
-  cp_safe "$SCAFFOLD_DIR/.github/workflows/coverage.yml.template" ".github/workflows/coverage.yml"
+  cp_scaffold "$SCAFFOLD_DIR/.github/workflows/coverage.yml.template" ".github/workflows/coverage.yml"
   echo "note: coverage.yml gates patch coverage (default 100% of changed lines)."
   echo "      It forces changed lines to be RUN by a test, not verified — pair with review."
 fi

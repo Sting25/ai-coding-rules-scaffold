@@ -43,7 +43,7 @@
 | Title | Location |
 |---|---|
 | Mid-script `cp`/`mkdir` failure aborts under `set -e` with no rollback/summary | `install.sh:103-104,145-274` |
-| Plain re-run keeps stale scaffold-owned scanners — security fixes never reach upgraders | `install.sh:156-159` |
+| ~~Plain re-run keeps stale scaffold-owned scanners — security fixes never reach upgraders~~ **FIXED** — `cp_scaffold` refreshes scaffold-owned code on diff (see "installer upgrade story" below) | `install.sh` |
 | Uninstall never removes `.githooks/lib/ci-changed-files` (install adds 8 libs, uninstall removes 7) | `uninstall.sh:133` |
 | Generic credential keyword list omits `secret`, `client_secret`, `private_key`, `credential`, `pwd`, `auth` | `secrets.txt.template:53` |
 | URL-embedded-credentials rule misses empty-username userinfo (a redis-style URL with an empty user) | `secrets.txt.template:48` |
@@ -88,9 +88,17 @@ Secret-regex coverage, each validated against a positive **and** negative FP cor
 - **chmod robustness (low)** — a new `mkx()` helper chmods only a real regular file, so a skipped (symlink) scaffold path can't abort the install via a chmod-through-a-broken-link under `set -e`. Replaces every `chmod +x` site.
 - **uninstall gap (medium)** — the uninstall loop now includes `ci-changed-files` (install adds 8 libs; uninstall removed 7, leaving it orphaned). (`uninstall.sh:133`; test `cases/09`.)
 
-**Still open** (priority order): the **installer upgrade story** — a plain re-run prints "skip (exists)" for scaffold-owned scanners, so existing users don't receive these very fixes by re-running (needs a design call on scaffold-owned vs user-owned files; see note below); the remaining test-coverage gaps (A10 et al.); and the remaining doc reconciliations.
+### Fixed in follow-ups (installer upgrade story)
 
-> **Design decision needed — installer upgrades.** `cp_safe` treats every existing file as user-owned (skip unless `--force`). That's correct for `CLAUDE.md`/`AGENTS.md`/configs, but it means scaffold-owned *code* (`check-*`, libs, workflows) is never refreshed on re-run, so a security fix never reaches an upgrader who re-runs `install.sh`. A fix has to decide which paths are scaffold-owned (safe to auto-update when they differ from the shipped version) vs user-owned (never auto-replace) — and `.forbidden-patterns/*.txt` is the hard case (scaffold ships them, but users add custom patterns, so auto-replacing would clobber). Likely answer: auto-update the pure-code paths; for pattern files, append/merge new shipped rules rather than overwrite, or tell the user to re-run with `--force` and rely on the `.scaffold-bak` backups. Deferred pending that call.
+**The installer upgrade story is RESOLVED.** A plain re-run of `install.sh` is now the supported upgrade path, so security fixes reach an existing user just by re-running. `cp_safe` was one policy ("skip unless `--force`") applied to three kinds of file with conflicting needs; it's split into one write mechanism (`_cp_replace` + `_backup`, carrying the A7 symlink defenses) and three ownership policies:
+
+- **`cp_scaffold` — scaffold-owned code** (`pre-commit`, all `.githooks/lib/*`, `commit-msg`, `lint.yml`, `coverage.yml`): **refreshes on diff with no `--force` needed**, so an upgrader receives the latest scanners/hooks/workflows by re-running. Identical → silent no-op; a symlink planted at a scaffold path is replaced with the real file (never written through); the prior bytes are recoverable from git + the scaffold, so a routine refresh writes no `.scaffold-bak` (only `--force` does). Announced as `updated: <path>`.
+- **`cp_safe` — user-owned files** (`ruff.toml`, eslint/tsconfig/prettier/vitest, `.scaffold.toml`, `.github/dependabot.yml`, the rules docs): unchanged — skip unless `--force` (which backs up first). `CLAUDE.md`/`AGENTS.md` keep their dedicated merge handlers.
+- **`cp_pattern` — `.forbidden-patterns/*.txt`** (the hard case: scaffold-shipped yet user-extended): a re-run only **notifies on drift** (`note (drift): …`) and keeps the user's file; `--force` backs up the user's rows to `.scaffold-bak` and writes the shipped version for manual merge-back.
+
+Red-then-green tested in `tests/cases/09` (refresh-stale-scanner, refresh-stale-workflow, leave-user-config, notify-on-pattern-drift, `--force`-backs-up-drift, clean-no-op-when-current); full suite 164/164, shellcheck clean. The scope was deliberately limited to code/libs/workflows: the markdown rules docs (`coding-rules.md`/`operational-rules.md`) and `dependabot.yml` stay user-owned (`cp_safe`), since teams localize them.
+
+**Still open** (priority order): the remaining test-coverage gaps (A10 et al.); and the remaining doc reconciliations.
 
 ### What's solid (verified, so fixes don't regress it)
 
