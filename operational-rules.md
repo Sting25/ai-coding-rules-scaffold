@@ -119,6 +119,21 @@ trace back.
 "complete"; downstream pipelines built on the missing-rows-without-error
 state spent days untangling the resulting derived corruption.
 
+### Fix the file, not the guardrail — don't weaken a check to pass
+When a check goes red — a secret/pattern/size/hygiene scan, a lint
+or type error, a failing test — the default is to fix the offending
+FILE, not to weaken the check. Suppressions (`scaffold-allow`, a
+`.scaffold.toml` disable/downgrade, a loosened pattern, a skip-list
+entry, `--no-verify`) are a last resort: only for a genuine false
+positive AND only when fixing the file truly isn't possible, and
+then narrowly and with a recorded reason. A check weakened to turn
+green silently lowers the bar for every later commit and every
+consumer that inherits it — catching the thing was the point. If the
+check itself is wrong, fix the check and add a test; don't bypass it.
+*Anchor:* a guardrail flagged a file; exempting it was one line and
+fixing it a few — but an exemption, unlike a fix, never expires, so
+suppressions accrete until the scanner no longer scans.
+
 ### Hold shared-resource locks for contiguous work, not per operation
 When multiple processes contend for a single shared resource (GPU,
 DB connection from a small pool, hardware port, file lock),
