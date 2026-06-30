@@ -94,8 +94,14 @@ if command -v jq >/dev/null 2>&1; then
   #       (141 is non-zero too, so a "non-zero == blocked" check would wrongly
   #       pass here). `pass`+`word` is built at runtime so this file stays clean.
   pw=pass
-  big=$(for _ in $(seq 1 20000); do printf '%sword = "aaaaaaaaaaaaaaaa"\n' "$pw"; done)
-  pc=$(jq -n --arg c "$big" '{tool_name:"Write",tool_input:{file_path:"big.py",content:$c}}')
+  # Build the payload via --rawfile, NOT --arg: the ~600 KB content passed as a
+  # single CLI argument exceeds Linux MAX_ARG_STRLEN (128 KB) and aborts jq with
+  # "Argument list too long" (macOS has no per-arg cap, so --arg passed locally
+  # but failed on the ubuntu runner). --rawfile reads the content from a file.
+  bigf=$(mktemp)
+  for _ in $(seq 1 20000); do printf '%sword = "aaaaaaaaaaaaaaaa"\n' "$pw"; done >"$bigf"
+  pc=$(jq -n --rawfile c "$bigf" '{tool_name:"Write",tool_input:{file_path:"big.py",content:$c}}')
+  rm -f "$bigf"
   rc=0
   printf '%s' "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1 || rc=$?
   if [ "$rc" -eq 2 ]; then
