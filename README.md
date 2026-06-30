@@ -174,6 +174,8 @@ Either way, the four `lib/check-*` scripts in `.githooks/lib/` are also runnable
 | `githooks/lib/scaffold-audit.template` | `.githooks/lib/scaffold-audit` | Lists every active override in `.scaffold.toml`; run locally and echoed by CI |
 | `.scaffold.toml.template` | `.scaffold.toml` | Per-project rule overrides — ships empty (commented), enforces nothing until edited |
 | `.github/workflows/lint.yml.template` | `.github/workflows/lint.yml` | CI mirror — invokes the same `lib/check-*` scripts as the hook, scoped to the PR/push diff (`lib/ci-changed-files`) for quality gates, whole-tree for the secret/credential scans |
+| `githooks/lib/ci-changed-files.template` | `.githooks/lib/ci-changed-files` | Resolves the PR/push diff so CI quality gates scan only changed files; fails open to the whole tree when there's no diff base |
+| `.github/dependabot.yml.template` | `.github/dependabot.yml` | Weekly grouped version bumps for the SHA-pinned GitHub Actions |
 | `forbidden-patterns/backend.txt.template` | `.forbidden-patterns/backend.txt` | Python patterns consumed by hook + CI |
 | `forbidden-patterns/frontend.txt.template` | `.forbidden-patterns/frontend.txt` | TS/JS patterns consumed by hook + CI |
 | `forbidden-patterns/secrets.txt.template` | `.forbidden-patterns/secrets.txt` | Secret/credential patterns, scanned across all file types |
@@ -278,7 +280,7 @@ Commit + CI-breaking (pre-commit hook + `lint.yml`):
 | Dangerous shell in `*.sh`/`*.bash` — `curl \| bash`, `rm -rf /`, `chmod 777`, `git --no-verify` (hook bypass) | regex (shell.txt) |
 | File size > 500 lines | line count of the staged blob (`git show :0:<path>`, counting a final line with no trailing newline) |
 | TODO/FIXME without ticket ref | regex (opt-in; commented in template) |
-| Secret / credential leaks (AWS `AKIA`/Bedrock, GitHub/GitLab tokens, Stripe, Supabase, OpenRouter, OpenAI/Anthropic, structural JWTs, private keys, URLs with embedded credentials, hardcoded `password=`/`token=` assignments) | regex (case-insensitive). Scans **every** tracked file's staged blob as text (no extension allowlist, so renaming a payload can't skip it); NUL bytes are stripped so they can't hide content, and a single line longer than `MAX_LINE_LENGTH` (50000) is dropped so a minified/binary blob can't hang the scan |
+| Secret / credential leaks (AWS `AKIA`/Bedrock, GitHub/GitLab tokens, Stripe, Supabase, OpenRouter, OpenAI/Anthropic, structural JWTs, private keys, URLs with embedded credentials, quoted hardcoded `password`/`token`/`api_key` assignments — unquoted/env-var forms are better caught by the gitleaks layer below) | regex (case-insensitive). Scans **every** tracked file's staged blob as text (no extension allowlist, so renaming a payload can't skip it); NUL bytes are stripped so they can't hide content. A single line longer than `MAX_LINE_LENGTH` (50000) is dropped before the regex (so a minified/binary blob can't hang the scan) and the file is then **rejected as unscannable** (fail-closed) — split/relocate the asset, raise `MAX_LINE_LENGTH`, or point a dedicated scanner at it |
 | Committed `.env` / `*.pem` / SSH private keys (`id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`) | filename check (`.env.example` / `.env.sample` / `.env.template` allowed) |
 | Merge-conflict markers (`<<<<<<<` / `\|\|\|\|\|\|\|` / `>>>>>>>`) left in a file | `check-hygiene` (staged-blob scan) |
 | Case-only filename collisions (`Readme.md` vs `README.md`) that break macOS/Windows checkouts | `check-hygiene` (path scan; diff-scoped in CI like the other quality gates) |
@@ -361,7 +363,8 @@ by default so the scaffold stays minimal; turn them on per project.
   Cursor has no before-write hook, so unlike `--claude` the secret-on-write scan
   and credential read deny-list aren't portable — the shell-command scan is the
   high-ROI piece that is. `--claude` and `--cursor` can be combined; they share
-  the one precheck script.
+  the one precheck script, which (like `--claude`) needs `jq` and fails open
+  without it.
 
 - **Conventional-Commits `commit-msg` hook (`install.sh --commit-msg`).**
   Rejects commit subjects that don't match `type(scope): description` (merge /
