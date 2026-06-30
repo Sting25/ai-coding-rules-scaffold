@@ -6,6 +6,44 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **`lint.yml` CI scopes its quality gates to the PR/push diff.** The
+  `python` (ruff), `frontend` (eslint/prettier), and the size /
+  forbidden-pattern / hygiene `guardrails` checks now run only against files
+  changed in the PR or push, instead of the whole tree. This means installing
+  the scaffold onto an existing project no longer retroactively fails its
+  pre-existing code — only new/changed code is gated, matching the pre-commit
+  hook's staged-files scope. The **secret + credential-filename** scans
+  deliberately stay **whole-tree** (catching an already-committed secret/key is
+  the point, and they're the non-overridable security boundary). Falls open to
+  a whole-tree scan when there's no diff base (e.g. first push to a new repo).
+- **Workflow shell is bash-3.2-safe.** Replaced `mapfile` (bash 4+) in the
+  diff-scoped jobs with the portable NUL read-loop the `check-*` scripts use, so
+  the workflow runs on older/self-hosted runners too.
+
+### Added
+- **`githooks/lib/ci-changed-files`** — shared helper that resolves the
+  PR/push diff as a NUL-delimited list (failing open to the whole tree). One
+  testable implementation called by every diff-scoped `lint.yml` job, instead of
+  copy-pasted bash inside the workflow YAML. Installed by `install.sh`.
+- **`tests/cases/10-ci-diff-scope.sh`** — regression test (9 assertions) for the
+  diff-scoping: legacy grandfathered, new code gated, secrets/filenames caught
+  whole-tree, and the no-diff-base fallback.
+- **`operational-rules.md` rule: "Capture pre-existing issues; never silently
+  drop them."** The complement to scope discipline — an out-of-scope bug, drift,
+  or lint finding noticed mid-task must land on a tracked fix-list, not be
+  dropped because "that's not what we're working on."
+
+### Fixed
+- **`frontend` lint job emits an actionable error when the eslint config is
+  present but its peer deps aren't installed**, instead of a cryptic config-load
+  crash — it names the exact `npm i -D …` to run and to commit the lockfile.
+
+### Upgrade note
+- Existing installs must re-run `install.sh` (or copy
+  `githooks/lib/ci-changed-files` + the new `lint.yml`) — the updated `lint.yml`
+  calls the new helper.
+
 ## [v0.8.0] — 2026-06-27
 
 Audit-hardening release. Closes the self-application gap — the scaffold now

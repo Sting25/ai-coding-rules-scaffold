@@ -19,4 +19,4 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - run: shellcheck -S info install.sh uninstall.sh tests/run.sh tests/lib/common.sh tests/cases/*.sh githooks/pre-commit.template githooks/lib/check-size.template githooks/lib/check-patterns.template githooks/lib/check-filenames.template githooks/lib/check-secrets.template githooks/lib/check-hygiene.template githooks/lib/agent-precheck.template githooks/commit-msg.template
+      - run: shellcheck -S info install.sh uninstall.sh tests/run.sh tests/lib/common.sh tests/cases/*.sh githooks/pre-commit.template githooks/lib/check-size.template githooks/lib/check-patterns.template githooks/lib/check-filenames.template githooks/lib/check-secrets.template githooks/lib/check-hygiene.template githooks/lib/ci-changed-files.template githooks/lib/agent-precheck.template githooks/commit-msg.template
