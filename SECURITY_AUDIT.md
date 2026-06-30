@@ -27,7 +27,7 @@ baseline.
 
 ### 🟠 High
 
-**B1 — `install_claude_md` / `install_agents_md` write THROUGH a symlink (A7-class, in the two handlers the A7 fix never touched)** — `install.sh:218,233,241` · **NOVEL**
+**B1 — `install_claude_md` / `install_agents_md` write THROUGH a symlink (A7-class, in the two handlers the A7 fix never touched)** — `install.sh:218,233,241` · **NOVEL** · ✅ **FIXED** (`fix/audit-b1-claude-agents-symlink`)
 - **What:** the A7 symlink defense (`[ -e ] || [ -L ]`, `rm -f` before `cp`, `cp -P` backups)
   lives only in `_cp_replace`/`_backup`/`cp_safe`/`cp_scaffold`/`cp_pattern`. The two bespoke
   merge handlers still use the pre-A7 `[ -e ]`-only guard around a raw `cp`/`>>` redirect.
@@ -42,10 +42,18 @@ baseline.
   stays a symlink, no real file, and `head -1 "$OUT"` prints `# CLAUDE.md` (the pointer written
   outside). **Control:** the same planted dangling symlink at `coding-rules.md` (A7-defended
   `cp_safe` path) is refused (`skip (exists, symlink)`) and writes nothing outside.
-- **Fix:** give both handlers the A7 treatment — gate on `[ -e ] || [ -L ]`, `rm -f` the path
+- **Fix (proposed):** give both handlers the A7 treatment — gate on `[ -e ] || [ -L ]`, `rm -f` the path
   before a create `cp` so a real regular file lands in the repo, and for the `CLAUDE.md` append
   branch refuse (skip with the "symlink, suspicious" notice) when `[ -L CLAUDE.md ]` rather than
   redirecting through the link. Add a `tests/cases/09`-style regression for both handlers.
+- **Fixed (as landed):** both handlers now test `[ -L ]` **first** and SKIP with a "symlink,
+  suspicious" notice — never writing through the link, for the dangling-create, live-append, and
+  AGENTS.md-create branches alike. Chose the `cp_safe` *user-owned* policy (skip + surface) over the
+  `cp_scaffold` *replace* policy, because `CLAUDE.md`/`AGENTS.md` are explicitly never clobbered (not
+  even with `--force`); a symlink there is left untouched and reported, never silently replaced.
+  Locked with three red→green tests in `tests/cases/09` (dangling `CLAUDE.md` create, live `CLAUDE.md`
+  append, dangling `AGENTS.md` create); each fails against the pre-fix handler and passes after — full
+  suite **178/0**, `shellcheck -S info` clean.
 
 **B2 — `check-hygiene` fails OPEN on over-cap lines: the A1 fail-closed fix never reached the hidden-Unicode (Trojan Source) and conflict-marker branches** — `githooks/lib/check-hygiene.template:106,163` · **already tracked but mis-prioritized + contradicts the A1 "FIXED" claim**
 - **What:** `check-secrets.template:159` carries the A1 fix (`awk '… { d=1; next } … END { exit (d ? 9 : 0) }'`,
