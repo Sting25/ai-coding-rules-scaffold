@@ -18,7 +18,9 @@
 # passes -a/--text for the same reason.
 #
 # A `scaffold-allow` marker exempts a line, but ONLY after a comment leader
-# (`#`, `//`, `/*`, `<!--`, `--`) — like `# noqa`. Use sparingly.
+# (`#`, `//`, `/*`, `<!--`) at start-of-line or after whitespace — like `# noqa`.
+# Bare `--` was dropped as a leader (cross-language bypass); see check-secrets
+# for why inline suppression isn't a hostile-committer boundary. Use sparingly.
 #
 # Output: human-readable on tty; ::error file=...:: when --ci is passed.
 # Exit:   0 if all OK, 1 if any violation.
@@ -185,7 +187,7 @@ scan() {
       pat="${patterns[$i]}"
       desc="${descriptions[$i]}"
       # Exempt only a comment-anchored marker (see check-secrets).
-      m=$(grep -anE -- "$pat" <<<"$content" | grep -ivE '(#|//|/\*|<!--|--)[[:space:]]*scaffold-allow' || true)
+      m=$(grep -anE -- "$pat" <<<"$content" | grep -ivE '(^|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true)
       [ -n "$m" ] || continue
       # Per-rule override: `disabled` skips the rule, `warn` reports without
       # failing, anything else (incl. missing config) enforces as `error`.

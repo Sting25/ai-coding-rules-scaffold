@@ -63,6 +63,16 @@ echo 'note = "scaffold-allow AKIA''IOSFODNN7EXAMPLE"' >sneaky2.txt
 git add sneaky2.txt
 assert_rejects "scaffold-allow in a string does not exempt a secret" "AWS access key"
 
+# 28b. REGRESSION (scaffold-allow `--` smuggle): the bare `--` leader used to
+#      exempt ANY line in ANY language. `--` is not a comment in JS, yet a marker
+#      placed inside a string literal — `"<secret> -- scaffold-allow"` — got the
+#      whole line dropped from the findings. Dropping `--` as a leader closes it.
+#      AKIA split so this harness file carries no live key; the temp-repo .js
+#      fixture reassembles the key + marker on one line.
+printf 'const k = "%s -- scaffold-allow";\n' "AKIA""IOSFODNN7EXAMPLE" >smuggle.js
+git add smuggle.js
+assert_rejects "bare -- scaffold-allow does not exempt a secret" "AWS access key"
+
 # 29. A config line with no TAB separator is skipped with a warning (not promoted
 #     to a whole-line pattern); a valid pattern on another line still scans.
 printf 'this line has no tab separator at all\n' >>.forbidden-patterns/backend.txt
