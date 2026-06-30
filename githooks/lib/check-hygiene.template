@@ -102,9 +102,15 @@ CONFLICT_STATE=$(cfg rule-state conflict-marker); [ -n "$CONFLICT_STATE" ] || CO
 if [ "$CONFLICT_STATE" != disabled ]; then
   CONFLICT_RE='^(<{7}|>{7}|\|{7})( |$)'
   for file in "${FILES[@]}"; do
+    # FAIL CLOSED on an over-cap line (check-secrets parity). The line is dropped
+    # before the marker scan — that is the ReDoS guard — but an unscannable line
+    # must not pass silently: awk exit 9 ("a line was dropped") triggers a finding
+    # at the rule's severity, while the in-cap lines below are still scanned.
     cap_rc=0
-    content=$(git show ":0:$file" 2>/dev/null | awk -v n="$MAX_LINE_LENGTH" 'length > n { next } { print }') || cap_rc=$?
-    [ "$cap_rc" -eq 0 ] || true
+    content=$(git show ":0:$file" 2>/dev/null | awk -v n="$MAX_LINE_LENGTH" 'length > n { d=1; next } { print } END { exit (d ? 9 : 0) }') || cap_rc=$?
+    if [ "$cap_rc" -eq 9 ]; then
+      emit "$CONFLICT_STATE" "$file" "line(s) over $MAX_LINE_LENGTH chars cannot be scanned for conflict markers — split/relocate the minified asset or raise MAX_LINE_LENGTH"
+    fi
     [ -n "$content" ] || continue
     m=$(grep -anE -- "$CONFLICT_RE" <<<"$content" | grep -ivE '(^|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true)
     if [ -n "$m" ]; then
@@ -159,8 +165,15 @@ if [ "$HIDDEN_STATE" != disabled ]; then
   HIDDEN_RE=$'\xe2\x80[\x8b-\x8d\xaa-\xae]|\xe2\x81[\xa0\xa6-\xa9]|\xef\xbb\xbf|\xf3\xa0[\x80\x81][\x80-\xbf]'
   for file in "${FILES[@]}"; do
     is_binary "$file" && continue
+    # FAIL CLOSED on an over-cap line (check-secrets parity). An unscannable line
+    # in an agent-read file is exactly the Trojan-Source / Rules-File-Backdoor
+    # surface this branch defends, so a dropped line is reported, not swallowed.
+    cap_rc=0
     content=$(git show ":0:$file" 2>/dev/null \
-                | LC_ALL=C awk -v n="$MAX_LINE_LENGTH" 'length > n { next } { print }' || true)
+                | LC_ALL=C awk -v n="$MAX_LINE_LENGTH" 'length > n { d=1; next } { print } END { exit (d ? 9 : 0) }') || cap_rc=$?
+    if [ "$cap_rc" -eq 9 ]; then
+      emit "$HIDDEN_STATE" "$file" "line(s) over $MAX_LINE_LENGTH chars cannot be scanned for hidden Unicode (Trojan Source / Rules File Backdoor surface) — split/relocate the minified asset or raise MAX_LINE_LENGTH"
+    fi
     [ -n "$content" ] || continue
     # A legitimate leading BOM is allowed; strip one before scanning so only a
     # mid-file occurrence trips the EF-BB-BF branch.

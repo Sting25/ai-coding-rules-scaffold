@@ -82,6 +82,24 @@ else
 fi
 reset_repo
 
+# 45g. FAIL CLOSED: a hidden-Unicode char (bidi override U+202E) on a line over
+#      MAX_LINE_LENGTH used to ride through — the ReDoS cap dropped the line, no
+#      signal, exit 0 (audit B2, the Trojan-Source bypass). The line is still
+#      dropped before the scan, but the unscannable line is now reported and the
+#      commit rejected. The expected-substring guard gives this teeth: without the
+#      fix check-secrets still rejects the 60k-char line, but the hidden-Unicode
+#      fail-closed message is absent. (U+202E built at runtime to keep this file ASCII.)
+bidi=$(printf '\xe2\x80\xae')
+{ printf 'legit start %s' "$bidi"; head -c 60000 /dev/zero | tr '\0' a; echo; } >longbidi.md
+git add longbidi.md
+assert_rejects "hidden Unicode on a >MAX_LINE_LENGTH line fails closed" "cannot be scanned for hidden Unicode"
+
+# 45h. FAIL CLOSED: the conflict-marker branch has the same over-cap hole. A
+#      marker on a >MAX_LINE_LENGTH line is reported rather than silently dropped.
+{ printf '<<<<<<< HEAD '; head -c 60000 /dev/zero | tr '\0' a; echo; } >longconflict.txt
+git add longconflict.txt
+assert_rejects "conflict marker on a >MAX_LINE_LENGTH line fails closed" "cannot be scanned for conflict markers"
+
 # --- Multi-language forbidden patterns (config-driven check-patterns) -------
 # Each language file declares its extensions via a `# scaffold-extensions:`
 # header and is auto-discovered by check-patterns. Samples come from the

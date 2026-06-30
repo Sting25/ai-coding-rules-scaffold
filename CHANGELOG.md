@@ -6,6 +6,17 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+- **`check-hygiene` fails closed on over-long lines (B2, high).** The A1
+  fail-closed fix had only reached `check-secrets`/`check-patterns`; the
+  conflict-marker and hidden-Unicode (Trojan Source / CVE-2021-42574 / Rules
+  File Backdoor) branches still dropped any line over `MAX_LINE_LENGTH` (50k)
+  silently and exited 0, so a bidi override or zero-width char on a minified /
+  base64 blob rode straight through the scaffold's named defense. Both branches
+  now report the unscannable line and reject the commit, at the rule's
+  configured severity (a repo that downgraded the rule to `warn` still gets a
+  warn, not a hard block). Regressions in `tests/cases/06` (#45g, #45h).
+
 ## [v0.9.0] — 2026-06-30
 
 A security-hardening release. A full multi-dimension re-audit of the scaffold's
