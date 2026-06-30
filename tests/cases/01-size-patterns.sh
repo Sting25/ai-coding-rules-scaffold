@@ -97,3 +97,46 @@ echo 'pri''nt("debug")' >sneaky.py
 git add sneaky.py
 echo '# clean now' >sneaky.py
 assert_rejects "scans staged content (not working tree)"
+
+# 10. Secret-coverage additions (2026-06-30 audit). Each distinctive token is
+#     assembled by printf in the temp-repo .txt fixture (a `%s` arg breaks the
+#     anchor the pattern needs), so this harness file carries no live-shaped
+#     secret. .txt keeps these isolated from ruff/eslint. Validated against an
+#     FP corpus (SHA/UUID/lockfile-hash negatives) before landing.
+
+# 10a. Underscore-prefixed credential name — the boundary fix ('_' used to count
+#      as a word char, so db_password / DATABASE_PASSWORD slipped through).
+printf 'db_password = "%s"\n' 'supersecretvalue1' >dbcfg.txt
+git add dbcfg.txt
+assert_rejects "underscore-prefixed credential (db_password)" "Hardcoded credential"
+
+# 10b. URL with EMPTY-username userinfo (a redis URL, empty user) — the '*' fix.
+printf 'u = "redis://:secretpassword%shost"\n' '@' >redis.txt
+git add redis.txt
+assert_rejects "URL with empty-username credentials" "URL with embedded credentials"
+
+# 10c. SendGrid key prefix.
+printf 'k = SG.%s.%s\n' 'abcdefghijklmnopqrstuv' 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHI' >sg.txt
+git add sg.txt
+assert_rejects "SendGrid API key" "SendGrid"
+
+# 10d. Shopify token prefix.
+printf 'k = shp%s\n' 'at_0123456789abcdef0123456789abcdef' >shop.txt
+git add shop.txt
+assert_rejects "Shopify access token" "Shopify"
+
+# 10e. Twilio Account SID — boundary-anchored 32-hex (must not match inside a SHA).
+printf 'sid = AC%s\n' '0123456789abcdef0123456789abcdef' >twil.txt
+git add twil.txt
+assert_rejects "Twilio Account SID" "Twilio"
+
+# 10f. NEGATIVE: a 64-char SHA-256 must NOT trip the new hex-prefixed rules.
+printf 'h = %s\n' 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' >sha.txt
+git add sha.txt
+assert_passes "SHA-256 hash is not a false positive"
+
+# 10g. NEGATIVE: an UNQUOTED assignment stays uncaught by design — quoted-only;
+#      unquoted/env-var forms are the gitleaks layer's job (see README).
+printf 'api_key = %s\n' 'my_config_variable_name_here' >unq.txt
+git add unq.txt
+assert_passes "unquoted credential assignment is not flagged (quoted-only by design)"

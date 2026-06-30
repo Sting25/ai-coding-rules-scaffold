@@ -46,7 +46,7 @@
 | Plain re-run keeps stale scaffold-owned scanners — security fixes never reach upgraders | `install.sh:156-159` |
 | Uninstall never removes `.githooks/lib/ci-changed-files` (install adds 8 libs, uninstall removes 7) | `uninstall.sh:133` |
 | Generic credential keyword list omits `secret`, `client_secret`, `private_key`, `credential`, `pwd`, `auth` | `secrets.txt.template:53` |
-| URL-embedded-credentials rule misses empty-username userinfo (`redis://:password@host`) | `secrets.txt.template:48` |
+| URL-embedded-credentials rule misses empty-username userinfo (a redis-style URL with an empty user) | `secrets.txt.template:48` |
 | `agent-precheck` long-line filter empties content → exit 0, skipping a one-line Bash command scan | `agent-precheck.template:57-59` |
 | Template-only action pins get neither Dependabot updates nor drift-guard coverage; rot silently | `gitleaks.yml.template:38` (+ `dependency-review`/`coverage`/opt-in `lint` jobs) |
 | `dependency-review` defaults to `fail-on-severity: moderate`, allowing low-severity advisories | `dependency-review.yml.template:49` |
@@ -72,7 +72,17 @@ Each landed with a red-then-green regression test; full suite 148/148 green.
 - **A3 (high)** — `scaffold-allow` dropped bare `--` as a leader and now requires a start-of-line/whitespace boundary, across all five exemption sites (check-secrets, check-patterns, check-hygiene ×2, agent-precheck); over-claiming docs corrected. (`2a92e6e`; cases/04 #28b)
 - **A4 (high)** — `check-filenames` folds name+path to lowercase before matching, so `.PEM`/`.ENV`/`ID_RSA` are blocked; the `.env.example` allowlist still holds. (`16ab43b`; cases/04 #36, #36b)
 
-**Still open** (recommended next, in priority order): the secret-regex coverage cluster (A5/A6/A8 + the medium keyword/URL gaps — needs positive **and** negative corpus validation to manage false positives); `cp_safe` symlink handling (A7); the installer/uninstaller robustness cluster; the remaining test-coverage gaps (A10 et al.); and the doc reconciliations.
+### Fixed in follow-ups (`fix/audit-secret-regex`)
+
+Secret-regex coverage, each validated against a positive **and** negative FP corpus (SHA-256 / git-hash / UUID / lockfile-hash / unquoted-variable negatives) and locked with harness tests (`cases/01` #10a–g):
+
+- **A6 (high)** — generic credential-rule boundary `[^A-Za-z_]` → `[^A-Za-z]`, so underscore-prefixed names (`db_password`, `DATABASE_PASSWORD`, `client_secret`) are caught.
+- **A8 (high)** — added prefix/boundary-anchored rules: SendGrid, Shopify, Square, Mailgun, Telegram, Twilio (Account SID + API key SID). The hex-prefixed ones (`AC`/`SK`/`key-`) carry non-alphanumeric boundaries so they don't match a window inside a SHA.
+- **medium** — keyword list broadened (`pwd`, bare `secret`, `private_key`, `credentials?`); URL-credentials rule now matches the empty-username userinfo form (e.g. a redis URL with an empty user).
+
+**A5 (unquoted values) is deliberately NOT fixed.** Loosening the quote requirement false-positives on ordinary `api_key = some_variable` assignments. Per the project's standing decision (and the README), unquoted/env-var secrets are the gitleaks layer's job — the README's secret-scan row now says "quoted" explicitly and points there.
+
+**Still open** (priority order): `cp_safe` symlink handling (A7); the installer/uninstaller robustness cluster (re-run keeps stale scanners; uninstall gaps); the remaining test-coverage gaps (A10 et al.); and the remaining doc reconciliations.
 
 ### What's solid (verified, so fixes don't regress it)
 
@@ -406,7 +416,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 | ⬜ Open | No CR-stripping, no .gitattributes, and no line-ending guidance for distributed config files | `README.md:1` |
 | ⬜ Open | print/console.log/alert/os.path.join patterns fire inside comments and string literals (false positives); os.p… | `backend.txt.template:7-8` |
 | ⬜ Open | AWS key coverage limited to AKIA; temporary (ASIA) and other AWS key-ID prefixes are not detected, contrary to… | `secrets.txt.template:13` |
-| ⬜ Open | URL-with-credentials pattern misses password-only userinfo (e.g. redis://:password@host) | `secrets.txt.template:25` |
+| ⬜→✅ | URL-with-credentials pattern misses password-only userinfo (e.g. a redis URL with an empty user) — now FIXED, see "Fixed in follow-ups" above | `secrets.txt.template:25` |
 | ⬜ Open | shell.txt curl\|bash and rm-rf/ patterns miss common real-world forms, overstating shell coverage | `shell.txt.template:4-5` |
 | ✅ Fixed | check-filenames aborts on leading-dash filenames via unguarded basename (confusing failure, order-dependent) | `check-filenames.template:33` |
 | ✅ Fixed | `printf \| head -3 \| sed` aborts check-patterns/check-secrets via SIGPIPE under pipefail (exit 141) | `check-patterns.template:92` |
