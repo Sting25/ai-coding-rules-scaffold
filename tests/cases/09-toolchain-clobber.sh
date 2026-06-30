@@ -239,3 +239,109 @@ else
 fi
 rm -rf "$UCI"
 reset_repo
+
+# --- installer upgrade story: re-runs refresh scaffold-owned code -------------
+# A plain re-run must REFRESH scaffold-owned code (check-*, libs, hooks,
+# workflows) so security fixes reach an upgrader who just re-runs install.sh,
+# LEAVE user-owned files alone, and NOTIFY (never silently overwrite) on
+# .forbidden-patterns/*.txt drift. Each upgrade scenario installs once, mutates
+# one file to simulate the prior state, then re-runs and asserts the outcome.
+
+# (T) re-run refreshes a STALE scaffold-owned scanner to the shipped version,
+#     without --force — the core upgrade path the design note called for.
+#     Simulate an older installed scanner by clobbering it, then re-run and
+#     assert it matches the template again, is announced as updated, and stays
+#     executable (the post-copy chmod must still run on the refreshed file).
+URS=$(mktemp -d)
+( cd "$URS" && git init --quiet && echo '{"name":"x"}' >package.json \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify >/dev/null 2>&1 )
+printf '#!/usr/bin/env bash\n# STALE OLD VERSION\nexit 0\n' >"$URS/.githooks/lib/check-secrets"
+( cd "$URS" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
+if cmp -s "$SCAFFOLD_DIR/githooks/lib/check-secrets.template" "$URS/.githooks/lib/check-secrets" \
+   && [ -x "$URS/.githooks/lib/check-secrets" ] \
+   && grep -q 'updated:.*check-secrets' "$HOOK_OUT"; then
+  echo "  ✓ re-run refreshes a stale scaffold-owned scanner to the shipped version"; PASS=$((PASS + 1))
+else
+  echo "  ✗ re-run did not refresh the stale scanner"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$URS"
+
+# (T) re-run refreshes a stale scaffold-owned WORKFLOW (lint.yml) too — the
+#     guardrails job hardening has to reach upgraders, not just the scanners.
+URW=$(mktemp -d)
+( cd "$URW" && git init --quiet && echo '{"name":"x"}' >package.json \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify >/dev/null 2>&1 )
+echo '# stale workflow' >"$URW/.github/workflows/lint.yml"
+( cd "$URW" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
+if cmp -s "$SCAFFOLD_DIR/.github/workflows/lint.yml.template" "$URW/.github/workflows/lint.yml" \
+   && grep -q 'updated:.*lint.yml' "$HOOK_OUT"; then
+  echo "  ✓ re-run refreshes a stale scaffold-owned workflow"; PASS=$((PASS + 1))
+else
+  echo "  ✗ re-run did not refresh the stale workflow"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$URW"
+
+# (T) re-run LEAVES a user-edited, user-owned config alone — no refresh, no
+#     backup. The scaffold-owned auto-update must not bleed into user files.
+UUE=$(mktemp -d)
+( cd "$UUE" && git init --quiet && echo 'name="x"' >pyproject.toml \
+  && "$SCAFFOLD_DIR/install.sh" --python --no-verify >/dev/null 2>&1 )
+echo '# my local ruff tweak' >>"$UUE/ruff.toml"
+( cd "$UUE" && "$SCAFFOLD_DIR/install.sh" --python --no-verify ) >"$HOOK_OUT" 2>&1
+if grep -q 'my local ruff tweak' "$UUE/ruff.toml" \
+   && grep -q 'skip (exists): ruff.toml' "$HOOK_OUT" \
+   && [ ! -e "$UUE/ruff.toml.scaffold-bak" ]; then
+  echo "  ✓ re-run leaves a user-edited config untouched (no refresh, no backup)"; PASS=$((PASS + 1))
+else
+  echo "  ✗ re-run should leave a user-owned config alone"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UUE"
+
+# (T) re-run NOTIFIES on .forbidden-patterns drift and KEEPS the user's custom
+#     rules — these files are scaffold-shipped AND user-extended, so a silent
+#     overwrite would clobber a team's added rows. Notify, never overwrite.
+UPD=$(mktemp -d)
+( cd "$UPD" && git init --quiet && echo '{"name":"x"}' >package.json \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify >/dev/null 2>&1 )
+printf '\nMYCUSTOMRULE\tmy custom rule\n' >>"$UPD/.forbidden-patterns/secrets.txt"
+( cd "$UPD" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
+if grep -q 'MYCUSTOMRULE' "$UPD/.forbidden-patterns/secrets.txt" \
+   && grep -q 'note (drift)' "$HOOK_OUT" && grep -q 'secrets.txt' "$HOOK_OUT"; then
+  echo "  ✓ re-run notifies on forbidden-patterns drift, keeps user rules"; PASS=$((PASS + 1))
+else
+  echo "  ✗ re-run should notify (not overwrite) on pattern drift"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UPD"
+
+# (T) --force on a drifted pattern file backs up the user's version, then
+#     installs the shipped one (the user's rows land in .scaffold-bak to merge
+#     back) — the documented escape hatch from the drift note.
+UPF=$(mktemp -d)
+( cd "$UPF" && git init --quiet && echo '{"name":"x"}' >package.json \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify >/dev/null 2>&1 )
+printf '\nMYCUSTOMRULE\tmy custom rule\n' >>"$UPF/.forbidden-patterns/secrets.txt"
+( cd "$UPF" && "$SCAFFOLD_DIR/install.sh" --frontend --force --no-verify ) >"$HOOK_OUT" 2>&1
+if [ -f "$UPF/.forbidden-patterns/secrets.txt.scaffold-bak" ] \
+   && grep -q 'MYCUSTOMRULE' "$UPF/.forbidden-patterns/secrets.txt.scaffold-bak" \
+   && cmp -s "$SCAFFOLD_DIR/forbidden-patterns/secrets.txt.template" "$UPF/.forbidden-patterns/secrets.txt"; then
+  echo "  ✓ --force backs up a drifted pattern file then installs the shipped one"; PASS=$((PASS + 1))
+else
+  echo "  ✗ --force should back up then replace a drifted pattern file"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UPF"
+
+# (T) a re-run over an already-current install is a CLEAN no-op: scaffold-owned
+#     files match the shipped version, so nothing is refreshed and no drift
+#     note fires. Guards against spurious churn / .scaffold-bak clutter on every
+#     routine re-run.
+UNO=$(mktemp -d)
+( cd "$UNO" && git init --quiet && echo '{"name":"x"}' >package.json \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify >/dev/null 2>&1 )
+( cd "$UNO" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
+if ! grep -q 'updated:' "$HOOK_OUT" && ! grep -q 'note (drift)' "$HOOK_OUT"; then
+  echo "  ✓ re-run over a current install is a clean no-op"; PASS=$((PASS + 1))
+else
+  echo "  ✗ re-run churned an already-current install"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UNO"
+reset_repo
