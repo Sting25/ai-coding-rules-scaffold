@@ -130,7 +130,7 @@ remove_if_unmodified ".prettierrc.json"              "$SCAFFOLD_DIR/.prettierrc.
 remove_if_unmodified ".prettierignore"               "$SCAFFOLD_DIR/.prettierignore.template"
 remove_if_unmodified "vitest.config.ts"              "$SCAFFOLD_DIR/vitest.config.ts.template"
 remove_if_unmodified ".githooks/pre-commit"          "$SCAFFOLD_DIR/githooks/pre-commit.template"
-for check in check-size check-patterns check-filenames check-secrets check-hygiene scaffold-config scaffold-audit; do
+for check in check-size check-patterns check-filenames check-secrets check-hygiene scaffold-config scaffold-audit ci-changed-files; do
   remove_if_unmodified ".githooks/lib/${check}" "$SCAFFOLD_DIR/githooks/lib/${check}.template"
 done
 # Per-project override file — removed only if still byte-identical to the

@@ -77,19 +77,29 @@ fi
 
 cp_safe() {
   local src=$1 dst=$2
-  if [ -e "$dst" ]; then
+  # `[ -e ]` alone is false for a DANGLING symlink and follows a LIVE one, so a
+  # pre-existing symlink at a scaffold path used to make the `cp` below follow it
+  # and write the scanner to the link's target OUTSIDE the repo, leaving the
+  # installed scanner as a symlink (arbitrary write + scanner substitution). Test
+  # `-L` too so a symlink is always treated as an existing thing to replace, and
+  # we never write THROUGH it (the `rm -f` before the final `cp` guarantees that).
+  if [ -e "$dst" ] || [ -L "$dst" ]; then
     if [ "$FORCE" -eq 0 ]; then
-      echo "skip (exists): $dst  — left untouched (use --force to replace)"
+      if [ -L "$dst" ]; then
+        echo "skip (exists, symlink): $dst — left untouched; a scaffold path that is a symlink is suspicious. Replace it with --force."
+      else
+        echo "skip (exists): $dst  — left untouched (use --force to replace)"
+      fi
       return
     fi
     # --force: back up the existing file before overwriting, but only when it
-    # actually differs — so no edit is ever silently destroyed. Identical
-    # files are a no-op.
-    if cmp -s "$src" "$dst"; then
+    # actually differs — so no edit is ever silently destroyed. A symlink is
+    # never compared through (`-L` short-circuits) and is always replaced.
+    if [ ! -L "$dst" ] && cmp -s "$src" "$dst"; then
       return
     fi
     local bak="${dst}.scaffold-bak" n=0
-    while [ -e "$bak" ]; do
+    while [ -e "$bak" ] || [ -L "$bak" ]; do
       n=$((n + 1))
       if [ "$n" -gt 99 ]; then
         echo "error: too many .scaffold-bak files for $dst — clean some up" >&2
@@ -97,13 +107,23 @@ cp_safe() {
       fi
       bak="${dst}.scaffold-bak.${n}"
     done
-    cp "$dst" "$bak"
+    # -P: back up a symlink AS the link, never the dereferenced target content.
+    cp -P "$dst" "$bak"
     echo "backed up:    $dst -> $bak"
   fi
   mkdir -p "$(dirname "$dst")"
+  # Remove any existing dst first (incl. a symlink) so we write a real regular
+  # file rather than following a link out of the tree.
+  rm -f "$dst"
   cp "$src" "$dst"
   echo "installed:    $dst"
 }
+
+# chmod +x only a real regular file. A scaffold path that cp_safe deliberately
+# SKIPPED because it's a (possibly dangling) symlink must not abort the install
+# via a chmod that follows a broken link and fails under set -e — nor should we
+# flip the mode of a skipped, user-owned file.
+mkx() { if [ -f "$1" ]; then chmod +x "$1"; fi; }
 
 # install_claude_md — CLAUDE.md is USER-OWNED project memory, not a scaffold
 # file. Never replace it (not even with --force). If absent, create it from
@@ -147,7 +167,7 @@ cp_safe "$SCAFFOLD_DIR/operational-rules.md" "operational-rules.md"
 install_agents_md   # never clobbers an existing AGENTS.md
 install_claude_md   # merges; never overwrites your CLAUDE.md
 cp_safe "$SCAFFOLD_DIR/githooks/pre-commit.template" ".githooks/pre-commit"
-chmod +x .githooks/pre-commit
+mkx .githooks/pre-commit
 # scaffold-config + scaffold-audit are the per-project override layer
 # (.scaffold.toml): the check-* scripts source the former for per-rule
 # disable / severity / per-path size caps; the latter lists active overrides.
@@ -155,7 +175,7 @@ chmod +x .githooks/pre-commit
 # lint.yml so a fresh install doesn't retroactively fail pre-existing code).
 for check in check-size check-patterns check-filenames check-secrets check-hygiene scaffold-config scaffold-audit ci-changed-files; do
   cp_safe "$SCAFFOLD_DIR/githooks/lib/${check}.template" ".githooks/lib/${check}"
-  chmod +x ".githooks/lib/${check}"
+  mkx ".githooks/lib/${check}"
 done
 cp_safe "$SCAFFOLD_DIR/.github/workflows/lint.yml.template" ".github/workflows/lint.yml"
 cp_safe "$SCAFFOLD_DIR/.github/dependabot.yml.template" ".github/dependabot.yml"
@@ -227,7 +247,7 @@ done
 # merge the template's keys in by hand.
 if [ "$CLAUDE" -eq 1 ] || [ "$CURSOR" -eq 1 ]; then
   cp_safe "$SCAFFOLD_DIR/githooks/lib/agent-precheck.template" ".githooks/lib/agent-precheck"
-  chmod +x ".githooks/lib/agent-precheck"
+  mkx ".githooks/lib/agent-precheck"
   if ! command -v jq >/dev/null 2>&1; then
     echo "warning: jq not found — the agent precheck needs jq (it fails open without it): https://jqlang.github.io/jq/"
   fi
@@ -247,7 +267,7 @@ fi
 # it lands in core.hooksPath, so it's off by default to avoid surprising users.
 if [ "$COMMIT_MSG" -eq 1 ]; then
   cp_safe "$SCAFFOLD_DIR/githooks/commit-msg.template" ".githooks/commit-msg"
-  chmod +x ".githooks/commit-msg"
+  mkx ".githooks/commit-msg"
 fi
 
 # Local gitleaks pre-commit pass (opt-in: --gitleaks-hook). The pre-commit
@@ -256,7 +276,7 @@ fi
 # the gitleaks binary is present; pair it with gitleaks.yml.template in CI.
 if [ "$GITLEAKS_HOOK" -eq 1 ]; then
   cp_safe "$SCAFFOLD_DIR/githooks/lib/check-gitleaks.template" ".githooks/lib/check-gitleaks"
-  chmod +x ".githooks/lib/check-gitleaks"
+  mkx ".githooks/lib/check-gitleaks"
   if ! command -v gitleaks >/dev/null 2>&1; then
     echo "warning: gitleaks not found — the local pass fails open (skips) until you install it: https://github.com/gitleaks/gitleaks#installing"
   fi
