@@ -54,10 +54,10 @@ The file-size rule (max 500 lines) is the one rule to never raise. Every other r
 
 Enforcement runs in two places, sharing the same scripts:
 
-- **Pre-commit hook** — blocks the commit locally. Fast feedback, skippable with `--no-verify`.
+- **Pre-commit hook** — blocks the commit locally, scanning only your **staged** files. Fast feedback, skippable with `--no-verify`.
 - **CI workflow** — blocks the PR server-side. Unskippable.
 
-Both invoke the same `lib/check-*` scripts (`check-size`, `check-patterns`, `check-filenames`, `check-secrets`, `check-hygiene`). The hook and CI can't drift apart because there's nothing to keep in sync — they call the same code. Each script is also runnable on its own (`git ls-files | .githooks/lib/check-secrets`), so you can wire it into Husky, lefthook, or any other orchestrator without rewriting the logic.
+Both invoke the same `lib/check-*` scripts (`check-size`, `check-patterns`, `check-filenames`, `check-secrets`, `check-hygiene`). The hook and CI can't drift apart because there's nothing to keep in sync — they call the same code. What differs is *scope*. The hook scans your staged files; CI scopes its **quality gates** (ruff, eslint/prettier, and the size / forbidden-pattern / hygiene guardrails) to the **PR/push diff** via the shared `.githooks/lib/ci-changed-files` helper, so installing onto an existing repo doesn't retroactively fail pre-existing code. The **secret and credential-filename scans stay whole-tree** in CI — the non-overridable security boundary, where catching an already-committed key is the whole point. Same scripts everywhere: scoped to the diff for quality gates, whole-tree for secrets. Each script is also runnable on its own (`git ls-files | .githooks/lib/check-secrets`), so you can wire it into Husky, lefthook, or any other orchestrator without rewriting the logic.
 
 ## Supported stacks
 
@@ -173,7 +173,7 @@ Either way, the four `lib/check-*` scripts in `.githooks/lib/` are also runnable
 | `githooks/lib/scaffold-config.template` | `.githooks/lib/scaffold-config` | Reads per-project rule overrides from `.scaffold.toml` (per-path size caps, per-rule disable / severity) |
 | `githooks/lib/scaffold-audit.template` | `.githooks/lib/scaffold-audit` | Lists every active override in `.scaffold.toml`; run locally and echoed by CI |
 | `.scaffold.toml.template` | `.scaffold.toml` | Per-project rule overrides — ships empty (commented), enforces nothing until edited |
-| `.github/workflows/lint.yml.template` | `.github/workflows/lint.yml` | CI mirror — invokes the same `lib/check-*` scripts as the hook |
+| `.github/workflows/lint.yml.template` | `.github/workflows/lint.yml` | CI mirror — invokes the same `lib/check-*` scripts as the hook, scoped to the PR/push diff (`lib/ci-changed-files`) for quality gates, whole-tree for the secret/credential scans |
 | `forbidden-patterns/backend.txt.template` | `.forbidden-patterns/backend.txt` | Python patterns consumed by hook + CI |
 | `forbidden-patterns/frontend.txt.template` | `.forbidden-patterns/frontend.txt` | TS/JS patterns consumed by hook + CI |
 | `forbidden-patterns/secrets.txt.template` | `.forbidden-patterns/secrets.txt` | Secret/credential patterns, scanned across all file types |
@@ -281,7 +281,7 @@ Commit + CI-breaking (pre-commit hook + `lint.yml`):
 | Secret / credential leaks (AWS `AKIA`/Bedrock, GitHub/GitLab tokens, Stripe, Supabase, OpenRouter, OpenAI/Anthropic, structural JWTs, private keys, URLs with embedded credentials, hardcoded `password=`/`token=` assignments) | regex (case-insensitive). Scans **every** tracked file's staged blob as text (no extension allowlist, so renaming a payload can't skip it); NUL bytes are stripped so they can't hide content, and a single line longer than `MAX_LINE_LENGTH` (50000) is dropped so a minified/binary blob can't hang the scan |
 | Committed `.env` / `*.pem` / SSH private keys (`id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`) | filename check (`.env.example` / `.env.sample` / `.env.template` allowed) |
 | Merge-conflict markers (`<<<<<<<` / `\|\|\|\|\|\|\|` / `>>>>>>>`) left in a file | `check-hygiene` (staged-blob scan) |
-| Case-only filename collisions (`Readme.md` vs `README.md`) that break macOS/Windows checkouts | `check-hygiene` (path scan; CI checks all tracked paths) |
+| Case-only filename collisions (`Readme.md` vs `README.md`) that break macOS/Windows checkouts | `check-hygiene` (path scan; diff-scoped in CI like the other quality gates) |
 | Hidden Unicode — bidi controls (Trojan Source), zero-width, tag block — in a staged text file | `check-hygiene` (LC_ALL=C byte scan; leading BOM allowed, binary skipped) |
 
 ### Per-line escape valve
