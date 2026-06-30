@@ -82,7 +82,15 @@ Secret-regex coverage, each validated against a positive **and** negative FP cor
 
 **A5 (unquoted values) is deliberately NOT fixed.** Loosening the quote requirement false-positives on ordinary `api_key = some_variable` assignments. Per the project's standing decision (and the README), unquoted/env-var secrets are the gitleaks layer's job — the README's secret-scan row now says "quoted" explicitly and points there.
 
-**Still open** (priority order): `cp_safe` symlink handling (A7); the installer/uninstaller robustness cluster (re-run keeps stale scanners; uninstall gaps); the remaining test-coverage gaps (A10 et al.); and the remaining doc reconciliations.
+### Fixed in follow-ups (`fix/audit-installer`)
+
+- **A7 (high)** — `cp_safe` no longer writes THROUGH a symlink at a scaffold path. `[ -e ]` is false for a dangling link and follows a live one, so a planted symlink used to make `cp` write the scanner to the link's target outside the repo (and leave the installed scanner as a symlink). Now: test `-L` too, never compare/no-op through a symlink, back up the link itself with `cp -P`, and `rm -f` the dst before writing a real regular file. (`install.sh`; tests `cases/09` live-force + dangling-no-force.)
+- **chmod robustness (low)** — a new `mkx()` helper chmods only a real regular file, so a skipped (symlink) scaffold path can't abort the install via a chmod-through-a-broken-link under `set -e`. Replaces every `chmod +x` site.
+- **uninstall gap (medium)** — the uninstall loop now includes `ci-changed-files` (install adds 8 libs; uninstall removed 7, leaving it orphaned). (`uninstall.sh:133`; test `cases/09`.)
+
+**Still open** (priority order): the **installer upgrade story** — a plain re-run prints "skip (exists)" for scaffold-owned scanners, so existing users don't receive these very fixes by re-running (needs a design call on scaffold-owned vs user-owned files; see note below); the remaining test-coverage gaps (A10 et al.); and the remaining doc reconciliations.
+
+> **Design decision needed — installer upgrades.** `cp_safe` treats every existing file as user-owned (skip unless `--force`). That's correct for `CLAUDE.md`/`AGENTS.md`/configs, but it means scaffold-owned *code* (`check-*`, libs, workflows) is never refreshed on re-run, so a security fix never reaches an upgrader who re-runs `install.sh`. A fix has to decide which paths are scaffold-owned (safe to auto-update when they differ from the shipped version) vs user-owned (never auto-replace) — and `.forbidden-patterns/*.txt` is the hard case (scaffold ships them, but users add custom patterns, so auto-replacing would clobber). Likely answer: auto-update the pure-code paths; for pattern files, append/merge new shipped rules rather than overwrite, or tell the user to re-run with `--force` and rely on the `.scaffold-bak` backups. Deferred pending that call.
 
 ### What's solid (verified, so fixes don't regress it)
 

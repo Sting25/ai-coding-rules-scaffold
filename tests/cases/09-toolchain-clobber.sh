@@ -188,4 +188,54 @@ else
   echo "  ✗ install concatenated the import onto the last handwritten line"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$UNL"
+
+# --- installer does not write THROUGH a symlink at a scaffold path (A7) -------
+# A pre-existing symlink at a scaffold destination used to make cp follow it and
+# write the scanner to the link's target OUTSIDE the repo, leaving the installed
+# scanner as a symlink (arbitrary write + scanner substitution).
+
+# (T) live symlink -> outside file, with --force: the outside file must NOT be
+#     overwritten, and the installed path must become a real regular file.
+USL=$(mktemp -d)
+mkdir -p "$USL/repo/.githooks/lib"
+printf 'PRECIOUS_DO_NOT_TOUCH\n' >"$USL/outside_target"
+ln -s "$USL/outside_target" "$USL/repo/.githooks/lib/check-secrets"
+( cd "$USL/repo" && git init --quiet && echo '{"name":"x"}' >package.json \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --force --no-verify ) >"$HOOK_OUT" 2>&1
+if [ -f "$USL/repo/.githooks/lib/check-secrets" ] && [ ! -L "$USL/repo/.githooks/lib/check-secrets" ] \
+   && grep -q 'PRECIOUS_DO_NOT_TOUCH' "$USL/outside_target" \
+   && head -1 "$USL/repo/.githooks/lib/check-secrets" | grep -q '#!/usr/bin/env bash'; then
+  echo "  ✓ install replaces a symlinked scaffold path with a real file (no write-through)"; PASS=$((PASS + 1))
+else
+  echo "  ✗ install wrote through a symlink or clobbered the outside target"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$USL"
+
+# (T) DANGLING symlink -> outside path, no --force: must be skipped, NOT written
+#     through (the dangling case is where `[ -e ]` is false and cp used to fall
+#     through and create the outside file).
+USD=$(mktemp -d)
+mkdir -p "$USD/repo/.githooks/lib"
+ln -s "$USD/nonexistent_outside" "$USD/repo/.githooks/lib/check-filenames"
+( cd "$USD/repo" && git init --quiet && echo '{"name":"x"}' >package.json \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
+if [ ! -e "$USD/nonexistent_outside" ]; then
+  echo "  ✓ install does not write through a dangling symlink (no --force)"; PASS=$((PASS + 1))
+else
+  echo "  ✗ install wrote through a dangling symlink to an outside path"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$USD"
+
+# (T) uninstall removes ci-changed-files too (install adds 8 libs; the uninstall
+#     loop dropped this one, leaving the scaffold half-uninstalled).
+UCI=$(mktemp -d)
+( cd "$UCI" && git init --quiet && echo '{"name":"x"}' >package.json \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify >/dev/null 2>&1 \
+  && "$SCAFFOLD_DIR/uninstall.sh" ) >"$HOOK_OUT" 2>&1
+if [ ! -e "$UCI/.githooks/lib/ci-changed-files" ]; then
+  echo "  ✓ uninstall removes .githooks/lib/ci-changed-files"; PASS=$((PASS + 1))
+else
+  echo "  ✗ uninstall left ci-changed-files behind"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UCI"
 reset_repo
