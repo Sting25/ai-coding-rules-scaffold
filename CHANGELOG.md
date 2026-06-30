@@ -29,6 +29,10 @@ versioning follows [SemVer](https://semver.org/).
 - **`tests/cases/10-ci-diff-scope.sh`** — regression test (9 assertions) for the
   diff-scoping: legacy grandfathered, new code gated, secrets/filenames caught
   whole-tree, and the no-diff-base fallback.
+- **`operational-rules.md` rule: "Capture pre-existing issues; never silently
+  drop them."** The complement to scope discipline — an out-of-scope bug, drift,
+  or lint finding noticed mid-task must land on a tracked fix-list, not be
+  dropped because "that's not what we're working on."
 
 ### Fixed
 - **`frontend` lint job emits an actionable error when the eslint config is

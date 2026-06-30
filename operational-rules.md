@@ -235,6 +235,19 @@ expansion as a separate question. Scope creep within a single
 change is one of the most common ways AI-assisted edits introduce
 unintended regressions.
 
+### Capture pre-existing issues; never silently drop them
+The complement to scope discipline: "out of scope" means don't
+silently EXPAND the change — it does NOT mean pretend you didn't
+see it. A pre-existing bug, drift, lint finding, or stale doc
+noticed while doing something else MUST land somewhere durable —
+a tracked fix-list, an issue, a flagged task — even when it won't
+be fixed now. Then let the human decide fix-now vs. later. Dropping
+it because "that's not what we're working on" is how known defects
+rot in place.
+*Anchor:* a session noticed a pre-existing lint finding, labeled it
+"out of scope," and moved on; with nothing tracking it, it was
+forgotten until it resurfaced later as a failure.
+
 ### Surface uncertainty rather than guessing
 When the agent doesn't have enough context to make a decision
 confidently, the right move is to ask, not to guess and proceed.
