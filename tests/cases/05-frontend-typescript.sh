@@ -92,7 +92,7 @@ if npx --no-install tsc --version >/dev/null 2>&1; then
   echo '{"compilerOptions":{"strict":true,"noEmit":true}}' >tsconfig.json
   echo 'const n: number = "definitely not a number";' >typeerr.ts
   git add tsconfig.json typeerr.ts
-  assert_rejects "tsc --noEmit rejects a type error"
+  assert_rejects "tsc --noEmit rejects a type error" "error TS"
 else
   echo "  - skipped tsc test (typescript not installed in temp repo)"
 fi

