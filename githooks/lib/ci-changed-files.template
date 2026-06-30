@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# .githooks/lib/ci-changed-files — print the set of files CI should scan as a
+# NUL-delimited list, scoped to the current PR/push DIFF. This is what lets
+# installing the scaffold onto an existing project NOT retroactively fail its
+# pre-existing code: the quality gates (size / forbidden-patterns / hygiene /
+# ruff / eslint) lint only new/changed files, while legacy is grandfathered
+# until it's next touched. (The secret + credential-filename scans deliberately
+# do NOT use this — they stay whole-tree; catching an already-committed secret
+# is the point. See lint.yml's guardrails job.)
+#
+# One implementation, called by every diff-scoped job in lint.yml, so the scope
+# logic lives in ONE testable place instead of being copy-pasted bash inside the
+# workflow YAML (where nothing could unit-test it). tests/cases/10 exercises it.
+#
+# Inputs (env, set from GitHub Actions ${{ }} expressions by the workflow):
+#   EVENT        github.event_name                  (pull_request | push | …)
+#   PR_BASE_SHA  github.event.pull_request.base.sha
+#   PR_HEAD_SHA  github.event.pull_request.head.sha
+#   PUSH_BEFORE  github.event.before
+#   PUSH_AFTER   github.event.after
+#
+# Output: NUL-delimited paths on stdout (consumed by the check-* scripts on
+# stdin, and split with a `while IFS= read -r -d ''` loop for ruff/eslint).
+#
+# FAILS OPEN to the whole tree (`git ls-files`) whenever there is no usable diff
+# base — an unrecognised event, a missing/zero base SHA (first push to a new
+# repo), or a diff that errors (e.g. unrelated histories without fetch-depth: 0).
+# Failing toward "scan everything" can only widen coverage, never hide a file.
+#
+# --diff-filter=d drops DELETED paths (no blob left to scan). core.quotepath=off
+# keeps unicode filenames raw rather than C-quoted. bash 3.2-safe (no mapfile,
+# no associative arrays) so it runs on any runner, matching the check-* scripts.
+
+set -euo pipefail
+
+EVENT=${EVENT:-}
+PR_BASE_SHA=${PR_BASE_SHA:-}
+PR_HEAD_SHA=${PR_HEAD_SHA:-}
+PUSH_BEFORE=${PUSH_BEFORE:-}
+PUSH_AFTER=${PUSH_AFTER:-}
+ZERO=0000000000000000000000000000000000000000
+
+# True when $1 names a commit object present in this checkout.
+have() { [ -n "$1" ] && git cat-file -e "$1^{commit}" 2>/dev/null; }
+
+# Emit the diff for the given revision args; on ANY failure fall back to the
+# whole tree. Buffer through a temp file so a mid-stream diff error can't emit a
+# partial list followed by the fallback (which would duplicate entries).
+changed_or_all() {
+  local tmp; tmp=$(mktemp)
+  if git -c core.quotepath=off diff -z --name-only --diff-filter=d "$@" >"$tmp" 2>/dev/null; then
+    cat "$tmp"; rm -f "$tmp"
+  else
+    rm -f "$tmp"; git -c core.quotepath=off ls-files -z
+  fi
+}
+
+if [ "$EVENT" = pull_request ] && have "$PR_BASE_SHA" && have "$PR_HEAD_SHA"; then
+  # Three-dot: changes on the PR branch since it diverged from base (ignores
+  # commits added to base after branch-off).
+  changed_or_all "$PR_BASE_SHA...$PR_HEAD_SHA"
+elif [ "$EVENT" = push ] && [ "$PUSH_BEFORE" != "$ZERO" ] && have "$PUSH_BEFORE" && have "$PUSH_AFTER"; then
+  changed_or_all "$PUSH_BEFORE" "$PUSH_AFTER"
+else
+  git -c core.quotepath=off ls-files -z
+fi

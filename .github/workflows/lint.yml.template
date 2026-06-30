@@ -22,10 +22,21 @@ jobs:
     # guardrails. The job always starts; its tool steps no-op when the
     # configs are absent (frontend-only repos see a green, empty python job).
     runs-on: ubuntu-latest
+    # Diff-scoped: ruff lints only files CHANGED in this PR/push, so installing
+    # the scaffold onto an existing project never retroactively fails the whole
+    # tree of pre-existing code. New/changed code is fully gated; legacy is
+    # grandfathered until it's next touched. fetch-depth: 0 gives the diff a base.
+    env:
+      EVENT: ${{ github.event_name }}
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PUSH_BEFORE: ${{ github.event.before }}
+      PUSH_AFTER: ${{ github.event.after }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false  # don't leave GITHUB_TOKEN in .git/config
+          fetch-depth: 0              # full history so the PR/push diff resolves
       - id: detect
         run: |
           if [ -f ruff.toml ] || [ -f pyproject.toml ]; then
@@ -37,16 +48,37 @@ jobs:
           python-version: "3.12"
       - if: steps.detect.outputs.present == 'true'
         run: pip install ruff
-      - if: steps.detect.outputs.present == 'true'
-        run: ruff check .
+      - name: ruff check (changed files only)
+        if: steps.detect.outputs.present == 'true'
+        run: |
+          # .githooks/lib/ci-changed-files resolves the PR/push diff (NUL list),
+          # failing open to the whole tree when there's no diff base. One shared
+          # implementation, unit-tested in tests/cases/10.
+          bash .githooks/lib/ci-changed-files >changed.nul
+          # Portable NUL read (bash 3.2-safe — same idiom as the check-* scripts);
+          # avoids `mapfile`, which predates bash 4 and is absent on some runners.
+          py=()
+          while IFS= read -r -d '' f; do case "$f" in *.py) py+=("$f") ;; esac; done <changed.nul
+          if [ ${#py[@]} -eq 0 ]; then echo "no changed Python files — skipping ruff"; exit 0; fi
+          printf 'ruff: linting %d changed Python file(s)\n' "${#py[@]}"
+          ruff check -- "${py[@]}"
 
   frontend:
     # Same pattern as `python` — detect in a step, not a job-level `if:`.
+    # Diff-scoped too: eslint + prettier check only the PR/push diff (tsc is
+    # whole-program, see its step). fetch-depth: 0 gives the diff a base.
     runs-on: ubuntu-latest
+    env:
+      EVENT: ${{ github.event_name }}
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PUSH_BEFORE: ${{ github.event.before }}
+      PUSH_AFTER: ${{ github.event.after }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false  # don't leave GITHUB_TOKEN in .git/config
+          fetch-depth: 0              # full history so the PR/push diff resolves
       - id: detect
         run: |
           if [ -f eslint.config.js ] || [ -f package.json ]; then
@@ -80,8 +112,41 @@ jobs:
             echo "no package-lock.json — using npm install (add a lockfile for reproducible CI)"
             npm install --ignore-scripts
           fi
-      - if: steps.detect.outputs.present == 'true'
-        run: npx eslint .
+      - name: Compute changed files
+        if: steps.detect.outputs.present == 'true'
+        run: |
+          # NUL-delimited list of files changed in this PR/push (shared by the
+          # eslint + prettier steps below — the workspace persists across steps).
+          # ci-changed-files fails open to the whole tree when there's no diff
+          # base; same shared helper the python + guardrails jobs use.
+          bash .githooks/lib/ci-changed-files >changed.nul
+      - name: ESLint (changed files only)
+        if: steps.detect.outputs.present == 'true'
+        run: |
+          # eslint must LOAD its flat config (every plugin resolved) before it can
+          # lint anything. The scaffold ships eslint.config.js whose peer deps must
+          # be in package.json + the lockfile, or `npm ci` won't install them and
+          # eslint crashes cryptically. Turn that into an actionable error instead.
+          PEERS='eslint @eslint/js typescript-eslint eslint-plugin-import-x eslint-plugin-unused-imports'
+          if [ -f eslint.config.js ]; then
+            if ! npx --no-install eslint --version >/dev/null 2>&1; then
+              echo "::error file=eslint.config.js::eslint is not installed. Run: npm i -D $PEERS  — then commit package-lock.json (CI installs from the lockfile)."
+              exit 1
+            fi
+            # Confirm the flat config actually loads — catches a missing PLUGIN dep
+            # (eslint --version passes even when a plugin import would fail).
+            if ! npx --no-install eslint --print-config eslint.config.js >/dev/null 2>cfg.err; then
+              echo "::error file=eslint.config.js::eslint.config.js failed to load — a peer dependency is likely missing. Run: npm i -D $PEERS (commit the lockfile)."
+              sed 's/^/  /' cfg.err >&2 || true
+              exit 1
+            fi
+          fi
+          # Portable NUL read (bash 3.2-safe — same idiom as the check-* scripts).
+          js=()
+          while IFS= read -r -d '' f; do case "$f" in *.ts|*.tsx|*.js|*.jsx|*.cjs|*.mjs|*.vue) js+=("$f") ;; esac; done <changed.nul
+          if [ ${#js[@]} -eq 0 ]; then echo "no changed JS/TS files — skipping eslint"; exit 0; fi
+          printf 'eslint: linting %d changed file(s)\n' "${#js[@]}"
+          npx --no-install eslint -- "${js[@]}"
       - name: Format check (prettier --check)
         if: steps.detect.outputs.present == 'true'
         # Mirrors the pre-commit hook. Only runs when a prettier config is present
@@ -90,7 +155,13 @@ jobs:
         run: |
           if { [ -f .prettierrc ] || [ -f .prettierrc.json ] || [ -f .prettierrc.js ] || [ -f prettier.config.js ]; } \
              && npx --no-install prettier --version >/dev/null 2>&1; then
-            npx --no-install prettier --check .
+            changed=()
+            while IFS= read -r -d '' f; do changed+=("$f"); done <changed.nul
+            if [ ${#changed[@]} -eq 0 ]; then echo "no changed files — skipping format check"; exit 0; fi
+            # --ignore-unknown lets prettier skip types it can't format, so passing
+            # every changed path is safe. Changed-files-only mirrors the rest of the
+            # workflow so a fresh install never format-fails pre-existing files.
+            npx --no-install prettier --check --ignore-unknown -- "${changed[@]}"
           else
             echo "no prettier config or prettier not installed — skipping format check"
           fi
@@ -101,6 +172,10 @@ jobs:
         # the two layers stay in lockstep. coding-rules.md rule 9 mandates a
         # type-checker; this is where it runs server-side.
         run: |
+          # NOTE: a type-check is inherently WHOLE-PROGRAM (types are interdependent),
+          # so unlike eslint/ruff it can't be diff-scoped. If a freshly-installed
+          # project has pre-existing type errors, narrow tsconfig "include" or fix
+          # them — this is a real correctness signal, not lint noise.
           if [ -f tsconfig.json ] && npx --no-install tsc --version >/dev/null 2>&1; then
             npx --no-install tsc --noEmit
           else
@@ -213,6 +288,13 @@ jobs:
     # File size, forbidden patterns, blocked filenames, secret scan —
     # the same lib/check-* scripts the pre-commit hook calls.
     #
+    # SCOPE: secrets + credential-filenames scan the WHOLE tree (catching an
+    # already-committed secret/key is the point, and they're the non-overridable
+    # security boundary). size + forbidden-patterns + hygiene scan only the
+    # PR/push DIFF, so installing the scaffold onto an existing repo doesn't
+    # retroactively fail its pre-existing code — only new/changed code is gated.
+    # fetch-depth: 0 (below) gives the diff a base.
+    #
     # Two limitations to know about (both inherent to how this job is wired,
     # not bugs you can patch in the script):
     #
@@ -237,10 +319,17 @@ jobs:
     #      If your repo keeps scannable text in LFS, add `lfs: true` to the
     #      checkout below and scan the smudged working tree for those paths.
     runs-on: ubuntu-latest
+    env:
+      EVENT: ${{ github.event_name }}
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PUSH_BEFORE: ${{ github.event.before }}
+      PUSH_AFTER: ${{ github.event.after }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false  # don't leave GITHUB_TOKEN in .git/config
+          fetch-depth: 0              # full history so the PR/push diff resolves
       - name: Show active rule overrides (.scaffold.toml)
         # Print every per-project override into the log so a disabled or
         # downgraded rule is visible in review, not silent. Informational only.
@@ -250,19 +339,29 @@ jobs:
       - name: Run scaffold checks
         run: |
           chmod +x .githooks/lib/* 2>/dev/null || true
-          # -z (NUL-delimited) so a filename containing a newline, tab, or
-          # quote can't split the list and slip a file past the scan. The
-          # check scripts read each file's committed blob (git show ":0:<path>"),
-          # so the server-side scan sees exactly what was committed — matching
-          # the pre-commit hook. A shell var can't hold NUL, so the list goes
-          # to a temp file fed to each check.
-          STAGED_LIST=$(mktemp)
-          git -c core.quotepath=off ls-files -z >"$STAGED_LIST"
+          # Two scopes (see the job header):
+          #  • ALL_LIST  — whole tree: secrets + credential-filenames. Catching an
+          #    already-committed secret/key is the point; these are the
+          #    non-overridable security boundary.
+          #  • CHANGED_LIST — PR/push diff: size + forbidden-patterns + hygiene. So
+          #    installing onto an existing repo never retroactively fails legacy
+          #    code; only new/changed code is gated.
+          # -z (NUL-delimited) so a filename with a newline/tab/quote can't split
+          # the list. The check scripts read each file's committed blob
+          # (git show ":0:<path>") — exactly what the pre-commit hook sees.
+          ALL_LIST=$(mktemp)
+          git -c core.quotepath=off ls-files -z >"$ALL_LIST"
+          CHANGED_LIST=$(mktemp)
+          # Shared helper: PR/push diff, failing open to the whole tree when there
+          # is no diff base (so a brand-new repo still gets fully scanned).
+          .githooks/lib/ci-changed-files >"$CHANGED_LIST"
           FAILED=0
-          .githooks/lib/check-size      --ci <"$STAGED_LIST" || FAILED=1
-          .githooks/lib/check-patterns  --ci <"$STAGED_LIST" || FAILED=1
-          .githooks/lib/check-filenames --ci <"$STAGED_LIST" || FAILED=1
-          .githooks/lib/check-secrets   --ci <"$STAGED_LIST" || FAILED=1
-          .githooks/lib/check-hygiene   --ci <"$STAGED_LIST" || FAILED=1
-          rm -f "$STAGED_LIST"
+          # Whole-tree security boundary (not overridable by .scaffold.toml):
+          .githooks/lib/check-secrets   --ci <"$ALL_LIST"     || FAILED=1
+          .githooks/lib/check-filenames --ci <"$ALL_LIST"     || FAILED=1
+          # Changed-files-only quality gates:
+          .githooks/lib/check-size      --ci <"$CHANGED_LIST" || FAILED=1
+          .githooks/lib/check-patterns  --ci <"$CHANGED_LIST" || FAILED=1
+          .githooks/lib/check-hygiene   --ci <"$CHANGED_LIST" || FAILED=1
+          rm -f "$ALL_LIST" "$CHANGED_LIST"
           exit $FAILED

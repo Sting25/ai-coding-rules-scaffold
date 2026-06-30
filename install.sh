@@ -151,7 +151,9 @@ chmod +x .githooks/pre-commit
 # scaffold-config + scaffold-audit are the per-project override layer
 # (.scaffold.toml): the check-* scripts source the former for per-rule
 # disable / severity / per-path size caps; the latter lists active overrides.
-for check in check-size check-patterns check-filenames check-secrets check-hygiene scaffold-config scaffold-audit; do
+# ci-changed-files scopes the CI quality gates to the PR/push diff (used by
+# lint.yml so a fresh install doesn't retroactively fail pre-existing code).
+for check in check-size check-patterns check-filenames check-secrets check-hygiene scaffold-config scaffold-audit ci-changed-files; do
   cp_safe "$SCAFFOLD_DIR/githooks/lib/${check}.template" ".githooks/lib/${check}"
   chmod +x ".githooks/lib/${check}"
 done
@@ -357,6 +359,10 @@ if [ "$VERIFY" -eq 1 ]; then
       offer "typescript (tsc)" "npx --no-install tsc --version" "$JSI" "typescript"
       offer "prettier" "npx --no-install prettier --version" "$JSI" "prettier"
       offer "vitest" "npx --no-install vitest --version" "$JSI" "vitest @vitest/coverage-v8"
+      # The 'frontend' CI job loads eslint.config.js (and its plugins) from the
+      # lockfile. If you skip the eslint prompt above, that job fails with an
+      # actionable error until you install the deps AND commit the lockfile.
+      echo "  → commit package-lock.json after installing eslint deps, or CI's frontend job will fail."
       ;;
   esac
 fi
