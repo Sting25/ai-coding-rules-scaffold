@@ -93,6 +93,14 @@ every flag in the list further down works after `npx ai-coding-rules-scaffold �
 Needs Node ≥ 14 and `bash` (preinstalled on macOS/Linux; use Git Bash or WSL on
 Windows). The package has zero dependencies — it's just the installer + templates.
 
+**Or Homebrew** (macOS/Linux, no Node):
+
+```sh
+brew install sting25/tap/ai-coding-rules-scaffold
+# then, from your project root:
+ai-coding-rules-scaffold            # auto-detects Python / JS
+```
+
 **Or clone + run** (language-agnostic, no Node required). Clone the scaffold
 somewhere stable:
 
