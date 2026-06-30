@@ -511,6 +511,24 @@ Safe mode only removes files whose content matches the current scaffold template
 | Claude Code agent-runtime hooks (`.claude/settings.json` `PreToolUse`) | Deferred — see [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) for design space and tradeoffs |
 | `git worktree` orchestration for parallel agent sessions | Documented in `AGENTS.md`; not automated |
 
+## Developing on the scaffold itself
+
+The scaffold can't install itself — `install.sh` refuses to run with the scaffold
+directory as the target (it would copy the `*.template` files onto their own
+sources). So a fresh clone has **no active hooks** until you bootstrap them:
+
+```sh
+scripts/dev-setup.sh
+```
+
+This renders the `*.template` sources into the gitignored `.githooks/` and
+`.forbidden-patterns/` — the same files `install.sh` writes into a consumer
+project and `self-lint.yml` renders in CI — and points `core.hooksPath` at
+`.githooks`, so commits in this repo run the scaffold's own guardrails, including
+the Conventional-Commits `commit-msg` hook. Edit a `*.template`, re-run the script
+to refresh. Only the `*.template` files are tracked; the rendered copies are
+build artifacts.
+
 ## Using this without an AI
 
 The scaffold works fine without any AI tool. Drop the files in, run the hook — same enforcement. `coding-rules.md` is just a named place to put the rules humans should read.
