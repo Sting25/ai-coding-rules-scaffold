@@ -1,5 +1,82 @@
 # Security & Code Audit — ai-coding-rules-scaffold
 
+## Audit 2026-06-30 — full-tree re-audit (latest)
+
+**Date:** 2026-06-30  ·  **Base:** HEAD of `main` (post-v0.8.0, commit `4ad17a9`)  ·  **Method:** 11-dimension multi-agent fan-out (68 agents) → per-finding adversarial verification (each finding reproduced in a throwaway git repo) → maintainer re-reproduction of the critical/high tier.
+
+**Result:** 57 confirmed · 49 confirmed-as-stated · 8 partial · 0 refuted.
+
+| Severity | Confirmed | Fixed on `fix/audit-2026-06-30` |
+|---|---|---|
+| critical | 1 | 1 |
+| high | 9 | 3 |
+| medium | 10 | 0 |
+| low | 37 | 0 |
+
+> ⚠️ **The historical sections below (2026-06-09/10, base `89ac255`, pre-PR #6) are STALE.** Several findings they mark `⬜ Open` have since been FIXED in shipped code, and one fix introduced a new critical bug. Trust *this* section over the per-finding `✅/⬜` markers further down:
+> - *"sk- regex misses modern OpenAI/Anthropic keys"* → **FIXED**: `secrets.txt` now ships `sk-ant-`, `sk-proj-`, `sk-svcacct-`/`sk-admin-`.
+> - *"Deleting the forbidden-patterns config disables the scan"* → **FIXED**: `pre-commit` now has the `DELETED_CONFIG` guard.
+> - *"Combined-ERE ReDoS hang"* → **FIXED** with a `MAX_LINE_LENGTH` line cap — but that cap **fails OPEN** (new finding **A1** below).
+> - *"scaffold-allow substring anywhere"* → **PARTIALLY fixed** (a comment leader is now required) but still bypassable (new finding **A3** below).
+
+### 🔴 Critical
+
+**A1 — Secret on a line longer than `MAX_LINE_LENGTH` is silently dropped (scanner fails OPEN)** — `githooks/lib/check-secrets.template:154-157` (same hole: `check-patterns.template:171-174`, `check-hygiene.template:106,163`, `agent-precheck.template:57-59`)
+- **What:** the ReDoS guard drops any line longer than `MAX_LINE_LENGTH` (default 50000) via `awk 'length > n { next }'`, emits only a stderr warning, and never sets `FAILED` — exit stays `0`, in the local hook **and** `--ci` mode. A credential on a single >50k-char line (minified/no-newline blob) is never scanned.
+- **Repro:** a 60000-char line + `AKIA…` → `--ci` prints "line(s) … dropped" and exits 0; the same key on a normal line exits 1. Verified end-to-end and via the awk pre-pass in isolation.
+- **Fix:** the secret scanner must **fail closed** on a dropped line (report + `exit 1`), or scan the long line with a linear matcher (fixed-string prescreen / fixed-width windows). `agent-precheck` should fail closed on the Bash path.
+
+### 🟠 High
+
+- **A2 — `agent-precheck` block path fails OPEN via SIGPIPE** — `githooks/lib/agent-precheck.template:99-106`. `{ …; printf '%s\n' "$hit" | head -3; } >&2` then `exit 2`, under `set -euo pipefail`: with ≥4 matched lines, `head` closes the pipe, `printf`→SIGPIPE→141, `pipefail`+`set -e` abort **before `exit 2`**. Claude/Cursor treat only exit 2 as "block", so the matched Write/Bash is **allowed**. *Fix:* `printf … | head -3 || true`.
+- **A3 — `scaffold-allow` can smuggle a real secret; documented "can't be smuggled" guarantee is false** — `check-secrets.template:167`, `check-patterns.template:188`, `check-hygiene.template:109,169`, `agent-precheck.template:96`. The exemption accepts a bare `--` anywhere on the line; secret charsets contain `-`, so `const k = "AKIA… -- scaffold-allow";` (marker inside the string, `--` not a comment in JS) suppresses the finding and exits 0. *Fix:* drop bare `--`, require the leader at start-of-line/after-whitespace, and correct the docs (inline suppression is inherently author-usable, like `# noqa`).
+- **A4 — `check-filenames` matches credential filenames case-sensitively** — `check-filenames.template:39,48-57`. `*.pem`, `.env`, `id_rsa` are byte-compared, so `key.PEM`/`.ENV`/`ID_RSA` bypass on the case-insensitive filesystems (macOS/Windows) the project targets. Dual-layer bypass: `.ENV` with `INTERNAL_TOKEN=plainword` passes both scanners. *Fix:* lowercase via `tr` before matching (bash-3.2-safe).
+- **A5 — Generic credential regex requires QUOTED values** — `secrets.txt.template:53`. `['"]…{16,}['"]` misses unquoted `.env`/YAML/shell/Dockerfile assignments (the dominant leak surface), JS backticks, and `=>` values. *Fix:* optional quotes + value terminator.
+- **A6 — Underscore-prefixed credential names evade the same rule** — `secrets.txt.template:53`. `(^|[^A-Za-z_])` treats `_` as a word char, so `db_password`, `MY_API_KEY`, `DATABASE_PASSWORD` aren't matched even when quoted. *Fix:* change the boundary to `(^|[^A-Za-z])`.
+- **A7 — `cp_safe` follows symlink destinations (arbitrary-path write; installed scanner left as a symlink)** — `install.sh:78-105`. `[ -e "$dst" ]` dereferences symlinks: a dangling symlink at a scaffold path makes `cp` write outside the repo and leaves the installed scanner as a symlink; a symlink→outside-file with `--force` overwrites that file. Gated on a planted symlink. *Fix:* `[ -e "$dst" ] || [ -L "$dst" ]`, `rm -f` before copy, `cp -P` for backups, guard the `cmp -s` no-op.
+- **A8 — Several common cloud/SaaS credential formats have no prefix rule** — `secrets.txt.template:12-35`. SendGrid, Twilio (AC-SID + auth token), Mailgun, Square, Shopify, Azure Storage/AD, Mailchimp, Telegram bot tokens fall through to the (weakened) generic rule → unscanned. *Fix:* add prefix-anchored lines.
+- **A9 — `scaffold-allow` exemption also smuggles past `check-hygiene`** — `check-hygiene.template:109,169` (hidden-Unicode / conflict markers). Same root cause as A3; *fix:* anchor the marker to a real trailing comment token.
+- **A10 — Test gap: `check-filenames` `*.pem` and SSH-key branches have zero tests** — `tests/cases/`. A typo in either `case` glob would let a private key through with the suite green. Highest-severity test gap per the threat model. *Fix:* add `key.pem`/`id_rsa` regression cases (with the expected-substring guard).
+
+### 🟡 Medium
+
+| Title | Location |
+|---|---|
+| Mid-script `cp`/`mkdir` failure aborts under `set -e` with no rollback/summary | `install.sh:103-104,145-274` |
+| Plain re-run keeps stale scaffold-owned scanners — security fixes never reach upgraders | `install.sh:156-159` |
+| Uninstall never removes `.githooks/lib/ci-changed-files` (install adds 8 libs, uninstall removes 7) | `uninstall.sh:133` |
+| Generic credential keyword list omits `secret`, `client_secret`, `private_key`, `credential`, `pwd`, `auth` | `secrets.txt.template:53` |
+| URL-embedded-credentials rule misses empty-username userinfo (`redis://:password@host`) | `secrets.txt.template:48` |
+| `agent-precheck` long-line filter empties content → exit 0, skipping a one-line Bash command scan | `agent-precheck.template:57-59` |
+| Template-only action pins get neither Dependabot updates nor drift-guard coverage; rot silently | `gitleaks.yml.template:38` (+ `dependency-review`/`coverage`/opt-in `lint` jobs) |
+| `dependency-review` defaults to `fail-on-severity: moderate`, allowing low-severity advisories | `dependency-review.yml.template:49` |
+| `scaffold-allow` over-broad in hygiene (substring after any leader, in files with no comments) | `check-hygiene.template:109,169` |
+| pre-commit stash push-failure and pop-conflict recovery paths are untested | `pre-commit.template:62-69,74-88` |
+
+### ⚪ Low (themes; 37 findings)
+
+- **Regex precision:** `check-secrets` `-i` false-positives on uppercase-only prefix tokens; leading whitespace before a pattern silently neuters it (`:102`); `backend.txt` `print()`/`os.path.join` unanchored (match `obj.print()`, comments); conflict-marker regex requires exactly 7 marker chars (8-run unmatched); hidden-Unicode scan skips any blob with a NUL in the first 8 KB (early NUL hides later Trojan-Source bytes); conflict/hidden-Unicode lines over `MAX_LINE_LENGTH` are dropped.
+- **`.scaffold.toml` parser:** a backslash in a rule-id defeats the override (awk `-v` C-escape); `scaffold-audit` can over-report inert entries as active.
+- **CI:** `check-hygiene` case-collision is diff-scoped in CI but the header claims whole-tree (`lint.yml.template:365`); `test.yml:66-68` pin-drift regex misses quoted `uses:`.
+- **`DELETED_CONFIG` gap** (`pre-commit.template:38`, partial): blocks deleting `.forbidden-patterns/*.txt` but not the `check-*` scripts, `scaffold-config`, or the hook itself.
+- **Uninstall** (partial): `--all` `rm -rf .forbidden-patterns` destroys user-authored pattern files (`uninstall.sh:159`); `awk`/`mv` failure in `clean_claude_md` aborts the rest of cleanup; `core.hooksPath --unset` can fail on a multivar value.
+- **Test gaps:** the `MAX_LINE_LENGTH` drop, invalid-pattern-dropped, combined-regex-invalid (`USE_PREFILTER=0`), CI fail-closed-on-missing-config, `ci-changed-files` fail-open branches, the `.env.example` allowlist, and 13 `assert_rejects` in `cases/01` that omit the expected-substring guard.
+- **Docs:** `README.md:281` advertises `password=`/`token=` detection that only fires on quoted values (A5); `SECURITY_AUDIT.md` (historical) stale "Open" statuses; `README.md:157-181` "what lands" table omits `.github/dependabot.yml`; `README.md:357-364` `--cursor` bullet omits the jq fail-open caveat; `forbidden-patterns/README.md:9` omits `.svelte`.
+
+### Fixed on this branch (`fix/audit-2026-06-30`)
+
+_Updated as fixes land (each with a red-then-green regression test):_
+
+- _(pending)_
+
+### What's solid (verified, so fixes don't regress it)
+
+Blob-scanning via `git show ":0:<path>"` (defeats symlink/NUL/post-stage edits); consistent `grep -a` text mode; up-front + combined-regex validation with fail-closed-to-per-pattern; GitHub-annotation escaping; the **non-overridable security boundary** (`check-secrets`/`check-filenames` genuinely never consult `.scaffold.toml` — verified by trace); `ci-changed-files` fail-open-to-whole-tree never emits a partial list; `lint.yml` hardening (SHA-pinned, `permissions: contents: read`, `persist-credentials: false`, env-routed expressions, `npm ci --ignore-scripts`); fail-closed test harness (`exit "$FAIL"`).
+
+---
+
+## Historical audit — 2026-06-09/10
+
 **Date:** 2026-06-09  ·  **Base commit audited:** `89ac255` (pre–PR #6)  ·  **Method:** multi-agent fan-out audit (86 agents, 6 dimensions) → adversarial empirical verification (PoCs reproduced in throwaway git repos) → completeness critic.
 
 **Result:** 73 candidates · **67 confirmed** (65 reproduced end-to-end) · 6 rejected by verification.
