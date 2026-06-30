@@ -70,6 +70,7 @@ jobs:
             echo "::error::Action pin drift — these actions have differing SHAs between"
             echo "real workflows and *.yml.template files (Dependabot only bumps the"
             echo "real *.yml; bump the templates to match):"
+            # shellcheck disable=SC2001  # sed prepends a bullet to each line of multi-line $drift; ${//} has no per-line ^ anchor
             echo "$drift" | sed 's/^/  - /'
             exit 1
           fi
