@@ -14,7 +14,7 @@ assert_passes "scaffold-allow exempts marked line"
   echo 'pri''nt("real leak")'
 } >mixed.py
 git add mixed.py
-assert_rejects "scaffold-allow does not whitelist whole file"
+assert_rejects "scaffold-allow does not whitelist whole file" "structlog"
 
 # 12. scaffold-allow works for the secrets check too. AKIA literal split
 #     so this test file itself doesn't trip the scan.
@@ -30,7 +30,7 @@ import sys
 import os
 EOF
   git add badimports.py
-  assert_rejects "ruff catches unsorted imports"
+  assert_rejects "ruff catches unsorted imports" "I001"
 else
   echo "  - skipped ruff test (ruff not installed)"
 fi
@@ -41,7 +41,7 @@ fi
 #     now uses `-c core.quotepath=off` so this case rejects.
 echo 'pri''nt("debug")' >café.py
 git add café.py
-assert_rejects "unicode filename does not bypass scan"
+assert_rejects "unicode filename does not bypass scan" "structlog"
 
 # 15. MAX_LINES env override — passing 100 should cause a 200-line file
 #     to reject (default 500 would let it through).

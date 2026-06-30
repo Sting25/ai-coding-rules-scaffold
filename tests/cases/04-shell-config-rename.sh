@@ -195,3 +195,40 @@ assert_rejects "uppercase ID_RSA filename is blocked (case-insensitive)" "SSH pr
 printf 'FOO=bar\n' >.ENV.EXAMPLE
 git add -f .ENV.EXAMPLE
 assert_passes ".ENV.EXAMPLE (allowlisted template) is not blocked"
+
+# 36c. A10 regression — the LOWERCASE canonical forms (the dominant real-world
+#      spelling) and EVERY alternative in the SSH-key case line need their own
+#      coverage. The #36 fixtures are all UPPERCASE, so they exercise the case-
+#      fold but leave the base globs `*.pem` / `id_rsa` and the untested SSH
+#      alternatives (id_ed25519 / id_ecdsa / id_dsa) unguarded — a typo in any of
+#      them would let a private key through with the suite green. Benign content
+#      keeps each fixture isolated to the filename rule.
+echo "placeholder" >key.pem
+git add -f key.pem
+assert_rejects "lowercase key.pem is blocked (PEM base glob)" "PEM file"
+
+echo "placeholder" >id_rsa
+git add -f id_rsa
+assert_rejects "lowercase id_rsa is blocked (SSH key)" "SSH private key"
+
+echo "placeholder" >id_ed25519
+git add -f id_ed25519
+assert_rejects "id_ed25519 is blocked (SSH key alternative)" "SSH private key"
+
+echo "placeholder" >id_ecdsa
+git add -f id_ecdsa
+assert_rejects "id_ecdsa is blocked (SSH key alternative)" "SSH private key"
+
+echo "placeholder" >id_dsa
+git add -f id_dsa
+assert_rejects "id_dsa is blocked (SSH key alternative)" "SSH private key"
+
+# 36d. NEGATIVE — the remaining .env allowlist entries (.env.sample/.env.template;
+#      only .env.example was covered) must NOT be blocked.
+printf 'FOO=bar\n' >.env.sample
+git add -f .env.sample
+assert_passes ".env.sample (allowlisted template) is not blocked"
+
+printf 'FOO=bar\n' >.env.template
+git add -f .env.template
+assert_passes ".env.template (allowlisted template) is not blocked"
