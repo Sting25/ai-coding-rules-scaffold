@@ -106,7 +106,7 @@ if [ "$CONFLICT_STATE" != disabled ]; then
     content=$(git show ":0:$file" 2>/dev/null | awk -v n="$MAX_LINE_LENGTH" 'length > n { next } { print }') || cap_rc=$?
     [ "$cap_rc" -eq 0 ] || true
     [ -n "$content" ] || continue
-    m=$(grep -anE -- "$CONFLICT_RE" <<<"$content" | grep -ivE '(#|//|/\*|<!--|--)[[:space:]]*scaffold-allow' || true)
+    m=$(grep -anE -- "$CONFLICT_RE" <<<"$content" | grep -ivE '(^|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true)
     if [ -n "$m" ]; then
       emit "$CONFLICT_STATE" "$file" "merge-conflict marker — resolve the conflict before committing"
       printf '%s\n' "$m" | head -3 | sed 's/^/    /' >&2 || true
@@ -166,7 +166,7 @@ if [ "$HIDDEN_STATE" != disabled ]; then
     # mid-file occurrence trips the EF-BB-BF branch.
     content=${content#$'\xef\xbb\xbf'}
     m=$(LC_ALL=C grep -anE -- "$HIDDEN_RE" <<<"$content" \
-          | grep -ivE '(#|//|/\*|<!--|--)[[:space:]]*scaffold-allow' || true)
+          | grep -ivE '(^|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true)
     if [ -n "$m" ]; then
       emit "$HIDDEN_STATE" "$file" "hidden Unicode control char (bidi / zero-width / tag) — strip it; this is the 'Rules File Backdoor' / Trojan Source surface"
       # Never echo the raw invisible bytes back to a terminal/CI log — sanitize

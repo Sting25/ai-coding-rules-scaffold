@@ -35,7 +35,12 @@ emit() {
 FAILED=0
 while IFS= read -r -d '' file; do
   [ -z "$file" ] && continue
-  case "$file" in
+  # Match case-INSENSITIVELY. macOS/Windows filesystems are case-insensitive, so
+  # `cert.PEM` / `.ENV` / `ID_RSA` are the SAME files as their lowercase forms and
+  # must not slip past a byte-exact glob. bash 3.2 has no ${var,,}, so fold with
+  # tr; the original $file/$name is kept for the human-readable message.
+  lfile=$(printf '%s' "$file" | tr '[:upper:]' '[:lower:]')
+  case "$lfile" in
     *.pem)
       emit "$file" "PEM file (likely private key) — rotate and use a secret manager"
       FAILED=1
@@ -45,7 +50,8 @@ while IFS= read -r -d '' file; do
   # `basename -- "$file"` so a path/name beginning with `-` is treated as data,
   # not an option.
   name=$(basename -- "$file")
-  case "$name" in
+  lname=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')
+  case "$lname" in
     .env.example|.env.sample|.env.template) ;;
     .env|.env.*)
       emit "$file" "environment file — use .env.example for shared config, keep secrets in env vars"

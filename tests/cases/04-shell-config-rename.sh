@@ -63,6 +63,16 @@ echo 'note = "scaffold-allow AKIA''IOSFODNN7EXAMPLE"' >sneaky2.txt
 git add sneaky2.txt
 assert_rejects "scaffold-allow in a string does not exempt a secret" "AWS access key"
 
+# 28b. REGRESSION (scaffold-allow `--` smuggle): the bare `--` leader used to
+#      exempt ANY line in ANY language. `--` is not a comment in JS, yet a marker
+#      placed inside a string literal — `"<secret> -- scaffold-allow"` — got the
+#      whole line dropped from the findings. Dropping `--` as a leader closes it.
+#      AKIA split so this harness file carries no live key; the temp-repo .js
+#      fixture reassembles the key + marker on one line.
+printf 'const k = "%s -- scaffold-allow";\n' "AKIA""IOSFODNN7EXAMPLE" >smuggle.js
+git add smuggle.js
+assert_rejects "bare -- scaffold-allow does not exempt a secret" "AWS access key"
+
 # 29. A config line with no TAB separator is skipped with a warning (not promoted
 #     to a whole-line pattern); a valid pattern on another line still scans.
 printf 'this line has no tab separator at all\n' >>.forbidden-patterns/backend.txt
@@ -95,9 +105,12 @@ else
 fi
 reset_repo
 
-# 31. ReDoS guard: a line over MAX_LINE_LENGTH is dropped before the combined
-#     ERE (which can hang superlinearly on a long line), while a secret on a
-#     normal line is still caught. Long line is benign filler; AKIA split.
+# 31. ReDoS guard now FAILS CLOSED. A line over MAX_LINE_LENGTH is still dropped
+#     before the combined ERE (so it can't hang superlinearly), but check-secrets
+#     no longer lets that file pass silently — an unscannable line is reported
+#     and the commit is rejected. The old behavior (warn + exit 0) was a
+#     fail-OPEN hole: a secret on a >50k line rode straight through. A secret on
+#     a normal line is still caught too.
 {
   echo "AKIA""IOSFODNN7EXAMPLE"
   head -c 60000 /dev/zero | tr '\0' a
@@ -105,16 +118,24 @@ reset_repo
 } >redos.txt
 git add redos.txt
 if .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
-  echo "  ✗ ReDoS guard — accepted, expected reject (secret on the normal line)"
+  echo "  ✗ ReDoS guard — accepted, expected reject (over-long line is unscannable)"
   sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
-elif grep -qF "AWS access key" "$HOOK_OUT" && grep -qF "chars dropped from the scan" "$HOOK_OUT"; then
-  echo "  ✓ over-long line dropped with warning; secret on normal line still caught"
+elif grep -qF "AWS access key" "$HOOK_OUT" && grep -qF "cannot be scanned for secrets" "$HOOK_OUT"; then
+  echo "  ✓ over-long line fails closed; secret on normal line still caught"
   PASS=$((PASS + 1))
 else
-  echo "  ✗ ReDoS guard — rejected but missing the secret hit or the drop warning"
+  echo "  ✗ ReDoS guard — rejected but missing the secret hit or the fail-closed message"
   sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 reset_repo
+
+# 31b. The bypass that motivated the fail-closed change: a secret embedded IN a
+#      single >MAX_LINE_LENGTH line. The old scanner dropped the whole line (and
+#      the secret with it) and exited 0; now the unscannable line is reported and
+#      the commit is rejected. AKIA literal split so this harness file is clean.
+{ head -c 60000 /dev/zero | tr '\0' a; printf ' AKIA''IOSFODNN7EXAMPLE\n'; } >longsecret.txt
+git add longsecret.txt
+assert_rejects "secret hidden on a >MAX_LINE_LENGTH line no longer slips through" "cannot be scanned for secrets"
 
 # 32. Rename bypass: a secret-bearing TEXT file given a binary extension is
 #     still scanned. Binary is decided by CONTENT (a NUL byte), not by the name,
@@ -150,3 +171,27 @@ else
   sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 reset_repo
+
+# 36. check-filenames is CASE-INSENSITIVE. macOS/Windows filesystems (which the
+#     project explicitly targets — see the case-collision hygiene check) treat
+#     `cert.PEM`, `.ENV`, `ID_RSA` as the same files as their lowercase forms, so
+#     an uppercase/mixed-case credential filename must still be blocked. Each
+#     fixture's CONTENT is benign, so only the filename rule can fire (isolating
+#     this from check-secrets).
+echo "placeholder" >cert.PEM
+git add -f cert.PEM
+assert_rejects "uppercase .PEM filename is blocked (case-insensitive)" "PEM file"
+
+printf 'FOO=bar\n' >.ENV
+git add -f .ENV
+assert_rejects "uppercase .ENV filename is blocked (case-insensitive)" "environment file"
+
+echo "placeholder" >ID_RSA
+git add -f ID_RSA
+assert_rejects "uppercase ID_RSA filename is blocked (case-insensitive)" "SSH private key"
+
+# 36b. NEGATIVE: the .env.example allowlist still holds regardless of case —
+#      a shared-config template must NOT be blocked.
+printf 'FOO=bar\n' >.ENV.EXAMPLE
+git add -f .ENV.EXAMPLE
+assert_passes ".ENV.EXAMPLE (allowlisted template) is not blocked"

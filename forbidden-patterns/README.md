@@ -72,14 +72,19 @@ sees this on every blocked commit.
 ## Per-line opt-out: `scaffold-allow`
 
 A line is exempt from `check-patterns` and `check-secrets` when it carries a
-`scaffold-allow` marker **after a comment leader** — `#`, `//`, `/*`, `<!--`,
-or `--` (case-insensitive). The comment-leader requirement is deliberate: it
-stops the bare substring from being smuggled inside a string literal to
-whitelist a real secret (e.g. `token = "scaffold-allow..."` is **not**
-exempt). Use it as an inline escape valve when a match is intentional — a CLI
+`scaffold-allow` marker **after a comment leader** — `#`, `//`, `/*`, or
+`<!--` (case-insensitive) — at the start of the line or following whitespace.
+The comment-leader requirement raises the bar against smuggling the bare
+substring inside a string literal (e.g. `token = "scaffold-allow..."` is
+**not** exempt). Bare `--` is intentionally **not** a leader: it is a comment
+in too few languages to justify the cross-language bypass it opened
+(`x = "<secret> -- scaffold-allow"` once suppressed the finding in JS/Python/
+shell). Use it as an inline escape valve when a match is intentional — a CLI
 entry point that needs `print`, a docs example showing an AWS key prefix, a
 test fixture with a synthetic credential. Mirrors the role `# noqa` plays for
-ruff.
+ruff. It is **not** a security boundary against a hostile committer (who
+controls the file and can also pass `--no-verify`); pair the scaffold with
+branch protection and required review.
 
 ```python
 print("entering CLI")  # scaffold-allow — no logger configured yet
