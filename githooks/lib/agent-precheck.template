@@ -101,7 +101,11 @@ scan_against() {
     echo "(${pfile#"$ROOT"/}). If this is deliberate and safe, append a comment"
     echo "containing 'scaffold-allow' on the matching line."
     echo "Matched:"
-    printf '%s\n' "$hit" | head -3
+    # `|| true`: on a many-line $hit, `head -3` closes the pipe early and printf
+    # takes SIGPIPE (exit 141). Under `set -euo pipefail` that would abort the
+    # script BEFORE the `exit 2` below — and the agent runtimes treat only exit 2
+    # as "block", so a non-2 exit silently ALLOWS the matched action (fail-open).
+    printf '%s\n' "$hit" | head -3 || true
   } >&2
   exit 2
 }

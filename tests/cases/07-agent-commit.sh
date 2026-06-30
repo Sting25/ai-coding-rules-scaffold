@@ -86,6 +86,24 @@ if command -v jq >/dev/null 2>&1; then
     echo "  ✗ agent-precheck — Cursor secret block missing expected message"
     sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
   fi
+  # (48g) REGRESSION (SIGPIPE fail-OPEN): when a block fires on MANY matching
+  #       lines, the block message's `printf '%s\n' "$hit" | head -3` took
+  #       SIGPIPE under `set -euo pipefail` and the script aborted at exit 141 —
+  #       BEFORE the `exit 2` the agent runtimes require to actually block, so
+  #       the dangerous action was allowed. Assert the exit code is EXACTLY 2
+  #       (141 is non-zero too, so a "non-zero == blocked" check would wrongly
+  #       pass here). `pass`+`word` is built at runtime so this file stays clean.
+  pw=pass
+  big=$(for _ in $(seq 1 20000); do printf '%sword = "aaaaaaaaaaaaaaaa"\n' "$pw"; done)
+  pc=$(jq -n --arg c "$big" '{tool_name:"Write",tool_input:{file_path:"big.py",content:$c}}')
+  rc=0
+  printf '%s' "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1 || rc=$?
+  if [ "$rc" -eq 2 ]; then
+    echo "  ✓ agent-precheck blocks with exit 2 on a many-line match (no SIGPIPE)"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — block exited $rc, expected exactly 2 (SIGPIPE fail-open?)"
+    FAIL=$((FAIL + 1))
+  fi
 else
   echo "  - skipped agent-precheck tests (jq not installed)"
 fi
