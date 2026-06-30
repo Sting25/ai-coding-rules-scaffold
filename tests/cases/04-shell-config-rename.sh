@@ -171,3 +171,27 @@ else
   sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 reset_repo
+
+# 36. check-filenames is CASE-INSENSITIVE. macOS/Windows filesystems (which the
+#     project explicitly targets — see the case-collision hygiene check) treat
+#     `cert.PEM`, `.ENV`, `ID_RSA` as the same files as their lowercase forms, so
+#     an uppercase/mixed-case credential filename must still be blocked. Each
+#     fixture's CONTENT is benign, so only the filename rule can fire (isolating
+#     this from check-secrets).
+echo "placeholder" >cert.PEM
+git add -f cert.PEM
+assert_rejects "uppercase .PEM filename is blocked (case-insensitive)" "PEM file"
+
+printf 'FOO=bar\n' >.ENV
+git add -f .ENV
+assert_rejects "uppercase .ENV filename is blocked (case-insensitive)" "environment file"
+
+echo "placeholder" >ID_RSA
+git add -f ID_RSA
+assert_rejects "uppercase ID_RSA filename is blocked (case-insensitive)" "SSH private key"
+
+# 36b. NEGATIVE: the .env.example allowlist still holds regardless of case —
+#      a shared-config template must NOT be blocked.
+printf 'FOO=bar\n' >.ENV.EXAMPLE
+git add -f .ENV.EXAMPLE
+assert_passes ".ENV.EXAMPLE (allowlisted template) is not blocked"
