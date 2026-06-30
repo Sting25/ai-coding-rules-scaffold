@@ -95,9 +95,12 @@ else
 fi
 reset_repo
 
-# 31. ReDoS guard: a line over MAX_LINE_LENGTH is dropped before the combined
-#     ERE (which can hang superlinearly on a long line), while a secret on a
-#     normal line is still caught. Long line is benign filler; AKIA split.
+# 31. ReDoS guard now FAILS CLOSED. A line over MAX_LINE_LENGTH is still dropped
+#     before the combined ERE (so it can't hang superlinearly), but check-secrets
+#     no longer lets that file pass silently — an unscannable line is reported
+#     and the commit is rejected. The old behavior (warn + exit 0) was a
+#     fail-OPEN hole: a secret on a >50k line rode straight through. A secret on
+#     a normal line is still caught too.
 {
   echo "AKIA""IOSFODNN7EXAMPLE"
   head -c 60000 /dev/zero | tr '\0' a
@@ -105,16 +108,24 @@ reset_repo
 } >redos.txt
 git add redos.txt
 if .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
-  echo "  ✗ ReDoS guard — accepted, expected reject (secret on the normal line)"
+  echo "  ✗ ReDoS guard — accepted, expected reject (over-long line is unscannable)"
   sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
-elif grep -qF "AWS access key" "$HOOK_OUT" && grep -qF "chars dropped from the scan" "$HOOK_OUT"; then
-  echo "  ✓ over-long line dropped with warning; secret on normal line still caught"
+elif grep -qF "AWS access key" "$HOOK_OUT" && grep -qF "cannot be scanned for secrets" "$HOOK_OUT"; then
+  echo "  ✓ over-long line fails closed; secret on normal line still caught"
   PASS=$((PASS + 1))
 else
-  echo "  ✗ ReDoS guard — rejected but missing the secret hit or the drop warning"
+  echo "  ✗ ReDoS guard — rejected but missing the secret hit or the fail-closed message"
   sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 reset_repo
+
+# 31b. The bypass that motivated the fail-closed change: a secret embedded IN a
+#      single >MAX_LINE_LENGTH line. The old scanner dropped the whole line (and
+#      the secret with it) and exited 0; now the unscannable line is reported and
+#      the commit is rejected. AKIA literal split so this harness file is clean.
+{ head -c 60000 /dev/zero | tr '\0' a; printf ' AKIA''IOSFODNN7EXAMPLE\n'; } >longsecret.txt
+git add longsecret.txt
+assert_rejects "secret hidden on a >MAX_LINE_LENGTH line no longer slips through" "cannot be scanned for secrets"
 
 # 32. Rename bypass: a secret-bearing TEXT file given a binary extension is
 #     still scanned. Binary is decided by CONTENT (a NUL byte), not by the name,
