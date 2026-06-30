@@ -65,9 +65,14 @@
 
 ### Fixed on this branch (`fix/audit-2026-06-30`)
 
-_Updated as fixes land (each with a red-then-green regression test):_
+Each landed with a red-then-green regression test; full suite 148/148 green.
 
-- _(pending)_
+- **A1 (critical)** — `check-secrets` now FAILS CLOSED on a line over `MAX_LINE_LENGTH` (reports it + fails) instead of dropping it with a warning and exit 0. The line is still dropped before the ERE, so the ReDoS guard is unchanged. (`2f79605`; tests cases/04 #31, #31b)
+- **A2 (high)** — `agent-precheck` block path no longer takes SIGPIPE (`printf … | head -3 || true`), so it reliably reaches `exit 2` and actually blocks. (`98c6d41`; cases/07 #48g asserts the exit code is exactly 2)
+- **A3 (high)** — `scaffold-allow` dropped bare `--` as a leader and now requires a start-of-line/whitespace boundary, across all five exemption sites (check-secrets, check-patterns, check-hygiene ×2, agent-precheck); over-claiming docs corrected. (`2a92e6e`; cases/04 #28b)
+- **A4 (high)** — `check-filenames` folds name+path to lowercase before matching, so `.PEM`/`.ENV`/`ID_RSA` are blocked; the `.env.example` allowlist still holds. (`16ab43b`; cases/04 #36, #36b)
+
+**Still open** (recommended next, in priority order): the secret-regex coverage cluster (A5/A6/A8 + the medium keyword/URL gaps — needs positive **and** negative corpus validation to manage false positives); `cp_safe` symlink handling (A7); the installer/uninstaller robustness cluster; the remaining test-coverage gaps (A10 et al.); and the doc reconciliations.
 
 ### What's solid (verified, so fixes don't regress it)
 
