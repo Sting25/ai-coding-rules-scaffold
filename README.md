@@ -85,7 +85,7 @@ Clone the scaffold somewhere stable:
 
 ```sh
 # Recommended: pin to a tagged release for reproducibility
-git clone --branch v0.8.0 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
+git clone --branch v0.9.0 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
 # Or track main if you want the latest changes
 git clone https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
 ```
@@ -115,6 +115,16 @@ The script auto-detects Python (`pyproject.toml` / `requirements.txt` / `setup.p
 ./install.sh --no-install   # detect missing tools but never auto-run a package manager
 ./install.sh --help         # show usage
 ```
+
+**Re-running is the upgrade path.** Running `install.sh` again refreshes
+scaffold-owned code — the pre-commit hook, the `.githooks/lib/*` scanners, the
+`commit-msg` hook, and the `lint.yml` / coverage workflows — whenever it differs
+from the shipped version, with no `--force` needed, so pulling a new tag and
+re-running delivers security fixes. Your own configs (`ruff.toml`,
+`eslint.config.js`, `.scaffold.toml`, the rules docs, …) are left untouched, and
+`.forbidden-patterns/*.txt` files you've edited are kept with a drift notice
+rather than overwritten (use `--force` to take the shipped version, backed up to
+`.scaffold-bak`).
 
 Language pattern files are auto-installed when their manifest is detected
 (`go.mod`, `Cargo.toml`, `composer.json`, `pom.xml`/`build.gradle`, `Gemfile`,

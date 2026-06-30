@@ -6,43 +6,96 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
-### Changed
-- **`lint.yml` CI scopes its quality gates to the PR/push diff.** The
-  `python` (ruff), `frontend` (eslint/prettier), and the size /
-  forbidden-pattern / hygiene `guardrails` checks now run only against files
-  changed in the PR or push, instead of the whole tree. This means installing
-  the scaffold onto an existing project no longer retroactively fails its
-  pre-existing code — only new/changed code is gated, matching the pre-commit
-  hook's staged-files scope. The **secret + credential-filename** scans
-  deliberately stay **whole-tree** (catching an already-committed secret/key is
-  the point, and they're the non-overridable security boundary). Falls open to
-  a whole-tree scan when there's no diff base (e.g. first push to a new repo).
-- **Workflow shell is bash-3.2-safe.** Replaced `mapfile` (bash 4+) in the
-  diff-scoped jobs with the portable NUL read-loop the `check-*` scripts use, so
-  the workflow runs on older/self-hosted runners too.
+## [v0.9.0] — 2026-06-30
+
+A security-hardening release. A full multi-dimension re-audit of the scaffold's
+own scanners closed one critical and several high-severity findings, and a new
+installer upgrade path means existing installs pick up the fixes by just
+re-running `install.sh`.
+
+### Security
+- **`check-secrets` fails closed on over-long lines (A1, critical).** A line
+  longer than `MAX_LINE_LENGTH` (50k) is still dropped before the regex (the
+  ReDoS guard), but the file is now reported and the commit rejected instead of
+  passing with only a warning — previously a secret on a >50k line rode straight
+  through, in both the hook and `--ci`.
+- **`agent-precheck` no longer fails open on the block path (A2, high).** The
+  block path took `SIGPIPE` (exit 141), which runtimes read as a non-2 "allow",
+  so a flagged Write/Edit could slip through; it now reliably reaches `exit 2`.
+- **`scaffold-allow` hardened against the bare `--` smuggle (A3, high).** The
+  exemption marker no longer treats a bare `--` as a comment leader and requires
+  a start-of-line/whitespace boundary, across all five exemption sites, so an
+  inline `-- scaffold-allow` inside a string literal can't whitelist a real
+  secret.
+- **Credential filenames match case-insensitively (A4, high).** `.PEM`, `.ENV`,
+  `ID_RSA`, and friends were bypassing the filename block on case-insensitive
+  filesystems; the name and path are now folded to lowercase before matching.
+- **Broader credential coverage (A6/A8).** Underscore-separated assignments
+  (`db_password`, `client_secret`, `DATABASE_PASSWORD`), more provider key
+  prefixes (SendGrid, Shopify, Square, Mailgun, Telegram, Twilio), and
+  empty-username credential URLs are now caught; hex-token patterns are
+  boundary-anchored to avoid SHA / UUID / lockfile-hash false positives.
+  (Unquoted `key = variable` assignments remain deliberately delegated to the
+  gitleaks layer to avoid false positives.)
+- **`install.sh` no longer writes through a symlink (A7, high).** Scaffold files
+  are replaced via `test -L` + `cp -P` backup + `rm -f` before copy, and `chmod`
+  only touches regular files, so a planted symlink can't redirect a write or
+  abort the install.
 
 ### Added
-- **`githooks/lib/ci-changed-files`** — shared helper that resolves the
-  PR/push diff as a NUL-delimited list (failing open to the whole tree). One
-  testable implementation called by every diff-scoped `lint.yml` job, instead of
-  copy-pasted bash inside the workflow YAML. Installed by `install.sh`.
-- **`tests/cases/10-ci-diff-scope.sh`** — regression test (9 assertions) for the
-  diff-scoping: legacy grandfathered, new code gated, secrets/filenames caught
-  whole-tree, and the no-diff-base fallback.
+- **`githooks/lib/ci-changed-files`** — shared helper that resolves the PR/push
+  diff as a NUL-delimited list (failing open to the whole tree when there's no
+  diff base). One testable implementation called by every diff-scoped `lint.yml`
+  job, instead of copy-pasted bash inside the workflow YAML. Installed by
+  `install.sh`.
+- **`tests/cases/10-ci-diff-scope.sh`** — regression test (12 assertions) for
+  the diff-scoping: legacy grandfathered, new code gated, secrets/filenames
+  caught whole-tree, and every fail-open branch (no diff base, an unresolvable
+  SHA, and an erroring diff) exercised, with the internal fallback mutation-proven.
 - **`operational-rules.md` rule: "Capture pre-existing issues; never silently
   drop them."** The complement to scope discipline — an out-of-scope bug, drift,
   or lint finding noticed mid-task must land on a tracked fix-list, not be
   dropped because "that's not what we're working on."
 
+### Changed
+- **`lint.yml` CI scopes its quality gates to the PR/push diff.** The `python`
+  (ruff), `frontend` (eslint/prettier), and the size / forbidden-pattern /
+  hygiene `guardrails` checks now run only against changed files, so installing
+  the scaffold onto an existing project no longer retroactively fails its
+  pre-existing code — only new/changed code is gated, matching the pre-commit
+  hook's staged-files scope. The **secret + credential-filename** scans
+  deliberately stay **whole-tree** (catching an already-committed secret/key is
+  the point, and they're the non-overridable security boundary). Falls open to a
+  whole-tree scan when there's no diff base (e.g. first push to a new repo).
+- **Re-running `install.sh` is now an upgrade path.** Scaffold-owned code (the
+  pre-commit hook, `.githooks/lib/*` scanners, `commit-msg`, and the `lint.yml` /
+  coverage workflows) is refreshed whenever it differs from the shipped version —
+  no `--force` needed — so re-running delivers security fixes. User-owned configs
+  (`ruff.toml`, `eslint.config.js`, `.scaffold.toml`, the rules docs,
+  `dependabot.yml`) still skip unless `--force`; `.forbidden-patterns/*.txt`
+  files you've edited are kept with a drift notice (backed up to `.scaffold-bak`
+  only under `--force`).
+- **Workflow shell is bash-3.2-safe.** Replaced `mapfile` (bash 4+) in the
+  diff-scoped jobs with the portable NUL read-loop the `check-*` scripts use, so
+  the workflow runs on older / self-hosted runners too.
+
 ### Fixed
 - **`frontend` lint job emits an actionable error when the eslint config is
-  present but its peer deps aren't installed**, instead of a cryptic config-load
-  crash — it names the exact `npm i -D …` to run and to commit the lockfile.
+  present but its peer deps aren't installed**, naming the exact `npm i -D …` to
+  run and to commit the lockfile, instead of a cryptic config-load crash.
+- **Test-harness portability** — the `agent-precheck` SIGPIPE regression test
+  builds its >128 KB payload via `jq --rawfile` rather than an `--arg` string
+  that hit Linux `MAX_ARG_STRLEN`, so the suite runs on both runners.
+- **Documentation reconciled with the audit** — the README secret-scan and
+  install tables, the `--cursor` `jq` fail-open caveat, and the
+  `forbidden-patterns` README's `.svelte` coverage now match the shipped
+  behavior.
 
 ### Upgrade note
-- Existing installs must re-run `install.sh` (or copy
-  `githooks/lib/ci-changed-files` + the new `lint.yml`) — the updated `lint.yml`
-  calls the new helper.
+- Existing installs should re-run `install.sh` to pick up the hardened scanners
+  and the new `lint.yml` (which calls the new `ci-changed-files` helper).
+  Re-running refreshes scaffold-owned code automatically; your configs and edited
+  pattern files are preserved.
 
 ## [v0.8.0] — 2026-06-27
 
