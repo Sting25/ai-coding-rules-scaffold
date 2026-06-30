@@ -226,6 +226,54 @@ else
 fi
 rm -rf "$USD"
 
+# --- installer does not write THROUGH a symlink at CLAUDE.md / AGENTS.md (B1) --
+# The A7 symlink defense lived only in the cp_* helpers; install_claude_md /
+# install_agents_md kept the pre-A7 `[ -e ]`-only guard, so a symlink planted at
+# CLAUDE.md/AGENTS.md made cp (or the `>>` append) write the file content to the
+# link's target OUTSIDE the repo, leaving the rules silently un-wired. Guard all
+# three branches: CLAUDE.md create (dangling link), CLAUDE.md append (live link),
+# AGENTS.md create (dangling link).
+
+# (T) CLAUDE.md DANGLING symlink -> outside path: the create branch must NOT
+#     write the pointer through the link to the outside target.
+UCD=$(mktemp -d)
+ln -s "$UCD/nonexistent_claude" "$UCD/CLAUDE.md"
+( cd "$UCD" && git init --quiet && echo '{"name":"x"}' >package.json \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
+if [ ! -e "$UCD/nonexistent_claude" ]; then
+  echo "  ✓ install does not write CLAUDE.md through a dangling symlink"; PASS=$((PASS + 1))
+else
+  echo "  ✗ install wrote the CLAUDE.md pointer through a dangling symlink"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UCD"
+
+# (T) CLAUDE.md LIVE symlink -> outside file lacking @AGENTS.md: the append
+#     branch must NOT append the import block through the link to the outside file.
+UCL=$(mktemp -d)
+printf '# outside\nOUTSIDE_USER_CONTENT\n' >"$UCL/outside_claude"
+ln -s "$UCL/outside_claude" "$UCL/CLAUDE.md"
+( cd "$UCL" && git init --quiet && echo '{"name":"x"}' >package.json \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
+if ! grep -q 'ai-coding-rules-scaffold:begin' "$UCL/outside_claude"; then
+  echo "  ✓ install does not append CLAUDE.md import through a live symlink"; PASS=$((PASS + 1))
+else
+  echo "  ✗ install appended the import through a live CLAUDE.md symlink"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UCL"
+
+# (T) AGENTS.md DANGLING symlink -> outside path: the create branch must NOT
+#     write the template through the link to the outside target.
+UAD=$(mktemp -d)
+ln -s "$UAD/nonexistent_agents" "$UAD/AGENTS.md"
+( cd "$UAD" && git init --quiet && echo '{"name":"x"}' >package.json \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
+if [ ! -e "$UAD/nonexistent_agents" ]; then
+  echo "  ✓ install does not write AGENTS.md through a dangling symlink"; PASS=$((PASS + 1))
+else
+  echo "  ✗ install wrote the AGENTS.md template through a dangling symlink"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UAD"
+
 # (T) uninstall removes ci-changed-files too (install adds 8 libs; the uninstall
 #     loop dropped this one, leaving the scaffold half-uninstalled).
 UCI=$(mktemp -d)

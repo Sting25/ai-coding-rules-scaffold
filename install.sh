@@ -215,6 +215,15 @@ mkx() { if [ -f "$1" ]; then chmod +x "$1"; fi; }
 # the pointer template. If present, append a marked block importing AGENTS.md
 # once, and only if no @AGENTS.md import already exists.
 install_claude_md() {
+  # A symlink at CLAUDE.md is suspicious: `[ -e ]` is false for a DANGLING link
+  # (so the create branch's cp would write the pointer THROUGH it, outside the
+  # repo) and FOLLOWS a live one (so the `>>` append would append through it).
+  # Test `-L` first and never write through it — the same A7 defense the cp_*
+  # helpers carry, which this bespoke handler had been missing (B1).
+  if [ -L "CLAUDE.md" ]; then
+    echo "skip (exists, symlink): CLAUDE.md — left untouched; a scaffold path that is a symlink is suspicious. Replace it with a real file to wire the AGENTS.md import."
+    return
+  fi
   if [ ! -e "CLAUDE.md" ]; then
     cp "$SCAFFOLD_DIR/CLAUDE.md.pointer" "CLAUDE.md"
     echo "installed:    CLAUDE.md (new — pointer to AGENTS.md)"
@@ -238,6 +247,13 @@ install_claude_md() {
 # so an existing one is never clobbered (even with --force). Skip if present;
 # create from template only when absent.
 install_agents_md() {
+  # `[ -e ]` is false for a dangling symlink, so the create branch's cp would
+  # write the template THROUGH it to an outside path. Test `-L` first and skip
+  # (same A7 defense as the cp_* helpers, missing from this handler — B1).
+  if [ -L "AGENTS.md" ]; then
+    echo "skip (exists, symlink): AGENTS.md — left untouched; a scaffold path that is a symlink is suspicious. Replace it with a real file to install the template."
+    return
+  fi
   if [ -e "AGENTS.md" ]; then
     echo "skip (exists): AGENTS.md — left untouched (your Project section is safe)"
     return
