@@ -6,7 +6,7 @@ Pattern files consumed by `.githooks/lib/check-patterns` and
 | File           | Scans                                              | Case-sensitive |
 |----------------|----------------------------------------------------|----------------|
 | `backend.txt`  | `*.py`                                             | yes            |
-| `frontend.txt` | `*.ts`, `*.tsx`, `*.js`, `*.jsx`, `*.vue`         | yes            |
+| `frontend.txt` | `*.ts`, `*.tsx`, `*.js`, `*.jsx`, `*.vue`, `*.svelte` | yes        |
 | `shell.txt`    | `*.sh`, `*.bash`                                   | yes            |
 | `php.txt`      | `*.php`, `*.phtml`, …                              | yes            |
 | `go.txt`       | `*.go`                                             | yes            |
