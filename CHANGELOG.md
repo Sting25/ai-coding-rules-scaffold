@@ -25,6 +25,15 @@ versioning follows [SemVer](https://semver.org/).
   not the same as a missing scanner. Regression in `tests/cases/07` (#48h). This
   completes the over-cap fail-closed sweep across all four scanners
   (check-secrets/check-patterns/check-hygiene/agent-precheck).
+- **npm package now ships the gitleaks + dependency-review CI templates (B3).**
+  `gitleaks.yml.template` and `dependency-review.yml.template` were git-tracked
+  and documented ("copy it in" in the README / `install.sh`) but missing from
+  the `package.json` `files` allowlist, so `npx` / `npm` consumers silently
+  lacked two security-CI gates that git-clone and Homebrew users get. Both are
+  now bundled, and the `tests/cases/11` bundle-drift guard globs every
+  `.github/workflows/*.yml.template` so it fails closed on any future
+  documented-but-unbundled workflow — the guard previously derived its required
+  set only from files `install.sh` reads, making manual-copy templates invisible.
 
 ## [v0.9.0] — 2026-06-30
 

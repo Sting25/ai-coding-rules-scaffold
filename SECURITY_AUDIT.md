@@ -15,7 +15,7 @@ baseline.
 | Severity | Count | Novel | Already tracked / by-design |
 |---|---|---|---|
 | high | 2 | 1 (B1 ✅) | 1 (B2 ✅ — A1 fix never reached check-hygiene) |
-| medium | 4 | 2 (B3, B4) | 2 (B5, B6 ✅) |
+| medium | 4 | 2 (B3 ✅, B4) | 2 (B5, B6 ✅) |
 | low | 6 | 4 (B8–B11) | 2 (B7 variant, B12) |
 | info / by-design | 1 | 0 | B13 |
 
@@ -88,7 +88,7 @@ baseline.
 
 ### 🟡 Medium
 
-**B3 — npm `files` allowlist omits `gitleaks.yml.template` + `dependency-review.yml.template` that README + `install.sh` tell users to copy in; `tests/cases/11` does not catch it** — `package.json:8-32`, `tests/cases/11-npm-bundle.sh:33-37` · **NOVEL** (merges the npm-package, docs-accuracy, and test-harness finders)
+**B3 — npm `files` allowlist omits `gitleaks.yml.template` + `dependency-review.yml.template` that README + `install.sh` tell users to copy in; `tests/cases/11` does not catch it** — `package.json:8-32`, `tests/cases/11-npm-bundle.sh:33-37` · **NOVEL** (merges the npm-package, docs-accuracy, and test-harness finders) · ✅ **FIXED** (`fix/audit-b3-npm-bundle-security-templates`)
 - **What:** the two security-CI templates are git-tracked but absent from the npm `files`
   allowlist, so `npm pack` ships only `lint.yml.template` + `coverage.yml.template` from
   `.github/workflows/`. Yet `install.sh:371` prints (on every `--gitleaks-hook` run) `… see
@@ -105,6 +105,14 @@ baseline.
 - **Fix:** add both templates to `package.json` `files`, **and** extend `cases/11`'s REQUIRED set to
   glob `.github/workflows/*.yml.template` (or any README/`install.sh`-referenced template) so the
   guard fails closed on documented-but-uncopied files.
+- **Fixed (as landed):** both templates added to `package.json` `files` (bundle now ships all four
+  `.github/workflows/*.yml.template`, verified via `npm pack --dry-run`), and `cases/11`'s REQUIRED
+  set globs `.github/workflows/*.yml.template` — chosen over hardcoding the two names so the guard
+  fails closed on *any* future workflow template, not just today's two. Now checks 45 files (was 43).
+  Teeth: mutation-removing either (or both) template(s) from `files` turns `cases/11` red and **names
+  the exact missing path(s)** ("missing 2 of 45"), the class that was invisible before. Suite
+  **181/0**, `shellcheck -S info` clean. (Verified the install.sh/README references by hand:
+  `install.sh:387` names `gitleaks.yml.template`; `README.md:409,425` say "Copy it in" for both.)
 
 **B4 — `scripts/dev-setup.sh` renders scanners with bare `cp`, regressing the A7 symlink write-through fix (arbitrary out-of-repo overwrite)** — `scripts/dev-setup.sh:27-40` · **NOVEL**
 - **What:** `install.sh` writes every scaffold file through `_cp_replace` (`rm -f "$dst"` before

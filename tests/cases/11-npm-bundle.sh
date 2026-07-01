@@ -21,9 +21,19 @@ else
   if ( cd "$SCAFFOLD_DIR" && npm pack --dry-run --json 2>/dev/null ) >"$C11"; then
     PACKED=$(jq -r '.[0].files[].path' "$C11" 2>/dev/null | sort -u)
 
-    # REQUIRED: every static $SCAFFOLD_DIR/<path> install.sh reads, the two
-    # dynamically-globbed dirs (${L}.txt.template / ${check}.template) expanded
-    # to their real members, plus the installer scripts and the npm wrapper.
+    # REQUIRED: every static $SCAFFOLD_DIR/<path> install.sh reads, the
+    # dynamically-globbed dirs (${L}.txt.template / ${check}.template + every
+    # workflow template) expanded to their real members, plus the installer
+    # scripts and the npm wrapper.
+    #
+    # The workflow glob is load-bearing: gitleaks.yml.template and
+    # dependency-review.yml.template are "copy it in" templates the user applies
+    # by hand (README §gitleaks/§dependency-review; install.sh only names them),
+    # so install.sh never READS them via $SCAFFOLD_DIR and the grep above can't
+    # see them. Without this glob an npm/npx user silently lacks two security-CI
+    # gates git-clone/Homebrew users get (audit B3). Globbing every
+    # .github/workflows/*.yml.template makes the guard fail closed on any
+    # documented-but-unbundled workflow — present or added later.
     REQUIRED=$(
       {
         # SC2016 off on purpose: we match the LITERAL text "$SCAFFOLD_DIR" / "${"
@@ -33,7 +43,8 @@ else
         grep -oE '\$SCAFFOLD_DIR/[^"'"'"' ]+' "$SCAFFOLD_DIR/install.sh" \
           | sed 's#\$SCAFFOLD_DIR/##' | grep -v '\${'
         ( cd "$SCAFFOLD_DIR" \
-            && ls forbidden-patterns/*.txt.template githooks/*.template githooks/lib/*.template )
+            && ls forbidden-patterns/*.txt.template githooks/*.template githooks/lib/*.template \
+                  .github/workflows/*.yml.template )
         printf '%s\n' install.sh uninstall.sh bin/cli.js
       } | sort -u
     )
