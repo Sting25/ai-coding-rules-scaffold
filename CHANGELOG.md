@@ -106,6 +106,16 @@ set of `install.sh` / `dev-setup.sh` robustness and parity fixes.
   Docs-only (maintainer procedure); both cases were reproduced and the fix verified
   against a crafted CHANGELOG fixture.
 
+### Changed
+- **`install.sh` file-write helpers extracted to a sourced `install-lib.sh`.**
+  Internal refactor, no behavior change: the `cp_scaffold`/`cp_safe`/`cp_pattern`
+  policy functions and the shared `_cp_replace`/`_backup`/`mkx` mechanism (~130
+  lines) moved into `install-lib.sh`, which `install.sh` now sources, dropping it
+  from 500 → 380 lines (back under the scaffold's own 500-line module cap). The
+  new file is shipped in the npm bundle (`package.json` `files`) and covered by the
+  bundle-completeness and shellcheck gates. Verified by the full suite plus an
+  end-to-end install smoke test.
+
 ## [v0.9.0] — 2026-06-30
 
 A security-hardening release. A full multi-dimension re-audit of the scaffold's
