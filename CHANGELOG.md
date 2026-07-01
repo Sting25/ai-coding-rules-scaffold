@@ -33,6 +33,16 @@ versioning follows [SemVer](https://semver.org/).
   templates end in `.example`, so the `.env.example` allowlist is unaffected. Regressions
   in `tests/cases/04` (#36e/#36f block `config.env`/`prod.env`/`PROD.ENV`; #36g keeps
   `config.env.example` passing).
+- **`check-filenames` now blocks binary key/keystore files (B7, low).** The
+  filename block knew only `*.pem`, `.env*`, and the four `id_*` SSH names, so a
+  committed `server.key` / `cert.p12` / `id.pfx` / `store.jks` / `key.ppk` passed —
+  and because these are binary blobs with no PEM `-----BEGIN … PRIVATE KEY-----`
+  armor, the content scanner can't backstop them, so both layers failed open. A new
+  `*.key|*.p12|*.pfx|*.jks|*.ppk` arm now blocks them (fail-closed; the filename is
+  the only signal). `*.key` also catches the common TLS/Kubernetes spelling; the rare
+  Keynote `.key` bundle is a deliberate false-positive trade-off (rename / keep out of
+  git). Regressions in `tests/cases/04` (#36h/#36i block all five extensions +
+  case-folded `SERVER.KEY`; #36j keeps public-key `authorized_keys` passing).
 - **npm package now ships the gitleaks + dependency-review CI templates (B3).**
   `gitleaks.yml.template` and `dependency-review.yml.template` were git-tracked
   and documented ("copy it in" in the README / `install.sh`) but missing from

@@ -3,7 +3,8 @@
 # Reads NUL-separated file paths on stdin (produced by `git ... -z`), so
 # filenames containing newlines, tabs, or quotes can't split the list and slip
 # past the check. Rejects .env and *.env (e.g. config.env/prod.env) — allowing
-# .env.example/.sample/.template — plus *.pem and SSH private key names.
+# .env.example/.sample/.template — plus *.pem, binary key/keystore extensions
+# (*.key/.p12/.pfx/.jks/.ppk), and SSH private key names.
 #
 # Output: human-readable on tty; ::error file=...:: when --ci is passed.
 # Exit:   0 if all OK, 1 if any violation.
@@ -43,6 +44,17 @@ while IFS= read -r -d '' file; do
   case "$lfile" in
     *.pem)
       emit "$file" "PEM file (likely private key) — rotate and use a secret manager"
+      FAILED=1
+      continue
+      ;;
+    # Binary private-key / keystore blobs (DER, PKCS#12, Java/PuTTY stores) carry
+    # no PEM `-----BEGIN … PRIVATE KEY-----` armor, so the content scanner cannot
+    # backstop them — the filename is the only signal. `*.key` also catches the
+    # common TLS/Kubernetes private-key spelling; the rare Keynote `.key` bundle
+    # is a deliberate false-positive trade-off (rename or keep it out of git),
+    # since fail-closed on possible key material beats leaking one.
+    *.key|*.p12|*.pfx|*.jks|*.ppk)
+      emit "$file" "private key / keystore — rotate it and use a secret manager"
       FAILED=1
       continue
       ;;

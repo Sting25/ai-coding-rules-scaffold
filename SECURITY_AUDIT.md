@@ -16,7 +16,7 @@ baseline.
 |---|---|---|---|
 | high | 2 | 1 (B1 ✅) | 1 (B2 ✅ — A1 fix never reached check-hygiene) |
 | medium | 4 | 2 (B3 ✅, B4 ✅) | 2 (B5 ✅, B6 ✅) |
-| low | 6 | 4 (B8–B11) | 2 (B7 variant, B12) |
+| low | 6 | 4 (B8–B11) | 2 (B7 ✅ variant, B12) |
 | info / by-design | 1 | 0 | B13 |
 
 > Two High findings were the actionable headline; **both are now ✅ FIXED**. **B1** was a genuinely
@@ -189,7 +189,7 @@ baseline.
 
 ### ⚪ Low
 
-**B7 — Binary key/keystore files (`*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.ppk`) bypass the filename block; the content scanner can't backstop binary key material** — `githooks/lib/check-filenames.template:43-64` · **new variant of the existing extension list**
+**B7 — Binary key/keystore files (`*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.ppk`) bypass the filename block; the content scanner can't backstop binary key material** — `githooks/lib/check-filenames.template:43-64` · **new variant of the existing extension list** · ✅ **FIXED** (`fix/audit-b7-keystore-filenames`)
 - **What:** the filename block knows only `*.pem`, `.env*`, and the four `id_*` SSH names. The other
   ubiquitous private-key/keystore extensions have no arm, and the only key content rule
   (`secrets.txt.template:43` PEM armor `-----BEGIN … PRIVATE KEY-----`) never matches a binary
@@ -201,6 +201,17 @@ baseline.
   both exit 0; the **identical bytes** as `cert.pem` → `✗ … PEM file (likely private key)`, exit 1.
 - **Fix:** add `*.key|*.p12|*.pfx|*.jks|*.ppk` to the case glob (with a "key/keystore — rotate"
   message) and `cases/04` fixtures; document that binary keystores rely on the filename layer / gitleaks.
+- **Fixed (as landed):** a new `*.key|*.p12|*.pfx|*.jks|*.ppk)` arm sits beside `*.pem` in the
+  `case "$lfile"` block (extension match on the full path, `continue` like `*.pem`), emitting
+  `private key / keystore — rotate it and use a secret manager`. Since these are binary blobs with no
+  PEM armor, the content scanner cannot backstop them and the filename is the only signal — so this
+  fails **closed**. `*.key` also catches the common TLS/Kubernetes private-key spelling; the rare
+  Keynote `.key` bundle is a **deliberate false-positive trade-off** (rename / keep out of git),
+  documented inline, on the grounds that fail-closed on possible key material beats leaking one.
+  Locked with `tests/cases/04` #36h (all five extensions, each its own fixture) + #36i (case-folded
+  `SERVER.KEY`) + #36j NEGATIVE (`authorized_keys` — public-key material, no `.key` suffix — still
+  passes, guarding against a `*key*` broadening). Mutation-neutralizing the glob turns exactly the six
+  positives red and leaves #36j green. Suite **194/0**, `shellcheck -S info` clean.
 
 **B8 — `package.json` `os: ["darwin","linux"]` hard-blocks native-Windows / Git-Bash npm install, contradicting `cli.js` + README Windows support** — `package.json:36-39` · **NOVEL**
 - **What:** npm enforces `os` as `EBADPLATFORM` (hard exit 1, package not installed) when
