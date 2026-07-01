@@ -16,7 +16,7 @@ baseline.
 |---|---|---|---|
 | high | 2 | 1 (B1 ✅) | 1 (B2 ✅ — A1 fix never reached check-hygiene) |
 | medium | 4 | 2 (B3 ✅, B4 ✅) | 2 (B5 ✅, B6 ✅) |
-| low | 6 | 4 (B8–B11) | 2 (B7 ✅ variant, B12) |
+| low | 6 | 4 (B8, B9 ✅, B10 ✅, B11) | 2 (B7 ✅ variant, B12) |
 | info / by-design | 1 | 0 | B13 |
 
 > Two High findings were the actionable headline; **both are now ✅ FIXED**. **B1** was a genuinely
@@ -225,20 +225,29 @@ baseline.
 - **Fix:** drop the `os` field (the bash/Windows guidance already lives in `cli.js` + README), or
   replace the hard gate with a non-fatal guidance check inside `cli.js`. Security-neutral; usability only.
 
-**B9 — `dev-setup.sh` aborts with raw `fatal: not in a git directory` (exit 128) when run before `git init`, unlike `install.sh`'s graceful guard** — `scripts/dev-setup.sh:44` · **NOVEL**
+**B9 — `dev-setup.sh` aborts with raw `fatal: not in a git directory` (exit 128) when run before `git init`, unlike `install.sh`'s graceful guard** — `scripts/dev-setup.sh:44` · **NOVEL** · ✅ **FIXED** (`fix/audit-b9-b10-dev-setup-hookspath-guards`)
 - **What:** `git config core.hooksPath .githooks` runs unconditionally under `set -euo pipefail`; with
   no `.git` it exits 128 and `set -e` propagates a hard failure *after* every file is already rendered
   and chmod'd. `install.sh:387-398` handles the same case with a `git rev-parse --git-dir` guard and an
   actionable warning (exit 0).
 - **Fix:** mirror `install.sh`'s guard around line 44 (warn + exit 0 with a "run `git init` first" hint).
 
-**B10 — `dev-setup.sh` unconditionally clobbers a pre-existing `core.hooksPath` (e.g. Husky), unlike `install.sh` which preserves it** — `scripts/dev-setup.sh:44` · **NOVEL**
+**B10 — `dev-setup.sh` unconditionally clobbers a pre-existing `core.hooksPath` (e.g. Husky), unlike `install.sh` which preserves it** — `scripts/dev-setup.sh:44` · **NOVEL** · ✅ **FIXED** (`fix/audit-b9-b10-dev-setup-hookspath-guards`)
 - **What:** `install.sh:387-398` only sets `core.hooksPath` when unset or already `.githooks`, warning
   otherwise (deliberate Husky/lefthook protection). `dev-setup.sh` overwrites it unconditionally.
 - **Repro:** `git config core.hooksPath .husky` then `dev-setup.sh` → silently becomes `.githooks`;
   the `install.sh` block warns and preserves `.husky`.
 - **Fix:** read the existing value and only set when empty/`.githooks`, else warn. Low (repo-local, a
   maintainer's own scaffold clone) but a genuine parity regression.
+- **Fixed (as landed, B9 + B10 together — same `git config core.hooksPath` line):** the wiring step now
+  mirrors `install.sh:403-414` — an outer `git rev-parse --git-dir` guard (no `.git` → warn + continue
+  to exit 0, no more raw exit 128) wrapping an inner `[ -z "$existing" ] || [ "$existing" = ".githooks" ]`
+  check (a pre-existing Husky/lefthook path is preserved with a warning, not clobbered). The summary line
+  now reports the actual outcome (`-> .githooks` / `left as '…'` / `NOT set`) instead of unconditionally
+  claiming `.githooks`. Locked in `tests/cases/09`: B10-preserve (planted `core.hooksPath=.husky` survives
+  a run), B10 happy-path (unset → `.githooks`), B9 (fake clone with NO `git init` → warns + exit 0).
+  Two independent mutations prove teeth: neutralizing the git-dir guard reddens only B9; neutralizing the
+  preserve check reddens only B10-preserve. Suite **197/0**, `shellcheck -S info` clean.
 
 **B11 — RELEASING.md release-notes `awk` emits EMPTY notes when the literal `vX.Y.Z` placeholder isn't substituted (ships a blank GitHub Release), and uses an unanchored version guard** — `RELEASING.md:47-48` · **NOVEL**
 - **What:** if the maintainer copy-pastes the line without replacing `vX.Y.Z`, no heading matches, awk
