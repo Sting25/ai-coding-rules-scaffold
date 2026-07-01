@@ -1,0 +1,93 @@
+name: release
+
+# Cuts a release when a version tag (vX.Y.Z) is pushed: re-runs the test suite,
+# publishes to npm via TRUSTED PUBLISHING (OIDC — no NPM_TOKEN, no 2FA prompt), and
+# creates the GitHub Release from the CHANGELOG. Maintainer CI — NOT installed into
+# consumer projects (unlike the *.yml.template files).
+#
+# One-time setup this depends on (see RELEASING.md): on npmjs.com, configure the
+# package's Trusted Publisher = GitHub Actions, org "Sting25", repo
+# "ai-coding-rules-scaffold", workflow filename "release.yml". Without it, the
+# publish step fails closed (npm rejects the OIDC exchange) — nothing half-ships.
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read
+
+jobs:
+  # Gate: never publish a tag whose tests don't pass. The cross-platform matrix
+  # runs on every PR; here a single fast ubuntu run guards a tag pushed directly.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - run: chmod +x tests/run.sh install.sh githooks/pre-commit.template
+      - run: ./tests/run.sh
+
+  publish-npm:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # mint the OIDC token npm trusted publishing verifies
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          # Node 24 bundles npm >= 11.6; trusted publishing (OIDC) needs npm
+          # >= 11.5.1, so the bundled npm is already new enough — no ad-hoc upgrade.
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          # Zero-dep package: nothing to cache. Disabling it also removes the
+          # cache-poisoning surface on this publish-triggered workflow.
+          package-manager-cache: false
+      - name: Verify the tag matches package.json version
+        # A tag whose version disagrees with package.json would publish the wrong
+        # version string — fail closed before touching the registry.
+        run: |
+          tag_ver="${GITHUB_REF_NAME#v}"
+          pkg_ver="$(node -p "require('./package.json').version")"
+          if [ "$tag_ver" != "$pkg_ver" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $pkg_ver"
+            exit 1
+          fi
+      - name: Publish to npm (OIDC trusted publishing, provenance auto)
+        # No NODE_AUTH_TOKEN: npm auto-detects the OIDC environment and exchanges
+        # it for a short-lived credential. Provenance is generated automatically.
+        run: npm publish
+
+  github-release:
+    needs: publish-npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # create the GitHub Release
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Build release notes from the CHANGELOG section
+        # Slice the `## [vX.Y.Z]` section up to the next `## [` heading. Matched by
+        # literal prefix (not regex) so the tag can't inject a pattern, and fails
+        # closed on an empty slice (a missing/mis-titled section) rather than
+        # shipping a blank release — the B11 lesson, enforced in CI.
+        run: |
+          awk -v h="## [${GITHUB_REF_NAME}]" '
+            index($0, h) == 1 { f = 1; print; next }
+            /^## \[/ { if (f) exit }
+            f { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          if [ ! -s "$RUNNER_TEMP/notes.md" ]; then
+            echo "::error::no CHANGELOG section found for $GITHUB_REF_NAME"
+            exit 1
+          fi
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
