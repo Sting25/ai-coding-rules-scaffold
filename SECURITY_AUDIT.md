@@ -296,8 +296,16 @@ baseline.
   to `return 1` reddens exactly this case (install aborts mid-run). Suite **199/0**, `shellcheck -S info`
   clean. The test lives in a **new `cases/12`** rather than `cases/09` because `cases/09` (and `install.sh`)
   were both at the scaffold's own 500-line module cap — extracting a new case file is the cap's intended
-  "extract a module" response, not a suppression. (Note: `install.sh` now sits at exactly 500 lines; a
-  genuine module extraction there is looming and tracked separately as a pre-existing cleanup.)
+  "extract a module" response, not a suppression.
+- **Follow-up DONE (module extraction):** the "looming" `install.sh` cap pressure this fix surfaced was
+  then resolved — the file-write policy helpers (`_cp_replace`/`_backup`/`cp_safe`/`cp_scaffold`/
+  `cp_pattern`/`mkx`, ~130 lines) were extracted verbatim into a sourced **`install-lib.sh`**, dropping
+  `install.sh` from 500 → **380 lines** (120 of headroom). Sourced via `. "$SCAFFOLD_DIR/install-lib.sh"`,
+  so `cases/11`'s bundle guard auto-detects it as REQUIRED (now 46 files checked) and it was added to
+  `package.json` `files` + the `shellcheck.yml` lint list. Behavior-preserving: suite **199/0**, plus a
+  fresh end-to-end smoke (install → hook blocks a `config.env`+AWS-key commit → `--force` backs up via the
+  sourced `_backup`). `shellcheck -S info` clean (the `FORCE` global is defaulted with `: "${FORCE:=0}"`
+  so the lib lints standalone without SC2154).
 
 ### ℹ️ By design / re-confirmed (captured, not new work)
 
