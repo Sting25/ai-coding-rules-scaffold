@@ -70,6 +70,14 @@ versioning follows [SemVer](https://semver.org/).
   hooks path is preserved with a warning instead of overwritten. The summary line
   reports the real outcome. Regressions in `tests/cases/09` (Husky path survives;
   unset → `.githooks`; no-`git init` clone warns + exits 0).
+- **npm package no longer blocks native-Windows / Git-Bash installs (B8, low).**
+  `package.json` carried `os: ["darwin","linux"]`, which npm enforces as a hard
+  `EBADPLATFORM` — native Windows (Git Bash and PowerShell) reports `win32`, so the
+  install was refused outright, *before* `cli.js` could print its "run it from Git
+  Bash or WSL" hint, and in contradiction of the README's Windows support. The `os`
+  field is dropped; the runtime already degrades gracefully when `bash` is absent.
+  Guarded in `tests/cases/11` (a jq check that `package.json` has no `os` field, or
+  one that permits `win32`).
 
 ## [v0.9.0] — 2026-06-30
 

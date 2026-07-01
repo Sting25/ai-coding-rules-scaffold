@@ -16,7 +16,7 @@ baseline.
 |---|---|---|---|
 | high | 2 | 1 (B1 ✅) | 1 (B2 ✅ — A1 fix never reached check-hygiene) |
 | medium | 4 | 2 (B3 ✅, B4 ✅) | 2 (B5 ✅, B6 ✅) |
-| low | 6 | 4 (B8, B9 ✅, B10 ✅, B11) | 2 (B7 ✅ variant, B12) |
+| low | 6 | 4 (B8 ✅, B9 ✅, B10 ✅, B11) | 2 (B7 ✅ variant, B12) |
 | info / by-design | 1 | 0 | B13 |
 
 > Two High findings were the actionable headline; **both are now ✅ FIXED**. **B1** was a genuinely
@@ -213,7 +213,7 @@ baseline.
   passes, guarding against a `*key*` broadening). Mutation-neutralizing the glob turns exactly the six
   positives red and leaves #36j green. Suite **194/0**, `shellcheck -S info` clean.
 
-**B8 — `package.json` `os: ["darwin","linux"]` hard-blocks native-Windows / Git-Bash npm install, contradicting `cli.js` + README Windows support** — `package.json:36-39` · **NOVEL**
+**B8 — `package.json` `os: ["darwin","linux"]` hard-blocks native-Windows / Git-Bash npm install, contradicting `cli.js` + README Windows support** — `package.json:36-39` · **NOVEL** · ✅ **FIXED** (`fix/audit-b8-drop-os-gate`)
 - **What:** npm enforces `os` as `EBADPLATFORM` (hard exit 1, package not installed) when
   `process.platform` is not listed. Native Windows (Git Bash and PowerShell) reports `win32`; only WSL
   reports `linux`. Yet `cli.js:38-41` emits a "run it from Git Bash or WSL" hint and `README.md:93-94,
@@ -224,6 +224,13 @@ baseline.
   `["darwin","linux"]`.
 - **Fix:** drop the `os` field (the bash/Windows guidance already lives in `cli.js` + README), or
   replace the hard gate with a non-fatal guidance check inside `cli.js`. Security-neutral; usability only.
+- **Fixed (as landed):** the `os` array is removed from `package.json`. The runtime already handles a
+  missing shell gracefully — `cli.js:36-41` prints the "needs bash — on Windows run it from Git Bash or
+  WSL" hint on `bash` ENOENT — so the hard `os` gate was pure downside (it EBADPLATFORM-refused the
+  install before the hint could ever run) and the README's Windows promise is now true rather than
+  contradicted. Locked in `tests/cases/11` (B8): a jq assertion that `package.json` has no `os` field, or
+  one that permits `win32`; re-adding `os:[darwin,linux]` turns it red. jq-only (runs even without npm).
+  Suite **198/0**.
 
 **B9 — `dev-setup.sh` aborts with raw `fatal: not in a git directory` (exit 128) when run before `git init`, unlike `install.sh`'s graceful guard** — `scripts/dev-setup.sh:44` · **NOVEL** · ✅ **FIXED** (`fix/audit-b9-b10-dev-setup-hookspath-guards`)
 - **What:** `git config core.hooksPath .githooks` runs unconditionally under `set -euo pipefail`; with
