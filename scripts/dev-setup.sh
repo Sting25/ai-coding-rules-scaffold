@@ -60,10 +60,30 @@ done
 
 chmod +x .githooks/pre-commit .githooks/commit-msg .githooks/lib/*
 
-git config core.hooksPath .githooks
+# Wire the hook — mirror install.sh's two guards. Only set core.hooksPath when it
+# is unset or already .githooks, so a pre-existing Husky/lefthook path is preserved
+# rather than silently clobbered. Guard on a real git dir (`git rev-parse
+# --git-dir`, which also covers worktrees/submodules) so a non-git checkout — a
+# tarball download, or a clone before `git init` — warns and continues instead of
+# aborting with a raw `fatal: not in a git directory` (exit 128) after every file
+# is already rendered.
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  existing_hooks_path=$(git config --get core.hooksPath || true)
+  if [ -z "$existing_hooks_path" ] || [ "$existing_hooks_path" = ".githooks" ]; then
+    git config core.hooksPath .githooks
+    hooks_status="core.hooksPath -> .githooks"
+  else
+    hooks_status="core.hooksPath left as '$existing_hooks_path' (pre-existing — not clobbered)"
+    echo "warning: core.hooksPath is already '$existing_hooks_path' — leaving it alone." >&2
+    echo "         Point it at .githooks or chain the scaffold's hook into your setup." >&2
+  fi
+else
+  hooks_status="core.hooksPath NOT set (not a git repo)"
+  echo "warning: not in a git repo — run 'git config core.hooksPath .githooks' after 'git init'." >&2
+fi
 
 libs=(.githooks/lib/*)
 pats=(.forbidden-patterns/*.txt)
-echo "✓ dev hooks rendered; core.hooksPath -> .githooks"
+echo "✓ dev hooks rendered; $hooks_status"
 echo "  active: pre-commit, commit-msg, ${#libs[@]} scanners, ${#pats[@]} pattern files"
 echo "  (gitignored build artifacts — edit the *.template sources, then re-run this script)"

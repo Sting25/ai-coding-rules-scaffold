@@ -442,4 +442,56 @@ else
   echo "  ✗ dev-setup followed a symlinked lib/ dir and wrote a scanner outside the repo (B4)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$BD"
+
+# --- dev-setup.sh guards the core.hooksPath wiring like install.sh (B9 / B10) --
+# install.sh:403-414 guards the `git config core.hooksPath` step two ways;
+# dev-setup.sh ran it unconditionally. Reuse the minimal fake clone (dev-setup
+# resolves its root from its own path, so a scripts/ + templates tree is enough).
+
+# (T) B10 — a pre-existing core.hooksPath (Husky/lefthook) must be PRESERVED, not
+#     silently clobbered to .githooks. Reverting the guard sets it to .githooks
+#     (this case turns red), mutation-proving the preserve arm.
+HP=$(mktemp -d)
+_b4_fakeclone "$HP/clone"
+( cd "$HP/clone" && git config core.hooksPath .husky )
+( cd "$HP/clone" && bash scripts/dev-setup.sh ) >"$HOOK_OUT" 2>&1 || true
+if [ "$( cd "$HP/clone" && git config --get core.hooksPath )" = ".husky" ] \
+   && grep -qi "already '.husky'" "$HOOK_OUT"; then
+  echo "  ✓ dev-setup preserves a pre-existing core.hooksPath (no Husky clobber)"; PASS=$((PASS + 1))
+else
+  echo "  ✗ dev-setup clobbered a pre-existing core.hooksPath (B10)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$HP"
+
+# (T) B10 happy path — with NO pre-existing hooksPath, dev-setup still sets
+#     .githooks (guards the fix from breaking the normal dogfooding wiring).
+HH=$(mktemp -d)
+_b4_fakeclone "$HH/clone"
+( cd "$HH/clone" && bash scripts/dev-setup.sh ) >"$HOOK_OUT" 2>&1 || true
+if [ "$( cd "$HH/clone" && git config --get core.hooksPath )" = ".githooks" ]; then
+  echo "  ✓ dev-setup sets core.hooksPath -> .githooks when unset (happy path)"; PASS=$((PASS + 1))
+else
+  echo "  ✗ dev-setup did not wire core.hooksPath on a fresh clone (B10 regression)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$HH"
+
+# (T) B9 — run before `git init` (a non-git checkout / tarball): dev-setup must
+#     WARN and exit 0, not abort with a raw `fatal: not in a git directory`
+#     (exit 128) after every file is already rendered. Build the fake clone WITHOUT
+#     `git init`; mktemp dirs are not inside a repo, so the git-dir guard fires.
+#     Reverting the guard makes the run exit 128 (this case turns red).
+NG=$(mktemp -d)
+mkdir -p "$NG/clone/scripts" "$NG/clone/githooks/lib" "$NG/clone/forbidden-patterns"
+cp "$SCAFFOLD_DIR/scripts/dev-setup.sh" "$NG/clone/scripts/dev-setup.sh"
+printf '#!/usr/bin/env bash\n' >"$NG/clone/githooks/pre-commit.template"
+printf '#!/usr/bin/env bash\n' >"$NG/clone/githooks/commit-msg.template"
+printf '#!/usr/bin/env bash\n# scanner\n' >"$NG/clone/githooks/lib/check-secrets.template"
+printf 'pat\tdesc\n' >"$NG/clone/forbidden-patterns/secrets.txt.template"
+if ( cd "$NG/clone" && bash scripts/dev-setup.sh ) >"$HOOK_OUT" 2>&1 \
+   && grep -qi 'not in a git repo' "$HOOK_OUT"; then
+  echo "  ✓ dev-setup warns + exits 0 when run before git init (no exit 128)"; PASS=$((PASS + 1))
+else
+  echo "  ✗ dev-setup aborted instead of warning without a git dir (B9)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$NG"
 reset_repo

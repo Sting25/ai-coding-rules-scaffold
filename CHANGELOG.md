@@ -60,6 +60,16 @@ versioning follows [SemVer](https://semver.org/).
   `install.sh` already defends. It now drops any symlink at a rendered file or
   directory before writing, so renders always land as real files in-tree.
   Regressions in `tests/cases/09` (file-symlink + dir-symlink plants).
+- **`scripts/dev-setup.sh` guards the `core.hooksPath` wiring like `install.sh`
+  (B9, B10, low).** The wiring step ran `git config core.hooksPath .githooks`
+  unconditionally, so (B9) run before `git init` it aborted with a raw `fatal:
+  not in a git directory` (exit 128) *after* every file was already rendered, and
+  (B10) it silently clobbered a pre-existing `core.hooksPath` (e.g. a Husky /
+  lefthook setup). It now mirrors `install.sh`: a `git rev-parse --git-dir` guard
+  warns and continues (exit 0) outside a git repo, and an existing non-`.githooks`
+  hooks path is preserved with a warning instead of overwritten. The summary line
+  reports the real outcome. Regressions in `tests/cases/09` (Husky path survives;
+  unset → `.githooks`; no-`git init` clone warns + exits 0).
 
 ## [v0.9.0] — 2026-06-30
 
