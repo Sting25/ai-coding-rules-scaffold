@@ -6,6 +6,14 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.10.0] — 2026-07-01
+
+A packaging / robustness release that closes the remaining findings of the
+2026-06-30 packaging audit (B1–B12). Two scanner-coverage additions
+(`check-filenames` now blocks non-dotfile `*.env` files and binary
+key/keystore files), native-Windows / Git-Bash `npm` install support, and a
+set of `install.sh` / `dev-setup.sh` robustness and parity fixes.
+
 ### Security
 - **`check-hygiene` fails closed on over-long lines (B2, high).** The A1
   fail-closed fix had only reached `check-secrets`/`check-patterns`; the
