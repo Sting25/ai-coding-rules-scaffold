@@ -37,36 +37,56 @@ The version lives in these places — all must agree on `vX.Y.Z`:
    - Open the PR, wait for CI green on **both** runners, merge (`--merge`, never
      `--auto` — this repo has no branch protection).
 
-## 2. Tag + GitHub release
+## 2. Push the tag — CI publishes (npm + GitHub release)
+
+Once the prep PR is merged, tag `main` and push. The **`release.yml`** workflow
+does the rest: runs the test suite, publishes to npm via **trusted publishing
+(OIDC — no `NPM_TOKEN`, no 2FA prompt)** with provenance, and creates the GitHub
+Release from the CHANGELOG section for the tag.
 
 ```sh
 git checkout main && git pull --ff-only
 git tag -a vX.Y.Z -m "vX.Y.Z — <one-line summary>"
-git push origin vX.Y.Z
+git push origin vX.Y.Z          # triggers release.yml
+gh run watch                    # or watch the Actions tab
+```
+
+On success: `npm view ai-coding-rules-scaffold version` shows `X.Y.Z` (with a
+provenance badge) and `gh release list` shows `vX.Y.Z` marked **Latest**. The
+workflow fails **closed** if the tag doesn't match `package.json` (a tag pushed
+without the prep bump aborts before touching the registry) or if the CHANGELOG
+section is missing/empty (no blank release ships).
+
+### One-time setup (per package — already done for this one)
+
+OIDC publishing depends on a **Trusted Publisher** registered on npmjs.com. Do
+this ONCE per package (all fields case-sensitive, exact):
+
+npmjs.com → the package → **Settings → Trusted Publisher → GitHub Actions**:
+- **Organization or user:** `Sting25`
+- **Repository:** `ai-coding-rules-scaffold`
+- **Workflow filename:** `release.yml`
+- **Allowed actions:** `npm publish`
+
+No token is stored anywhere. GitHub mints a short-lived OIDC token scoped to this
+repo + workflow file; npm verifies it against the config above. (Requires npm
+≥ 11.5.1 / Node ≥ 22.14 — the workflow pins Node 24, which bundles a new-enough npm.)
+
+### Manual fallback (only if Actions is unavailable)
+
+```sh
+git tag -a vX.Y.Z -m "vX.Y.Z — <summary>" && git push origin vX.Y.Z
 # Release notes = the CHANGELOG section for this version. The end-of-section guard
 # is ANCHORED (`^## \[vX\.Y\.Z\]`) so an adjacent heading that merely CONTAINS the
 # version as a substring (e.g. a `vX.Y.Z-hotfix`) can't leak its body into the notes.
 awk '/^## \[vX\.Y\.Z\]/{f=1} /^## \[/{if(f && !/^## \[vX\.Y\.Z\]/)exit} f' CHANGELOG.md > /tmp/notes.md
-# Fail loudly instead of shipping a BLANK release: if vX.Y.Z wasn't substituted
-# above, no heading matches, awk emits 0 bytes, and `gh release create` would
-# otherwise publish empty notes with no error.
 [ -s /tmp/notes.md ] || { echo "ERROR: empty release notes — did you substitute vX.Y.Z?" >&2; exit 1; }
 gh release create vX.Y.Z --title "vX.Y.Z — <summary>" --notes-file /tmp/notes.md
+npm publish   # ⚠ manual publish needs a 2FA OTP or a bypass-enabled granular token
+              #   (npm mandate). Trusted publishing above avoids both — prefer it.
 ```
 
-Confirm it's latest: `gh release list` shows `vX.Y.Z` marked **Latest**.
-
-## 3. Publish to npm
-
-```sh
-npm publish            # needs `npm login` first; npm may prompt for a 2FA OTP
-npm view ai-coding-rules-scaffold version   # confirm it shows X.Y.Z
-```
-
-The package has zero dependencies, so there's no lockfile to manage. `npx
-ai-coding-rules-scaffold` resolves the new version automatically.
-
-## 4. Update the Homebrew tap
+## 3. Update the Homebrew tap
 
 The formula's `url` points at the GitHub source tarball for the tag; bump the
 `url` + recompute the `sha256`:
@@ -93,7 +113,7 @@ brew uninstall ai-coding-rules-scaffold                      # clean up
 > `brew tap-new you/localtest --no-git`, copy the `.rb` into its `Formula/`, then
 > `brew style you/localtest/ai-coding-rules-scaffold`. Untap when done.
 
-## 5. Smoke-test both registries
+## 4. Smoke-test both registries
 
 ```sh
 # npm
@@ -102,10 +122,11 @@ npx -y ai-coding-rules-scaffold@X.Y.Z --help
 brew install sting25/tap/ai-coding-rules-scaffold && ai-coding-rules-scaffold --help
 ```
 
-## Future: automate
+## Future: automate the Homebrew tap too
 
-This is currently manual on purpose (it needs the maintainer's npm + GitHub
-auth). A `release.yml` triggered on tag push could publish to npm (with an
-`NPM_TOKEN` secret) and open a PR to the tap bumping `url`/`sha256` (with a
-tap-scoped PAT) — deriving every copy from the tag so steps 3–4 can't drift.
-Worth adding once the cadence justifies the secret setup.
+npm publish + the GitHub Release are automated (`release.yml`, OIDC — no secret).
+The one remaining manual step is the Homebrew tap bump (§3): it needs a
+**cross-repo push** to `Sting25/homebrew-tap`, which the default `GITHUB_TOKEN`
+can't do — so a follow-on job would need a tap-scoped PAT (or deploy key) secret
+to compute the `sha256` from the tag tarball and push the formula. Deferred until
+it's worth managing that one secret; it's the only token the pipeline would hold.
