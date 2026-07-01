@@ -53,9 +53,24 @@ content=$(jq -r '[(.tool_input // .) | .. | strings] | join("\n")' <<<"$payload"
 [ -n "$content" ] || exit 0
 
 # Drop pathologically long lines (a minified bundle pasted into a Write) so the
-# combined ERE can't be made to hang — same guard as check-secrets.
+# combined ERE can't be made to hang — same guard as check-secrets. But an
+# over-cap line must FAIL CLOSED here (block, exit 2), not ride through as
+# "allow": a secret or a `curl|bash` padded past MAX_LINE_LENGTH would otherwise
+# be silently permitted at write time while its short form blocks. This is the
+# one place agent-precheck blocks rather than failing open — an *unscannable*
+# line is not the same as a *missing scanner* (jq/config), and consistency with
+# the short-input block wins. awk exit 9 signals "a line was dropped".
 MAX_LINE_LENGTH=${MAX_LINE_LENGTH:-50000}
-content=$(printf '%s\n' "$content" | awk -v n="$MAX_LINE_LENGTH" 'length > n { next } { print }')
+cap_rc=0
+content=$(printf '%s\n' "$content" | awk -v n="$MAX_LINE_LENGTH" 'length > n { d=1; next } { print } END { exit (d ? 9 : 0) }') || cap_rc=$?
+if [ "$cap_rc" -eq 9 ]; then
+  {
+    echo "BLOCKED by agent-precheck: a line over $MAX_LINE_LENGTH chars is too long"
+    echo "to scan for secret/shell patterns — split the content (or raise"
+    echo "MAX_LINE_LENGTH, accepting the ReDoS cost) before this write/command runs."
+  } >&2
+  exit 2
+fi
 [ -n "$content" ] || exit 0
 
 # scan_against <patternfile> <i|""> <advice line>
