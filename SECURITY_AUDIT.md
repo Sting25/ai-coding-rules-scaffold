@@ -14,16 +14,17 @@ baseline.
 
 | Severity | Count | Novel | Already tracked / by-design |
 |---|---|---|---|
-| high | 2 | 1 (B1) | 1 (B2 — A1 fix never reached check-hygiene) |
+| high | 2 | 1 (B1 ✅) | 1 (B2 ✅ — A1 fix never reached check-hygiene) |
 | medium | 4 | 2 (B3, B4) | 2 (B5, B6) |
 | low | 6 | 4 (B8–B11) | 2 (B7 variant, B12) |
 | info / by-design | 1 | 0 | B13 |
 
-> Two High findings are the actionable headline. **B1** is a genuinely new location of the
-> already-fixed A7 symlink class. **B2** shows the A1 "fail-closed on over-cap lines" fix —
-> recorded as FIXED in the section below — was only applied to `check-secrets`/`check-patterns`
-> and **never reached `check-hygiene`'s hidden-Unicode (Trojan Source) branch**, so that gate
-> still fails OPEN. Both were re-reproduced by hand.
+> Two High findings were the actionable headline; **both are now ✅ FIXED**. **B1** was a genuinely
+> new location of the already-fixed A7 symlink class. **B2** showed the A1 "fail-closed on over-cap
+> lines" fix — recorded as FIXED in the section below — had only been applied to
+> `check-secrets`/`check-patterns` and **never reached `check-hygiene`'s hidden-Unicode (Trojan
+> Source) and conflict-marker branches**, so that gate still failed OPEN. Both were re-reproduced by
+> hand, then closed with red→green regressions.
 
 ### 🟠 High
 
@@ -55,7 +56,7 @@ baseline.
   append, dangling `AGENTS.md` create); each fails against the pre-fix handler and passes after — full
   suite **178/0**, `shellcheck -S info` clean.
 
-**B2 — `check-hygiene` fails OPEN on over-cap lines: the A1 fail-closed fix never reached the hidden-Unicode (Trojan Source) and conflict-marker branches** — `githooks/lib/check-hygiene.template:106,163` · **already tracked but mis-prioritized + contradicts the A1 "FIXED" claim**
+**B2 — `check-hygiene` fails OPEN on over-cap lines: the A1 fail-closed fix never reached the hidden-Unicode (Trojan Source) and conflict-marker branches** — `githooks/lib/check-hygiene.template:106,163` · **already tracked but mis-prioritized + contradicts the A1 "FIXED" claim** · ✅ **FIXED** (`fix/audit-b2-hygiene-fail-closed`)
 - **What:** `check-secrets.template:159` carries the A1 fix (`awk '… { d=1; next } … END { exit (d ? 9 : 0) }'`,
   then reports the un-scannable line and sets `FAILED`). `check-hygiene`'s conflict-marker (`:106`)
   and hidden-Unicode (`:163`) branches still use the plain `awk 'length > n { next } { print }'`
@@ -73,6 +74,17 @@ baseline.
   the already-present-but-dead `cap_rc`). Add an over-cap hygiene regression (bidi + conflict marker
   each on a >cap line must be reported and exit non-zero), mirroring `cases/04 #31`. Reconcile the A1
   "FIXED" summary above, which currently over-claims that `check-hygiene` fails closed.
+- **Fixed (as landed):** both awk passes now carry `{ d=1; next } … END { exit (d ? 9 : 0) }`, the
+  conflict-marker branch's dead `cap_rc` is wired live, and the previously-`|| true` hidden-Unicode
+  branch now captures `cap_rc`. On `cap_rc==9` each branch emits via the existing `emit "$STATE"` —
+  so the over-cap finding inherits the rule's configured severity (a repo that downgraded
+  `hidden-unicode`/`conflict-marker` to `warn` gets a warn, not a surprise hard-block; the default
+  `error` sets `FAILED`). This is the one deliberate divergence from `check-secrets`, which hard-errors
+  inline because it is non-overridable. Locked with two red→green regressions in `tests/cases/06`
+  (#45g bidi-on-over-cap, #45h conflict-marker-on-over-cap); the expected-substring guard gives them
+  teeth — mutation-reverting the template leaves the commit rejected by `check-secrets` but drops the
+  hygiene fail-closed message, turning exactly those two cases red and no others. Full suite **180/0**,
+  `shellcheck -S info` clean. The A1 summary below is reconciled accordingly.
 
 ### 🟡 Medium
 
@@ -291,7 +303,7 @@ and the cross-grep / bash-3.2 portability sweep (no BSD-vs-GNU or bash-4-ism div
 
 Each landed with a red-then-green regression test; full suite 148/148 green.
 
-- **A1 (critical)** — `check-secrets` now FAILS CLOSED on a line over `MAX_LINE_LENGTH` (reports it + fails) instead of dropping it with a warning and exit 0. The line is still dropped before the ERE, so the ReDoS guard is unchanged. (`2f79605`; tests cases/04 #31, #31b)
+- **A1 (critical)** — `check-secrets` now FAILS CLOSED on a line over `MAX_LINE_LENGTH` (reports it + fails) instead of dropping it with a warning and exit 0. The line is still dropped before the ERE, so the ReDoS guard is unchanged. (`2f79605`; tests cases/04 #31, #31b) **`check-patterns` carries the same fix. `check-hygiene`'s conflict-marker + hidden-Unicode branches were NOT covered by this commit — that gap was finding B2, fixed separately in `fix/audit-b2-hygiene-fail-closed` (cases/06 #45g/#45h). `agent-precheck` (B6) remains open.**
 - **A2 (high)** — `agent-precheck` block path no longer takes SIGPIPE (`printf … | head -3 || true`), so it reliably reaches `exit 2` and actually blocks. (`98c6d41`; cases/07 #48g asserts the exit code is exactly 2)
 - **A3 (high)** — `scaffold-allow` dropped bare `--` as a leader and now requires a start-of-line/whitespace boundary, across all five exemption sites (check-secrets, check-patterns, check-hygiene ×2, agent-precheck); over-claiming docs corrected. (`2a92e6e`; cases/04 #28b)
 - **A4 (high)** — `check-filenames` folds name+path to lowercase before matching, so `.PEM`/`.ENV`/`ID_RSA` are blocked; the `.env.example` allowlist still holds. (`16ab43b`; cases/04 #36, #36b)
