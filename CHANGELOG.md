@@ -87,6 +87,16 @@ versioning follows [SemVer](https://semver.org/).
   and completes. `_backup` prints a "skipping this one file — re-run after cleanup"
   notice so the skip is visible. Guarded in `tests/cases/12` (100 saturated slots →
   the file keeps its local edit and the run still reaches `Done`).
+- **`RELEASING.md` release-notes extraction no longer risks a blank or leaky
+  GitHub Release (B11, low).** The `awk` that slices the CHANGELOG section for a tag
+  used an unanchored end-of-section guard (`!/vX\.Y\.Z/`), so an adjacent heading
+  containing the version as a substring (e.g. `vX.Y.Z-hotfix`) could leak its body
+  into the notes; and if the maintainer ran the snippet without substituting
+  `vX.Y.Z`, it emitted 0 bytes and `gh release create` shipped an empty-body Release
+  with no error. The guard is now anchored (`!/^## \[vX\.Y\.Z\]/`) and a
+  `[ -s /tmp/notes.md ]` check aborts loudly on empty notes before publishing.
+  Docs-only (maintainer procedure); both cases were reproduced and the fix verified
+  against a crafted CHANGELOG fixture.
 
 ## [v0.9.0] — 2026-06-30
 

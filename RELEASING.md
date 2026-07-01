@@ -43,8 +43,14 @@ The version lives in these places — all must agree on `vX.Y.Z`:
 git checkout main && git pull --ff-only
 git tag -a vX.Y.Z -m "vX.Y.Z — <one-line summary>"
 git push origin vX.Y.Z
-# Release notes = the CHANGELOG section for this version:
-awk '/^## \[vX\.Y\.Z\]/{f=1} /^## \[/{if(f && !/vX\.Y\.Z/)exit} f' CHANGELOG.md > /tmp/notes.md
+# Release notes = the CHANGELOG section for this version. The end-of-section guard
+# is ANCHORED (`^## \[vX\.Y\.Z\]`) so an adjacent heading that merely CONTAINS the
+# version as a substring (e.g. a `vX.Y.Z-hotfix`) can't leak its body into the notes.
+awk '/^## \[vX\.Y\.Z\]/{f=1} /^## \[/{if(f && !/^## \[vX\.Y\.Z\]/)exit} f' CHANGELOG.md > /tmp/notes.md
+# Fail loudly instead of shipping a BLANK release: if vX.Y.Z wasn't substituted
+# above, no heading matches, awk emits 0 bytes, and `gh release create` would
+# otherwise publish empty notes with no error.
+[ -s /tmp/notes.md ] || { echo "ERROR: empty release notes — did you substitute vX.Y.Z?" >&2; exit 1; }
 gh release create vX.Y.Z --title "vX.Y.Z — <summary>" --notes-file /tmp/notes.md
 ```
 
