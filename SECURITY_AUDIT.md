@@ -16,7 +16,7 @@ baseline.
 |---|---|---|---|
 | high | 2 | 1 (B1 ✅) | 1 (B2 ✅ — A1 fix never reached check-hygiene) |
 | medium | 4 | 2 (B3 ✅, B4 ✅) | 2 (B5 ✅, B6 ✅) |
-| low | 6 | 4 (B8 ✅, B9 ✅, B10 ✅, B11) | 2 (B7 ✅ variant, B12 ✅) |
+| low | 6 | 4 (B8 ✅, B9 ✅, B10 ✅, B11 ✅) | 2 (B7 ✅ variant, B12 ✅) |
 | info / by-design | 1 | 0 | B13 |
 
 > Two High findings were the actionable headline; **both are now ✅ FIXED**. **B1** was a genuinely
@@ -256,7 +256,7 @@ baseline.
   Two independent mutations prove teeth: neutralizing the git-dir guard reddens only B9; neutralizing the
   preserve check reddens only B10-preserve. Suite **197/0**, `shellcheck -S info` clean.
 
-**B11 — RELEASING.md release-notes `awk` emits EMPTY notes when the literal `vX.Y.Z` placeholder isn't substituted (ships a blank GitHub Release), and uses an unanchored version guard** — `RELEASING.md:47-48` · **NOVEL**
+**B11 — RELEASING.md release-notes `awk` emits EMPTY notes when the literal `vX.Y.Z` placeholder isn't substituted (ships a blank GitHub Release), and uses an unanchored version guard** — `RELEASING.md:47-48` · **NOVEL** · ✅ **FIXED** (`fix/audit-b11-releasing-notes-guard`)
 - **What:** if the maintainer copy-pastes the line without replacing `vX.Y.Z`, no heading matches, awk
   emits 0 bytes, and the next command `gh release create … --notes-file /tmp/notes.md` publishes a
   blank-body Release with no error. Separately, the exit guard `!/vX\.Y\.Z/` is an unanchored substring
@@ -265,6 +265,16 @@ baseline.
 - **Fix:** anchor the guard to the heading (`!/^## \[vX\.Y\.Z\]/`) and add `[ -s /tmp/notes.md ] || {
   echo "ERROR: empty release notes" >&2; exit 1; }` before `gh release create`. Maintainer-procedure
   doc defect, recoverable post-hoc — low.
+- **Fixed (as landed):** both applied. The end-of-section guard is now
+  `!/^## \[vX\.Y\.Z\]/` (anchored, so an adjacent `## [vX.Y.Z-hotfix]`-style heading no longer leaks its
+  body), and a `[ -s /tmp/notes.md ] || { echo "ERROR: empty release notes — did you substitute
+  vX.Y.Z?"; exit 1; }` gate sits before `gh release create` so an un-substituted placeholder aborts
+  loudly instead of shipping a blank Release. **No permanent regression test:** RELEASING.md is a
+  copy-paste maintainer procedure with no shipped code path to regress, and a test that greps + evals the
+  awk out of the markdown would be brittle theater. Instead both bugs were **reproduced empirically** and
+  the fix verified against a crafted CHANGELOG fixture (unsubstituted `vX.Y.Z` → 0 bytes caught by the
+  new `-s` gate; a `v0.9.0-hotfix` sibling heading leaked under the old unanchored guard and is correctly
+  excluded under the anchored one). Suite unchanged at **199/0** (doc-only change).
 
 **B12 — `_backup` >99-cap `return 1` aborts the whole install mid-run with no rollback (a concrete trigger of the already-tracked `set -e` mid-script-abort limitation)** — `install.sh:127` · **already tracked** (`SECURITY_AUDIT.md:45`, Medium, open) · ✅ **FIXED** (`fix/audit-b12-backup-cap-skip`)
 - **What:** with 100 stale `.scaffold-bak[.N]` files for a destination, `_backup` returns 1; callers do
