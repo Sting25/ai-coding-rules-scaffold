@@ -392,4 +392,54 @@ else
   echo "  ✗ re-run churned an already-current install"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$UNO"
+
+# --- dev-setup.sh does not write THROUGH a symlink at a rendered path (B4) -----
+# scripts/dev-setup.sh renders templates into the gitignored .githooks/ /
+# .forbidden-patterns/ for the scaffold's OWN dogfooding. It used bare `cp` /
+# `mkdir -p`, so a leftover/planted symlink there (surviving across checkouts,
+# since those dirs are gitignored) made cp write a scanner THROUGH the link to an
+# outside target, or mkdir -p follow a symlinked lib/ dir — the A7 class install.sh
+# already defends. dev-setup refuses to run outside a scaffold clone, so build a
+# MINIMAL fake clone (it resolves its root from its own path) and drive it.
+_b4_fakeclone() {   # $1 = dir to build a minimal runnable dev-setup clone into
+  local d=$1
+  mkdir -p "$d/scripts" "$d/githooks/lib" "$d/forbidden-patterns"
+  cp "$SCAFFOLD_DIR/scripts/dev-setup.sh" "$d/scripts/dev-setup.sh"
+  printf '#!/usr/bin/env bash\n' >"$d/githooks/pre-commit.template"
+  printf '#!/usr/bin/env bash\n' >"$d/githooks/commit-msg.template"
+  printf '#!/usr/bin/env bash\n# scanner\n' >"$d/githooks/lib/check-secrets.template"
+  printf 'pat\tdesc\n' >"$d/forbidden-patterns/secrets.txt.template"
+  ( cd "$d" && git init --quiet && git config user.email t@t.local && git config user.name t )
+}
+
+# (T) file symlink at a rendered scanner path -> outside victim: the victim must
+#     NOT be overwritten, and the rendered path must become a real regular file.
+BF=$(mktemp -d)
+_b4_fakeclone "$BF/clone"
+printf 'PRECIOUS_DO_NOT_TOUCH\n' >"$BF/outside_target"
+mkdir -p "$BF/clone/.githooks/lib"
+ln -s "$BF/outside_target" "$BF/clone/.githooks/lib/check-secrets"
+( cd "$BF/clone" && bash scripts/dev-setup.sh ) >"$HOOK_OUT" 2>&1 || true
+if grep -q 'PRECIOUS_DO_NOT_TOUCH' "$BF/outside_target" \
+   && [ -f "$BF/clone/.githooks/lib/check-secrets" ] && [ ! -L "$BF/clone/.githooks/lib/check-secrets" ]; then
+  echo "  ✓ dev-setup replaces a symlinked rendered path with a real file (no write-through)"; PASS=$((PASS + 1))
+else
+  echo "  ✗ dev-setup wrote through a symlink or clobbered the outside target (B4)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$BF"
+
+# (T) symlinked .githooks/lib DIR -> outside dir: mkdir -p must NOT follow it, so
+#     no scanner lands outside the repo and the rendered lib/ is a real dir.
+BD=$(mktemp -d)
+_b4_fakeclone "$BD/clone"
+mkdir -p "$BD/clone/.githooks" "$BD/outside_dir"
+ln -s "$BD/outside_dir" "$BD/clone/.githooks/lib"
+( cd "$BD/clone" && bash scripts/dev-setup.sh ) >"$HOOK_OUT" 2>&1 || true
+if [ ! -e "$BD/outside_dir/check-secrets" ] \
+   && [ -d "$BD/clone/.githooks/lib" ] && [ ! -L "$BD/clone/.githooks/lib" ]; then
+  echo "  ✓ dev-setup does not render through a symlinked lib/ dir (no outside write)"; PASS=$((PASS + 1))
+else
+  echo "  ✗ dev-setup followed a symlinked lib/ dir and wrote a scanner outside the repo (B4)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$BD"
 reset_repo

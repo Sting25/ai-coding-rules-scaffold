@@ -24,19 +24,38 @@ if [ ! -f githooks/pre-commit.template ]; then
   exit 1
 fi
 
-mkdir -p .githooks/lib .forbidden-patterns
+# Mirror install.sh's A7 symlink defenses (_cp_replace). .githooks/ and
+# .forbidden-patterns/ are gitignored, so a leftover or planted symlink there
+# survives across checkouts; a bare `cp` follows a symlink at a rendered path and
+# writes the scanner THROUGH the link to a target OUTSIDE the repo, and `mkdir -p`
+# follows a symlinked DIR (sending every scanner outside). Drop any symlink before
+# writing so we always land a real file/dir in the tree, never through a link.
+_mkdir_safe() {           # create a real dir, never follow a symlink into one
+  local d=$1
+  if [ -L "$d" ]; then rm -f "$d"; fi
+  mkdir -p "$d"
+}
+_cp() {                   # write a real regular file, never through a symlink
+  local src=$1 dst=$2
+  rm -f "$dst"
+  cp "$src" "$dst"
+}
+
+_mkdir_safe .githooks
+_mkdir_safe .githooks/lib
+_mkdir_safe .forbidden-patterns
 
 # Top-level hooks — including the opt-in commit-msg: the repo dogfoods everything
 # it ships, even the hooks that are opt-in for downstream consumers.
-cp githooks/pre-commit.template .githooks/pre-commit
-cp githooks/commit-msg.template .githooks/commit-msg
+_cp githooks/pre-commit.template .githooks/pre-commit
+_cp githooks/commit-msg.template .githooks/commit-msg
 
 # Scanner libs + language/secret pattern files.
 for t in githooks/lib/*.template; do
-  cp "$t" ".githooks/lib/$(basename "$t" .template)"
+  _cp "$t" ".githooks/lib/$(basename "$t" .template)"
 done
 for t in forbidden-patterns/*.txt.template; do
-  cp "$t" ".forbidden-patterns/$(basename "$t" .template)"
+  _cp "$t" ".forbidden-patterns/$(basename "$t" .template)"
 done
 
 chmod +x .githooks/pre-commit .githooks/commit-msg .githooks/lib/*
