@@ -110,6 +110,25 @@ if command -v jq >/dev/null 2>&1; then
     echo "  ✗ agent-precheck — block exited $rc, expected exactly 2 (SIGPIPE fail-open?)"
     FAIL=$((FAIL + 1))
   fi
+  # (48h) REGRESSION (over-cap fail-OPEN, audit B6): a secret embedded IN a single
+  #       line over MAX_LINE_LENGTH was dropped by the ReDoS cap and the Write
+  #       allowed at exit 0 — while the short form blocks at exit 2. It must now
+  #       BLOCK (exit 2). The secret sits ON the over-cap line, so dropping the
+  #       line drops the secret; only the over-cap fail-closed can produce exit 2
+  #       here (the line never reaches the pattern scan). --rawfile keeps the 60k
+  #       content off the CLI (Linux MAX_ARG_STRLEN), same as 48g.
+  bigf=$(mktemp)
+  { head -c 60000 /dev/zero | tr '\0' a; printf 'AWS=%s\n' "$akia"; } >"$bigf"
+  pc=$(jq -n --rawfile c "$bigf" '{tool_name:"Write",tool_input:{file_path:"big.py",content:$c}}')
+  rm -f "$bigf"
+  rc=0
+  printf '%s' "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1 || rc=$?
+  if [ "$rc" -eq 2 ] && grep -qF "too long" "$HOOK_OUT"; then
+    echo "  ✓ agent-precheck blocks (exit 2) a secret on a >MAX_LINE_LENGTH line (over-cap fail-closed)"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — over-cap line exited $rc, expected exactly 2 with the too-long block message (fail-open?)"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
 else
   echo "  - skipped agent-precheck tests (jq not installed)"
 fi

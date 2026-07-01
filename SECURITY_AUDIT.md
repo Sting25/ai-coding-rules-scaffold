@@ -15,7 +15,7 @@ baseline.
 | Severity | Count | Novel | Already tracked / by-design |
 |---|---|---|---|
 | high | 2 | 1 (B1 ✅) | 1 (B2 ✅ — A1 fix never reached check-hygiene) |
-| medium | 4 | 2 (B3, B4) | 2 (B5, B6) |
+| medium | 4 | 2 (B3, B4) | 2 (B5, B6 ✅) |
 | low | 6 | 4 (B8–B11) | 2 (B7 variant, B12) |
 | info / by-design | 1 | 0 | B13 |
 
@@ -136,7 +136,7 @@ baseline.
 - **Fix:** add a `*.env` case to the env arm (keeping the `.env.example` allowlist); add a
   `cases/04` fixture asserting `prod.env` is rejected, mutation-proven.
 
-**B6 — `agent-precheck` over-long-line filter still FAILS OPEN (allow): the A1 fail-closed upgrade was never applied to the agent-write layer** — `githooks/lib/agent-precheck.template:58-59,127` · **already tracked** (`SECURITY_AUDIT.md:50`; A1 header listed `:57-59`, fix said "should fail closed on the Bash path")
+**B6 — `agent-precheck` over-long-line filter still FAILS OPEN (allow): the A1 fail-closed upgrade was never applied to the agent-write layer** — `githooks/lib/agent-precheck.template:58-59,127` · **already tracked** (`SECURITY_AUDIT.md:50`; A1 header listed `:57-59`, fix said "should fail closed on the Bash path") · ✅ **FIXED** (`fix/audit-b6-agent-precheck-fail-closed`)
 - **What:** line 58 drops any line over `MAX_LINE_LENGTH` with the plain `awk 'length > n { next }'`
   and line 59 (`[ -n "$content" ] || exit 0`) then exits 0 = ALLOW. Both Claude and Cursor treat any
   non-2 exit as allow. So a secret (Claude `Write` content) or a dangerous shell command (Cursor
@@ -149,6 +149,15 @@ baseline.
 - **Fix:** give `:58` the `check-secrets` fail-closed awk, capture `rc`, and on `rc==9` emit a BLOCKED
   message + `exit 2` instead of the `exit 0` at `:59/:127`. (The A2 SIGPIPE fix on the block path was
   re-verified holding, and both JSON templates parse.)
+- **Fixed (as landed):** `:58` now runs `{ d=1; next } … END { exit (d ? 9 : 0) }`; `cap_rc==9`
+  prints a `BLOCKED by agent-precheck: … too long to scan …` message and `exit 2`, before the
+  `[ -n "$content" ] || exit 0` allow-path. This is the **one place agent-precheck blocks rather than
+  failing open** — a deliberate carve-out from the file's "never brick the session" philosophy, on the
+  grounds that an *unscannable* line differs from a *missing scanner* (jq/config still fail open) and
+  must not be less strict than the short-input block. No `printf | head` on this path, so the A2
+  SIGPIPE class doesn't apply. Locked with `tests/cases/07` #48h (secret on a >`MAX_LINE_LENGTH` line
+  → exit exactly 2 + the too-long message; mutation-reverting the template drops it to exit 0 and turns
+  only that case red). Suite **181/0**, `shellcheck -S info` clean.
 
 ### ⚪ Low
 
@@ -303,7 +312,7 @@ and the cross-grep / bash-3.2 portability sweep (no BSD-vs-GNU or bash-4-ism div
 
 Each landed with a red-then-green regression test; full suite 148/148 green.
 
-- **A1 (critical)** — `check-secrets` now FAILS CLOSED on a line over `MAX_LINE_LENGTH` (reports it + fails) instead of dropping it with a warning and exit 0. The line is still dropped before the ERE, so the ReDoS guard is unchanged. (`2f79605`; tests cases/04 #31, #31b) **`check-patterns` carries the same fix. `check-hygiene`'s conflict-marker + hidden-Unicode branches were NOT covered by this commit — that gap was finding B2, fixed separately in `fix/audit-b2-hygiene-fail-closed` (cases/06 #45g/#45h). `agent-precheck` (B6) remains open.**
+- **A1 (critical)** — `check-secrets` now FAILS CLOSED on a line over `MAX_LINE_LENGTH` (reports it + fails) instead of dropping it with a warning and exit 0. The line is still dropped before the ERE, so the ReDoS guard is unchanged. (`2f79605`; tests cases/04 #31, #31b) **`check-patterns` carries the same fix. `check-hygiene`'s conflict-marker + hidden-Unicode branches were NOT covered by this commit — that gap was finding B2, fixed separately in `fix/audit-b2-hygiene-fail-closed` (cases/06 #45g/#45h). `agent-precheck` was finding B6, fixed in `fix/audit-b6-agent-precheck-fail-closed` (cases/07 #48h) — the over-cap line there BLOCKS (exit 2) rather than reporting, since it is the agent-write layer. All four over-cap sites now fail closed.**
 - **A2 (high)** — `agent-precheck` block path no longer takes SIGPIPE (`printf … | head -3 || true`), so it reliably reaches `exit 2` and actually blocks. (`98c6d41`; cases/07 #48g asserts the exit code is exactly 2)
 - **A3 (high)** — `scaffold-allow` dropped bare `--` as a leader and now requires a start-of-line/whitespace boundary, across all five exemption sites (check-secrets, check-patterns, check-hygiene ×2, agent-precheck); over-claiming docs corrected. (`2a92e6e`; cases/04 #28b)
 - **A4 (high)** — `check-filenames` folds name+path to lowercase before matching, so `.PEM`/`.ENV`/`ID_RSA` are blocked; the `.env.example` allowlist still holds. (`16ab43b`; cases/04 #36, #36b)

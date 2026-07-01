@@ -16,6 +16,15 @@ versioning follows [SemVer](https://semver.org/).
   now report the unscannable line and reject the commit, at the rule's
   configured severity (a repo that downgraded the rule to `warn` still gets a
   warn, not a hard block). Regressions in `tests/cases/06` (#45g, #45h).
+- **`agent-precheck` fails closed on over-long lines (B6, medium).** The
+  agent-write PreToolUse hook dropped any line over `MAX_LINE_LENGTH` and then
+  exited 0 (allow), so a secret or a `curl|bash` padded past the cap was silently
+  permitted at write time while its short form blocked at exit 2. An unscannable
+  over-cap line now BLOCKS (exit 2) with an actionable message — the one place
+  this advisory hook fails closed rather than open, since an unscannable line is
+  not the same as a missing scanner. Regression in `tests/cases/07` (#48h). This
+  completes the over-cap fail-closed sweep across all four scanners
+  (check-secrets/check-patterns/check-hygiene/agent-precheck).
 
 ## [v0.9.0] — 2026-06-30
 
