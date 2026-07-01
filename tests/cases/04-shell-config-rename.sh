@@ -258,3 +258,40 @@ assert_rejects "PROD.ENV (non-dotfile env, uppercase) is blocked" "environment f
 printf 'FOO=bar\n' >config.env.example
 git add -f config.env.example
 assert_passes "config.env.example (non-dotfile template) is not blocked"
+
+# 36h. B7 regression — binary key/keystore blobs (*.key / *.p12 / *.pfx / *.jks /
+#      *.ppk) carry no PEM armor, so the content scanner can't backstop them; the
+#      filename is the only signal. Benign content isolates the filename rule.
+#      Each extension gets its own fixture so a typo in any glob alternative turns
+#      exactly that case red (mutation-proven).
+echo "placeholder" >server.key
+git add -f server.key
+assert_rejects "server.key (TLS/K8s private key) is blocked" "keystore"
+
+echo "placeholder" >cert.p12
+git add -f cert.p12
+assert_rejects "cert.p12 (PKCS#12 keystore) is blocked" "keystore"
+
+echo "placeholder" >id.pfx
+git add -f id.pfx
+assert_rejects "id.pfx (PKCS#12 keystore) is blocked" "keystore"
+
+echo "placeholder" >store.jks
+git add -f store.jks
+assert_rejects "store.jks (Java keystore) is blocked" "keystore"
+
+echo "placeholder" >key.ppk
+git add -f key.ppk
+assert_rejects "key.ppk (PuTTY private key) is blocked" "keystore"
+
+# 36i. Case-fold parity — SERVER.KEY folds to server.key and must block too.
+echo "placeholder" >SERVER.KEY
+git add -f SERVER.KEY
+assert_rejects "SERVER.KEY (keystore, uppercase) is blocked" "keystore"
+
+# 36j. NEGATIVE — `authorized_keys` is PUBLIC-key material (safe to commit) and
+#      does not end in `.key`, so the `*.key` glob must NOT catch it. Guards the
+#      fix against broadening to a `*key*` substring match.
+echo "placeholder" >authorized_keys
+git add -f authorized_keys
+assert_passes "authorized_keys (public keys) is not blocked"
