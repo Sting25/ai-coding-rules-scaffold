@@ -15,7 +15,7 @@ baseline.
 | Severity | Count | Novel | Already tracked / by-design |
 |---|---|---|---|
 | high | 2 | 1 (B1 ✅) | 1 (B2 ✅ — A1 fix never reached check-hygiene) |
-| medium | 4 | 2 (B3 ✅, B4 ✅) | 2 (B5, B6 ✅) |
+| medium | 4 | 2 (B3 ✅, B4 ✅) | 2 (B5 ✅, B6 ✅) |
 | low | 6 | 4 (B8–B11) | 2 (B7 variant, B12) |
 | info / by-design | 1 | 0 | B13 |
 
@@ -141,7 +141,7 @@ baseline.
   `self-lint.yml`'s bare `cp` — per the audit note it runs in an ephemeral runner with no planted
   symlinks, so it's out of scope here rather than silently swept in.
 
-**B5 — Non-dotfile env files (`config.env`, `prod.env`) bypass `check-filenames`; chains with the deferred A5 unquoted-value gap for a dual-layer leak** — `githooks/lib/check-filenames.template:54-59` · **already tracked (stale section, never carried forward)**
+**B5 — Non-dotfile env files (`config.env`, `prod.env`) bypass `check-filenames`; chains with the deferred A5 unquoted-value gap for a dual-layer leak** — `githooks/lib/check-filenames.template:54-59` · **already tracked (stale section, never carried forward)** · ✅ **FIXED** (`fix/audit-b5-nondotfile-env-filenames`)
 - **What:** the `.env` arm matches only `.env`/`.env.*` (case-folded). `config.env`/`prod.env`/
   `staging.env` match no arm, so the file commits. With an unquoted `KEY=value` secret it also evades
   the content scanner (the deliberately-deferred A5 quoted-only rule), so **both** layers pass. This is
@@ -154,6 +154,15 @@ baseline.
   for the unquoted case).
 - **Fix:** add a `*.env` case to the env arm (keeping the `.env.example` allowlist); add a
   `cases/04` fixture asserting `prod.env` is rejected, mutation-proven.
+- **Fixed (as landed):** the block arm is now `.env|.env.*|*.env)`. `*.env` catches non-dotfile env
+  files (`config.env`/`prod.env`/`staging.env`) that end in `.env` without starting with it;
+  `*.env.example`-style templates end in `.example`, so `*.env` never matches them and they keep
+  passing via case fall-through (no allowlist change needed). Locked with `tests/cases/04` #36e/#36f
+  (`config.env`, `prod.env`, and case-folded `PROD.ENV` → blocked) plus #36g NEGATIVE
+  (`config.env.example` still passes — guards against over-matching). Mutation-reverting the `*.env`
+  glob turns exactly #36e/#36f red (3 cases) and leaves #36g green. Suite **187/0**, `shellcheck -S
+  info` clean. The unquoted-value content-scanner gap (A5) remains deliberately deferred to the
+  gitleaks layer; this closes the filename layer so the two no longer fail open together.
 
 **B6 — `agent-precheck` over-long-line filter still FAILS OPEN (allow): the A1 fail-closed upgrade was never applied to the agent-write layer** — `githooks/lib/agent-precheck.template:58-59,127` · **already tracked** (`SECURITY_AUDIT.md:50`; A1 header listed `:57-59`, fix said "should fail closed on the Bash path") · ✅ **FIXED** (`fix/audit-b6-agent-precheck-fail-closed`)
 - **What:** line 58 drops any line over `MAX_LINE_LENGTH` with the plain `awk 'length > n { next }'`

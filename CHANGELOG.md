@@ -25,6 +25,14 @@ versioning follows [SemVer](https://semver.org/).
   not the same as a missing scanner. Regression in `tests/cases/07` (#48h). This
   completes the over-cap fail-closed sweep across all four scanners
   (check-secrets/check-patterns/check-hygiene/agent-precheck).
+- **`check-filenames` now blocks non-dotfile env files (B5, medium).** The env
+  arm matched only `.env`/`.env.*`, so `config.env`/`prod.env`/`staging.env` — which
+  end in `.env` without starting with it — committed clean; paired with an unquoted
+  `KEY=value` secret they also slipped the (deliberately deferred) quoted-only content
+  scanner, a dual-layer leak. The arm is now `.env|.env.*|*.env`; `*.env.example`-style
+  templates end in `.example`, so the `.env.example` allowlist is unaffected. Regressions
+  in `tests/cases/04` (#36e/#36f block `config.env`/`prod.env`/`PROD.ENV`; #36g keeps
+  `config.env.example` passing).
 - **npm package now ships the gitleaks + dependency-review CI templates (B3).**
   `gitleaks.yml.template` and `dependency-review.yml.template` were git-tracked
   and documented ("copy it in" in the README / `install.sh`) but missing from

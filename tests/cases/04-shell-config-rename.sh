@@ -232,3 +232,29 @@ assert_passes ".env.sample (allowlisted template) is not blocked"
 printf 'FOO=bar\n' >.env.template
 git add -f .env.template
 assert_passes ".env.template (allowlisted template) is not blocked"
+
+# 36e. B5 regression — NON-dotfile env files (config.env / prod.env / staging.env)
+#      end in `.env` but do not START with `.env`, so the `.env`/`.env.*` arms miss
+#      them and (with an unquoted KEY=value secret) the deferred-A5 content scanner
+#      passes too — a dual-layer leak. The `*.env` arm closes the filename layer.
+#      Benign content isolates the filename rule; reverting the `*.env` glob turns
+#      each of these red (mutation-proven).
+printf 'FOO=bar\n' >config.env
+git add -f config.env
+assert_rejects "config.env (non-dotfile env file) is blocked" "environment file"
+
+printf 'FOO=bar\n' >prod.env
+git add -f prod.env
+assert_rejects "prod.env (non-dotfile env file) is blocked" "environment file"
+
+# 36f. Case-fold parity — PROD.ENV folds to prod.env and must block too.
+printf 'FOO=bar\n' >PROD.ENV
+git add -f PROD.ENV
+assert_rejects "PROD.ENV (non-dotfile env, uppercase) is blocked" "environment file"
+
+# 36g. NEGATIVE — a non-dotfile template (config.env.example) ends in `.example`,
+#      not `.env`, so `*.env` must NOT catch it; the allowlist philosophy holds
+#      for non-dotfile forms via fall-through. Guards the fix from over-matching.
+printf 'FOO=bar\n' >config.env.example
+git add -f config.env.example
+assert_passes "config.env.example (non-dotfile template) is not blocked"

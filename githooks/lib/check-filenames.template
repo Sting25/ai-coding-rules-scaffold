@@ -2,8 +2,8 @@
 # .githooks/lib/check-filenames — block committed credentials by filename.
 # Reads NUL-separated file paths on stdin (produced by `git ... -z`), so
 # filenames containing newlines, tabs, or quotes can't split the list and slip
-# past the check. Rejects .env (allowing .env.example/.sample/.template),
-# *.pem, and SSH private key names.
+# past the check. Rejects .env and *.env (e.g. config.env/prod.env) — allowing
+# .env.example/.sample/.template — plus *.pem and SSH private key names.
 #
 # Output: human-readable on tty; ::error file=...:: when --ci is passed.
 # Exit:   0 if all OK, 1 if any violation.
@@ -53,7 +53,10 @@ while IFS= read -r -d '' file; do
   lname=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')
   case "$lname" in
     .env.example|.env.sample|.env.template) ;;
-    .env|.env.*)
+    # `*.env` catches non-dotfile env files (config.env, prod.env, staging.env)
+    # that the `.env`/`.env.*` arms miss. `*.env.example`-style templates end in
+    # `.example`, so `*.env` never matches them — they keep passing via fall-through.
+    .env|.env.*|*.env)
       emit "$file" "environment file — use .env.example for shared config, keep secrets in env vars"
       FAILED=1
       ;;
