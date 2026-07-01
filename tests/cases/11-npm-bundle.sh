@@ -71,3 +71,21 @@ else
   fi
   rm -f "$C11"
 fi
+
+# (B8) The npm package must NOT carry an `os` allowlist that EBADPLATFORM-blocks a
+# native-Windows / Git-Bash install (win32). cli.js already emits the "run from Git
+# Bash or WSL" hint at runtime, so a hard os gate only stops the user reaching it —
+# npm refuses the install first. Assert there is no os field, or (if present) that
+# it permits win32. jq-only, so it runs even where npm is unavailable; reverting the
+# fix (re-adding os:[darwin,linux]) turns this red.
+if command -v jq >/dev/null 2>&1; then
+  os_ok=$(jq -r 'if has("os") then ((.os | index("win32")) != null) else true end' \
+            "$SCAFFOLD_DIR/package.json" 2>/dev/null)
+  if [ "$os_ok" = "true" ]; then
+    echo "  ✓ package.json os field does not block Windows/Git-Bash npm install (B8)"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ package.json os EBADPLATFORM-blocks win32 — drop the field or add win32 (B8)"; FAIL=$((FAIL + 1))
+  fi
+else
+  echo "  ~ skipped B8 os-field check (jq not available)"
+fi

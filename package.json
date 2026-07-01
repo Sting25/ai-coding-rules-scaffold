@@ -35,10 +35,6 @@
   "engines": {
     "node": ">=14"
   },
-  "os": [
-    "darwin",
-    "linux"
-  ],
   "keywords": [
     "pre-commit",
     "git-hooks",
