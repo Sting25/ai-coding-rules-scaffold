@@ -34,6 +34,14 @@ versioning follows [SemVer](https://semver.org/).
   `.github/workflows/*.yml.template` so it fails closed on any future
   documented-but-unbundled workflow — the guard previously derived its required
   set only from files `install.sh` reads, making manual-copy templates invisible.
+- **`scripts/dev-setup.sh` no longer writes through a symlink (B4).** The
+  maintainer dogfooding script rendered templates with bare `cp` / `mkdir -p`,
+  so a leftover or planted symlink in the gitignored `.githooks/` /
+  `.forbidden-patterns/` dirs could redirect a rendered scanner (or the whole
+  `lib/` dir) to a target outside the repo — the A7 write-through class that
+  `install.sh` already defends. It now drops any symlink at a rendered file or
+  directory before writing, so renders always land as real files in-tree.
+  Regressions in `tests/cases/09` (file-symlink + dir-symlink plants).
 
 ## [v0.9.0] — 2026-06-30
 

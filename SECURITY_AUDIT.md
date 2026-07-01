@@ -15,7 +15,7 @@ baseline.
 | Severity | Count | Novel | Already tracked / by-design |
 |---|---|---|---|
 | high | 2 | 1 (B1 ✅) | 1 (B2 ✅ — A1 fix never reached check-hygiene) |
-| medium | 4 | 2 (B3 ✅, B4) | 2 (B5, B6 ✅) |
+| medium | 4 | 2 (B3 ✅, B4 ✅) | 2 (B5, B6 ✅) |
 | low | 6 | 4 (B8–B11) | 2 (B7 variant, B12) |
 | info / by-design | 1 | 0 | B13 |
 
@@ -114,7 +114,7 @@ baseline.
   **181/0**, `shellcheck -S info` clean. (Verified the install.sh/README references by hand:
   `install.sh:387` names `gitleaks.yml.template`; `README.md:409,425` say "Copy it in" for both.)
 
-**B4 — `scripts/dev-setup.sh` renders scanners with bare `cp`, regressing the A7 symlink write-through fix (arbitrary out-of-repo overwrite)** — `scripts/dev-setup.sh:27-40` · **NOVEL**
+**B4 — `scripts/dev-setup.sh` renders scanners with bare `cp`, regressing the A7 symlink write-through fix (arbitrary out-of-repo overwrite)** — `scripts/dev-setup.sh:27-40` · **NOVEL** · ✅ **FIXED** (`fix/audit-b4-dev-setup-symlink`)
 - **What:** `install.sh` writes every scaffold file through `_cp_replace` (`rm -f "$dst"` before
   `cp`, the A7 fix). `dev-setup.sh` uses bare `cp "$t" ".githooks/lib/…"` with no prior `rm -f`, and
   `mkdir -p .githooks/lib` follows a symlinked dir. Since `.githooks/`/`.forbidden-patterns/` are
@@ -129,6 +129,17 @@ baseline.
   `mkdir -p`), or source/reuse `install.sh`'s `_cp_replace`. Scope: maintainer-only dogfooding clone,
   hence medium not high. (`self-lint.yml:43,47` also renders with bare `cp` but runs in an ephemeral
   runner with no planted symlinks.)
+- **Fixed (as landed):** `dev-setup.sh` gained two helpers mirroring `_cp_replace` — `_cp` (`rm -f
+  "$dst"` before `cp`, so a symlink at a rendered file path is dropped and a real file lands in-tree)
+  and `_mkdir_safe` (drops a symlinked dir before `mkdir -p`, so `.githooks`/`.githooks/lib`/
+  `.forbidden-patterns` can't redirect writes outside the repo). Both write-through paths were
+  **re-reproduced by hand first** (file symlink → victim's first line became `#!/usr/bin/env bash`;
+  symlinked `lib/` dir → scanner written to the outside dir), then confirmed closed. Locked with two
+  red→green regressions in `tests/cases/09` (file-symlink + dir-symlink, each driving a minimal fake
+  clone since dev-setup refuses to run outside a scaffold checkout); mutation-reverting the script
+  turns exactly those two red. Suite **183/0**, `shellcheck -S info` clean. **Not changed:**
+  `self-lint.yml`'s bare `cp` — per the audit note it runs in an ephemeral runner with no planted
+  symlinks, so it's out of scope here rather than silently swept in.
 
 **B5 — Non-dotfile env files (`config.env`, `prod.env`) bypass `check-filenames`; chains with the deferred A5 unquoted-value gap for a dual-layer leak** — `githooks/lib/check-filenames.template:54-59` · **already tracked (stale section, never carried forward)**
 - **What:** the `.env` arm matches only `.env`/`.env.*` (case-folded). `config.env`/`prod.env`/
