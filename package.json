@@ -28,7 +28,9 @@
     ".scaffold.toml.template",
     ".github/dependabot.yml.template",
     ".github/workflows/lint.yml.template",
-    ".github/workflows/coverage.yml.template"
+    ".github/workflows/coverage.yml.template",
+    ".github/workflows/gitleaks.yml.template",
+    ".github/workflows/dependency-review.yml.template"
   ],
   "engines": {
     "node": ">=14"
