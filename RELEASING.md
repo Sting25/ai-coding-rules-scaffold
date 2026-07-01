@@ -86,10 +86,23 @@ npm publish   # ⚠ manual publish needs a 2FA OTP or a bypass-enabled granular 
               #   (npm mandate). Trusted publishing above avoids both — prefer it.
 ```
 
-## 3. Update the Homebrew tap
+## 3. Update the Homebrew tap — automated
 
-The formula's `url` points at the GitHub source tarball for the tag; bump the
-`url` + recompute the `sha256`:
+The tap (`Sting25/homebrew-tap`) **bumps its own formula**. A `bump-formula`
+workflow there points `Formula/ai-coding-rules-scaffold.rb` at the latest upstream
+release (recomputing the `sha256`), using the tap's own `GITHUB_TOKEN` — no secret.
+
+- **Instant:** after cutting the release, open the tap's **Actions → bump-formula
+  → Run workflow**. It bumps within ~10s (or no-ops if already current).
+- **Hands-off:** a 6-hour schedule catches it otherwise.
+
+It's fail-safe: it validates the formula's Ruby syntax and that the new `url` +
+`sha256` landed before committing, and leaves the formula untouched otherwise.
+
+Also update the **canonical copy** in this repo (`packaging/homebrew/ai-coding-rules-scaffold.rb`)
+in the next convenient PR so it doesn't drift from the tap — it's the versioned source of truth.
+
+### Manual fallback (if the workflow is unavailable)
 
 ```sh
 SHA=$(curl -fsSL https://github.com/Sting25/ai-coding-rules-scaffold/archive/refs/tags/vX.Y.Z.tar.gz | shasum -a 256 | awk '{print $1}')
@@ -122,11 +135,13 @@ npx -y ai-coding-rules-scaffold@X.Y.Z --help
 brew install sting25/tap/ai-coding-rules-scaffold && ai-coding-rules-scaffold --help
 ```
 
-## Future: automate the Homebrew tap too
+## Fully automated — no secrets anywhere
 
-npm publish + the GitHub Release are automated (`release.yml`, OIDC — no secret).
-The one remaining manual step is the Homebrew tap bump (§3): it needs a
-**cross-repo push** to `Sting25/homebrew-tap`, which the default `GITHUB_TOKEN`
-can't do — so a follow-on job would need a tap-scoped PAT (or deploy key) secret
-to compute the `sha256` from the tag tarball and push the formula. Deferred until
-it's worth managing that one secret; it's the only token the pipeline would hold.
+The whole pipeline is now hands-off and **tokenless**:
+- **npm publish + GitHub Release** — `release.yml` on tag push, via OIDC trusted
+  publishing (no `NPM_TOKEN`).
+- **Homebrew tap** — the tap's own `bump-formula` workflow, via its own
+  `GITHUB_TOKEN` (no cross-repo PAT).
+
+So a release is: merge the prep PR → push the tag → (optionally click the tap's
+"Run workflow" for an instant Homebrew bump). No secret is stored in any repo.
