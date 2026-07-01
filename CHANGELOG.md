@@ -78,6 +78,15 @@ versioning follows [SemVer](https://semver.org/).
   field is dropped; the runtime already degrades gracefully when `bash` is absent.
   Guarded in `tests/cases/11` (a jq check that `package.json` has no `os` field, or
   one that permits `win32`).
+- **`install.sh` no longer aborts mid-run when one file's backup slots are full
+  (B12, low).** When all 100 `.scaffold-bak[.N]` slots for a `--force`-replaced file
+  were taken, `_backup` returned non-zero and the bare caller aborted the whole
+  script under `set -e` — leaving hooks unwired, before `core.hooksPath` was set,
+  with no summary. The three call sites now skip that one file (leaving the user's
+  version untouched — no backup means no safe overwrite) and the install continues
+  and completes. `_backup` prints a "skipping this one file — re-run after cleanup"
+  notice so the skip is visible. Guarded in `tests/cases/12` (100 saturated slots →
+  the file keeps its local edit and the run still reaches `Done`).
 
 ## [v0.9.0] — 2026-06-30
 

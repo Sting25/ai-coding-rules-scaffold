@@ -16,7 +16,7 @@ baseline.
 |---|---|---|---|
 | high | 2 | 1 (B1 ✅) | 1 (B2 ✅ — A1 fix never reached check-hygiene) |
 | medium | 4 | 2 (B3 ✅, B4 ✅) | 2 (B5 ✅, B6 ✅) |
-| low | 6 | 4 (B8 ✅, B9 ✅, B10 ✅, B11) | 2 (B7 ✅ variant, B12) |
+| low | 6 | 4 (B8 ✅, B9 ✅, B10 ✅, B11) | 2 (B7 ✅ variant, B12 ✅) |
 | info / by-design | 1 | 0 | B13 |
 
 > Two High findings were the actionable headline; **both are now ✅ FIXED**. **B1** was a genuinely
@@ -266,13 +266,28 @@ baseline.
   echo "ERROR: empty release notes" >&2; exit 1; }` before `gh release create`. Maintainer-procedure
   doc defect, recoverable post-hoc — low.
 
-**B12 — `_backup` >99-cap `return 1` aborts the whole install mid-run with no rollback (a concrete trigger of the already-tracked `set -e` mid-script-abort limitation)** — `install.sh:127` · **already tracked** (`SECURITY_AUDIT.md:45`, Medium, open)
+**B12 — `_backup` >99-cap `return 1` aborts the whole install mid-run with no rollback (a concrete trigger of the already-tracked `set -e` mid-script-abort limitation)** — `install.sh:127` · **already tracked** (`SECURITY_AUDIT.md:45`, Medium, open) · ✅ **FIXED** (`fix/audit-b12-backup-cap-skip`)
 - **What:** with 100 stale `.scaffold-bak[.N]` files for a destination, `_backup` returns 1; callers do
   `_backup "$dst" || return 1`; under `set -euo pipefail` the bare top-level `cp_*` call aborts the
   script. On a first install this happens before the `core.hooksPath` wiring, leaving hooks unwired with
   no rollback/summary. Fails closed (nothing half-trusted) and is visible (error + exit 1).
 - **Fix:** on the >99 case, warn-and-skip the backup for that one file (`return 0`) instead of `return 1`,
   or make callers tolerate it; add an EXIT-trap summary of what was/wasn't installed.
+- **Fixed (as landed):** took the "callers tolerate it" path (not `return 0` from `_backup` itself, which
+  would fall through to `_cp_replace` and overwrite the file with **no** backup = silent data loss). All
+  three sites (`cp_safe`, `cp_scaffold`, `cp_pattern`) now do `_backup "$dst" || return 0`: on the cap the
+  caller SKIPS that one file — leaving the user's version untouched (no backup ⇒ no safe overwrite) — and
+  the run continues to wire hooks and print `Done`. `_backup` emits a two-line "skipping this one file …
+  re-run after cleanup" notice, so the skip is visible; the install still exits 0 (a loud-but-non-fatal
+  degrade, matching the finding's "make callers tolerate it"). The EXIT-trap install summary was **not**
+  added — it is a larger structural change with new global state, out of scope for this low-severity abort
+  fix. Locked in `tests/cases/12` (B12): saturate all 100 `ruff.toml.scaffold-bak[.N]` slots, `--force`
+  re-install → the cap trips, `ruff.toml` keeps its local edit, and the run still reaches `Done`. Reverting
+  to `return 1` reddens exactly this case (install aborts mid-run). Suite **199/0**, `shellcheck -S info`
+  clean. The test lives in a **new `cases/12`** rather than `cases/09` because `cases/09` (and `install.sh`)
+  were both at the scaffold's own 500-line module cap — extracting a new case file is the cap's intended
+  "extract a module" response, not a suppression. (Note: `install.sh` now sits at exactly 500 lines; a
+  genuine module extraction there is looming and tracked separately as a pre-existing cleanup.)
 
 ### ℹ️ By design / re-confirmed (captured, not new work)
 

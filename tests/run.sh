@@ -46,7 +46,8 @@ for case_file in \
   "$HERE/cases/08-overrides-gitleaks.sh" \
   "$HERE/cases/09-toolchain-clobber.sh" \
   "$HERE/cases/10-ci-diff-scope.sh" \
-  "$HERE/cases/11-npm-bundle.sh"; do
+  "$HERE/cases/11-npm-bundle.sh" \
+  "$HERE/cases/12-install-backup-cap.sh"; do
   # shellcheck source=/dev/null
   . "$case_file"
 done

@@ -118,14 +118,17 @@ _cp_replace() {
 
 # _backup DST — copy an existing file/symlink aside to <dst>.scaffold-bak[.N]
 # before it is replaced, so no local edit is ever silently destroyed. `-P` backs
-# up a symlink AS the link, never the dereferenced target content.
+# up a symlink AS the link, never the dereferenced target content. Returns non-zero
+# when all >99 slots are taken; callers treat that as "skip this one file, keep
+# going" (`|| return 0`) — never abort, and never overwrite without a backup.
 _backup() {
   local dst=$1
   local bak="${dst}.scaffold-bak" n=0
   while [ -e "$bak" ] || [ -L "$bak" ]; do
     n=$((n + 1))
     if [ "$n" -gt 99 ]; then
-      echo "error: too many .scaffold-bak files for $dst — clean some up" >&2
+      echo "error: too many .scaffold-bak files for $dst — clean some up." >&2
+      echo "       Skipping this one file (left untouched); re-run after cleanup." >&2
       return 1
     fi
     bak="${dst}.scaffold-bak.${n}"
@@ -152,7 +155,7 @@ cp_safe() {
     if [ ! -L "$dst" ] && cmp -s "$src" "$dst"; then
       return
     fi
-    _backup "$dst" || return 1
+    _backup "$dst" || return 0
   fi
   _cp_replace "$src" "$dst"
   echo "installed:    $dst"
@@ -171,7 +174,7 @@ cp_scaffold() {
     if [ ! -L "$dst" ] && cmp -s "$src" "$dst"; then
       return
     fi
-    [ "$FORCE" -eq 1 ] && { _backup "$dst" || return 1; }
+    [ "$FORCE" -eq 1 ] && { _backup "$dst" || return 0; }
     _cp_replace "$src" "$dst"
     echo "updated:      $dst (refreshed to the shipped version)"
     return
@@ -198,7 +201,7 @@ cp_pattern() {
       fi
       return
     fi
-    _backup "$dst" || return 1
+    _backup "$dst" || return 0
   fi
   _cp_replace "$src" "$dst"
   echo "installed:    $dst"
