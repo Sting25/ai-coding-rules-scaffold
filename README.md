@@ -84,12 +84,14 @@ Language pattern files auto-install when their manifest is detected (`go.mod`, `
 **Quickest — `npx`, no clone.** From your project root:
 
 ```sh
-npx ai-coding-rules-scaffold            # auto-detects Python / JS
-npx ai-coding-rules-scaffold --both     # or pick the stack explicitly
+npx ai-coding-rules-scaffold                  # auto-detects Python / JS
+npx ai-coding-rules-scaffold --both           # or pick the stack explicitly
+npx ai-coding-rules-scaffold --both --claude  # + AI-agent guardrails (also --cursor)
 ```
 
-This fetches the pinned package and runs the same installer documented below —
+This fetches the published package and runs the same installer documented below —
 every flag in the list further down works after `npx ai-coding-rules-scaffold …`.
+Re-run it any time to upgrade (it refreshes scaffold-owned files, keeps your edits).
 Needs Node ≥ 14 and `bash` (preinstalled on macOS/Linux; use Git Bash or WSL on
 Windows). The package has zero dependencies — it's just the installer + templates.
 
