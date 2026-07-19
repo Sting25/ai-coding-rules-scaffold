@@ -88,6 +88,24 @@ echo "AKIA""IOSFODNN7EXAMPLE" >creds.txt
 git add .scaffold.toml creds.txt
 assert_rejects "override: secret scanner is NOT disablable via .scaffold.toml" "AWS access key"
 
+# 58b. GUTTING secrets.txt to zero patterns (keeping the file present) is the
+#      neutering analogue of deleting it — it dodges the orchestrator's deletion
+#      guard, which only catches a full removal. A commit that empties the config
+#      AND lands a secret must fail CLOSED (check-secrets empty-config guard).
+printf '# all patterns removed\n# (gutted)\n' >.forbidden-patterns/secrets.txt
+echo "AKIA""IOSFODNN7EXAMPLE" >creds.txt
+git add .forbidden-patterns/secrets.txt creds.txt
+assert_rejects "gutting secrets.txt to zero patterns fails closed" "the secret scanner is disabled"
+
+# 58c. RENAMING secrets.txt (git mv) makes git report an R, not a D — the
+#      deletion guard used default rename detection and saw an empty D list, so
+#      the neutered-config commit passed. `--no-renames` surfaces the old path as
+#      a deletion so the guard fires.
+git mv .forbidden-patterns/secrets.txt .forbidden-patterns/secrets.txt.disabled
+echo "AKIA""IOSFODNN7EXAMPLE" >creds.txt
+git add creds.txt
+assert_rejects "renaming secrets.txt away is caught by the deletion guard" "deletes forbidden-pattern config"
+
 # 59. scaffold-audit (installed by install.sh) lists active overrides. The CI
 #     guardrails job runs this so a disabled rule is visible in the build log.
 printf '[rules."backend/Use structlog (or the project'\''s logger), not print()"]\ndisabled = true\n' >.scaffold.toml

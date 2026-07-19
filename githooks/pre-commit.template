@@ -35,7 +35,11 @@ LIB="$HOOK_DIR/lib"
 # no config and exit 0 — a one-commit way to land a secret AND neuter the scan.
 # Checked BEFORE the empty-staged-list exit, since a delete-only commit has an
 # empty ACMR list. Use `git commit --no-verify` if a removal is intended (uninstall).
-DELETED_CONFIG=$(git diff --cached -z --name-only --diff-filter=D | tr '\0' '\n' | grep -E '^\.forbidden-patterns/.+\.txt$' || true)
+# `--no-renames` is load-bearing: git's default rename detection reports a
+# `git mv secrets.txt secrets.txt.disabled` as an R (rename), not a D, so the
+# guard's list would be empty and the neutered-config commit would pass. Treating
+# a rename as delete+add surfaces the OLD path as a D so the guard still fires.
+DELETED_CONFIG=$(git diff --cached --no-renames -z --name-only --diff-filter=D | tr '\0' '\n' | grep -E '^\.forbidden-patterns/.+\.txt$' || true)
 if [ -n "$DELETED_CONFIG" ]; then
   echo "error: this commit deletes forbidden-pattern config, disabling the scanner:" >&2
   printf '%s\n' "$DELETED_CONFIG" | sed 's/^/       /' >&2
