@@ -122,3 +122,35 @@ assert_rejects "GitLab runner token (glrt-) detected" "GitLab token"
 echo "DOCKER=dckr_""pat_abcdefghij0123456789ABCD" >q5.txt
 git add q5.txt
 assert_rejects "Docker Hub PAT (dckr_pat_) detected" "Docker Hub"
+
+# 22g. AWS ABIA/ACCA key-id prefixes (STS bearer / context creds) — the pattern
+#      previously covered only AKIA/ASIA.
+echo "AWS=ABIA""IOSFODNN7EXAMPLE" >r1.txt
+git add r1.txt
+assert_rejects "AWS ABIA key-id prefix detected" "AWS access key"
+
+# 22h. Slack app-level (xapp-) and config/refresh (xoxe-) tokens.
+echo "SLACK=xapp-""1-A01234567-abcdefghij0123456789" >r2.txt
+git add r2.txt
+assert_rejects "Slack app-level token (xapp-) detected" "Slack app-level"
+
+echo "SLACK=xoxe-""1-abcdefghij0123456789ABCDEFGHIJ" >r3.txt
+git add r3.txt
+assert_rejects "Slack config/refresh token (xoxe-) detected" "Slack config"
+
+# 22i. Stripe webhook signing secret (whsec_) — forge-signed-events risk.
+echo "STRIPE=whsec_""abcdefghij0123456789ABCDEFGH" >r4.txt
+git add r4.txt
+assert_rejects "Stripe webhook signing secret (whsec_) detected" "webhook signing"
+
+# 22j. JWT with a compact payload (short second segment) — the {17,} floor on the
+#      payload missed real minimal-claim tokens; only the header needs the floor.
+echo "JWT=eyJ""hbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ""pZCI6N30" >r5.txt
+git add r5.txt
+assert_rejects "JWT with a compact payload is detected" "JWT in source"
+
+# 22k. A non-.txt file under .forbidden-patterns/ is now scanned — the blanket
+#      dir skip let a committed creds.env there smuggle a secret unscanned.
+echo "AWS=AKIA""IOSFODNN7EXAMPLE" >.forbidden-patterns/creds.env
+git add .forbidden-patterns/creds.env
+assert_rejects "secret in .forbidden-patterns/creds.env is scanned (not skipped)" "AWS access key"
