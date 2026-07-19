@@ -45,7 +45,7 @@
 # always land real dirs in the tree. Mirrors scripts/dev-setup.sh's _mkdir_safe
 # (B4) but handles arbitrary depth for the shared _cp_replace mechanism.
 _mkdir_safe() {
-  local dir=$1 path= comp
+  local dir=$1 path='' comp
   while [ -n "$dir" ]; do
     comp=${dir%%/*}
     case $dir in */*) dir=${dir#*/} ;; *) dir= ;; esac
