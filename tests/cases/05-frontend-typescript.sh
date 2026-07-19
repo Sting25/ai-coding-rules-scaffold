@@ -96,3 +96,32 @@ if npx --no-install tsc --version >/dev/null 2>&1; then
 else
   echo "  - skipped tsc test (typescript not installed in temp repo)"
 fi
+
+# 42b. eslint block rejection. The JS-linter integration in the pre-commit
+#      orchestrator had no rejection test — eslint isn't resolvable in the temp
+#      repo, so it silently skips, meaning a regression that stops eslint
+#      findings from setting FAILED would ship green. Stub `npx` on an isolated
+#      PATH so the --version gate passes and the lint run fails, proving the
+#      block propagates a non-zero exit into the hook's failure.
+ESB=$(mktemp -d)
+cat >"$ESB/npx" <<'STUB'
+#!/bin/sh
+# `--no-install eslint --version` → ok (gate); `eslint -- <files>` → fail (lint).
+case "$*" in
+  *--version*) exit 0 ;;
+  *eslint*)    echo "eslint: problems found"; exit 1 ;;
+  *)           exit 0 ;;
+esac
+STUB
+chmod +x "$ESB/npx"
+echo 'const x = 1' >lintme.js
+git add lintme.js
+if PATH="$ESB:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ eslint block — hook accepted despite an eslint failure"; FAIL=$((FAIL + 1))
+elif grep -qF "Pre-commit failed" "$HOOK_OUT"; then
+  echo "  ✓ eslint findings fail the pre-commit hook"; PASS=$((PASS + 1))
+else
+  echo "  ✗ eslint block — rejected but not via the linter path"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$ESB"
+reset_repo

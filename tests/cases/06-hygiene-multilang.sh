@@ -159,6 +159,24 @@ else
 fi
 reset_repo
 
+# php -l syntax-error rejection. The php -l block had only VALID .php fixtures
+# (which exercise check-hygiene's dd() pattern, not php -l itself). Runs only
+# where php is on PATH; skips cleanly otherwise, like the tsc test.
+if command -v php >/dev/null 2>&1; then
+  printf '<?php\nfunction broken( {\n' >syntaxerr.php
+  git add syntaxerr.php
+  if .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+    echo "  ✗ php -l — hook accepted a PHP syntax error"; FAIL=$((FAIL + 1))
+  elif grep -qF "PHP syntax error" "$HOOK_OUT"; then
+    echo "  ✓ php -l rejects a PHP syntax error"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ php -l — rejected but without the expected message"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  reset_repo
+else
+  echo "  - skipped php -l test (php not installed)"
+fi
+
 # --- Multi-language forbidden patterns (config-driven check-patterns) -------
 # Each language file declares its extensions via a `# scaffold-extensions:`
 # header and is auto-discovered by check-patterns. Samples come from the
