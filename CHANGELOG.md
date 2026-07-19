@@ -6,6 +6,106 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.11.0] — 2026-07-19
+
+A code + security review pass (multi-dimension, each finding adversarially
+verified) closing 30 confirmed findings plus one new bypass surfaced while
+fixing them. Highlights: a high-severity installer symlink write-through, two
+one-commit ways to neuter the secret scanner, and a NUL-injection bypass that
+affected every scanner on macOS/BSD. The test suite grows 199 → 227, every new
+case mutation-proven.
+
+### Security
+- **`install.sh` no longer writes through a symlinked parent directory (high).**
+  The `cp_*` symlink defenses dropped a symlink at the destination *leaf* file
+  but `mkdir -p "$(dirname …)"` still followed a symlinked *parent* — a repo
+  shipping `.githooks -> ~/.ssh` (or any scaffold dir as a symlink) made a
+  routine `install.sh` write every scanner/hook/workflow through the link to an
+  out-of-repo target, silently overwriting files there with no backup, while the
+  in-tree path stayed a symlink so the guardrails never landed (a fail-open
+  teammates inherit on clone). A new multi-level `_mkdir_safe` in `install-lib.sh`
+  drops any symlink at every path component before `mkdir`; `scripts/dev-setup.sh`
+  had this (B4) but the user-facing installer never received it. Regression in
+  `tests/cases/09` (dir-symlink plant driving `install.sh`).
+- **Two one-commit ways to neuter the secret scanner are closed (high).** The
+  orchestrator's deletion guard refused only a full *removal* of a
+  `.forbidden-patterns/*.txt`. Gutting `secrets.txt` to comments-only (present but
+  zero patterns) made `check-secrets` treat it as "nothing to scan" and exit 0 at
+  both the hook and CI; and `git mv secrets.txt secrets.txt.disabled` was reported
+  by git as a rename (R), not a delete (D), so the guard's list was empty. A
+  present-but-empty (or all-invalid-regex) config now fails **closed** at both
+  gates, and the deletion guard uses `--no-renames` so a rename surfaces as a
+  deletion. Regressions in `tests/cases/08`.
+- **NUL-injection bypass across all scanners (macOS/BSD).** The shared awk
+  line-length cap truncates a record at an embedded NUL on a C-string awk, so
+  content *after* a NUL byte was silently lost — a secret placed after a NUL
+  slipped `check-secrets` entirely, and a lone NUL prepended to an agent-read
+  `.md` reclassified it as "binary" and dodged the hidden-Unicode (Trojan Source /
+  Rules File Backdoor) scan. All four scan pipelines now strip NULs (`tr -d '\000'`)
+  before the cap, and the hidden-Unicode binary skip requires a binary *extension*
+  in addition to a NUL, so text/agent files are always scanned while images keep
+  their false-positive exemption. Regressions in `tests/cases/03` and `06`.
+- **`check-patterns` fails closed on over-long lines.** A forbidden pattern on a
+  line over `MAX_LINE_LENGTH` was dropped with only a warning and exit 0 — the
+  last fail-open in the over-cap sweep. It now reports and rejects like the other
+  scanners. Regression in `tests/cases/06` (invoked directly, since `check-secrets`
+  masks it end-to-end).
+- **`scaffold-allow` now works on a column-0 comment line.** The exemption filter
+  ran on `grep -n` output, so its `^` anchor could never match a comment leader at
+  the start of a line (the line begins with `NN:`) — the documented start-of-line
+  form never exempted. The anchor now tolerates the line-number prefix across all
+  five scanners. Regression in `tests/cases/03`.
+- **Wider secret coverage; narrower config-dir skip.** Added AWS `ABIA`/`ACCA`
+  key-id prefixes, Slack app-level (`xapp-`) and config/refresh (`xoxe-`) tokens,
+  and the Stripe webhook signing secret (`whsec_`); lowered the JWT payload-segment
+  floor so a compact-claim token (e.g. `{"id":7}`) is no longer missed. Narrowed
+  the `check-secrets` scan-skip from all of `.forbidden-patterns/` to only its
+  `*.txt` configs, so a committed `.forbidden-patterns/creds.env` is scanned.
+  Regressions in `tests/cases/03`.
+- **CI supply-chain hardening.** The PHP lint job (consumer template) now runs
+  `composer install --no-scripts --no-plugins` (matching the frontend job's
+  `--ignore-scripts`) and surfaces an install failure instead of swallowing it;
+  the maintainer `actionlint` install downloads the pinned release *asset* and
+  verifies its per-platform sha256 (OS/arch-aware) rather than trusting a mutable
+  asset; and the CI linters (`ruff`, `pytest`/`pytest-cov`, `diff-cover`) are
+  version-pinned to match the repo's own cooldown posture.
+
+### Added
+- **`install.sh --gitleaks-ci`** installs the gitleaks CI workflow
+  (`.github/workflows/gitleaks.yml`), symmetric with `--coverage-gate`. Previously
+  `--gitleaks-hook` only pointed users at `gitleaks.yml.template`, which `npx`
+  users have no on-disk copy of. `uninstall.sh` removes it too. Regression in
+  `tests/cases/09`.
+- **`RECOMMENDATIONS.md` and `CHANGELOG.md` are now in the npm `files` allowlist.**
+  Four installed templates and the README's relative links point at
+  `RECOMMENDATIONS.md`, but it (and `CHANGELOG.md`) were absent from the published
+  tarball, so `npx` users had dangling links and no copy on disk. The
+  `tests/cases/11` bundle guard now fails closed if either drops out.
+
+### Changed
+- **`release.yml` documents the npm-publish gating options** (a protected
+  `environment` with required reviewers and/or a tag-protection ruleset). Left
+  opt-in — it needs out-of-band GitHub/npm configuration — so a fresh clone's
+  tokenless release pipeline keeps working.
+
+### Documented
+- README drift corrected: the "adopting on an existing codebase" section now
+  states CI scopes size/pattern/hygiene to the diff (only secret/filename scans
+  are whole-tree); agent-runtime hooks are described as a shipped opt-in layer
+  (`--claude`/`--cursor`), not "deferred"; the `npx` upgrade path documents
+  `@latest`; the hygiene override ids include `hidden-unicode`; the per-line
+  escape valve names the four comment leaders; and uninstall is documented per
+  install channel. `forbidden-patterns/README.md` now states `secrets.txt` scans
+  every staged blob regardless of extension.
+
+### Tests
+- Coverage added for eight previously-unpinned guardrail branches: the
+  `commit-msg` auto-generated-subject exemptions (`Revert`/`fixup!`/`squash!`/
+  `Reapply`) and `feat!:` marker, the `check-size` `severity = "warn"` downgrade,
+  the `MAX_LINES` override's reject reason, the mid-file BOM / plain bidi /
+  tag-block hidden-Unicode arms, the diff3 `|||||||` conflict marker, and the
+  `eslint` / `php -l` pre-commit linter blocks.
+
 ## [v0.10.0] — 2026-07-01
 
 A packaging / robustness release that closes the remaining findings of the
