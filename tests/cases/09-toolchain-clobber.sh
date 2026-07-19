@@ -296,6 +296,25 @@ else
 fi
 rm -rf "$UAD"
 
+# (T) --gitleaks-ci installs the CI workflow (symmetric with --coverage-gate) so
+#     npx users, who have no on-disk copy of gitleaks.yml.template, can wire the
+#     unskippable CI gate; uninstall then removes it (no half-uninstall).
+UGC=$(mktemp -d)
+( cd "$UGC" && git init --quiet && echo '{"name":"x"}' >package.json \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --gitleaks-ci --no-verify >/dev/null 2>&1 )
+if [ -f "$UGC/.github/workflows/gitleaks.yml" ] \
+   && cmp -s "$SCAFFOLD_DIR/.github/workflows/gitleaks.yml.template" "$UGC/.github/workflows/gitleaks.yml"; then
+  ( cd "$UGC" && "$SCAFFOLD_DIR/uninstall.sh" >/dev/null 2>&1 )
+  if [ ! -e "$UGC/.github/workflows/gitleaks.yml" ]; then
+    echo "  ✓ --gitleaks-ci installs gitleaks.yml and uninstall removes it"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ uninstall left gitleaks.yml behind (half-uninstall)"; FAIL=$((FAIL + 1))
+  fi
+else
+  echo "  ✗ --gitleaks-ci did not install .github/workflows/gitleaks.yml"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UGC"
+
 # (T) uninstall removes ci-changed-files too (install adds 8 libs; the uninstall
 #     loop dropped this one, leaving the scaffold half-uninstalled).
 UCI=$(mktemp -d)

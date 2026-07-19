@@ -12,6 +12,7 @@
 #   install.sh --cursor     # also install opt-in Cursor agent guardrails (.cursor/hooks.json)
 #   install.sh --commit-msg # also install the Conventional-Commits commit-msg hook
 #   install.sh --gitleaks-hook # also install opt-in local gitleaks pre-commit pass
+#   install.sh --gitleaks-ci # also install the gitleaks CI workflow (unskippable gate)
 #   install.sh --all-langs  # install every language's forbidden-pattern file
 #   install.sh --coverage-gate # also install the opt-in CI patch-coverage gate
 #   install.sh --no-install # detect missing tools but never auto-run a package manager
@@ -33,6 +34,7 @@ CLAUDE=0
 CURSOR=0
 COMMIT_MSG=0
 GITLEAKS_HOOK=0
+GITLEAKS_CI=0
 ALL_LANGS=0
 COVERAGE_GATE=0
 NO_INSTALL=0
@@ -48,10 +50,11 @@ for arg in "$@"; do
     --cursor)     CURSOR=1 ;;
     --commit-msg) COMMIT_MSG=1 ;;
     --gitleaks-hook) GITLEAKS_HOOK=1 ;;
+    --gitleaks-ci) GITLEAKS_CI=1 ;;
     --all-langs)  ALL_LANGS=1 ;;
     --coverage-gate) COVERAGE_GATE=1 ;;
     --no-install) NO_INSTALL=1 ;;
-    --help|-h)    sed -n '2,24p' "$0"; exit 0 ;;
+    --help|-h)    sed -n '2,25p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -267,7 +270,16 @@ if [ "$GITLEAKS_HOOK" -eq 1 ]; then
   if ! command -v gitleaks >/dev/null 2>&1; then
     echo "warning: gitleaks not found — the local pass fails open (skips) until you install it: https://github.com/gitleaks/gitleaks#installing"
   fi
-  echo "note: --gitleaks-hook is the LOCAL echo only. Add .github/workflows/gitleaks.yml (see gitleaks.yml.template) for the unskippable CI gate."
+  echo "note: --gitleaks-hook is the LOCAL pass only. Add --gitleaks-ci for the unskippable CI gate (.github/workflows/gitleaks.yml)."
+fi
+
+# Opt-in gitleaks CI workflow (--gitleaks-ci). The unskippable server-side gate
+# that pairs with --gitleaks-hook's local pass. A dedicated flag (mirroring
+# --coverage-gate) actually INSTALLS the workflow, so npx users — who have no
+# persistent copy of gitleaks.yml.template on disk — can wire the CI gate too.
+if [ "$GITLEAKS_CI" -eq 1 ]; then
+  cp_scaffold "$SCAFFOLD_DIR/.github/workflows/gitleaks.yml.template" ".github/workflows/gitleaks.yml"
+  echo "note: gitleaks.yml is the unskippable CI secret scan (runs even without --no-verify locally)."
 fi
 
 # Opt-in CI patch-coverage gate (--coverage-gate). Fails a PR when CHANGED lines
