@@ -206,7 +206,13 @@ jobs:
           fail=0
           git ls-files -z '*.php' '*.phtml' | xargs -0 -r -n1 php -l >/dev/null || fail=1
           if [ -f composer.json ] && [ -f composer.lock ]; then
-            composer install --no-interaction --no-progress --prefer-dist || true
+            # --no-scripts --no-plugins: never execute a dependency's composer
+            # lifecycle scripts/plugins in CI (the same supply-chain class the
+            # frontend job's `npm ci --ignore-scripts` defends against — the
+            # runner holds GITHUB_TOKEN). phpcs is pure PHP and needs neither.
+            # Surface an install failure (fail=1) instead of `|| true`, which
+            # silently skipped phpcs and passed the job green.
+            composer install --no-interaction --no-progress --prefer-dist --no-scripts --no-plugins || fail=1
           fi
           if [ -x vendor/bin/phpcs ]; then vendor/bin/phpcs || fail=1; fi
           exit $fail
