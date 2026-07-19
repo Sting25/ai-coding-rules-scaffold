@@ -32,6 +32,14 @@ jobs:
   publish-npm:
     needs: test
     runs-on: ubuntu-latest
+    # HARDENING (opt-in, needs out-of-band config): this job publishes on any
+    # matching tag push — npm trusted publishing binds only org/repo/workflow,
+    # not a ref or environment, so anyone who can push a v* tag can mint a
+    # release. To gate it, add `environment: release` here, then in GitHub add
+    # required reviewers to that environment AND (optionally) set the environment
+    # in the npm trusted-publisher config; and/or add a tag-protection ruleset
+    # restricting who can create v* tags. Left un-gated by default so a fresh
+    # clone's release pipeline works without manual environment setup.
     permissions:
       contents: read
       id-token: write  # mint the OIDC token npm trusted publishing verifies

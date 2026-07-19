@@ -167,12 +167,24 @@ scan() {
     done
     [ "$keep" -eq 1 ] || continue
 
-    # Scan the staged blob, not the working-tree path (see header). awk (linear)
-    # drops over-long lines so the combined ERE never sees them (ReDoS guard).
+    # Scan the staged blob, not the working-tree path (see header). Strip NUL
+    # bytes FIRST: a C-string awk (macOS/BSD) truncates a record at an embedded
+    # NUL, so a forbidden pattern placed after a NUL byte would be silently lost —
+    # the same NUL-injection bypass the -a/--text greps below defend against.
+    # awk (linear) then drops over-long lines so the combined ERE never sees them.
     cap_rc=0
-    content=$(git show ":0:$file" 2>/dev/null | awk -v n="$MAX_LINE_LENGTH" 'length > n { d=1; next } { print } END { exit (d ? 9 : 0) }') || cap_rc=$?
+    content=$(git show ":0:$file" 2>/dev/null | LC_ALL=C tr -d '\000' | awk -v n="$MAX_LINE_LENGTH" 'length > n { d=1; next } { print } END { exit (d ? 9 : 0) }') || cap_rc=$?
     if [ "$cap_rc" -eq 9 ]; then
-      echo "warning: $file: line(s) over $MAX_LINE_LENGTH chars dropped from the scan (minified/generated?)" >&2
+      # FAIL CLOSED (check-secrets/check-hygiene parity). A forbidden pattern on a
+      # >MAX_LINE_LENGTH line was dropped before the ERE (the ReDoS guard), but an
+      # unscannable line must not pass silently as it used to (warn + exit 0).
+      over="line(s) over $MAX_LINE_LENGTH chars cannot be scanned for forbidden patterns — split/relocate the minified asset or raise MAX_LINE_LENGTH"
+      if [ "$CI_MODE" -eq 1 ]; then
+        echo "::error file=$(ghesc prop "$file")::$(ghesc data "$over")"
+      else
+        echo "✗ $file: $over"
+      fi
+      FAILED=1
     fi
     [ -n "$content" ] || continue
 
@@ -187,7 +199,7 @@ scan() {
       pat="${patterns[$i]}"
       desc="${descriptions[$i]}"
       # Exempt only a comment-anchored marker (see check-secrets).
-      m=$(grep -anE -- "$pat" <<<"$content" | grep -ivE '(^|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true)
+      m=$(grep -anE -- "$pat" <<<"$content" | grep -ivE '(^[0-9]+:|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true)
       [ -n "$m" ] || continue
       # Per-rule override: `disabled` skips the rule, `warn` reports without
       # failing, anything else (incl. missing config) enforces as `error`.

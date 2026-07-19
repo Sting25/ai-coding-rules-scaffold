@@ -150,6 +150,8 @@ remove_if_unmodified ".githooks/commit-msg"          "$SCAFFOLD_DIR/githooks/com
 remove_if_unmodified ".githooks/lib/check-gitleaks"  "$SCAFFOLD_DIR/githooks/lib/check-gitleaks.template"
 # Opt-in CI patch-coverage gate (only present if installed with --coverage-gate).
 remove_if_unmodified ".github/workflows/coverage.yml" "$SCAFFOLD_DIR/.github/workflows/coverage.yml.template"
+# Opt-in gitleaks CI workflow (only present if installed with --gitleaks-ci).
+remove_if_unmodified ".github/workflows/gitleaks.yml" "$SCAFFOLD_DIR/.github/workflows/gitleaks.yml.template"
 
 # Likely-customized files — only with --all
 if [ "$REMOVE_ALL" -eq 1 ]; then

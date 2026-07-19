@@ -26,18 +26,27 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
           python-version: "3.12"
-      - run: pip install ruff
+      # Pin the linter version (supply-chain posture: the repo's own
+      # dependabot.yml justifies a cooldown so a compromised-and-yanked release
+      # isn't executed minutes after publish — an unpinned `pip install ruff`
+      # contradicted that). Bump deliberately.
+      - run: pip install ruff==0.15.22
       - name: Install actionlint
-        # Validates the rendered lint.yml is a parseable GitHub Actions
-        # workflow — guards against the job-level `if: hashFiles(...)` class
-        # of error that silently disables every job. The download script is
-        # pinned to a COMMIT SHA, not the mutable v1.7.12 tag, so a moved tag
-        # or a compromised release can't swap the script under us. The `1.7.12`
-        # arg is the actionlint version the (pinned) script then downloads.
+        # Validates the rendered lint.yml is a parseable GitHub Actions workflow
+        # — guards against the job-level `if: hashFiles(...)` class of error that
+        # silently disables every job. Download the PINNED release asset and
+        # verify its sha256 before executing it: a GitHub release asset is mutable
+        # independently of its tag, so pinning only the download SCRIPT (the prior
+        # approach) still trusted whatever tarball the release currently serves.
+        # Pin + checksum = a swapped asset fails the build instead of running in CI.
         run: |
           mkdir -p "$RUNNER_TEMP/bin"
-          # SHA is rhysd/actionlint tag v1.7.12.
-          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/914e7df21a07ef503a81201c76d2b11c789d3fca/scripts/download-actionlint.bash) 1.7.12 "$RUNNER_TEMP/bin"
+          ver=1.7.12
+          sha=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          url="https://github.com/rhysd/actionlint/releases/download/v${ver}/actionlint_${ver}_linux_amd64.tar.gz"
+          curl -fsSL "$url" -o "$RUNNER_TEMP/actionlint.tgz"
+          echo "${sha}  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP/bin" actionlint
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Static-audit our own workflows (zizmor)
         # Machine-verifies the CI hardening the scaffold claims — SHA-pinned

@@ -66,6 +66,20 @@ else
       echo "  ✗ npm bundle is missing $missing of $n required source file(s)"
       FAIL=$((FAIL + 1))
     fi
+
+    # Docs referenced by SHIPPED/INSTALLED files (pytest.ini.template,
+    # coverage.yml.template, agent-precheck, README relative links) but not read
+    # via $SCAFFOLD_DIR, so the grep above can't see them. They were absent from
+    # the tarball, leaving npx users with dangling "see RECOMMENDATIONS.md" links.
+    docs_missing=0
+    for d in RECOMMENDATIONS.md CHANGELOG.md; do
+      grep -qxF "$d" <<<"$PACKED" || { echo "  ✗ referenced doc missing from npm bundle: $d"; docs_missing=$((docs_missing + 1)); }
+    done
+    if [ "$docs_missing" -eq 0 ]; then
+      echo "  ✓ referenced docs (RECOMMENDATIONS.md, CHANGELOG.md) are bundled"; PASS=$((PASS + 1))
+    else
+      echo "  ✗ npm bundle is missing $docs_missing referenced doc(s)"; FAIL=$((FAIL + 1))
+    fi
   else
     echo "  ✗ npm pack --dry-run failed"; sed 's/^/      /' "$C11"; FAIL=$((FAIL + 1))
   fi

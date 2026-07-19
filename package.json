@@ -14,6 +14,8 @@
     "forbidden-patterns/",
     "coding-rules.md",
     "operational-rules.md",
+    "RECOMMENDATIONS.md",
+    "CHANGELOG.md",
     "AGENTS.md.template",
     "CLAUDE.md.pointer",
     "claude-settings.json.template",

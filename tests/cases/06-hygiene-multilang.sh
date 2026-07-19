@@ -100,6 +100,83 @@ assert_rejects "hidden Unicode on a >MAX_LINE_LENGTH line fails closed" "cannot 
 git add longconflict.txt
 assert_rejects "conflict marker on a >MAX_LINE_LENGTH line fails closed" "cannot be scanned for conflict markers"
 
+# 45i. NUL-byte bypass: prepending a NUL to an agent-read text file flipped
+#      is_binary and skipped the hidden-Unicode scan — the ONLY defense for .md /
+#      source files against bidi smuggling. The skip now needs a binary EXTENSION
+#      too, so a .md with an injected NUL is still scanned (NULs stripped by $()).
+{ printf '\x00'; printf 'run this: %s rm -rf /\n' "$bidi"; } >nulbidi.md
+git add nulbidi.md
+assert_rejects "NUL-prepended agent file is still scanned for hidden Unicode" "hidden Unicode"
+
+# 45j. NEGATIVE: a genuine binary ASSET (binary content AND a binary extension)
+#      is still skipped, so images don't false-positive on the scanned bytes.
+{ printf '\x00\x00PNG'; printf 'x %s y' "$bidi"; } >logo.png
+git add logo.png
+assert_passes "real binary image asset is skipped (no hidden-Unicode false positive)"
+
+# 45k. Mid-file BOM (U+FEFF away from column 0) — a leading BOM is allowed but a
+#      mid-file one is a hidden-Unicode finding; this arm had no positive fixture.
+bom=$(printf '\xef\xbb\xbf')
+printf 'const x = 1;%s // trailing\n' "$bom" >midbom.js
+git add midbom.js
+assert_rejects "mid-file BOM is rejected (leading-BOM allowance not abused)" "hidden Unicode"
+
+# 45l. Plain bidi override (U+202E) on a normal-length line — 45g only covered the
+#      over-cap fail-closed path, never a direct bidi rejection.
+printf 'let user = "admin"; %s\n' "$bidi" >plainbidi.js
+git add plainbidi.js
+assert_rejects "plain bidi override (U+202E) is rejected" "hidden Unicode"
+
+# 45m. Tag-block smuggling (U+E0001, bytes F3 A0 80 81) — the invisible "tag"
+#      instruction-smuggling arm of HIDDEN_RE had no fixture.
+tag=$(printf '\xf3\xa0\x80\x81')
+printf 'safe instruction%s hidden tag\n' "$tag" >tagsmuggle.md
+git add tagsmuggle.md
+assert_rejects "tag-block hidden Unicode (U+E0001) is rejected" "hidden Unicode"
+
+# 45n. diff3 common-ancestor conflict marker (|||||||) — CONFLICT_RE matches three
+#      shapes but only <<< / >>> had a fixture. A diff3 resolve can leave the base
+#      marker behind after the user removes the <<< / >>> lines.
+printf 'a\n||||||| merged common ancestors\nb\n' >diff3conflict.txt
+git add diff3conflict.txt
+assert_rejects "diff3 ||||||| conflict marker is rejected" "merge-conflict marker"
+
+# 45o. check-patterns over-cap FAIL CLOSED (invoked directly — the end-to-end
+#      hook masks this because check-secrets independently rejects any over-cap
+#      line). A forbidden pattern on a >MAX_LINE_LENGTH line used to be dropped
+#      with only a warning + exit 0 (fail-OPEN); it must now fail closed like the
+#      other scanners. `print(` (backend.txt) sits on a 60k-char line.
+{ printf 'print("x") '; head -c 60000 /dev/zero | tr '\0' a; echo; } >longpat.py
+git add longpat.py
+if printf '%s\0' longpat.py | .githooks/lib/check-patterns >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ check-patterns over-cap — exited 0 (fail-open), expected reject"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "cannot be scanned for forbidden patterns" "$HOOK_OUT"; then
+  echo "  ✓ check-patterns fails closed on an over-cap line"; PASS=$((PASS + 1))
+else
+  echo "  ✗ check-patterns over-cap — rejected but missing the expected message"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
+# php -l syntax-error rejection. The php -l block had only VALID .php fixtures
+# (which exercise check-hygiene's dd() pattern, not php -l itself). Runs only
+# where php is on PATH; skips cleanly otherwise, like the tsc test.
+if command -v php >/dev/null 2>&1; then
+  printf '<?php\nfunction broken( {\n' >syntaxerr.php
+  git add syntaxerr.php
+  if .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+    echo "  ✗ php -l — hook accepted a PHP syntax error"; FAIL=$((FAIL + 1))
+  elif grep -qF "PHP syntax error" "$HOOK_OUT"; then
+    echo "  ✓ php -l rejects a PHP syntax error"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ php -l — rejected but without the expected message"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  reset_repo
+else
+  echo "  - skipped php -l test (php not installed)"
+fi
+
 # --- Multi-language forbidden patterns (config-driven check-patterns) -------
 # Each language file declares its extensions via a `# scaffold-extensions:`
 # header and is auto-discovered by check-patterns. Samples come from the

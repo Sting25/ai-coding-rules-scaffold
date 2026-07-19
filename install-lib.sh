@@ -35,14 +35,36 @@
 # The three policies share one write MECHANISM (_cp_replace) and one backup
 # routine (_backup), so the A7 symlink defenses live in exactly one place.
 
+# _mkdir_safe DIR — create DIR as real directories, never following a symlink at
+# ANY path component. `rm -f "$dst"` in _cp_replace drops a symlink at the LEAF
+# file, but a plain `mkdir -p` follows a symlinked PARENT (e.g. a planted
+# `.githooks -> ~/.ssh` or `.github -> $HOME`), which would send every scanner /
+# hook / CI workflow — and any overwrite — THROUGH the link, outside the repo,
+# while the in-tree path stays a symlink (a silent write-through + fail-open).
+# Walk the path top-down, dropping any symlink component before descending, so we
+# always land real dirs in the tree. Mirrors scripts/dev-setup.sh's _mkdir_safe
+# (B4) but handles arbitrary depth for the shared _cp_replace mechanism.
+_mkdir_safe() {
+  local dir=$1 path='' comp
+  while [ -n "$dir" ]; do
+    comp=${dir%%/*}
+    case $dir in */*) dir=${dir#*/} ;; *) dir= ;; esac
+    [ -z "$comp" ] && continue
+    path="${path:+$path/}$comp"
+    [ -L "$path" ] && rm -f "$path"
+    [ -d "$path" ] || mkdir "$path"
+  done
+}
+
 # _cp_replace SRC DST — the actual write. `[ -e ]` alone is false for a DANGLING
 # symlink and follows a LIVE one, so a pre-existing symlink at a scaffold path
 # used to make `cp` follow it and write the scanner to the link's target OUTSIDE
-# the repo. We `rm -f` the destination first (dropping any symlink) so we always
-# write a real regular file IN the tree, never THROUGH a link.
+# the repo. We drop any symlink at every parent component (_mkdir_safe) AND at the
+# leaf (`rm -f`) first, so we always write a real regular file IN the tree, never
+# THROUGH a link.
 _cp_replace() {
   local src=$1 dst=$2
-  mkdir -p "$(dirname "$dst")"
+  _mkdir_safe "$(dirname "$dst")"
   rm -f "$dst"
   cp "$src" "$dst"
 }

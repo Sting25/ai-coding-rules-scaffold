@@ -26,7 +26,7 @@ Drop-in guardrails that **block bad code from being committed or merged**. One `
 - **Two layers, one implementation** — the hook and the CI job call the exact same `lib/check-*` scripts, so they can never drift apart.
 - **Agent-agnostic** — rules live in `AGENTS.md` (with a thin `CLAUDE.md` pointer); Cursor, Claude Code, Aider, and others read them directly.
 - **Tunable, not all-or-nothing** — per-path size caps and per-rule disable/warn via `.scaffold.toml`, plus inline `# scaffold-allow` for the rare legitimate exception.
-- **Cleanly removable** — `./uninstall.sh` reverses everything and never touches the content of your own `CLAUDE.md` / `AGENTS.md`.
+- **Cleanly removable** — `uninstall.sh` reverses everything and never touches the content of your own `CLAUDE.md` / `AGENTS.md` (see [Update & uninstall](#update--uninstall) for how to run it per install method).
 
 ## Why this exists
 
@@ -42,7 +42,7 @@ That setup hits four compounding failure modes that ordinary linting alone doesn
 
 4. **Forbidden patterns recur.** Agents reach for old import paths, deprecated service names, and outdated idioms because their training data still has them. A per-stack regex deny-list (`backend.txt`, `frontend.txt`, `secrets.txt`, `shell.txt`) is the only durable fix — the agent can't be talked out of recurrent muscle memory, but the build can fail on it.
 
-This scaffold ships the **enforcement layer** that addresses all four directly. Two layers are live: commit-time (the pre-commit hook) and merge-time (the CI mirror), both running the same `lib/check-*` scripts. A third layer — agent-runtime hooks that block bad patterns *before* they're written — is deferred; see [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) for the design space and tradeoffs.
+This scaffold ships the **enforcement layer** that addresses all four directly. Two layers are always-on: commit-time (the pre-commit hook) and merge-time (the CI mirror), both running the same `lib/check-*` scripts. A third opt-in layer — agent-runtime hooks that block bad patterns *before* they're written — ships via `install.sh --claude` (Claude Code) and `install.sh --cursor` (Cursor); see [Opt-in layers](#opt-in-layers) and [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) for the design space and tradeoffs.
 
 What the scaffold doesn't try to solve: parallel-session collisions, context-window discipline across long projects, and spec-first workflows. Those belong to git workflow (`git worktree` per session), nested `CLAUDE.md` files, and project-specific spec docs respectively. Recommended patterns for each are documented in `AGENTS.md` and `RECOMMENDATIONS.md`.
 
@@ -91,7 +91,9 @@ npx ai-coding-rules-scaffold --both --claude  # + AI-agent guardrails (also --cu
 
 This fetches the published package and runs the same installer documented below —
 every flag in the list further down works after `npx ai-coding-rules-scaffold …`.
-Re-run it any time to upgrade (it refreshes scaffold-owned files, keeps your edits).
+To upgrade, run `npx ai-coding-rules-scaffold@latest` (the `@latest` tag forces
+npm to re-resolve the current release, bypassing any cached version — bare-spec
+`npx` on npm 7–8 can silently reuse a stale cached copy and skip the upgrade).
 Needs Node ≥ 14 and `bash` (preinstalled on macOS/Linux; use Git Bash or WSL on
 Windows). The package has zero dependencies — it's just the installer + templates.
 
@@ -323,10 +325,13 @@ Commit + CI-breaking (pre-commit hook + `lint.yml`):
 
 When a regex match is intentional — a CLI entry point that needs `print`,
 a docs example showing an AWS key prefix, a fixture with a synthetic
-credential — append `scaffold-allow` (any case, in a comment) on the
-matched line. `check-patterns` and `check-secrets` skip lines containing
-the marker; `check-filenames` and `check-size` are file-level and
-unaffected. See `forbidden-patterns/README.md` for examples.
+credential — append `scaffold-allow` (any case) after a comment leader
+(`#`, `//`, `/*`, or `<!--`) on the matched line. The marker must follow
+a comment leader; a bare `scaffold-allow` inside a string literal is NOT
+exempt. `check-patterns` and `check-secrets` skip lines containing the
+marker; `check-filenames` and `check-size` are file-level and
+unaffected. See `forbidden-patterns/README.md` for examples and the full
+leader spec.
 
 **Reviewers: every PR that adds or moves a `scaffold-allow` marker is
 suppressing a guardrail.** Treat new markers like new `# noqa`s — confirm
@@ -353,13 +358,13 @@ by       = "alex 2026-06-11"
 [rules."frontend/console.log left in code"]
 severity = "warn"          # error (default) → warn: still reported, doesn't fail
 
-[rules.case-collision]     # hygiene ids: conflict-marker, case-collision
+[rules.case-collision]     # hygiene ids: conflict-marker, case-collision, hidden-unicode
 severity = "warn"
 ```
 
 - **Rule ids.** Forbidden-pattern rules are keyed `"<patternfile-stem>/<description>"`
   (the text after the TAB in `.forbidden-patterns/<lang>.txt`). Hygiene rules
-  use `conflict-marker` / `case-collision`; the size cap uses `size`.
+  use `conflict-marker` / `case-collision` / `hidden-unicode`; the size cap uses `size`.
 - **Disable vs downgrade.** `disabled = true` turns the rule off; `severity =
   "warn"` keeps emitting the finding (a CI `::warning::`) without failing the
   build — a relaxed rule stays visible, never silent.
@@ -380,8 +385,8 @@ severity = "warn"
 Beyond the always-on hook + CI mirror, three extras are available. They're off
 by default so the scaffold stays minimal; turn them on per project.
 
-- **Agent-runtime guardrails (`install.sh --claude`).** The deferred "layer
-  three" — catching bad input *before* the agent writes it, not at commit time.
+- **Agent-runtime guardrails (`install.sh --claude`).** The opt-in third layer —
+  catching bad input *before* the agent writes it, not at commit time.
   Installs a `.claude/settings.json` that denies the agent reading credential
   files (`.env`, `*.pem`, `*.key`, `~/.ssh/**`, `~/.aws/**`, …) and a
   `PreToolUse` hook (`.githooks/lib/agent-precheck`) that scans Write/Edit/Bash
@@ -473,7 +478,7 @@ git commit -m "should be rejected"
 - **`.forbidden-patterns/*.txt`** — TAB-separated `<regex>\t<description>` lines (one per language, auto-discovered via each file's `# scaffold-extensions:` header). Add deprecated import paths, old service names, etc. Lines starting with `#` are comments; an opt-in TODO/FIXME pattern is pre-seeded as a comment.
 - **`ruff.toml`** — enables `E,F,I,W,B,UP,SIM,PTH,ANN,ASYNC,FAST,G,LOG,BLE,C90,PL,PT,RUF` plus a curated `flake8-bandit` `S` security subset. Trim `ignore = [...]` if a rule fights your style.
 - **Pre-commit hook** — `MAX_LINES=500` by default. Override per-invocation: `MAX_LINES=800 git commit`. Edit the hook to change permanently. The CI workflow reads the same env var.
-- **Adopting on an existing codebase** — the local hook scans only the files in a given commit, but the CI job scans *all* tracked files (size, patterns, filenames, and secrets alike), not just changed ones. So the first PR after adoption surfaces pre-existing debt: a file already over 500 lines, an existing `print()`, or a secret already in history all fail in CI even if the PR didn't touch them. For the size case, extract the offenders first (preferred — this is the debt the rule is meant to catch) or set `MAX_LINES` higher temporarily in both the hook and CI, then ratchet it down as you refactor.
+- **Adopting on an existing codebase** — the local hook scans only staged files. In CI, the scope splits: the **secret and credential-filename scans run whole-tree** (so a pre-existing committed secret or a bad filename surfaces on the first PR even if that PR never touched the file — catching already-committed keys is the whole point); but the **size, forbidden-pattern, and hygiene gates are scoped to the PR/push diff**, so pre-existing oversize files and existing `print()`s are grandfathered until the next time those files change. This matches the behaviour described in [Philosophy](#philosophy) above.
 
 ## Update & uninstall
 
@@ -486,13 +491,29 @@ diff ~/src/ai-coding-rules-scaffold/ruff.toml.template ruff.toml
 
 A `git pull` in the scaffold clone picks up new rules / patterns upstream.
 
-**Uninstall:**
+**Uninstall** (run from your project root — choose the path that matches how you installed):
 
-```sh
-~/src/ai-coding-rules-scaffold/uninstall.sh            # safe: only unmodified files
-~/src/ai-coding-rules-scaffold/uninstall.sh --dry-run  # preview
-~/src/ai-coding-rules-scaffold/uninstall.sh --all      # also nuke AGENTS.md, coding-rules.md, patterns
-```
+- **git-clone install:** run `uninstall.sh` directly from the clone:
+  ```sh
+  ~/src/ai-coding-rules-scaffold/uninstall.sh            # safe: only unmodified files
+  ~/src/ai-coding-rules-scaffold/uninstall.sh --dry-run  # preview
+  ~/src/ai-coding-rules-scaffold/uninstall.sh --all      # also nuke AGENTS.md, coding-rules.md, patterns
+  ```
+
+- **Homebrew install:** `uninstall.sh` is bundled in the formula's `libexec`:
+  ```sh
+  bash "$(brew --prefix)/opt/ai-coding-rules-scaffold/libexec/uninstall.sh"
+  # add --dry-run or --all as needed
+  ```
+
+- **npx install:** there is no persistent on-disk copy of the scaffold, so
+  `uninstall.sh` isn't directly available after an npx run. To uninstall,
+  clone the repo temporarily and run it from there:
+  ```sh
+  git clone https://github.com/Sting25/ai-coding-rules-scaffold /tmp/scaffold-uninstall
+  /tmp/scaffold-uninstall/uninstall.sh   # run from your project root
+  rm -rf /tmp/scaffold-uninstall
+  ```
 
 Safe mode only removes files whose content matches the current scaffold template byte-for-byte, so local edits are never lost. `AGENTS.md`, `coding-rules.md`, and `.forbidden-patterns/` are kept unless you pass `--all`. `CLAUDE.md` is treated as a regenerable pointer and removed if unchanged.
 
@@ -510,7 +531,6 @@ Safe mode only removes files whose content matches the current scaffold template
 | Logging conventions, whole-repo coverage % | Per-project decision (the shipped gate measures *patch* coverage, not a global threshold) |
 | `ruff format` (Python formatting) | Drop-in if you want; Python formatting stays opinion-light (TS/JS formatting now ships via Prettier) |
 | Spec-first workflow templates (`SPEC.md`) | Out of scope — see [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) |
-| Claude Code agent-runtime hooks (`.claude/settings.json` `PreToolUse`) | Deferred — see [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) for design space and tradeoffs |
 | `git worktree` orchestration for parallel agent sessions | Documented in `AGENTS.md`; not automated |
 
 ## Developing on the scaffold itself

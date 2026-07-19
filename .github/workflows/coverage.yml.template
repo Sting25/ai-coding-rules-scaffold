@@ -59,7 +59,10 @@ jobs:
         # `|| true` so a no-tests-collected exit doesn't mask the diff-cover
         # verdict below; diff-cover reads coverage.xml and is the gate.
         run: |
-          pip install pytest pytest-cov
+          # Pinned: an unpinned `pip install` executes whatever version is newest
+          # at run time, minutes after publish — contradicting the cooldown posture
+          # the scaffold's dependabot.yml.template documents. Dependabot bumps these.
+          pip install pytest==9.1.1 pytest-cov==7.1.0
           pytest --cov --cov-report=xml || true
 
       # ── Frontend: vitest V8 coverage → coverage/cobertura-coverage.xml ────
@@ -83,7 +86,7 @@ jobs:
       # ── Gate: every changed line must be covered ──────────────────────────
       - name: Enforce patch coverage (diff-cover)
         run: |
-          pip install diff-cover
+          pip install diff-cover==10.3.0  # pinned (see note above); Dependabot bumps
           git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
           REPORTS=""
           [ -f coverage.xml ] && REPORTS="$REPORTS coverage.xml"
