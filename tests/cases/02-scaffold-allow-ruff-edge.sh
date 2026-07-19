@@ -51,6 +51,12 @@ if MAX_LINES=100 .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
   echo "  ✗ MAX_LINES=100 — hook accepted, expected reject"
   sed 's/^/      /' "$HOOK_OUT"
   FAIL=$((FAIL + 1))
+elif ! grep -qF 'extract a module' "$HOOK_OUT"; then
+  # Guard the reject reason (like assert_rejects): without it the case passed on
+  # ANY non-zero exit, so a crash unrelated to the size cap counted as a pass.
+  echo "  ✗ MAX_LINES=100 — rejected but not for the size cap (unexpected output)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
 else
   echo "  ✓ MAX_LINES env var override"
   PASS=$((PASS + 1))

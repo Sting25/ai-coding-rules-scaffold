@@ -23,6 +23,26 @@ seq 1 501 | sed 's/^/# /' >big2.py
 git add .scaffold.toml big2.py
 assert_passes "override: [rules.size] disabled skips the size cap"
 
+# 53b. [rules.size] severity = "warn" reports an oversize file but does NOT fail
+#      the build. The size scanner's own warn arm had no fixture — only disabled
+#      (53) and per-glob caps (52) — so a regression in either direction (warn
+#      silently failing, or error silently demoted) would ship green.
+printf '[rules.size]\nseverity = "warn"\n' >.scaffold.toml
+seq 1 501 | sed 's/^/# /' >bigwarn.py
+git add .scaffold.toml bigwarn.py
+if .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  if grep -qF "(warn — .scaffold.toml override)" "$HOOK_OUT" && grep -qF "bigwarn.py" "$HOOK_OUT"; then
+    echo "  ✓ override: [rules.size] severity=warn reports without failing"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ override: size warn passed but emitted no warn notice for the file"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+else
+  echo "  ✗ override: [rules.size] severity=warn — hook failed, expected pass-with-warning"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
 # 54. A disabled forbidden-pattern rule lets its match through.
 cat >.scaffold.toml <<'EOF'
 [rules."backend/Use structlog (or the project's logger), not print()"]

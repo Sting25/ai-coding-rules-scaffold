@@ -159,6 +159,26 @@ if bash "$CMHOOK" "$mf" >"$HOOK_OUT" 2>&1; then
 else
   echo "  ✗ commit-msg rejected a merge commit"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
+# 51b. Git's OTHER auto-generated subjects must be exempt too — only "Merge " had
+#      coverage, so a regression dropping these would break `git revert` /
+#      `git rebase --autosquash` on every consumer repo, undetected.
+for exempt in "Revert \"feat(api): add pagination\"" "fixup! feat(api): add pagination" \
+              "squash! feat(api): add pagination" "Reapply \"feat(api): add pagination\""; do
+  printf '%s\n' "$exempt" >"$mf"
+  if bash "$CMHOOK" "$mf" >"$HOOK_OUT" 2>&1; then
+    echo "  ✓ commit-msg exempts auto-generated subject: ${exempt%% *}"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ commit-msg rejected an exempt subject: $exempt"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+done
+# 51c. The `!` breaking-change marker on a valid type is accepted (only plain
+#      `feat(api): ...` was exercised, never the `feat!:` shape).
+printf 'feat!: drop the legacy endpoint\n' >"$mf"
+if bash "$CMHOOK" "$mf" >"$HOOK_OUT" 2>&1; then
+  echo "  ✓ commit-msg accepts a feat!: breaking-change subject"; PASS=$((PASS + 1))
+else
+  echo "  ✗ commit-msg rejected a valid feat!: subject"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
 # A valid-shape subject over 100 chars is rejected for length (commitlint parity).
 printf 'feat(api): %s\n' "$(printf 'a%.0s' $(seq 1 100))" >"$mf"
 if bash "$CMHOOK" "$mf" >"$HOOK_OUT" 2>&1; then
