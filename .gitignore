@@ -16,3 +16,4 @@ eslint.config.js
 node_modules/
 .venv/
 __pycache__/
+.claude/handoff_backups/
