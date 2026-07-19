@@ -12,6 +12,21 @@ printf 'AKIA''IOSFODNN7EXAMPLE\000trailing\n' >nul.txt
 git add nul.txt
 assert_rejects "NUL byte does not hide a secret" "AWS access key"
 
+# 19b. Secret placed AFTER a NUL byte. Case 19 kept the secret BEFORE the NUL, so
+#      a C-string awk (macOS/BSD) that truncates the record at the NUL still saw
+#      it. A secret AFTER the NUL was silently lost by the awk length-cap stage —
+#      a real fail-open. Stripping NULs before awk (tr -d '\000') closes it.
+printf 'harmless prefix\000AKIA''IOSFODNN7EXAMPLE\n' >nulafter.txt
+git add nulafter.txt
+assert_rejects "secret AFTER a NUL byte is still scanned" "AWS access key"
+
+# 19c. scaffold-allow on a COLUMN-0 comment line (leader immediately before the
+#      marker) must exempt — the exemption anchor has to tolerate the `grep -n`
+#      "NN:" line-number prefix, or the documented start-of-line form never works.
+printf '# scaffold-allow expired demo: AKIA''IOSFODNN7EXAMPLE\n' >leadallow.txt
+git add leadallow.txt
+assert_passes "scaffold-allow on a leading (column-0) comment line is exempt"
+
 # 20. A secret carried as a symlink target must be scanned. A symlink's
 #     committed blob is its target string; the old path-based scan followed the
 #     link (or `[ -f ]`-skipped a dangling one) and never saw it. Blob scanning

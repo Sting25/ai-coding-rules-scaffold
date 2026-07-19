@@ -107,12 +107,12 @@ if [ "$CONFLICT_STATE" != disabled ]; then
     # must not pass silently: awk exit 9 ("a line was dropped") triggers a finding
     # at the rule's severity, while the in-cap lines below are still scanned.
     cap_rc=0
-    content=$(git show ":0:$file" 2>/dev/null | awk -v n="$MAX_LINE_LENGTH" 'length > n { d=1; next } { print } END { exit (d ? 9 : 0) }') || cap_rc=$?
+    content=$(git show ":0:$file" 2>/dev/null | LC_ALL=C tr -d '\000' | awk -v n="$MAX_LINE_LENGTH" 'length > n { d=1; next } { print } END { exit (d ? 9 : 0) }') || cap_rc=$?
     if [ "$cap_rc" -eq 9 ]; then
       emit "$CONFLICT_STATE" "$file" "line(s) over $MAX_LINE_LENGTH chars cannot be scanned for conflict markers — split/relocate the minified asset or raise MAX_LINE_LENGTH"
     fi
     [ -n "$content" ] || continue
-    m=$(grep -anE -- "$CONFLICT_RE" <<<"$content" | grep -ivE '(^|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true)
+    m=$(grep -anE -- "$CONFLICT_RE" <<<"$content" | grep -ivE '(^[0-9]+:|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true)
     if [ -n "$m" ]; then
       emit "$CONFLICT_STATE" "$file" "merge-conflict marker — resolve the conflict before committing"
       printf '%s\n' "$m" | head -3 | sed 's/^/    /' >&2 || true
@@ -143,14 +143,34 @@ if [ "$CASE_STATE" != disabled ]; then
 fi
 
 # --- 3. hidden Unicode (bidi / zero-width / tag) ---------------------------
-# A blob is "binary" (skip) if a NUL appears in the first 8 KB — the NULs survive
-# the pipe into wc (a bash var can't hold NUL, so we count in the pipeline).
+# A blob is "binary" (a NUL in the first 8 KB) — the NULs survive the pipe into
+# wc (a bash var can't hold NUL, so we count in the pipeline).
 is_binary() {
   local n
   # `|| true`: a missing/unreadable path (git show fails) is simply "not binary"
   # under set -e/pipefail, not a hard error.
   n=$(git show ":0:$1" 2>/dev/null | head -c 8192 | LC_ALL=C tr -dc '\000' | wc -c | tr -d ' ' || true)
   [ "${n:-0}" -gt 0 ]
+}
+
+# The binary skip below exists ONLY so real images/media/archives (which
+# legitimately contain the scanned byte sequences) don't false-positive. But a
+# lone NUL is attacker-controlled: prepending one to an agent-read text file
+# (AGENTS.md, coding-rules.md, any .md/source) used to flip is_binary and skip
+# the ONLY scan that defends those files against bidi overrides / the Rules File
+# Backdoor. So the skip now requires BOTH a binary blob AND a known binary-asset
+# EXTENSION — a text/source/agent file (or any unknown/extensionless type) is
+# scanned as text regardless of an injected NUL ($() strips NULs before the scan).
+is_binary_asset_name() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    *.png|*.jpg|*.jpeg|*.gif|*.bmp|*.ico|*.webp|*.tif|*.tiff|*.heic|*.avif|*.psd|\
+    *.pdf|*.zip|*.gz|*.tgz|*.bz2|*.xz|*.zst|*.7z|*.rar|*.jar|*.war|*.ear|\
+    *.mp3|*.mp4|*.m4a|*.wav|*.avi|*.mov|*.mkv|*.flac|*.ogg|*.opus|*.webm|\
+    *.woff|*.woff2|*.ttf|*.otf|*.eot|\
+    *.so|*.dylib|*.dll|*.exe|*.bin|*.o|*.a|*.lib|*.class|*.wasm|*.pyc|*.pyo|\
+    *.parquet|*.pack|*.idx|*.db|*.sqlite|*.sqlite3|*.mo|*.dat) return 0 ;;
+  esac
+  return 1
 }
 
 HIDDEN_STATE=$(cfg rule-state hidden-unicode); [ -n "$HIDDEN_STATE" ] || HIDDEN_STATE=error
@@ -164,12 +184,14 @@ if [ "$HIDDEN_STATE" != disabled ]; then
   #   F3 A0 80-81 ··  tag block U+E0000–E007F (invisible "tag" smuggling)
   HIDDEN_RE=$'\xe2\x80[\x8b-\x8d\xaa-\xae]|\xe2\x81[\xa0\xa6-\xa9]|\xef\xbb\xbf|\xf3\xa0[\x80\x81][\x80-\xbf]'
   for file in "${FILES[@]}"; do
-    is_binary "$file" && continue
+    # Skip only a genuine binary ASSET (binary content AND a binary extension) —
+    # never a text/agent file whose "binary-ness" is one injected NUL (see above).
+    if is_binary "$file" && is_binary_asset_name "$file"; then continue; fi
     # FAIL CLOSED on an over-cap line (check-secrets parity). An unscannable line
     # in an agent-read file is exactly the Trojan-Source / Rules-File-Backdoor
     # surface this branch defends, so a dropped line is reported, not swallowed.
     cap_rc=0
-    content=$(git show ":0:$file" 2>/dev/null \
+    content=$(git show ":0:$file" 2>/dev/null | LC_ALL=C tr -d '\000' \
                 | LC_ALL=C awk -v n="$MAX_LINE_LENGTH" 'length > n { d=1; next } { print } END { exit (d ? 9 : 0) }') || cap_rc=$?
     if [ "$cap_rc" -eq 9 ]; then
       emit "$HIDDEN_STATE" "$file" "line(s) over $MAX_LINE_LENGTH chars cannot be scanned for hidden Unicode (Trojan Source / Rules File Backdoor surface) — split/relocate the minified asset or raise MAX_LINE_LENGTH"
@@ -179,7 +201,7 @@ if [ "$HIDDEN_STATE" != disabled ]; then
     # mid-file occurrence trips the EF-BB-BF branch.
     content=${content#$'\xef\xbb\xbf'}
     m=$(LC_ALL=C grep -anE -- "$HIDDEN_RE" <<<"$content" \
-          | grep -ivE '(^|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true)
+          | grep -ivE '(^[0-9]+:|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true)
     if [ -n "$m" ]; then
       emit "$HIDDEN_STATE" "$file" "hidden Unicode control char (bidi / zero-width / tag) — strip it; this is the 'Rules File Backdoor' / Trojan Source surface"
       # Never echo the raw invisible bytes back to a terminal/CI log — sanitize

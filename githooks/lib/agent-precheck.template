@@ -108,7 +108,7 @@ scan_against() {
 
   # A comment-anchored `scaffold-allow` exempts a line, exactly like the scanners.
   hit=$(printf '%s\n' "$content" | grep -an"${iflag}"E -- "$combined" \
-          | grep -ivE '(^|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true)
+          | grep -ivE '(^[0-9]+:|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true)
   [ -n "$hit" ] || return 0
 
   {
