@@ -14,7 +14,7 @@ Pattern files consumed by `.githooks/lib/check-patterns` and
 | `java.txt`     | `*.java`                                           | yes            |
 | `kotlin.txt`   | `*.kt`, `*.kts`                                    | yes            |
 | `ruby.txt`     | `*.rb`, `*.rake`                                   | yes            |
-| `secrets.txt`  | all tracked text files (binaries / lockfiles excluded) | no         |
+| `secrets.txt`  | all tracked files (every staged blob, regardless of extension) | no    |
 
 `check-patterns` **auto-discovers** every `*.txt` here (except `secrets.txt`,
 which is `check-secrets`' domain). Each file declares which extensions it
