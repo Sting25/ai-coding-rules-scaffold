@@ -42,10 +42,28 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/bin"
           ver=1.7.12
-          sha=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
-          url="https://github.com/rhysd/actionlint/releases/download/v${ver}/actionlint_${ver}_linux_amd64.tar.gz"
+          # Select the asset for THIS runner's OS/arch — the matrix runs
+          # ubuntu-latest (linux/amd64) and macos-latest (darwin/arm64), so a
+          # hardcoded linux_amd64 binary can't execute on macOS.
+          case "$(uname -s)" in Linux) os=linux ;; Darwin) os=darwin ;; *) echo "unsupported OS"; exit 1 ;; esac
+          case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; arm64|aarch64) arch=arm64 ;; *) echo "unsupported arch"; exit 1 ;; esac
+          # Per-platform pinned sha256 of actionlint_1.7.12_<os>_<arch>.tar.gz — a
+          # swapped release asset fails the build instead of running in CI.
+          case "${os}_${arch}" in
+            linux_amd64)  sha=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8 ;;
+            linux_arm64)  sha=325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6 ;;
+            darwin_amd64) sha=5b44c3bc2255115c9b69e30efc0fecdf498fdb63c5d58e17084fd5f16324c644 ;;
+            darwin_arm64) sha=aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f ;;
+            *) echo "no pinned checksum for ${os}_${arch}"; exit 1 ;;
+          esac
+          url="https://github.com/rhysd/actionlint/releases/download/v${ver}/actionlint_${ver}_${os}_${arch}.tar.gz"
           curl -fsSL "$url" -o "$RUNNER_TEMP/actionlint.tgz"
-          echo "${sha}  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c -
+          # Portable checksum verify: sha256sum on Linux, shasum -a 256 on macOS.
+          if command -v sha256sum >/dev/null 2>&1; then
+            echo "${sha}  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c -
+          else
+            echo "${sha}  $RUNNER_TEMP/actionlint.tgz" | shasum -a 256 -c -
+          fi
           tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP/bin" actionlint
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Static-audit our own workflows (zizmor)
