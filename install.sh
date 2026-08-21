@@ -6,6 +6,7 @@
 #   install.sh --python     # Python only
 #   install.sh --frontend   # TS/JS only
 #   install.sh --both       # install both stacks
+#   install.sh --shell      # shell-only project (hooks + shell/secrets patterns, no Python/TS configs)
 #   install.sh --force      # replace scaffold files (backs each up first; never CLAUDE.md/AGENTS.md)
 #   install.sh --no-verify  # skip the post-install linter smoke test
 #   install.sh --claude     # also install opt-in Claude Code agent guardrails
@@ -44,6 +45,7 @@ for arg in "$@"; do
     --python)     MODE="python" ;;
     --frontend)   MODE="frontend" ;;
     --both)       MODE="both" ;;
+    --shell)      MODE="shell" ;;
     --force)      FORCE=1 ;;
     --no-verify)  VERIFY=0 ;;
     --claude)     CLAUDE=1 ;;
@@ -54,7 +56,7 @@ for arg in "$@"; do
     --all-langs)  ALL_LANGS=1 ;;
     --coverage-gate) COVERAGE_GATE=1 ;;
     --no-install) NO_INSTALL=1 ;;
-    --help|-h)    sed -n '2,25p' "$0"; exit 0 ;;
+    --help|-h)    sed -n '2,26p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -78,9 +80,33 @@ if [ "$MODE" = "auto" ]; then
   elif [ "$HAS_PY" -eq 1 ]; then MODE="python"
   elif [ "$HAS_JS" -eq 1 ]; then MODE="frontend"
   else
-    echo "error: no pyproject.toml / requirements.txt / setup.py / package.json found." >&2
-    echo "       Specify the stack explicitly: --python, --frontend, or --both." >&2
-    exit 1
+    # No Python/JS manifest to key off. A shell-only project (plain bash/sh, no
+    # package manager) has no equivalent manifest file, so fall back to looking
+    # for shell scripts: tracked ones first — the same `git ls-files` fallback
+    # the shipped lint.yml.template php job uses when there's no composer.json —
+    # then the working tree, since install.sh is often run on a fresh project
+    # before anything has been committed. A repo with neither still errors
+    # rather than silently guessing a stack.
+    #
+    # Both probes avoid a pipeline on purpose: under `set -o pipefail` a
+    # `... | grep -q .` reports the producer's SIGPIPE (141) when grep exits
+    # early, which would read as "no shell scripts" and defeat the check.
+    SH_HITS=""
+    if git rev-parse --git-dir >/dev/null 2>&1; then
+      SH_HITS=$(git ls-files -- '*.sh' '*.bash' 2>/dev/null || true)
+    fi
+    if [ -z "$SH_HITS" ]; then
+      SH_HITS=$(find . -maxdepth 2 \( -name .git -o -name node_modules \) -prune -o \
+                     -type f \( -name '*.sh' -o -name '*.bash' \) -print 2>/dev/null || true)
+    fi
+    if [ -n "$SH_HITS" ]; then
+      MODE="shell"
+    else
+      echo "error: no pyproject.toml / requirements.txt / setup.py / package.json found," >&2
+      echo "       and no *.sh/*.bash files either." >&2
+      echo "       Specify the stack explicitly: --python, --frontend, --both, or --shell." >&2
+      exit 1
+    fi
   fi
 fi
 
@@ -384,9 +410,26 @@ if [ "$VERIFY" -eq 1 ]; then
       echo "  → commit package-lock.json after installing eslint deps, or CI's frontend job will fail."
       ;;
   esac
+  case "$MODE" in
+    shell)
+      # Print-only, never an auto-install offer. `offer` runs a package manager,
+      # and shellcheck has no single canonical one across platforms
+      # (brew/apt/dnf/cargo/pkg all differ) — unlike ruff (pip) and eslint (npm),
+      # where the manifest we just detected names the installer unambiguously.
+      if command -v shellcheck >/dev/null 2>&1; then
+        echo "  ✓ shellcheck installed"
+      else
+        echo "  ! shellcheck not installed — see https://www.shellcheck.net (brew install shellcheck / apt install shellcheck)"
+      fi
+      ;;
+  esac
 fi
 
 echo ""
 echo "Next:"
 echo "  - Edit AGENTS.md — fill in the Project section at the bottom"
-echo "  - Verify the hook: add 'print(\"x\")' to a .py file, 'git add' it, try to commit — hook should reject"
+case "$MODE" in
+  shell) echo "  - Verify the hook: add 'chmod 777 /tmp/x' to a .sh file, 'git add' it, try to commit — hook should reject" ;;
+  frontend) echo "  - Verify the hook: add 'console.log(\"x\")' to a .ts file, 'git add' it, try to commit — hook should reject" ;;
+  *) echo "  - Verify the hook: add 'print(\"x\")' to a .py file, 'git add' it, try to commit — hook should reject" ;;
+esac

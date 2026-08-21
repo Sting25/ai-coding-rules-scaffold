@@ -48,7 +48,8 @@ for case_file in \
   "$HERE/cases/10-ci-diff-scope.sh" \
   "$HERE/cases/11-npm-bundle.sh" \
   "$HERE/cases/12-install-backup-cap.sh" \
-  "$HERE/cases/13-devsetup-guards.sh"; do
+  "$HERE/cases/13-devsetup-guards.sh" \
+  "$HERE/cases/14-shell-install-mode.sh"; do
   # shellcheck source=/dev/null
   . "$case_file"
 done
