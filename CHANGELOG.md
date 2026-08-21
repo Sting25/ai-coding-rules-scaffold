@@ -136,6 +136,26 @@ versioning follows [SemVer](https://semver.org/).
   ever starts reading pattern config from the index.
 
 ### Fixed
+- **The secret scanner now catches a hardcoded `AWS_SECRET_ACCESS_KEY`
+  ([#87]).** The generic hardcoded-credential rule required its keyword to sit
+  immediately before the `=` or `:`, so `secret` matched and then wanted the
+  separator but found `_ACCESS_KEY`. The AKIA rule above it covers the AWS
+  access key *ID*; nothing covered the paired *secret*, which is the half that
+  actually grants access — and `AWS_SECRET_ACCESS_KEY` is its canonical
+  spelling in every AWS SDK and CI config.
+
+  Measured before the fix, against a fresh `install.sh --shell` project:
+  `AWS_SECRET_ACCESS_KEY = "wJalr…"` and `aws_secret_access_key: "wJalr…"` both
+  committed clean (hook exit 0), while `secret_key = "…"`, `api_key = "…"` and
+  a bare `AKIA…` were all blocked. Adds `secret[-_]?access[-_]?key` to the
+  alternation, ordered longest-first so the rule behaves identically in a
+  leftmost-first engine (PCRE, and anything this file is copied into) as under
+  POSIX leftmost-longest `grep -E`.
+
+  Both directions are tested: the assignment is rejected, and `secret_name =
+  "billing-prod-key-name"` — an identifier that merely *contains* "secret",
+  with a value long enough to clear the 16-char floor — still passes.
+
 - **Whole-tree checks no longer break on gitignored content ([#76]).**
   `AGENTS.md` prescribes whole-tree local commands (`npx eslint .`, `pytest`),
   but the configs installed beside them enumerated their exclusions instead of
@@ -295,6 +315,7 @@ versioning follows [SemVer](https://semver.org/).
 [#83]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/83
 [#84]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/84
 [#85]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/85
+[#87]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/87
 
 ## [v0.11.0] — 2026-07-19
 
