@@ -6,6 +6,18 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.12.0] — 2026-08-21
+
+A release about the difference between a guardrail being *installed* and a
+guardrail being *armed*. `scaffold-doctor` reports, for every check the
+scaffold ships, whether the mechanism that makes it actually execute is in
+place — `core.hooksPath` wiring, executable bits, pattern data, opt-in
+surfaces and their external tools. Mutation-testing the doctor immediately
+found a real hole in the shipped secret patterns (`AWS_SECRET_ACCESS_KEY`),
+which is fixed here too. `install.sh` also gave up its post-install toolchain
+step to a sourced module, having reached the 500-line cap it enforces on
+everyone else.
+
 ### Added
 - **`scaffold-doctor.sh` — checks whether an installed scaffold is armed, not
   just present.** `install.sh` reports what it *wrote*; that's a different
