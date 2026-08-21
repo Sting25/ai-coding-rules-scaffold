@@ -179,7 +179,10 @@ assert_rejects "correctly-cased ACCA key is still detected" "AWS access key"
 
 # 22n. Keyword-shaped rules deliberately KEEP -i (they match human-written
 #      prose, where case genuinely varies). An uppercase assignment must still
-#      be caught, or the fix over-corrected into a fail-open.
-echo 'PASSWORD = "abcdefghijklmnop1234"' >kw1.txt
+#      be caught, or the fix over-corrected into a fail-open. Value split
+#      (`abcdefghij`+`klmnop1234`) so this harness line carries no contiguous
+#      16+ run of its own — secrets.txt scans every text file, this one
+#      included, and the keyword rule has no prefix to make it self-exempt.
+echo 'PASSWORD = "abcdefghij''klmnop1234"' >kw1.txt
 git add kw1.txt
 assert_rejects "keyword rule stays case-insensitive (uppercase PASSWORD)" "Hardcoded credential"
