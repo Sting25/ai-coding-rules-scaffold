@@ -186,3 +186,23 @@ assert_rejects "correctly-cased ACCA key is still detected" "AWS access key"
 echo 'PASSWORD = "abcdefghij''klmnop1234"' >kw1.txt
 git add kw1.txt
 assert_rejects "keyword rule stays case-insensitive (uppercase PASSWORD)" "Hardcoded credential"
+
+# 22o. LOAD-VALIDITY GUARD. The `(?-i)` marker must never reach grep. Both
+#      check-secrets and agent-precheck DROP a rule whose ERE grep rejects,
+#      rather than failing on it — so a leaked marker does not error, it
+#      silently disarms every rule carrying one (a fail-OPEN). Asserting the
+#      load is clean turns that into a clear, early failure instead of a
+#      confusing "allowed a secret, expected block" further down the suite.
+#      Bites on GNU grep, which rejects `(?-i)`; BSD grep accepts it, so this
+#      is a Linux-side guard for a bug that is invisible on macOS.
+echo "benign content" >clean1.txt
+git add clean1.txt
+printf '%s\0' clean1.txt | .githooks/lib/check-secrets --ci >"$HOOK_OUT" 2>&1 || true
+if grep -qF 'invalid pattern dropped' "$HOOK_OUT"; then
+  echo "  ✗ shipped secrets.txt has rules grep rejects — the (?-i) marker leaked:"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+else
+  echo "  ✓ every shipped secrets.txt rule loads as a valid ERE (no marker leak)"
+  PASS=$((PASS + 1))
+fi
+reset_repo
