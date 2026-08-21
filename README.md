@@ -224,6 +224,7 @@ Scripts (stay in the scaffold repo):
 |---|---|
 | `install.sh` | Copy templates into your project, wire `core.hooksPath`, detect/offer the toolchain |
 | `uninstall.sh` | Remove unmodified scaffold files, unwire the hook |
+| `scaffold-doctor.sh` | Check whether an installed project's guardrails are armed, not just present — see [Check whether it's armed](#check-whether-its-armed) |
 
 ## AI agent integration
 
@@ -478,6 +479,33 @@ git add some_module.py
 git commit -m "should be rejected"
 # → hook prints: ✗ some_module.py: Use structlog (or the project's logger), not print()
 ```
+
+## Check whether it's armed
+
+`install.sh` reports what it *wrote*. Whether the guardrails actually *run* is
+a different question, and the gap between the two is where this scaffold's
+worst bugs have lived — a foreign `core.hooksPath` (Husky, lefthook, …) that
+`install.sh` deliberately leaves alone and only warns about, a hook file
+missing its executable bit that git skips without a word, a `secrets.txt`
+that went missing and left `check-secrets` exiting 0 silently. Measured on a
+real fixture: with that file gone, a genuine `AKIA…` AWS access key commits
+clean, with no output at all.
+
+`scaffold-doctor.sh` checks each guardrail's arming mechanism, not just its
+presence on disk:
+
+```sh
+./scaffold-doctor.sh            # from anywhere inside the working tree
+./scaffold-doctor.sh --quiet    # gaps + summary only — for CI / pre-flight use
+npx ai-coding-rules-scaffold doctor
+```
+
+Each line is `✓` armed, `✗` gap (installed but inert — a commit that should
+be blocked isn't), or `!` note (a deliberate off-switch, or an opt-in surface
+never opted into — a project that never installed gitleaks is healthy, not
+broken). Notes never affect the exit status. Exit `0` means no gaps, `1`
+means at least one guardrail is installed but not running, `2` means a usage
+error or "not a git repository".
 
 ## Customize per project
 
