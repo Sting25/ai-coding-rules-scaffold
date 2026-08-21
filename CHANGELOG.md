@@ -32,6 +32,25 @@ versioning follows [SemVer](https://semver.org/).
   Works through `npx ai-coding-rules-scaffold --shell` too — `bin/cli.js`
   passes arguments straight through with no allowlist.
 
+- **`.githooks/local.d/` — a real extension point for project-local checks
+  ([#72]).** Any executable in that directory runs as part of the guardrails, in
+  both the pre-commit hook and the CI `guardrails` job, under the same contract
+  as the shipped `lib/check-*` scripts: the NUL-delimited file list on stdin,
+  `--ci` as `$1` in CI, non-zero exit blocks. The hook feeds it the staged list;
+  CI feeds it the PR/push diff, matching the scoping of the other quality gates
+  so installing onto an existing repo never retroactively fails legacy code.
+
+  `install.sh` never writes into the directory — only a non-executable
+  `README.md` documenting the contract, and that through `cp_safe`. The
+  executable bit is the on/off switch, so `chmod -x` disables a check without
+  deleting it; for that reason the CI job deliberately does **not** `chmod +x`
+  the directory the way it does `lib/*`, which would both re-arm a disabled
+  check server-side and execute the README.
+
+  This is the durable half of the [#72] fix: before it, the only place to wire
+  in a project-local check was `.githooks/pre-commit` or
+  `.github/workflows/lint.yml`, both scaffold-owned and refreshed on upgrade.
+
 ### Changed
 - **The pre-commit hook distinguishes *untracking* a pattern file from
   *deleting* it ([#65]).** A staged `.forbidden-patterns/*.txt` deletion used
@@ -52,26 +71,37 @@ versioning follows [SemVer](https://semver.org/).
   staging a real secret must still be caught, so the suite turns red if a check
   ever starts reading pattern config from the index.
 
-- **`.githooks/local.d/` — a real extension point for project-local checks
-  ([#72]).** Any executable in that directory runs as part of the guardrails, in
-  both the pre-commit hook and the CI `guardrails` job, under the same contract
-  as the shipped `lib/check-*` scripts: the NUL-delimited file list on stdin,
-  `--ci` as `$1` in CI, non-zero exit blocks. The hook feeds it the staged list;
-  CI feeds it the PR/push diff, matching the scoping of the other quality gates
-  so installing onto an existing repo never retroactively fails legacy code.
-
-  `install.sh` never writes into the directory — only a non-executable
-  `README.md` documenting the contract, and that through `cp_safe`. The
-  executable bit is the on/off switch, so `chmod -x` disables a check without
-  deleting it; for that reason the CI job deliberately does **not** `chmod +x`
-  the directory the way it does `lib/*`, which would both re-arm a disabled
-  check server-side and execute the README.
-
-  This is the durable half of the [#72] fix: before it, the only place to wire
-  in a project-local check was `.githooks/pre-commit` or
-  `.github/workflows/lint.yml`, both scaffold-owned and refreshed on upgrade.
-
 ### Fixed
+- **`coding-rules.md` and `operational-rules.md` now pass the prettier config the
+  scaffold ships beside them ([#73]).** Both land in a consumer's project root
+  next to a `.prettierrc.json` this scaffold also writes, and the shipped
+  `lint.yml` runs `prettier --check` over every changed file — but both docs
+  failed that config, on `*Anchor:*` vs `_Anchor:_` emphasis and missing blank
+  lines after headings.
+
+  Diff-scoping did not save the consumer, because the README tells them to edit
+  one of the offenders ("add a Project-specific section to `coding-rules.md`").
+  Following the documented workflow put a scaffold-authored file in the changed
+  set and produced a red format check, on prose the consumer never wrote, on the
+  first commit after install. Formatting-only change — the prose is byte-identical
+  once emphasis markers and blank lines are normalized.
+
+  They are **not** added to `.prettierignore.template`, which the issue raised as
+  an alternative. `install-lib.sh` classifies the rules docs as `cp_safe` —
+  USER-OWNED, never auto-replaced — so by the scaffold's own ownership model they
+  are the consumer's files, not vendored content to exempt. The right fix is to
+  ship them already correct, then let the consumer's own additions be format-
+  checked like anything else they write.
+
+  `self-lint.yml` gained a step that enforces this, since nothing else in this
+  repo runs prettier and a one-off reformat would rot. It checks the docs under
+  their INSTALLED names in a temp dir: prettier picks its parser from the
+  extension, so `AGENTS.md.template` is not seen as markdown in place and would
+  silently pass unchecked. Scope is the installed set only — `README.md`,
+  `CHANGELOG.md` and `RECOMMENDATIONS.md` also fail this config but never reach a
+  consumer's tree, so no consumer CI checks them and reformatting them would be
+  churn without a bug.
+
 - **`install.sh` no longer destroys a locally-edited scaffold file without a
   trace ([#72]).** `cp_scaffold` refreshes scaffold-owned code on a plain re-run
   — that is how upgraders receive security fixes — but it took a backup only
@@ -157,6 +187,7 @@ versioning follows [SemVer](https://semver.org/).
 [#67]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/67
 [#71]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/71
 [#72]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/72
+[#73]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/73
 
 ## [v0.11.0] — 2026-07-19
 
