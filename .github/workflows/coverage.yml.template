@@ -56,14 +56,33 @@ jobs:
           python-version: "3.12"
       - name: Run Python tests with coverage
         if: steps.detect.outputs.python == 'true'
-        # `|| true` so a no-tests-collected exit doesn't mask the diff-cover
-        # verdict below; diff-cover reads coverage.xml and is the gate.
+        # Tolerate ONLY pytest's exit 5 (no tests collected), so an empty suite
+        # doesn't mask the diff-cover verdict below. Every other non-zero code —
+        # 1 failed, 2 interrupted, 3 internal error, 4 usage — fails the job.
+        #
+        # This used to be a blanket `|| true`, which swallowed exit 1 as well, so
+        # a PR with FAILING tests produced a green check (#71). Worse than merely
+        # not gating: a failing test still executes the lines it touches and so
+        # still writes them into coverage.xml, meaning a PR whose new code is
+        # covered only by a red test PASSED the patch-coverage gate on the
+        # strength of that very test.
+        #
+        # `|| rc=$?`, not `; rc=$?`: the default shell for a `run` step is
+        # `bash -e`, under which `pytest …; rc=$?` exits at pytest before the
+        # assignment is ever reached — which would fail the job on exit 5 and
+        # undo the tolerance this block exists to provide. A command on the left
+        # of `||` is a tested command and exempt from -e.
         run: |
           # Pinned: an unpinned `pip install` executes whatever version is newest
           # at run time, minutes after publish — contradicting the cooldown posture
           # the scaffold's dependabot.yml.template documents. Dependabot bumps these.
           pip install pytest==9.1.1 pytest-cov==7.1.0
-          pytest --cov --cov-report=xml || true
+          rc=0
+          pytest --cov --cov-report=xml || rc=$?
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 5 ]; then
+            echo "pytest exited $rc — failing the job (only 5 = no tests collected is tolerated)."
+            exit "$rc"
+          fi
 
       # ── Frontend: vitest V8 coverage → coverage/cobertura-coverage.xml ────
       - if: steps.detect.outputs.frontend == 'true'
@@ -75,13 +94,19 @@ jobs:
         # --ignore-scripts: same supply-chain hardening as lint.yml. Vitest +
         # @vitest/coverage-v8 are pure JS. Jest projects: swap for your
         # `jest --coverage` command emitting cobertura.
+        #
+        # No `|| true` here either (#71) — a failing vitest run must fail the job.
+        # vitest has no distinct "nothing collected" exit code to special-case
+        # the way pytest's 5 is handled above; `--passWithNoTests` is the
+        # supported way to say an empty suite is not an error, so it exits 0 and
+        # the diff-cover step still gets its say.
         run: |
           if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
             npm ci --ignore-scripts
           else
             npm install --ignore-scripts
           fi
-          npx --no-install vitest run --coverage || true
+          npx --no-install vitest run --coverage --passWithNoTests
 
       # ── Gate: every changed line must be covered ──────────────────────────
       - name: Enforce patch coverage (diff-cover)
