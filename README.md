@@ -74,7 +74,7 @@ Two always-on enforcement layers (pre-commit hook + CI mirror) plus optional age
 - **Rust** — `rust.txt`: `dbg!`, `println!`, `.unwrap()`/`.expect()` (opt-in); clippy CI job stub.
 - **Java / Kotlin** — `java.txt` / `kotlin.txt`: `System.out.println`, `println`, `printStackTrace`; setup-java/Gradle CI stubs.
 - **Ruby** — `ruby.txt`: `binding.pry`, `puts` (opt-in); setup-ruby CI stub.
-- **Shell** (`*.sh`/`*.bash`) — `shell.txt`: `curl | bash`, `rm -rf /`, `chmod 777`, `git --no-verify` (hook-bypass).
+- **Shell** (`*.sh`/`*.bash`) — `shell.txt`: `curl | bash`, `rm -rf /`, `chmod 777`, `git --no-verify` (hook-bypass). `shell.txt` and `secrets.txt` ship in **every** mode, so a Python or frontend project with shell scripts gets shell-pattern coverage too; `install.sh --shell` (or the manifest-less auto-detect fallback) is for projects that are *only* shell, with no Python/TS toolchain configs to install.
 - **Every language / all files** — `secrets.txt` token shapes (AWS `AKIA`/Bedrock, GCP, GitHub, GitLab PAT + runner/deploy/agent tokens, Slack, OpenAI/Anthropic, Stripe, Supabase, OpenRouter, HuggingFace, structural JWTs, private keys, URL-embedded creds), credential-file blocking (`.env`, `*.pem`, SSH keys), the 500-line file-size cap, merge-conflict markers, case-only filename collisions, and hidden-Unicode (Trojan-Source) scanning.
 
 Language pattern files auto-install when their manifest is detected (`go.mod`, `Cargo.toml`, `composer.json`, `pom.xml`/`build.gradle`, `Gemfile`), or install them all with `--all-langs`. Anything not listed still gets the always-on cross-language layers (secrets, file size, filenames, hygiene). Adding a new language is just dropping a `.forbidden-patterns/<lang>.txt` with a `# scaffold-extensions:` header — no script changes.
@@ -123,12 +123,13 @@ From your project root:
 ~/src/ai-coding-rules-scaffold/install.sh
 ```
 
-The script auto-detects Python (`pyproject.toml` / `requirements.txt` / `setup.py`) or frontend (`package.json`) and installs the matching pieces. If neither is present, it exits — pass the stack explicitly:
+The script auto-detects Python (`pyproject.toml` / `requirements.txt` / `setup.py`) or frontend (`package.json`) and installs the matching pieces. If neither is present, it falls back to **shell mode** when the repo contains any `*.sh`/`*.bash` file (tracked or not yet committed); with no manifest and no shell scripts it exits and asks for the stack explicitly. A manifest always wins over the shell fallback, so a `package.json` project that also ships build scripts is still a frontend install.
 
 ```sh
 ./install.sh --python       # Python only
 ./install.sh --frontend     # TS/JS only
 ./install.sh --both         # both stacks
+./install.sh --shell        # shell-only project (no Python/TS manifest) — hooks + shell/secrets patterns only
 ./install.sh --force        # replace scaffold files (each backed up to .scaffold-bak; CLAUDE.md/AGENTS.md never overwritten)
 ./install.sh --no-verify    # skip the post-install toolchain check (no detect/offer)
 ./install.sh --claude       # also install opt-in Claude Code agent guardrails

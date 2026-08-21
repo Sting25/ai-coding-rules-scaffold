@@ -6,6 +6,32 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Shell-only install mode (`install.sh --shell`) ([#65]).** For projects with
+  no Python or TS/JS manifest — plain bash/sh, `shellcheck`-linted — installs
+  the git hooks, guard checks, and the shell-relevant plus language-agnostic
+  pattern files (`shell.txt`, `secrets.txt`, both of which already shipped in
+  every mode) while skipping every Python/TS config template. There is nothing
+  for `ruff.toml` or `tsconfig.json` to configure in such a project.
+
+  Auto-detect falls back to shell mode on its own: no
+  `pyproject.toml`/`requirements.txt`/`setup.py`/`package.json`, but at least
+  one `*.sh`/`*.bash` file, selects it without the flag. Tracked files are
+  checked first (the same `git ls-files` fallback the shipped
+  `lint.yml.template` php job uses when there's no `composer.json`), then the
+  working tree, since `install.sh` is routinely run before the first commit. A
+  manifest always wins, so a `package.json` project that also ships build
+  scripts is still a frontend install. A repo with neither still errors rather
+  than guessing.
+
+  `shellcheck` gets a print-only presence hint, deliberately **not** an
+  auto-install offer: it has no single canonical package manager across
+  platforms, unlike ruff (pip) and eslint (npm) where the detected manifest
+  names the installer unambiguously.
+
+  Works through `npx ai-coding-rules-scaffold --shell` too — `bin/cli.js`
+  passes arguments straight through with no allowlist.
+
 ### Changed
 - **The pre-commit hook distinguishes *untracking* a pattern file from
   *deleting* it ([#65]).** A staged `.forbidden-patterns/*.txt` deletion used
