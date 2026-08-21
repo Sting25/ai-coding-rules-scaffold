@@ -384,7 +384,9 @@ jobs:
           # the mode bit, so a committed check arrives executable.
           if [ -d .githooks/local.d ]; then
             for lc in .githooks/local.d/*; do
-              [ -f "$lc" ] && [ -x "$lc" ] || continue
+              if [ ! -f "$lc" ] || [ ! -x "$lc" ]; then
+                continue
+              fi
               echo "running project-local check: $lc"
               "$lc" --ci <"$CHANGED_LIST" || FAILED=1
             done

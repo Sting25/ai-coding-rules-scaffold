@@ -33,12 +33,21 @@ LC_EOF
 # A fixture project with the scaffold installed. `core.hooksPath` is pointed at
 # a nonexistent dir for the SEED commit rather than passing --no-verify: shell.txt
 # forbids that flag and this harness is a .sh file the scaffold scans itself.
+#
+# --shell, deliberately. These assertions are about whether local.d ran, so the
+# hook's OPTIONAL linter steps must not be able to fail the commit for unrelated
+# reasons and be misread as a verdict on local.d. A `package.json` fixture is a
+# frontend install, which lands tsconfig.json and makes the hook run
+# `tsc --noEmit` wherever npx resolves a tsc — green on a runner without one and
+# red on a runner with one, on `Cannot find module 'vitest/config'` in a fixture
+# that never ran npm install. Shell mode installs no ruff/eslint/prettier/tsc
+# config, so nothing but the guardrails and local.d can decide the exit status.
 _fixture() {
   local d; d=$(mktemp -d)
   ( cd "$d" && git init --quiet && git config core.hooksPath .nohooks \
-    && echo '{}' >package.json && git add -A \
+    && printf '#!/usr/bin/env bash\necho seed\n' >seed.sh && git add -A \
     && git -c user.email=t@t -c user.name=t commit --quiet -m seed \
-    && "$SCAFFOLD_DIR/install.sh" ) >/dev/null 2>&1
+    && "$SCAFFOLD_DIR/install.sh" --shell ) >/dev/null 2>&1
   ( cd "$d" && git config --unset core.hooksPath && git config core.hooksPath .githooks )
   printf '%s' "$d"
 }
@@ -122,7 +131,9 @@ CI_FAILED=0
 CI_LIST=$(mktemp)
 ( cd "$LTMP" && git -c core.quotepath=off ls-files -z ) >"$CI_LIST"
 for lc in "$LTMP"/.githooks/local.d/*; do
-  [ -f "$lc" ] && [ -x "$lc" ] || continue
+  if [ ! -f "$lc" ] || [ ! -x "$lc" ]; then
+    continue
+  fi
   CI_RAN="$CI_RAN $(basename "$lc")"
   ( cd "$LTMP" && "$lc" --ci ) <"$CI_LIST" >/dev/null 2>&1 || CI_FAILED=1
 done

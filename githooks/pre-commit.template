@@ -151,11 +151,15 @@ fi
 #
 # `-f` before `-x` because an unmatched glob expands to the literal pattern
 # under bash's default (no nullglob), and the executable bit is the on/off
-# switch — a plain README in there is inert. Keep going after a failure so one
-# run reports every problem, matching the shipped checks above.
+# switch — a plain README in there is inert. Spelled as an `if`, not
+# `[ -f ] && [ -x ] || continue`: that form is correct here but trips SC2015,
+# and the scaffold fixes the file rather than suppressing the check. Keep going
+# after a failure so one run reports every problem, like the shipped checks.
 if [ -d "$HOOK_DIR/local.d" ]; then
   for lc in "$HOOK_DIR"/local.d/*; do
-    [ -f "$lc" ] && [ -x "$lc" ] || continue
+    if [ ! -f "$lc" ] || [ ! -x "$lc" ]; then
+      continue
+    fi
     "$lc" <"$STAGED_LIST" || FAILED=1
   done
 fi
