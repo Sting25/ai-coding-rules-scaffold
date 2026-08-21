@@ -6,6 +6,7 @@
 #   install.sh --python     # Python only
 #   install.sh --frontend   # TS/JS only
 #   install.sh --both       # install both stacks
+#   install.sh --shell      # shell-only project (hooks + shell/secrets patterns, no Python/TS configs)
 #   install.sh --force      # replace scaffold files (backs each up first; never CLAUDE.md/AGENTS.md)
 #   install.sh --no-verify  # skip the post-install linter smoke test
 #   install.sh --claude     # also install opt-in Claude Code agent guardrails
@@ -20,9 +21,13 @@
 #
 # On re-run (upgrade): scaffold-owned code (the hook, .githooks/lib/*, CI
 # workflows) is REFRESHED when it differs from the shipped version, so security
-# fixes reach you just by re-running. User-owned configs are left alone; a
+# fixes reach you just by re-running — and every file it overwrites is BACKED UP
+# to .scaffold-bak first, so an edit you made to one is recoverable and the
+# "backed up:" line tells you it happened. User-owned configs are left alone; a
 # drifted .forbidden-patterns/*.txt only prints a notice (use --force to replace
 # it — your customizations are backed up to .scaffold-bak first).
+# .githooks/local.d/ is never written to at all: it's where project-local checks
+# live precisely so an upgrade cannot unwire them.
 
 set -euo pipefail
 
@@ -44,6 +49,7 @@ for arg in "$@"; do
     --python)     MODE="python" ;;
     --frontend)   MODE="frontend" ;;
     --both)       MODE="both" ;;
+    --shell)      MODE="shell" ;;
     --force)      FORCE=1 ;;
     --no-verify)  VERIFY=0 ;;
     --claude)     CLAUDE=1 ;;
@@ -54,7 +60,7 @@ for arg in "$@"; do
     --all-langs)  ALL_LANGS=1 ;;
     --coverage-gate) COVERAGE_GATE=1 ;;
     --no-install) NO_INSTALL=1 ;;
-    --help|-h)    sed -n '2,25p' "$0"; exit 0 ;;
+    --help|-h)    sed -n '2,26p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -78,9 +84,33 @@ if [ "$MODE" = "auto" ]; then
   elif [ "$HAS_PY" -eq 1 ]; then MODE="python"
   elif [ "$HAS_JS" -eq 1 ]; then MODE="frontend"
   else
-    echo "error: no pyproject.toml / requirements.txt / setup.py / package.json found." >&2
-    echo "       Specify the stack explicitly: --python, --frontend, or --both." >&2
-    exit 1
+    # No Python/JS manifest to key off. A shell-only project (plain bash/sh, no
+    # package manager) has no equivalent manifest file, so fall back to looking
+    # for shell scripts: tracked ones first — the same `git ls-files` fallback
+    # the shipped lint.yml.template php job uses when there's no composer.json —
+    # then the working tree, since install.sh is often run on a fresh project
+    # before anything has been committed. A repo with neither still errors
+    # rather than silently guessing a stack.
+    #
+    # Both probes avoid a pipeline on purpose: under `set -o pipefail` a
+    # `... | grep -q .` reports the producer's SIGPIPE (141) when grep exits
+    # early, which would read as "no shell scripts" and defeat the check.
+    SH_HITS=""
+    if git rev-parse --git-dir >/dev/null 2>&1; then
+      SH_HITS=$(git ls-files -- '*.sh' '*.bash' 2>/dev/null || true)
+    fi
+    if [ -z "$SH_HITS" ]; then
+      SH_HITS=$(find . -maxdepth 2 \( -name .git -o -name node_modules \) -prune -o \
+                     -type f \( -name '*.sh' -o -name '*.bash' \) -print 2>/dev/null || true)
+    fi
+    if [ -n "$SH_HITS" ]; then
+      MODE="shell"
+    else
+      echo "error: no pyproject.toml / requirements.txt / setup.py / package.json found," >&2
+      echo "       and no *.sh/*.bash files either." >&2
+      echo "       Specify the stack explicitly: --python, --frontend, --both, or --shell." >&2
+      exit 1
+    fi
   fi
 fi
 
@@ -166,6 +196,15 @@ for check in check-size check-patterns check-filenames check-secrets check-hygie
   mkx ".githooks/lib/${check}"
 done
 cp_scaffold "$SCAFFOLD_DIR/.github/workflows/lint.yml.template" ".github/workflows/lint.yml"
+# .githooks/local.d/ — the project-local check extension point (#72). The
+# DIRECTORY is user-owned territory: nothing here ever writes into it beyond
+# this one README, and the README goes through cp_safe so even --force backs it
+# up rather than discarding an edit. It is what makes the directory exist in a
+# fresh install and, being tracked, survive a clone; it is not executable, so
+# the hook's `-x` guard skips it. This is the whole point of the fix — pre-commit
+# and lint.yml above are cp_scaffold (refreshed on upgrade), so a call site added
+# to either is reset, while anything in local.d/ is left strictly alone.
+cp_safe "$SCAFFOLD_DIR/githooks/local.d/README.md.template" ".githooks/local.d/README.md"
 # dependabot.yml is user-owned config (teams add their own ecosystems) → cp_safe.
 cp_safe "$SCAFFOLD_DIR/.github/dependabot.yml.template" ".github/dependabot.yml"
 # Pattern files are scaffold-shipped but user-extended → cp_pattern (notify on drift).
@@ -180,12 +219,58 @@ if [ "$MODE" = "python" ] || [ "$MODE" = "both" ]; then
   cp_safe "$SCAFFOLD_DIR/ruff.toml.template" "ruff.toml"
   cp_pattern "$SCAFFOLD_DIR/forbidden-patterns/backend.txt.template" ".forbidden-patterns/backend.txt"
   # Test-runner + coverage config (standalone, like ruff.toml — never edits
-  # pyproject.toml). Skip pytest.ini if the project already configures pytest in
-  # pyproject.toml/tox.ini/setup.cfg, since pytest.ini would silently override it.
-  if grep -rqs -e '\[tool.pytest.ini_options\]' -e '\[pytest\]' pyproject.toml tox.ini setup.cfg 2>/dev/null; then
-    echo "skip (pytest config exists): pytest.ini  — merge .coveragerc settings into your existing config"
+  # pyproject.toml). Skip pytest.ini if the project already configures pytest,
+  # since a root pytest.ini SILENTLY OVERRIDES that config: pytest picks one
+  # ini-file, and the rootdir one wins.
+  #
+  # The root check alone was not enough (#76). `grep -r` does not recurse for a
+  # FILE argument — only for a directory — so these three paths only ever looked
+  # at the project root. In a monorepo the Python project lives in a subdirectory
+  # (backend/, api/, services/x/) with its own [tool.pytest.ini_options], and the
+  # root looked unconfigured. install.sh then wrote a root pytest.ini whose
+  # `testpaths = tests` matched nothing, so pytest fell back to collecting from
+  # rootdir — walking the whole tree into vendored toolchains and extra
+  # checkouts — while shadowing the real config (losing e.g. asyncio_mode).
+  # Inert AND shadowing is the worst of the three outcomes.
+  #
+  # So look one level down as well, bounded: -maxdepth 2 covers backend/ and
+  # services/x/ without walking a vendored tree, and prunes the usual suspects.
+  # A `find` result is only used as a yes/no signal, so a weird filename cannot
+  # do anything but flip a boolean.
+  PYTEST_CFG=""
+  if grep -qs -e '\[tool.pytest.ini_options\]' -e '\[pytest\]' pyproject.toml tox.ini setup.cfg 2>/dev/null; then
+    PYTEST_CFG="."
+  else
+    while IFS= read -r cand; do
+      [ -n "$cand" ] || continue
+      if grep -qs -e '\[tool.pytest.ini_options\]' -e '\[pytest\]' "$cand" 2>/dev/null; then
+        PYTEST_CFG=$(dirname "$cand")
+        break
+      fi
+    done <<EOF_PYCFG
+$(find . -mindepth 2 -maxdepth 3 \
+       \( -name .git -o -name node_modules -o -name .venv -o -name venv \
+          -o -name .tox -o -name .claude -o -name vendor \) -prune -o \
+       -type f \( -name pyproject.toml -o -name tox.ini -o -name setup.cfg -o -name pytest.ini \) \
+       -print 2>/dev/null || true)
+EOF_PYCFG
+  fi
+  if [ -n "$PYTEST_CFG" ]; then
+    if [ "$PYTEST_CFG" = "." ]; then
+      echo "skip (pytest config exists): pytest.ini  — merge .coveragerc settings into your existing config"
+    else
+      echo "skip (pytest config in ${PYTEST_CFG#./}): pytest.ini  — not writing a root pytest.ini; a root ini overrides the one in ${PYTEST_CFG#./} and would collect the whole tree. Run pytest from ${PYTEST_CFG#./}, and merge .coveragerc settings into that config."
+    fi
   else
     cp_safe "$SCAFFOLD_DIR/pytest.ini.template" "pytest.ini"
+    # Installed a root pytest.ini but there is no root tests/ for its
+    # `testpaths = tests` to match. pytest treats an unmatched testpaths as
+    # "collect from rootdir", so the config that looks scoped is really
+    # whole-tree. Say so at install time rather than letting them find out via a
+    # collection error from a vendored package.
+    if [ ! -d tests ]; then
+      echo "note:         pytest.ini installed but ./tests/ does not exist — its 'testpaths = tests' matches nothing, and pytest then collects from the repo root. Create ./tests/, or point testpaths at your real test dir."
+    fi
   fi
   cp_safe "$SCAFFOLD_DIR/.coveragerc.template" ".coveragerc"
 fi
@@ -384,9 +469,29 @@ if [ "$VERIFY" -eq 1 ]; then
       echo "  → commit package-lock.json after installing eslint deps, or CI's frontend job will fail."
       ;;
   esac
+  case "$MODE" in
+    shell)
+      # Print-only, never an auto-install offer. `offer` runs a package manager,
+      # and shellcheck has no single canonical one across platforms
+      # (brew/apt/dnf/cargo/pkg all differ) — unlike ruff (pip) and eslint (npm),
+      # where the manifest we just detected names the installer unambiguously.
+      if command -v shellcheck >/dev/null 2>&1; then
+        echo "  ✓ shellcheck installed"
+      else
+        echo "  ! shellcheck not installed — see https://www.shellcheck.net (brew install shellcheck / apt install shellcheck)"
+      fi
+      ;;
+  esac
 fi
 
 echo ""
 echo "Next:"
 echo "  - Edit AGENTS.md — fill in the Project section at the bottom"
-echo "  - Verify the hook: add 'print(\"x\")' to a .py file, 'git add' it, try to commit — hook should reject"
+case "$MODE" in
+  # Literal split (`7`+`77`) so this .sh file does not itself carry the pattern
+  # shell.txt forbids — the scaffold's own guardrails scan install.sh. The echo
+  # still prints the contiguous string; same trick the test harness uses.
+  shell) echo "  - Verify the hook: add 'chmod 7""77 /tmp/x' to a .sh file, 'git add' it, try to commit — hook should reject" ;;
+  frontend) echo "  - Verify the hook: add 'console.log(\"x\")' to a .ts file, 'git add' it, try to commit — hook should reject" ;;
+  *) echo "  - Verify the hook: add 'print(\"x\")' to a .py file, 'git add' it, try to commit — hook should reject" ;;
+esac

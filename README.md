@@ -74,7 +74,7 @@ Two always-on enforcement layers (pre-commit hook + CI mirror) plus optional age
 - **Rust** — `rust.txt`: `dbg!`, `println!`, `.unwrap()`/`.expect()` (opt-in); clippy CI job stub.
 - **Java / Kotlin** — `java.txt` / `kotlin.txt`: `System.out.println`, `println`, `printStackTrace`; setup-java/Gradle CI stubs.
 - **Ruby** — `ruby.txt`: `binding.pry`, `puts` (opt-in); setup-ruby CI stub.
-- **Shell** (`*.sh`/`*.bash`) — `shell.txt`: `curl | bash`, `rm -rf /`, `chmod 777`, `git --no-verify` (hook-bypass).
+- **Shell** (`*.sh`/`*.bash`) — `shell.txt`: `curl | bash`, `rm -rf /`, `chmod 777`, `git --no-verify` (hook-bypass). `shell.txt` and `secrets.txt` ship in **every** mode, so a Python or frontend project with shell scripts gets shell-pattern coverage too; `install.sh --shell` (or the manifest-less auto-detect fallback) is for projects that are *only* shell, with no Python/TS toolchain configs to install.
 - **Every language / all files** — `secrets.txt` token shapes (AWS `AKIA`/Bedrock, GCP, GitHub, GitLab PAT + runner/deploy/agent tokens, Slack, OpenAI/Anthropic, Stripe, Supabase, OpenRouter, HuggingFace, structural JWTs, private keys, URL-embedded creds), credential-file blocking (`.env`, `*.pem`, SSH keys), the 500-line file-size cap, merge-conflict markers, case-only filename collisions, and hidden-Unicode (Trojan-Source) scanning.
 
 Language pattern files auto-install when their manifest is detected (`go.mod`, `Cargo.toml`, `composer.json`, `pom.xml`/`build.gradle`, `Gemfile`), or install them all with `--all-langs`. Anything not listed still gets the always-on cross-language layers (secrets, file size, filenames, hygiene). Adding a new language is just dropping a `.forbidden-patterns/<lang>.txt` with a `# scaffold-extensions:` header — no script changes.
@@ -123,12 +123,13 @@ From your project root:
 ~/src/ai-coding-rules-scaffold/install.sh
 ```
 
-The script auto-detects Python (`pyproject.toml` / `requirements.txt` / `setup.py`) or frontend (`package.json`) and installs the matching pieces. If neither is present, it exits — pass the stack explicitly:
+The script auto-detects Python (`pyproject.toml` / `requirements.txt` / `setup.py`) or frontend (`package.json`) and installs the matching pieces. If neither is present, it falls back to **shell mode** when the repo contains any `*.sh`/`*.bash` file (tracked or not yet committed); with no manifest and no shell scripts it exits and asks for the stack explicitly. A manifest always wins over the shell fallback, so a `package.json` project that also ships build scripts is still a frontend install.
 
 ```sh
 ./install.sh --python       # Python only
 ./install.sh --frontend     # TS/JS only
 ./install.sh --both         # both stacks
+./install.sh --shell        # shell-only project (no Python/TS manifest) — hooks + shell/secrets patterns only
 ./install.sh --force        # replace scaffold files (each backed up to .scaffold-bak; CLAUDE.md/AGENTS.md never overwritten)
 ./install.sh --no-verify    # skip the post-install toolchain check (no detect/offer)
 ./install.sh --claude       # also install opt-in Claude Code agent guardrails
@@ -196,7 +197,7 @@ Either way, the four `lib/check-*` scripts in `.githooks/lib/` are also runnable
 | `coding-rules.md` | `coding-rules.md` | Short list of code-level rules that aren't tool-enforceable |
 | `operational-rules.md` | `operational-rules.md` | Process and collaboration rules — failure modes that no linter can catch |
 | `ruff.toml.template` | `ruff.toml` | Python lint config |
-| `pytest.ini.template` | `pytest.ini` | Python test-runner config (skipped if pyproject/tox already configures pytest) |
+| `pytest.ini.template` | `pytest.ini` | Python test-runner config (skipped if pyproject/tox already configures pytest — including in a subdirectory, since a root `pytest.ini` would shadow it) |
 | `.coveragerc.template` | `.coveragerc` | coverage.py config for the patch-coverage gate |
 | `eslint.config.js.template` | `eslint.config.js` | TS/JS lint config (flat config, ESLint 9+) |
 | `tsconfig.json.template` | `tsconfig.json` | Strict TS config the type-aware eslint rules + `tsc --noEmit` assume |
@@ -207,6 +208,7 @@ Either way, the four `lib/check-*` scripts in `.githooks/lib/` are also runnable
 | `githooks/lib/check-{size,patterns,filenames,secrets,hygiene}.template` | `.githooks/lib/check-{size,patterns,filenames,secrets,hygiene}` | Reusable check scripts; the same scripts run from CI so hook and CI can't drift |
 | `githooks/lib/scaffold-config.template` | `.githooks/lib/scaffold-config` | Reads per-project rule overrides from `.scaffold.toml` (per-path size caps, per-rule disable / severity) |
 | `githooks/lib/scaffold-audit.template` | `.githooks/lib/scaffold-audit` | Lists every active override in `.scaffold.toml`; run locally and echoed by CI |
+| `githooks/local.d/README.md.template` | `.githooks/local.d/README.md` | Documents the project-local check contract. The **directory** is yours: drop executables in and hook + CI both run them, and `install.sh` never writes into it |
 | `.scaffold.toml.template` | `.scaffold.toml` | Per-project rule overrides — ships empty (commented), enforces nothing until edited |
 | `.github/workflows/lint.yml.template` | `.github/workflows/lint.yml` | CI mirror — invokes the same `lib/check-*` scripts as the hook, scoped to the PR/push diff (`lib/ci-changed-files`) for quality gates, whole-tree for the secret/credential scans |
 | `githooks/lib/ci-changed-files.template` | `.githooks/lib/ci-changed-files` | Resolves the PR/push diff so CI quality gates scan only changed files; fails open to the whole tree when there's no diff base |
@@ -315,7 +317,7 @@ Commit + CI-breaking (pre-commit hook + `lint.yml`):
 | Dangerous shell in `*.sh`/`*.bash` — `curl \| bash`, `rm -rf /`, `chmod 777`, `git --no-verify` (hook bypass) | regex (shell.txt) |
 | File size > 500 lines | line count of the staged blob (`git show :0:<path>`, counting a final line with no trailing newline) |
 | TODO/FIXME without ticket ref | regex (opt-in; commented in template) |
-| Secret / credential leaks (AWS `AKIA`/Bedrock, GitHub/GitLab tokens, Stripe, Supabase, OpenRouter, OpenAI/Anthropic, structural JWTs, private keys, URLs with embedded credentials, quoted hardcoded `password`/`token`/`api_key` assignments — unquoted/env-var forms are better caught by the gitleaks layer below) | regex (case-insensitive). Scans **every** tracked file's staged blob as text (no extension allowlist, so renaming a payload can't skip it); NUL bytes are stripped so they can't hide content. A single line longer than `MAX_LINE_LENGTH` (50000) is dropped before the regex (so a minified/binary blob can't hang the scan) and the file is then **rejected as unscannable** (fail-closed) — split/relocate the asset, raise `MAX_LINE_LENGTH`, or point a dedicated scanner at it |
+| Secret / credential leaks (AWS `AKIA`/Bedrock, GitHub/GitLab tokens, Stripe, Supabase, OpenRouter, OpenAI/Anthropic, structural JWTs, private keys, URLs with embedded credentials, quoted hardcoded `password`/`token`/`api_key` assignments — unquoted/env-var forms are better caught by the gitleaks layer below) | regex (case-insensitive for keyword rules; token-shaped rules are case-sensitive via a `(?-i)` marker, so an all-hex prefix like AWS `ACCA` cannot collide with a SHA-256 digest). Scans **every** tracked file's staged blob as text (no extension allowlist, so renaming a payload can't skip it); NUL bytes are stripped so they can't hide content. A single line longer than `MAX_LINE_LENGTH` (50000) is dropped before the regex (so a minified/binary blob can't hang the scan) and the file is then **rejected as unscannable** (fail-closed) — split/relocate the asset, raise `MAX_LINE_LENGTH`, or point a dedicated scanner at it |
 | Committed `.env` / `*.pem` / SSH private keys (`id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`) | filename check (`.env.example` / `.env.sample` / `.env.template` allowed) |
 | Merge-conflict markers (`<<<<<<<` / `\|\|\|\|\|\|\|` / `>>>>>>>`) left in a file | `check-hygiene` (staged-blob scan) |
 | Case-only filename collisions (`Readme.md` vs `README.md`) that break macOS/Windows checkouts | `check-hygiene` (path scan; diff-scoped in CI like the other quality gates) |
@@ -450,6 +452,12 @@ by default so the scaffold stays minimal; turn them on per project.
   tests"). Opt-in because forcing tests on new code is a policy a team must
   choose deliberately.
 
+  The job also **fails on failing tests**, not only on uncovered lines. That is
+  worth stating because it was not always true: the test steps ended in
+  `|| true`, so a red suite went green ([#71]). Only `pytest`'s exit 5 (no tests
+  collected) is tolerated now, and `vitest` uses `--passWithNoTests` for the
+  same case.
+
 Supply-chain hardening is **on by default** in the shipped CI + Dependabot
 config: `install.sh` drops a `.github/dependabot.yml` (weekly grouped bumps of
 the SHA-pinned Actions, with a **7-day `cooldown`** so a compromised-and-yanked
@@ -476,13 +484,17 @@ git commit -m "should be rejected"
 - **`coding-rules.md`** — short by design. Add a "Project-specific" section at the bottom for stack rules (SQLAlchemy column quirks, import conventions, architectural constraints).
 - **`AGENTS.md`** — the `Project` section is meant to be edited: stack, entry points, gotchas. Keep it tight; agents reread it on every turn.
 - **`.forbidden-patterns/*.txt`** — TAB-separated `<regex>\t<description>` lines (one per language, auto-discovered via each file's `# scaffold-extensions:` header). Add deprecated import paths, old service names, etc. Lines starting with `#` are comments; an opt-in TODO/FIXME pattern is pre-seeded as a comment.
+- **Whole-tree checks vs. gitignored content** — `npx eslint .` and `pytest` walk what is **on disk**, not what is in git, so a vendored toolchain, an agent worktree, or an extra checkout is inside their blast radius even though CI (fresh checkout, diff-scoped) never sees it. The shipped `eslint.config.js` derives its ignores from your `.gitignore` (via `@eslint/compat`, so add it to the `npm i -D` line); `pytest.ini` ships a `norecursedirs` default, but pytest has **no** `.gitignore` awareness, so extend that list with your own vendored directories by name. Extend the config rather than narrowing the command — a check everyone runs with a hand-picked path has stopped being a gate.
 - **`ruff.toml`** — enables `E,F,I,W,B,UP,SIM,PTH,ANN,ASYNC,FAST,G,LOG,BLE,C90,PL,PT,RUF` plus a curated `flake8-bandit` `S` security subset. Trim `ignore = [...]` if a rule fights your style.
+- **`.githooks/local.d/`** — project-local checks. Drop an executable in and it runs in both the pre-commit hook and the CI `guardrails` job, under the same contract as the shipped checks: the NUL-delimited file list on stdin, `--ci` as `$1` in CI, non-zero exit blocks. **`install.sh` never writes into this directory**, so an upgrade cannot unwire your checks — which is exactly what happened when the only option was editing `.githooks/pre-commit` or `.github/workflows/lint.yml` (both scaffold-owned and refreshed on re-run). The executable bit is the on/off switch: `chmod -x` disables a check without deleting it. The installed `README.md` in that directory has the full contract and a worked example.
 - **Pre-commit hook** — `MAX_LINES=500` by default. Override per-invocation: `MAX_LINES=800 git commit`. Edit the hook to change permanently. The CI workflow reads the same env var.
 - **Adopting on an existing codebase** — the local hook scans only staged files. In CI, the scope splits: the **secret and credential-filename scans run whole-tree** (so a pre-existing committed secret or a bad filename surfaces on the first PR even if that PR never touched the file — catching already-committed keys is the whole point); but the **size, forbidden-pattern, and hygiene gates are scoped to the PR/push diff**, so pre-existing oversize files and existing `print()`s are grandfathered until the next time those files change. This matches the behaviour described in [Philosophy](#philosophy) above.
 
 ## Update & uninstall
 
-**Update:** the project's configs are local forks of the templates. `install.sh --force` replaces them, backing up each changed file to `<file>.scaffold-bak` first so no edit is lost — and it never overwrites your `CLAUDE.md` (the import block is merged in once) or `AGENTS.md` (left as-is, since its Project section is yours). Diff first:
+**Update:** re-running `install.sh` is the upgrade path. Scaffold-owned code (the hook, the `lib/check-*` scanners, `lint.yml`) is refreshed whenever it differs from the shipped version — that's how you receive security fixes — and **any file it overwrites is backed up to `<file>.scaffold-bak` first, with a `backed up:` line in the output**, so an edit you made to one is recoverable rather than silently gone. If you have been wiring project-local checks into `.githooks/pre-commit` or `.github/workflows/lint.yml`, move them to `.githooks/local.d/` (see [Customize per project](#customize-per-project)); that directory is never written by an upgrade.
+
+Your own config files are a separate case: they're local forks of the templates and are left alone entirely unless you pass `--force`. `install.sh --force` replaces them, backing up each changed file to `<file>.scaffold-bak` first so no edit is lost — and it never overwrites your `CLAUDE.md` (the import block is merged in once) or `AGENTS.md` (left as-is, since its Project section is yours). Diff first:
 
 ```sh
 diff ~/src/ai-coding-rules-scaffold/ruff.toml.template ruff.toml
@@ -558,3 +570,5 @@ The scaffold works fine without any AI tool. Drop the files in, run the hook —
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+[#71]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/71

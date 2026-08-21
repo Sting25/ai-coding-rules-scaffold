@@ -137,6 +137,12 @@ done
 # shipped (empty) template; a team that has recorded overrides keeps it.
 remove_if_unmodified ".scaffold.toml"                "$SCAFFOLD_DIR/.scaffold.toml.template"
 remove_if_unmodified ".github/workflows/lint.yml"    "$SCAFFOLD_DIR/.github/workflows/lint.yml.template"
+# The local.d README only — never the directory. Anything else in there is a
+# project's own check scripts, which the scaffold neither wrote nor owns; the
+# rmdir sweep below clears the directory iff it is empty. Not touched by --all
+# either: --all removes files the SCAFFOLD authored and a user then customized,
+# and a local check is not one of those.
+remove_if_unmodified ".githooks/local.d/README.md"   "$SCAFFOLD_DIR/githooks/local.d/README.md.template"
 remove_if_unmodified ".github/dependabot.yml"        "$SCAFFOLD_DIR/.github/dependabot.yml.template"
 clean_claude_md
 # Opt-in Claude Code guardrails (only present if installed with --claude).
@@ -162,7 +168,8 @@ if [ "$REMOVE_ALL" -eq 1 ]; then
 fi
 
 # Clean up empty dirs the installer created
-for dir in .githooks/lib .githooks .github/workflows .github .claude .cursor; do
+# local.d before .githooks, so an emptied local.d lets .githooks go too.
+for dir in .githooks/lib .githooks/local.d .githooks .github/workflows .github .claude .cursor; do
   [ -d "$dir" ] || continue
   if rmdir "$dir" 2>/dev/null; then
     echo "removed empty: $dir"

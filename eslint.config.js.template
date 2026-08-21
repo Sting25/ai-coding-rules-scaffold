@@ -1,7 +1,7 @@
 // Copy to project root as `eslint.config.js` (flat config, ESLint 9+).
 //
 // Install peers:
-//   npm i -D eslint @eslint/js typescript-eslint \
+//   npm i -D eslint @eslint/js @eslint/compat typescript-eslint \
 //           eslint-plugin-import-x eslint-plugin-unused-imports
 //   # React projects also: npm i -D eslint-plugin-react-hooks  (see opt-in block below)
 //
@@ -21,14 +21,42 @@
 // rules, so there's nothing for Prettier to conflict with; do NOT add
 // eslint-plugin-prettier / eslint-config-prettier.
 
+// Import order below satisfies this config's own `import-x/order` rule: builtin
+// group first, blank line, then externals alphabetized. The shipped template had
+// `typescript-eslint` ahead of the plugins and so failed its own rule — nothing
+// in this repo lints JS, so it went unnoticed until #76 put an eslint run on it.
+import fs from 'node:fs';
+import path from 'node:path';
+
+import { includeIgnoreFile } from '@eslint/compat';
 import js from '@eslint/js';
-import tseslint from 'typescript-eslint';
 import importX from 'eslint-plugin-import-x';
 import unusedImports from 'eslint-plugin-unused-imports';
+import tseslint from 'typescript-eslint';
+
+// Ignore whatever git ignores (#76).
+//
+// `npx eslint .` — the command AGENTS.md prescribes — walks the WORKING TREE,
+// not the index, so it descends into anything present on disk. A hardcoded
+// ignore list only covers the names someone thought of: a vendored toolchain
+// produces hundreds of errors from code you did not write, and an agent
+// worktree containing its own eslint.config.js but no node_modules is worse
+// than noise — ESLint dies with ERR_MODULE_NOT_FOUND and lints NOTHING, exit 2.
+// A guardrail that hard-fails on unrelated content is one people learn to skip.
+//
+// Deriving from .gitignore fixes the whole class instead of the instances, and
+// `includeIgnoreFile` is ESLint's own supported way to do it. Guarded on
+// existence because it throws on a missing file, and a repo without a
+// .gitignore must still lint rather than fail to load its config.
+const gitignorePath = path.resolve(import.meta.dirname, '.gitignore');
+const gitignore = fs.existsSync(gitignorePath) ? [includeIgnoreFile(gitignorePath)] : [];
 
 export default tseslint.config(
+  ...gitignore,
   {
-    // Build output / vendored code is not ours to lint. Adjust per project.
+    // Build output that git may NOT ignore (a committed dist/, a vendored lib).
+    // The .gitignore-derived block above covers the ignored ones; this is the
+    // belt to its braces. Adjust per project.
     ignores: ['dist/**', 'build/**', 'coverage/**', 'node_modules/**'],
   },
   js.configs.recommended,

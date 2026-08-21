@@ -6,6 +6,243 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Shell-only install mode (`install.sh --shell`) ([#65]).** For projects with
+  no Python or TS/JS manifest — plain bash/sh, `shellcheck`-linted — installs
+  the git hooks, guard checks, and the shell-relevant plus language-agnostic
+  pattern files (`shell.txt`, `secrets.txt`, both of which already shipped in
+  every mode) while skipping every Python/TS config template. There is nothing
+  for `ruff.toml` or `tsconfig.json` to configure in such a project.
+
+  Auto-detect falls back to shell mode on its own: no
+  `pyproject.toml`/`requirements.txt`/`setup.py`/`package.json`, but at least
+  one `*.sh`/`*.bash` file, selects it without the flag. Tracked files are
+  checked first (the same `git ls-files` fallback the shipped
+  `lint.yml.template` php job uses when there's no `composer.json`), then the
+  working tree, since `install.sh` is routinely run before the first commit. A
+  manifest always wins, so a `package.json` project that also ships build
+  scripts is still a frontend install. A repo with neither still errors rather
+  than guessing.
+
+  `shellcheck` gets a print-only presence hint, deliberately **not** an
+  auto-install offer: it has no single canonical package manager across
+  platforms, unlike ruff (pip) and eslint (npm) where the detected manifest
+  names the installer unambiguously.
+
+  Works through `npx ai-coding-rules-scaffold --shell` too — `bin/cli.js`
+  passes arguments straight through with no allowlist.
+
+- **`.githooks/local.d/` — a real extension point for project-local checks
+  ([#72]).** Any executable in that directory runs as part of the guardrails, in
+  both the pre-commit hook and the CI `guardrails` job, under the same contract
+  as the shipped `lib/check-*` scripts: the NUL-delimited file list on stdin,
+  `--ci` as `$1` in CI, non-zero exit blocks. The hook feeds it the staged list;
+  CI feeds it the PR/push diff, matching the scoping of the other quality gates
+  so installing onto an existing repo never retroactively fails legacy code.
+
+  `install.sh` never writes into the directory — only a non-executable
+  `README.md` documenting the contract, and that through `cp_safe`. The
+  executable bit is the on/off switch, so `chmod -x` disables a check without
+  deleting it; for that reason the CI job deliberately does **not** `chmod +x`
+  the directory the way it does `lib/*`, which would both re-arm a disabled
+  check server-side and execute the README.
+
+  This is the durable half of the [#72] fix: before it, the only place to wire
+  in a project-local check was `.githooks/pre-commit` or
+  `.github/workflows/lint.yml`, both scaffold-owned and refreshed on upgrade.
+
+### Changed
+- **New operational rule: "Record every skip, deferral, and flag before moving
+  on."** The existing "capture pre-existing issues" rule covers what a session
+  NOTICES; this covers what it DECIDES — a skipped test, a check that no-op'd
+  because its tool was absent, an unanswered question, a workaround taken "for
+  now", scope deliberately not taken. Each lands somewhere durable at the moment
+  it happens, with why and what would unblock it, because chat is not durable and
+  a PR description only counts if the item also exists outside it.
+
+  Applied to itself immediately: the four items this session deferred are filed
+  as [#82], [#83], [#84] and [#85] rather than left in PR bodies.
+
+- **The pre-commit hook distinguishes *untracking* a pattern file from
+  *deleting* it ([#65]).** A staged `.forbidden-patterns/*.txt` deletion used
+  to hard-fail unconditionally, but `git rm --cached` (untrack, keep the file
+  on disk, ignore it via `.git/info/exclude`) is a legitimate local-only-tooling
+  move. Every check reads its pattern config from the **working tree** — never
+  from the index — so a file still on disk keeps the scanner fully armed. The
+  hook now fails only when the file is also gone from (or unreadable on) disk,
+  and warns on a pure untrack.
+
+  This does not reopen the neutering paths closed in v0.9.0: a config that is
+  gone, gutted to zero patterns, or renamed away still fails, and server-side
+  an untracked config is absent from the repo entirely, where
+  `check-secrets --ci` fails closed. The warning says so explicitly.
+
+  Four cases cover it, mutation-proven in both directions — including one that
+  asserts the *premise* rather than the behaviour: untracking the config while
+  staging a real secret must still be caught, so the suite turns red if a check
+  ever starts reading pattern config from the index.
+
+### Fixed
+- **Whole-tree checks no longer break on gitignored content ([#76]).**
+  `AGENTS.md` prescribes whole-tree local commands (`npx eslint .`, `pytest`),
+  but the configs installed beside them enumerated their exclusions instead of
+  deriving them, and neither honoured `.gitignore`. Anything on disk but not in
+  git — a vendored toolchain, an agent worktree, an extra checkout — was inside
+  the blast radius. CI never showed it (fresh checkout, diff-scoped), so the
+  documented local gate and the real gate disagreed.
+
+  Both halves shared one signature: a config that reads as scoped and behaves as
+  whole-tree, without announcing the fallback.
+
+  **eslint** now derives its ignores from `.gitignore` via `includeIgnoreFile`
+  from `@eslint/compat` — ESLint's own supported mechanism, added to the
+  documented peer install and guarded with `existsSync` so a repo without a
+  `.gitignore` still loads its config. Reproduced the reported failure first: an
+  agent worktree carrying its own `eslint.config.js` but no `node_modules` made
+  ESLint die with `ERR_MODULE_NOT_FOUND` and lint **nothing** (exit 2) — a
+  guardrail that hard-fails on unrelated content is one people learn to skip.
+  After the change the same tree lints clean, and real source is still checked.
+
+  **pytest**: `install.sh` now detects a pytest config in a SUBDIRECTORY and
+  declines to write a root `pytest.ini`. The old guard was root-only by
+  accident — `grep -r` does not recurse for a file argument, only a directory —
+  so in a monorepo (`backend/pyproject.toml`) it saw nothing, wrote a root
+  `pytest.ini` whose `testpaths = tests` matched nothing, and pytest fell back to
+  collecting from rootdir: inert *and* shadowing the real config (losing e.g.
+  `asyncio_mode`). Installing without a `./tests` now warns that collection goes
+  whole-tree, and the template ships `norecursedirs` — re-listing pytest's
+  defaults, since setting the key replaces rather than extends them, and
+  deliberately conservative because a too-broad entry silently stops collecting
+  real tests, which is worse than collecting too many.
+
+  Also fixes a pre-existing violation surfaced by actually running eslint on the
+  shipped config: `eslint.config.js.template` failed its own `import-x/order`
+  rule and had since it was written, because nothing in this repo lints JS.
+
+  Suite 252 → 260, every assertion mutation-proven.
+
+- **`coding-rules.md` and `operational-rules.md` now pass the prettier config the
+  scaffold ships beside them ([#73]).** Both land in a consumer's project root
+  next to a `.prettierrc.json` this scaffold also writes, and the shipped
+  `lint.yml` runs `prettier --check` over every changed file — but both docs
+  failed that config, on `*Anchor:*` vs `_Anchor:_` emphasis and missing blank
+  lines after headings.
+
+  Diff-scoping did not save the consumer, because the README tells them to edit
+  one of the offenders ("add a Project-specific section to `coding-rules.md`").
+  Following the documented workflow put a scaffold-authored file in the changed
+  set and produced a red format check, on prose the consumer never wrote, on the
+  first commit after install. Formatting-only change — the prose is byte-identical
+  once emphasis markers and blank lines are normalized.
+
+  They are **not** added to `.prettierignore.template`, which the issue raised as
+  an alternative. `install-lib.sh` classifies the rules docs as `cp_safe` —
+  USER-OWNED, never auto-replaced — so by the scaffold's own ownership model they
+  are the consumer's files, not vendored content to exempt. The right fix is to
+  ship them already correct, then let the consumer's own additions be format-
+  checked like anything else they write.
+
+  `self-lint.yml` gained a step that enforces this, since nothing else in this
+  repo runs prettier and a one-off reformat would rot. It checks the docs under
+  their INSTALLED names in a temp dir: prettier picks its parser from the
+  extension, so `AGENTS.md.template` is not seen as markdown in place and would
+  silently pass unchecked. Scope is the installed set only — `README.md`,
+  `CHANGELOG.md` and `RECOMMENDATIONS.md` also fail this config but never reach a
+  consumer's tree, so no consumer CI checks them and reformatting them would be
+  churn without a bug.
+
+- **`install.sh` no longer destroys a locally-edited scaffold file without a
+  trace ([#72]).** `cp_scaffold` refreshes scaffold-owned code on a plain re-run
+  — that is how upgraders receive security fixes — but it took a backup only
+  under `--force`, justified in its own header as "the prior bytes are scaffold
+  code, recoverable from git history and the scaffold repo". That premise holds
+  for an untouched destination and fails for an edited one, and nothing tested
+  which it was.
+
+  The two files most likely to be edited were `.githooks/pre-commit` and
+  `.github/workflows/lint.yml`, because they were the only place to wire in a
+  project-local check. The symptom was silent: the local check script stayed on
+  disk, its call sites were reset, nothing errored, and the guardrail became
+  decoration until someone noticed by chance.
+
+  Every `cp_scaffold` overwrite now backs up to `<file>.scaffold-bak` first and
+  prints a `backed up:` line, which is the signal that was missing. The refresh
+  itself is unchanged, so upgrades still deliver fixes. Cost is a backup file
+  beside each scaffold file that actually changed in the upgrade. If all 99
+  backup slots are taken, that one file is skipped rather than overwritten
+  unbacked (same policy as `cp_safe`/`cp_pattern`), with an error saying so.
+
+  `uninstall.sh` removes the `local.d/README.md` if unmodified and clears the
+  directory only when empty — a project's own checks are never scaffold files to
+  remove, not even under `--all`.
+
+  Suite 239 → 246; all four behaviours (the block, the `chmod -x` disable, the
+  backup, and the CI loop) mutation-proven in both directions.
+
+- **The patch-coverage gate no longer passes a PR whose tests are failing
+  ([#71]).** `coverage.yml.template` ran both test steps with `|| true`. The
+  intent was narrow and sound — `pytest` exits 5 when it collects nothing, and
+  an empty suite should not mask the `diff-cover` verdict that is the actual
+  gate — but `|| true` swallows exit 1 just as happily, so a PR with failing
+  tests produced a green check.
+
+  It was worse than merely not gating on failure. A failing test still executes
+  the lines it touches, so those lines still land in `coverage.xml`; a PR whose
+  new code was covered only by a red test therefore **passed** the patch-coverage
+  gate on the strength of that very test. And since the job is named `coverage`
+  and may be the only one invoking `pytest`, a consumer could reasonably read it
+  as a test gate it was not.
+
+  Now only `pytest`'s exit 5 is tolerated; 1 (failed), 2 (interrupted), 3
+  (internal error) and 4 (usage error) all fail the job. `vitest` has no
+  equivalent no-tests code, so its step drops `|| true` and gains
+  `--passWithNoTests`, which handles the empty case by exiting 0.
+
+  Written as `pytest … || rc=$?`, not `pytest …; rc=$?`: a `run:` step's default
+  shell is `bash -e`, under which the latter exits at `pytest` before the
+  assignment is reached — failing the job on exit 5 and undoing the tolerance
+  the block exists to provide. `cases/16` runs the step's real shell body,
+  lifted out of the shipped YAML, under `bash -e` against a fake `pytest`, and
+  catches exactly that mistake.
+
+  Suite 239 → 245.
+
+- **`check-secrets` matches token-shaped rules case-sensitively ([#67]).**
+  Every rule used to be matched with `grep -i`. The AWS key-ID rule widened to
+  `(AKIA|ASIA|ABIA|ACCA)…` in v0.11.0, and `ACCA` is composed entirely of hex
+  characters — so case-folded it matched inside ordinary SHA-256 digests, and
+  any repo with a lockfile could fail the whole-tree scan on content holding no
+  credential at all, over a message telling the reader to "rotate immediately".
+  (`AKIA`/`ASIA`/`ABIA` each contain a non-hex letter and cannot collide; the
+  Twilio `AC` SID prefix is all-hex and was one anchor away from the same bug.)
+
+  `secrets.txt` rules now accept a leading `(?-i)` marker that `check-secrets`
+  strips and turns into a case-sensitive match. Vendor key prefixes, base64
+  segments (JWT `eyJ`, Bedrock, PyPI) and the uppercase PEM banner carry it:
+  those formats are case-sensitive by specification, so folding case could
+  never add a true positive, only false ones. Keyword-shaped rules
+  (`password =`, `secret_key`) and the URL-scheme rules deliberately keep `-i`,
+  since they match human-written prose where case genuinely varies.
+
+  The fast pre-filter stays case-insensitive on purpose: it only decides which
+  files get a closer look, so `-i` keeps its match set a strict superset of the
+  per-rule pass and cannot drop a file a case-sensitive rule would have hit.
+
+  Backward compatible — a rule without the marker behaves exactly as before, so
+  an un-upgraded consumer `secrets.txt` is unaffected until its patterns are
+  refreshed. Suite 227 → 230, all three cases mutation-proven.
+
+[#65]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/65
+[#67]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/67
+[#71]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/71
+[#72]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/72
+[#73]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/73
+[#76]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/76
+[#82]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/82
+[#83]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/83
+[#84]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/84
+[#85]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/85
+
 ## [v0.11.0] — 2026-07-19
 
 A code + security review pass (multi-dimension, each finding adversarially
