@@ -72,3 +72,43 @@ jobs:
           .githooks/lib/check-hygiene   --ci <"$STAGED_LIST" || FAILED=1
           rm -f "$STAGED_LIST"
           exit $FAILED
+
+      - name: Docs installed into consumer projects must pass the shipped prettier config
+        # The other half of dogfooding: not just "our files pass our scanners"
+        # but "the files we INSTALL pass the config we install beside them".
+        #
+        # coding-rules.md and operational-rules.md land in a consumer's project
+        # root, next to a .prettierrc.json this scaffold also writes, and the
+        # shipped lint.yml runs `prettier --check` over every changed file. Both
+        # docs failed that config (#73) — so a consumer following the documented
+        # workflow (README: "add a Project-specific section to coding-rules.md")
+        # put a scaffold-authored file in the changed set and got a red format
+        # check on prose they never wrote, on their first commit after install.
+        #
+        # Formatting them once fixes today; this step is what stops it rotting
+        # back, since nothing else in this repo runs prettier. Checked under
+        # their INSTALLED names in a temp dir: prettier picks its parser from the
+        # extension, so AGENTS.md.template is not seen as markdown at all and
+        # would silently "pass" unchecked in place.
+        #
+        # Scope is deliberately the installed set. README.md, CHANGELOG.md and
+        # RECOMMENDATIONS.md also fail this config, but they stay in the scaffold
+        # clone / npm package and never reach a consumer's tree, so no consumer
+        # CI ever checks them. Reformatting them would be churn without a bug.
+        run: |
+          # Pinned, like the repo's other CI tool installs (ruff, zizmor,
+          # actionlint): an unpinned install runs whatever published minutes ago.
+          # --ignore-scripts: no lifecycle scripts from the dependency tree.
+          npm install --no-audit --no-fund --ignore-scripts prettier@3.9.6
+          docs="$RUNNER_TEMP/docs"
+          mkdir -p "$docs"
+          cp .prettierrc.json.template "$docs/.prettierrc.json"
+          cp coding-rules.md operational-rules.md "$docs/"
+          cp AGENTS.md.template "$docs/AGENTS.md"
+          if ! npx --no-install prettier --check "$docs"/*.md; then
+            echo "::error::A doc install.sh copies into consumer projects fails the"
+            echo ".prettierrc.json this scaffold ships beside it. A consumer editing"
+            echo "that file would get a red format check on prose they did not write."
+            echo "Fix: npx prettier --write --config .prettierrc.json.template <file>"
+            exit 1
+          fi

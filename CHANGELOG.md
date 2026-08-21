@@ -53,6 +53,36 @@ versioning follows [SemVer](https://semver.org/).
   ever starts reading pattern config from the index.
 
 ### Fixed
+- **`coding-rules.md` and `operational-rules.md` now pass the prettier config the
+  scaffold ships beside them ([#73]).** Both land in a consumer's project root
+  next to a `.prettierrc.json` this scaffold also writes, and the shipped
+  `lint.yml` runs `prettier --check` over every changed file — but both docs
+  failed that config, on `*Anchor:*` vs `_Anchor:_` emphasis and missing blank
+  lines after headings.
+
+  Diff-scoping did not save the consumer, because the README tells them to edit
+  one of the offenders ("add a Project-specific section to `coding-rules.md`").
+  Following the documented workflow put a scaffold-authored file in the changed
+  set and produced a red format check, on prose the consumer never wrote, on the
+  first commit after install. Formatting-only change — the prose is byte-identical
+  once emphasis markers and blank lines are normalized.
+
+  They are **not** added to `.prettierignore.template`, which the issue raised as
+  an alternative. `install-lib.sh` classifies the rules docs as `cp_safe` —
+  USER-OWNED, never auto-replaced — so by the scaffold's own ownership model they
+  are the consumer's files, not vendored content to exempt. The right fix is to
+  ship them already correct, then let the consumer's own additions be format-
+  checked like anything else they write.
+
+  `self-lint.yml` gained a step that enforces this, since nothing else in this
+  repo runs prettier and a one-off reformat would rot. It checks the docs under
+  their INSTALLED names in a temp dir: prettier picks its parser from the
+  extension, so `AGENTS.md.template` is not seen as markdown in place and would
+  silently pass unchecked. Scope is the installed set only — `README.md`,
+  `CHANGELOG.md` and `RECOMMENDATIONS.md` also fail this config but never reach a
+  consumer's tree, so no consumer CI checks them and reformatting them would be
+  churn without a bug.
+
 - **The patch-coverage gate no longer passes a PR whose tests are failing
   ([#71]).** `coverage.yml.template` ran both test steps with `|| true`. The
   intent was narrow and sound — `pytest` exits 5 when it collects nothing, and
@@ -109,6 +139,7 @@ versioning follows [SemVer](https://semver.org/).
 [#65]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/65
 [#67]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/67
 [#71]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/71
+[#73]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/73
 
 ## [v0.11.0] — 2026-07-19
 
