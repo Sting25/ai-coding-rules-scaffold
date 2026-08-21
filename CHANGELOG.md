@@ -52,6 +52,17 @@ versioning follows [SemVer](https://semver.org/).
   `.github/workflows/lint.yml`, both scaffold-owned and refreshed on upgrade.
 
 ### Changed
+- **New operational rule: "Record every skip, deferral, and flag before moving
+  on."** The existing "capture pre-existing issues" rule covers what a session
+  NOTICES; this covers what it DECIDES — a skipped test, a check that no-op'd
+  because its tool was absent, an unanswered question, a workaround taken "for
+  now", scope deliberately not taken. Each lands somewhere durable at the moment
+  it happens, with why and what would unblock it, because chat is not durable and
+  a PR description only counts if the item also exists outside it.
+
+  Applied to itself immediately: the four items this session deferred are filed
+  as [#82], [#83], [#84] and [#85] rather than left in PR bodies.
+
 - **The pre-commit hook distinguishes *untracking* a pattern file from
   *deleting* it ([#65]).** A staged `.forbidden-patterns/*.txt` deletion used
   to hard-fail unconditionally, but `git rm --cached` (untrack, keep the file
@@ -227,6 +238,10 @@ versioning follows [SemVer](https://semver.org/).
 [#72]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/72
 [#73]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/73
 [#76]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/76
+[#82]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/82
+[#83]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/83
+[#84]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/84
+[#85]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/85
 
 ## [v0.11.0] — 2026-07-19
 
