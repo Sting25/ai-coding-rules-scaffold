@@ -72,6 +72,44 @@ versioning follows [SemVer](https://semver.org/).
   ever starts reading pattern config from the index.
 
 ### Fixed
+- **Whole-tree checks no longer break on gitignored content ([#76]).**
+  `AGENTS.md` prescribes whole-tree local commands (`npx eslint .`, `pytest`),
+  but the configs installed beside them enumerated their exclusions instead of
+  deriving them, and neither honoured `.gitignore`. Anything on disk but not in
+  git — a vendored toolchain, an agent worktree, an extra checkout — was inside
+  the blast radius. CI never showed it (fresh checkout, diff-scoped), so the
+  documented local gate and the real gate disagreed.
+
+  Both halves shared one signature: a config that reads as scoped and behaves as
+  whole-tree, without announcing the fallback.
+
+  **eslint** now derives its ignores from `.gitignore` via `includeIgnoreFile`
+  from `@eslint/compat` — ESLint's own supported mechanism, added to the
+  documented peer install and guarded with `existsSync` so a repo without a
+  `.gitignore` still loads its config. Reproduced the reported failure first: an
+  agent worktree carrying its own `eslint.config.js` but no `node_modules` made
+  ESLint die with `ERR_MODULE_NOT_FOUND` and lint **nothing** (exit 2) — a
+  guardrail that hard-fails on unrelated content is one people learn to skip.
+  After the change the same tree lints clean, and real source is still checked.
+
+  **pytest**: `install.sh` now detects a pytest config in a SUBDIRECTORY and
+  declines to write a root `pytest.ini`. The old guard was root-only by
+  accident — `grep -r` does not recurse for a file argument, only a directory —
+  so in a monorepo (`backend/pyproject.toml`) it saw nothing, wrote a root
+  `pytest.ini` whose `testpaths = tests` matched nothing, and pytest fell back to
+  collecting from rootdir: inert *and* shadowing the real config (losing e.g.
+  `asyncio_mode`). Installing without a `./tests` now warns that collection goes
+  whole-tree, and the template ships `norecursedirs` — re-listing pytest's
+  defaults, since setting the key replaces rather than extends them, and
+  deliberately conservative because a too-broad entry silently stops collecting
+  real tests, which is worse than collecting too many.
+
+  Also fixes a pre-existing violation surfaced by actually running eslint on the
+  shipped config: `eslint.config.js.template` failed its own `import-x/order`
+  rule and had since it was written, because nothing in this repo lints JS.
+
+  Suite 252 → 260, every assertion mutation-proven.
+
 - **`coding-rules.md` and `operational-rules.md` now pass the prettier config the
   scaffold ships beside them ([#73]).** Both land in a consumer's project root
   next to a `.prettierrc.json` this scaffold also writes, and the shipped
@@ -188,6 +226,7 @@ versioning follows [SemVer](https://semver.org/).
 [#71]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/71
 [#72]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/72
 [#73]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/73
+[#76]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/76
 
 ## [v0.11.0] — 2026-07-19
 
