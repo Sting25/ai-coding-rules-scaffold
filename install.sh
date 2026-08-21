@@ -219,12 +219,58 @@ if [ "$MODE" = "python" ] || [ "$MODE" = "both" ]; then
   cp_safe "$SCAFFOLD_DIR/ruff.toml.template" "ruff.toml"
   cp_pattern "$SCAFFOLD_DIR/forbidden-patterns/backend.txt.template" ".forbidden-patterns/backend.txt"
   # Test-runner + coverage config (standalone, like ruff.toml — never edits
-  # pyproject.toml). Skip pytest.ini if the project already configures pytest in
-  # pyproject.toml/tox.ini/setup.cfg, since pytest.ini would silently override it.
-  if grep -rqs -e '\[tool.pytest.ini_options\]' -e '\[pytest\]' pyproject.toml tox.ini setup.cfg 2>/dev/null; then
-    echo "skip (pytest config exists): pytest.ini  — merge .coveragerc settings into your existing config"
+  # pyproject.toml). Skip pytest.ini if the project already configures pytest,
+  # since a root pytest.ini SILENTLY OVERRIDES that config: pytest picks one
+  # ini-file, and the rootdir one wins.
+  #
+  # The root check alone was not enough (#76). `grep -r` does not recurse for a
+  # FILE argument — only for a directory — so these three paths only ever looked
+  # at the project root. In a monorepo the Python project lives in a subdirectory
+  # (backend/, api/, services/x/) with its own [tool.pytest.ini_options], and the
+  # root looked unconfigured. install.sh then wrote a root pytest.ini whose
+  # `testpaths = tests` matched nothing, so pytest fell back to collecting from
+  # rootdir — walking the whole tree into vendored toolchains and extra
+  # checkouts — while shadowing the real config (losing e.g. asyncio_mode).
+  # Inert AND shadowing is the worst of the three outcomes.
+  #
+  # So look one level down as well, bounded: -maxdepth 2 covers backend/ and
+  # services/x/ without walking a vendored tree, and prunes the usual suspects.
+  # A `find` result is only used as a yes/no signal, so a weird filename cannot
+  # do anything but flip a boolean.
+  PYTEST_CFG=""
+  if grep -qs -e '\[tool.pytest.ini_options\]' -e '\[pytest\]' pyproject.toml tox.ini setup.cfg 2>/dev/null; then
+    PYTEST_CFG="."
+  else
+    while IFS= read -r cand; do
+      [ -n "$cand" ] || continue
+      if grep -qs -e '\[tool.pytest.ini_options\]' -e '\[pytest\]' "$cand" 2>/dev/null; then
+        PYTEST_CFG=$(dirname "$cand")
+        break
+      fi
+    done <<EOF_PYCFG
+$(find . -mindepth 2 -maxdepth 3 \
+       \( -name .git -o -name node_modules -o -name .venv -o -name venv \
+          -o -name .tox -o -name .claude -o -name vendor \) -prune -o \
+       -type f \( -name pyproject.toml -o -name tox.ini -o -name setup.cfg -o -name pytest.ini \) \
+       -print 2>/dev/null || true)
+EOF_PYCFG
+  fi
+  if [ -n "$PYTEST_CFG" ]; then
+    if [ "$PYTEST_CFG" = "." ]; then
+      echo "skip (pytest config exists): pytest.ini  — merge .coveragerc settings into your existing config"
+    else
+      echo "skip (pytest config in ${PYTEST_CFG#./}): pytest.ini  — not writing a root pytest.ini; a root ini overrides the one in ${PYTEST_CFG#./} and would collect the whole tree. Run pytest from ${PYTEST_CFG#./}, and merge .coveragerc settings into that config."
+    fi
   else
     cp_safe "$SCAFFOLD_DIR/pytest.ini.template" "pytest.ini"
+    # Installed a root pytest.ini but there is no root tests/ for its
+    # `testpaths = tests` to match. pytest treats an unmatched testpaths as
+    # "collect from rootdir", so the config that looks scoped is really
+    # whole-tree. Say so at install time rather than letting them find out via a
+    # collection error from a vendored package.
+    if [ ! -d tests ]; then
+      echo "note:         pytest.ini installed but ./tests/ does not exist — its 'testpaths = tests' matches nothing, and pytest then collects from the repo root. Create ./tests/, or point testpaths at your real test dir."
+    fi
   fi
   cp_safe "$SCAFFOLD_DIR/.coveragerc.template" ".coveragerc"
 fi

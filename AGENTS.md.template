@@ -18,8 +18,27 @@ working tree):
 ```sh
 ruff check .                       # Python  (when ruff.toml / pyproject.toml present)
 npx eslint . && npx tsc --noEmit   # TS/JS   (tsc when tsconfig.json present)
+pytest                             # Python  (from the dir holding the pytest config)
 git hook run pre-commit            # size / pattern / secret / hygiene / filename guards
 ```
+
+These are whole-tree commands, and a whole-tree command sees everything **on
+disk**, not everything in git. A vendored toolchain, an agent worktree, or an
+extra checkout — all gitignored, all present — lands inside their blast radius,
+where the result is either noise or a hard failure that lints nothing at all.
+CI never shows this, because CI runs on a fresh checkout and is diff-scoped, so
+the documented local gate and the real gate quietly disagree.
+
+The shipped configs handle the common cases: `eslint.config.js` derives its
+ignores from your `.gitignore`, and `pytest.ini` sets `norecursedirs`. Neither
+is automatic beyond that — pytest has no `.gitignore` awareness at all. **If a
+whole-tree command reports problems in code you did not write, extend the
+config rather than narrowing the command**; a command everyone has learned to
+run with a hand-picked path is a gate that no longer gates.
+
+In a monorepo, run `pytest` from the directory holding the pytest config, not
+from the repo root. pytest reads exactly one ini-file and the rootdir one wins,
+so invoking from the root can silently use the wrong config.
 
 ## Operational rules
 

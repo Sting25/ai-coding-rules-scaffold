@@ -1,12 +1,40 @@
 # Copy to project root as `pytest.ini` (install.sh does this for Python stacks
-# when no pytest config already exists in pyproject.toml/pytest.ini/tox.ini).
+# when no pytest config already exists in pyproject.toml/pytest.ini/tox.ini —
+# including one in a subdirectory, see below).
 # Minimal, standalone — like ruff.toml, it does not edit your pyproject.toml.
+#
+# MONOREPO WARNING. pytest reads exactly ONE ini-file, and the one at rootdir
+# wins. If your Python project lives in a subdirectory (backend/, api/,
+# services/x/) with its own [tool.pytest.ini_options], a pytest.ini at the repo
+# ROOT silently overrides it — you lose settings like asyncio_mode, and the
+# suite is only correct when invoked from that subdirectory. install.sh now
+# detects that case and declines to write this file (#76); if you are copying it
+# by hand, put it next to the Python project, not at the repo root.
 #
 # A runner forces nothing on its own. The opt-in patch-coverage gate
 # (`.github/workflows/coverage.yml`, `install.sh --coverage-gate`) is what
 # fails the build when CHANGED lines ship untested. See RECOMMENDATIONS.md.
 [pytest]
+# If ./tests does not exist, pytest treats testpaths as unmatched and collects
+# from rootdir instead — so this line reads as "scoped" while behaving as
+# "whole tree". Point it at your real test directory.
 testpaths = tests
 python_files = test_*.py *_test.py
+# Defence in depth for the whole-tree fallback above, and for an explicit
+# `pytest <path>` that reaches past testpaths. Anything on disk but not in git —
+# a vendored toolchain, an agent worktree, an extra checkout — is otherwise
+# inside collection's blast radius, and a vendored package's own tests fail on
+# import with errors that have nothing to do with your code (#76).
+#
+# Setting this REPLACES pytest's default, so the default list is repeated here
+# verbatim; only `.venv .tox .nox vendor third_party` are additions. The leading
+# `.*` is what covers agent worktrees under `.claude/`.
+#
+# Deliberately conservative. pytest has NO .gitignore awareness, so this list is
+# hand-written — and a too-broad entry (`tools`, `env`) silently stops collecting
+# real tests, which is a worse failure than collecting too many: one is loud at
+# the moment it happens, the other is invisible forever. Add your own vendored
+# directories by name; do not add generic ones on spec.
+norecursedirs = *.egg .* _darcs build CVS dist node_modules venv {arch} .venv .tox .nox vendor third_party
 # -ra prints a summary of skips/xfails so silently-skipped tests stay visible.
 addopts = -ra
