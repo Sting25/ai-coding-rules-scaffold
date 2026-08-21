@@ -369,5 +369,25 @@ jobs:
           .githooks/lib/check-size      --ci <"$CHANGED_LIST" || FAILED=1
           .githooks/lib/check-patterns  --ci <"$CHANGED_LIST" || FAILED=1
           .githooks/lib/check-hygiene   --ci <"$CHANGED_LIST" || FAILED=1
+          # Project-local checks — the supported extension point (issue #72).
+          # Every executable in .githooks/local.d/ runs with the same contract as
+          # the shipped checks: --ci, the NUL-delimited list on stdin, non-zero
+          # exit fails the job. The pre-commit hook runs the same directory.
+          # Scoped to CHANGED_LIST like the other quality gates, so installing
+          # onto an existing repo never retroactively fails its legacy code.
+          #
+          # Deliberately NO `chmod +x` here, unlike the lib/* line above. lib/ is
+          # all scripts; local.d/ is a MIXED directory where the executable bit
+          # IS the on/off switch (the shipped README documents `chmod -x` as how
+          # you disable a check). A blanket chmod would re-enable a disabled
+          # check server-side and would execute the README itself. Git preserves
+          # the mode bit, so a committed check arrives executable.
+          if [ -d .githooks/local.d ]; then
+            for lc in .githooks/local.d/*; do
+              [ -f "$lc" ] && [ -x "$lc" ] || continue
+              echo "running project-local check: $lc"
+              "$lc" --ci <"$CHANGED_LIST" || FAILED=1
+            done
+          fi
           rm -f "$ALL_LIST" "$CHANGED_LIST"
           exit $FAILED

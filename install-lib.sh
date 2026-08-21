@@ -20,8 +20,8 @@
 #                carry security fixes, so a plain re-run REFRESHES them whenever
 #                they differ from the shipped version (no --force needed); that's
 #                how an upgrader who just re-runs install.sh actually receives the
-#                fixes. The prior bytes are recoverable from git + the scaffold,
-#                so a routine refresh writes no backup (only --force does).
+#                fixes. Every overwrite is backed up first (#72) — a project may
+#                have edited one, and that edit must never vanish silently.
 #   cp_safe      USER-OWNED files — ruff.toml, eslint config, .scaffold.toml,
 #                dependabot.yml, the rules docs, etc. A project customizes these,
 #                so they're never auto-replaced: skip unless --force (which backs
@@ -117,9 +117,25 @@ cp_safe() {
 # cp_scaffold SRC DST — SCAFFOLD-OWNED code. Refreshes on diff so security fixes
 # reach upgraders on a plain re-run. Identical → silent no-op. A symlink planted
 # at a scaffold-owned path is always replaced with the real scanner (better than
-# leaving a dead link there) and never written through. No backup on a routine
-# refresh — the prior bytes are scaffold code, recoverable from git history and
-# the scaffold repo; --force still backs up first for parity with cp_safe.
+# leaving a dead link there) and never written through.
+#
+# ALWAYS backs up before overwriting — not just under --force (issue #72). The
+# old policy skipped the routine-refresh backup on the premise that "the prior
+# bytes are scaffold code, recoverable from git history and the scaffold repo."
+# That premise is TRUE for an untouched destination and FALSE for an edited one,
+# and nothing tested which it was. .githooks/pre-commit and .github/workflows/
+# lint.yml are the two files a project MUST edit to wire in a local check, so
+# the false case was the likely one — and its symptom was silent: the local
+# check script stayed on disk, its call sites were reset, nothing errored, and
+# the guardrail became decoration. Backing up unconditionally makes the loss
+# recoverable AND prints a "backed up:" line, which is the signal that was
+# missing. Cost is a .scaffold-bak beside each file that actually changed in the
+# upgrade; `.githooks/local.d/` now exists so local checks need not live in a
+# scaffold-owned file at all.
+#
+# If _backup fails (>99 slots), we skip this ONE file rather than overwrite it
+# unbacked — same policy as cp_safe/cp_pattern (B12). That defers a scanner
+# refresh, so _backup prints why and tells the user to clean up and re-run.
 cp_scaffold() {
   local src=$1 dst=$2
   if [ -e "$dst" ] || [ -L "$dst" ]; then
@@ -127,7 +143,7 @@ cp_scaffold() {
     if [ ! -L "$dst" ] && cmp -s "$src" "$dst"; then
       return
     fi
-    [ "$FORCE" -eq 1 ] && { _backup "$dst" || return 0; }
+    _backup "$dst" || return 0
     _cp_replace "$src" "$dst"
     echo "updated:      $dst (refreshed to the shipped version)"
     return

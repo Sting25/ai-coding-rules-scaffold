@@ -21,9 +21,13 @@
 #
 # On re-run (upgrade): scaffold-owned code (the hook, .githooks/lib/*, CI
 # workflows) is REFRESHED when it differs from the shipped version, so security
-# fixes reach you just by re-running. User-owned configs are left alone; a
+# fixes reach you just by re-running — and every file it overwrites is BACKED UP
+# to .scaffold-bak first, so an edit you made to one is recoverable and the
+# "backed up:" line tells you it happened. User-owned configs are left alone; a
 # drifted .forbidden-patterns/*.txt only prints a notice (use --force to replace
 # it — your customizations are backed up to .scaffold-bak first).
+# .githooks/local.d/ is never written to at all: it's where project-local checks
+# live precisely so an upgrade cannot unwire them.
 
 set -euo pipefail
 
@@ -192,6 +196,15 @@ for check in check-size check-patterns check-filenames check-secrets check-hygie
   mkx ".githooks/lib/${check}"
 done
 cp_scaffold "$SCAFFOLD_DIR/.github/workflows/lint.yml.template" ".github/workflows/lint.yml"
+# .githooks/local.d/ — the project-local check extension point (#72). The
+# DIRECTORY is user-owned territory: nothing here ever writes into it beyond
+# this one README, and the README goes through cp_safe so even --force backs it
+# up rather than discarding an edit. It is what makes the directory exist in a
+# fresh install and, being tracked, survive a clone; it is not executable, so
+# the hook's `-x` guard skips it. This is the whole point of the fix — pre-commit
+# and lint.yml above are cp_scaffold (refreshed on upgrade), so a call site added
+# to either is reset, while anything in local.d/ is left strictly alone.
+cp_safe "$SCAFFOLD_DIR/githooks/local.d/README.md.template" ".githooks/local.d/README.md"
 # dependabot.yml is user-owned config (teams add their own ecosystems) → cp_safe.
 cp_safe "$SCAFFOLD_DIR/.github/dependabot.yml.template" ".github/dependabot.yml"
 # Pattern files are scaffold-shipped but user-extended → cp_pattern (notify on drift).
