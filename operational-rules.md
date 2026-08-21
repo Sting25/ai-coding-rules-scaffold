@@ -286,6 +286,22 @@ _Anchor:_ a session noticed a pre-existing lint finding, labeled it
 "out of scope," and moved on; with nothing tracking it, it was
 forgotten until it resurfaced later as a failure.
 
+### Record every skip, deferral, and flag before moving on
+
+The complement to the rule above: that one covers what you NOTICE,
+this one covers what you DECIDE. A skipped test, a check that
+no-op'd because its tool was absent, a question left unanswered, a
+workaround taken "for now", scope deliberately not taken — each
+lands somewhere durable AT THE MOMENT it happens: an issue, a
+tracked fix-list, a TODO with an owner. Record why it was skipped
+and what would unblock it; a bare title is not actionable later.
+Chat is not durable — the transcript scrolls away and the next
+session starts from the code, not from what was said. A PR
+description is only durable if the item also exists outside it.
+_Anchor:_ a harness printed "skipped (tool not installed)" on every
+runner for months; the check it guarded had never once executed,
+and nothing recorded that it wasn't running.
+
 ### Surface uncertainty rather than guessing
 
 When the agent doesn't have enough context to make a decision
