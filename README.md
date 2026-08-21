@@ -452,6 +452,12 @@ by default so the scaffold stays minimal; turn them on per project.
   tests"). Opt-in because forcing tests on new code is a policy a team must
   choose deliberately.
 
+  The job also **fails on failing tests**, not only on uncovered lines. That is
+  worth stating because it was not always true: the test steps ended in
+  `|| true`, so a red suite went green ([#71]). Only `pytest`'s exit 5 (no tests
+  collected) is tolerated now, and `vitest` uses `--passWithNoTests` for the
+  same case.
+
 Supply-chain hardening is **on by default** in the shipped CI + Dependabot
 config: `install.sh` drops a `.github/dependabot.yml` (weekly grouped bumps of
 the SHA-pinned Actions, with a **7-day `cooldown`** so a compromised-and-yanked
@@ -563,3 +569,5 @@ The scaffold works fine without any AI tool. Drop the files in, run the hook —
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+[#71]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/71
