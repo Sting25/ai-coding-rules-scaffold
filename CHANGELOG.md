@@ -52,6 +52,26 @@ versioning follows [SemVer](https://semver.org/).
   `.github/workflows/lint.yml`, both scaffold-owned and refreshed on upgrade.
 
 ### Changed
+- **`install.sh`'s post-install toolchain check moved to `install-verify.sh`
+  ([#84]).** `install.sh` had reached 497 lines against the scaffold's own
+  500-line module-size cap — a cap it enforces on every project it installs
+  into, so the installer has to obey it too. The next change to that file would
+  have had to either shrink something or weaken the check, and weakening a
+  guardrail to fit is the one move this repo's rules rule out.
+
+  The extracted module is the whole post-install toolchain step
+  (`js_install_cmd`, `py_install_cmd`, `offer`, and the `--no-verify`-gated
+  body), now behind a single `run_toolchain_verify` call. It is SOURCED, not
+  executed, on exactly the same contract as `install-lib.sh`: it runs in
+  `install.sh`'s shell with its globals (`MODE`, `VERIFY`, `NO_INSTALL`) and its
+  `set -euo pipefail`. Behavior is unchanged; `install.sh` drops to 419 lines.
+
+  `tests/cases/11-npm-bundle.sh` derives its required-file list by grepping
+  `install.sh` for `$SCAFFOLD_DIR/...` paths, so the new module became a
+  required npm-bundle entry the moment it was sourced — `package.json` `files`
+  is updated to match, and `shellcheck.yml`'s explicit file list too, since that
+  list names root scripts individually rather than globbing.
+
 - **New operational rule: "Record every skip, deferral, and flag before moving
   on."** The existing "capture pre-existing issues" rule covers what a session
   NOTICES; this covers what it DECIDES — a skipped test, a check that no-op'd
