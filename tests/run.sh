@@ -50,6 +50,7 @@ for case_file in \
   "$HERE/cases/12-install-backup-cap.sh" \
   "$HERE/cases/13-devsetup-guards.sh" \
   "$HERE/cases/14-shell-install-mode.sh" \
+  "$HERE/cases/15-local-checks.sh" \
   "$HERE/cases/16-coverage-gate.sh"; do
   # shellcheck source=/dev/null
   . "$case_file"

@@ -1,0 +1,71 @@
+# `.githooks/local.d/` — project-local checks
+
+Drop an executable here and it runs as part of the guardrails, in both the
+pre-commit hook and the CI `guardrails` job. **`install.sh` never writes into
+this directory**, so upgrading the scaffold cannot unwire your checks.
+
+This exists because the alternative used to be editing `.githooks/pre-commit`
+or `.github/workflows/lint.yml` to add a call site. Both are scaffold-owned:
+a re-run of `install.sh` refreshes them to the shipped version, so the call
+site disappeared while the check script stayed on disk — the check silently
+became decoration (issue #72). Put local checks here instead.
+
+## Contract
+
+A local check is any executable file in this directory. It receives exactly
+what the shipped `lib/check-*` scripts receive:
+
+- **stdin** — the file list, **NUL-delimited** (`-z`), one path per record.
+  Read it with `while IFS= read -r -d '' f; do ... done`. NUL-delimiting is
+  what keeps a filename containing a newline, tab, or quote from splitting the
+  list and slipping a file past the scan.
+- **`--ci` as `$1`** when invoked from CI; no arguments from the pre-commit
+  hook. Use it to adjust output, not to weaken the check.
+- **exit status** — non-zero blocks the commit (hook) or fails the job (CI).
+  Every check runs even if an earlier one failed, so one run reports every
+  problem rather than only the first.
+
+Which files are in the list differs by caller, matching the shipped split:
+
+| Caller | List |
+| --- | --- |
+| pre-commit hook | staged files (`--diff-filter=ACMR`) |
+| CI `guardrails` job | the PR/push **diff**, falling open to the whole tree when there's no diff base |
+
+The diff scope is deliberate: installing the scaffold onto an existing repo
+should not retroactively fail its pre-existing code.
+
+Files run in glob order, so prefix them (`10-`, `20-`) if order matters. A
+non-executable file is skipped — that's why this README is inert.
+
+## Example
+
+`.githooks/local.d/20-check-import-boundaries`:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+FAILED=0
+while IFS= read -r -d '' f; do
+  case "$f" in src/core/*.py) ;; *) continue ;; esac
+  # Scan the COMMITTED BLOB, not the working tree — the same thing the shipped
+  # checks read, so a post-stage edit cannot hide content from the scan.
+  if git show ":0:$f" 2>/dev/null | grep -qn '^from src\.web'; then
+    echo "✗ $f: src/core must not import from src.web"
+    FAILED=1
+  fi
+done
+exit $FAILED
+```
+
+Then `chmod +x .githooks/local.d/20-check-import-boundaries` and commit it.
+
+## Notes
+
+- Commit your checks. CI checks out the repo and runs whatever is here, so an
+  uncommitted local check protects your machine only.
+- The executable bit is the switch. `chmod -x` disables a check without
+  deleting it.
+- These run with your repo checked out and your privileges, in CI too. Review
+  anything you add here as you would any other CI step.

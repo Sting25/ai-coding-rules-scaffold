@@ -138,6 +138,32 @@ if [ -x "$LIB/check-gitleaks" ]; then
   "$LIB/check-gitleaks" <"$STAGED_LIST" || FAILED=1
 fi
 
+# Project-local checks — the supported extension point (issue #72). Every
+# executable in .githooks/local.d/ runs here under the SAME contract as the
+# shipped checks: the NUL-delimited staged list on stdin, non-zero exit blocks
+# the commit. `.github/workflows/lint.yml` runs the same directory server-side.
+#
+# This exists so a project never has to edit THIS file to wire a check in.
+# pre-commit and lint.yml are scaffold-owned and refreshed by install.sh, so a
+# call site added here is reset on upgrade while the check script it called
+# stays on disk — the check silently becomes decoration. install.sh never
+# writes into local.d/, so an upgrade cannot unwire anything in it.
+#
+# `-f` before `-x` because an unmatched glob expands to the literal pattern
+# under bash's default (no nullglob), and the executable bit is the on/off
+# switch — a plain README in there is inert. Spelled as an `if`, not
+# `[ -f ] && [ -x ] || continue`: that form is correct here but trips SC2015,
+# and the scaffold fixes the file rather than suppressing the check. Keep going
+# after a failure so one run reports every problem, like the shipped checks.
+if [ -d "$HOOK_DIR/local.d" ]; then
+  for lc in "$HOOK_DIR"/local.d/*; do
+    if [ ! -f "$lc" ] || [ ! -x "$lc" ]; then
+      continue
+    fi
+    "$lc" <"$STAGED_LIST" || FAILED=1
+  done
+fi
+
 # Lint staged files with ruff / eslint when configs exist and the tool is
 # installed. CI is the source of truth — running here just shortens the
 # feedback loop. Silently skipped if a tool isn't on PATH so the hook
