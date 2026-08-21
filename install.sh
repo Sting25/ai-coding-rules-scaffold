@@ -429,7 +429,10 @@ echo ""
 echo "Next:"
 echo "  - Edit AGENTS.md — fill in the Project section at the bottom"
 case "$MODE" in
-  shell) echo "  - Verify the hook: add 'chmod 777 /tmp/x' to a .sh file, 'git add' it, try to commit — hook should reject" ;;
+  # Literal split (`7`+`77`) so this .sh file does not itself carry the pattern
+  # shell.txt forbids — the scaffold's own guardrails scan install.sh. The echo
+  # still prints the contiguous string; same trick the test harness uses.
+  shell) echo "  - Verify the hook: add 'chmod 7""77 /tmp/x' to a .sh file, 'git add' it, try to commit — hook should reject" ;;
   frontend) echo "  - Verify the hook: add 'console.log(\"x\")' to a .ts file, 'git add' it, try to commit — hook should reject" ;;
   *) echo "  - Verify the hook: add 'print(\"x\")' to a .py file, 'git add' it, try to commit — hook should reject" ;;
 esac

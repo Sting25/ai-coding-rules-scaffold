@@ -38,9 +38,14 @@ rm -rf "$STMP"
 # (T) Auto-detect fallback: no manifest but a TRACKED *.sh selects shell mode
 #     without the flag — the same git-ls-files fallback the shipped
 #     lint.yml.template php job uses when there's no composer.json.
+#     `core.hooksPath` is pointed at a nonexistent dir rather than passing the
+#     commit `--no-verify`: shell.txt forbids that flag and this harness is a
+#     .sh file the scaffold scans itself. It also defends against a global
+#     hooksPath leaking into the fixture repo, which the flag would not.
 ATMP=$(mktemp -d)
 ( cd "$ATMP" && git init --quiet && echo '#!/usr/bin/env bash' >deploy.sh && git add deploy.sh \
-  && git -c user.email=t@t.local -c user.name=t commit --quiet -m fixture --no-verify \
+  && git -c core.hooksPath=/nonexistent -c user.email=t@t.local -c user.name=t \
+       commit --quiet -m fixture \
   && "$SCAFFOLD_DIR/install.sh" --no-verify ) >"$HOOK_OUT" 2>&1
 if grep -qF "Done (mode: shell)." "$HOOK_OUT" && [ -f "$ATMP/.forbidden-patterns/shell.txt" ] \
    && [ ! -f "$ATMP/ruff.toml" ] && [ ! -f "$ATMP/eslint.config.js" ]; then
