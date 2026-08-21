@@ -32,6 +32,25 @@ versioning follows [SemVer](https://semver.org/).
   Works through `npx ai-coding-rules-scaffold --shell` too — `bin/cli.js`
   passes arguments straight through with no allowlist.
 
+- **`.githooks/local.d/` — a real extension point for project-local checks
+  ([#72]).** Any executable in that directory runs as part of the guardrails, in
+  both the pre-commit hook and the CI `guardrails` job, under the same contract
+  as the shipped `lib/check-*` scripts: the NUL-delimited file list on stdin,
+  `--ci` as `$1` in CI, non-zero exit blocks. The hook feeds it the staged list;
+  CI feeds it the PR/push diff, matching the scoping of the other quality gates
+  so installing onto an existing repo never retroactively fails legacy code.
+
+  `install.sh` never writes into the directory — only a non-executable
+  `README.md` documenting the contract, and that through `cp_safe`. The
+  executable bit is the on/off switch, so `chmod -x` disables a check without
+  deleting it; for that reason the CI job deliberately does **not** `chmod +x`
+  the directory the way it does `lib/*`, which would both re-arm a disabled
+  check server-side and execute the README.
+
+  This is the durable half of the [#72] fix: before it, the only place to wire
+  in a project-local check was `.githooks/pre-commit` or
+  `.github/workflows/lint.yml`, both scaffold-owned and refreshed on upgrade.
+
 ### Changed
 - **The pre-commit hook distinguishes *untracking* a pattern file from
   *deleting* it ([#65]).** A staged `.forbidden-patterns/*.txt` deletion used
@@ -82,6 +101,34 @@ versioning follows [SemVer](https://semver.org/).
   `CHANGELOG.md` and `RECOMMENDATIONS.md` also fail this config but never reach a
   consumer's tree, so no consumer CI checks them and reformatting them would be
   churn without a bug.
+
+- **`install.sh` no longer destroys a locally-edited scaffold file without a
+  trace ([#72]).** `cp_scaffold` refreshes scaffold-owned code on a plain re-run
+  — that is how upgraders receive security fixes — but it took a backup only
+  under `--force`, justified in its own header as "the prior bytes are scaffold
+  code, recoverable from git history and the scaffold repo". That premise holds
+  for an untouched destination and fails for an edited one, and nothing tested
+  which it was.
+
+  The two files most likely to be edited were `.githooks/pre-commit` and
+  `.github/workflows/lint.yml`, because they were the only place to wire in a
+  project-local check. The symptom was silent: the local check script stayed on
+  disk, its call sites were reset, nothing errored, and the guardrail became
+  decoration until someone noticed by chance.
+
+  Every `cp_scaffold` overwrite now backs up to `<file>.scaffold-bak` first and
+  prints a `backed up:` line, which is the signal that was missing. The refresh
+  itself is unchanged, so upgrades still deliver fixes. Cost is a backup file
+  beside each scaffold file that actually changed in the upgrade. If all 99
+  backup slots are taken, that one file is skipped rather than overwritten
+  unbacked (same policy as `cp_safe`/`cp_pattern`), with an error saying so.
+
+  `uninstall.sh` removes the `local.d/README.md` if unmodified and clears the
+  directory only when empty — a project's own checks are never scaffold files to
+  remove, not even under `--all`.
+
+  Suite 239 → 246; all four behaviours (the block, the `chmod -x` disable, the
+  backup, and the CI loop) mutation-proven in both directions.
 
 - **The patch-coverage gate no longer passes a PR whose tests are failing
   ([#71]).** `coverage.yml.template` ran both test steps with `|| true`. The
@@ -139,6 +186,7 @@ versioning follows [SemVer](https://semver.org/).
 [#65]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/65
 [#67]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/67
 [#71]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/71
+[#72]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/72
 [#73]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/73
 
 ## [v0.11.0] — 2026-07-19
