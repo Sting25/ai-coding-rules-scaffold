@@ -53,6 +53,34 @@ versioning follows [SemVer](https://semver.org/).
   ever starts reading pattern config from the index.
 
 ### Fixed
+- **The patch-coverage gate no longer passes a PR whose tests are failing
+  ([#71]).** `coverage.yml.template` ran both test steps with `|| true`. The
+  intent was narrow and sound — `pytest` exits 5 when it collects nothing, and
+  an empty suite should not mask the `diff-cover` verdict that is the actual
+  gate — but `|| true` swallows exit 1 just as happily, so a PR with failing
+  tests produced a green check.
+
+  It was worse than merely not gating on failure. A failing test still executes
+  the lines it touches, so those lines still land in `coverage.xml`; a PR whose
+  new code was covered only by a red test therefore **passed** the patch-coverage
+  gate on the strength of that very test. And since the job is named `coverage`
+  and may be the only one invoking `pytest`, a consumer could reasonably read it
+  as a test gate it was not.
+
+  Now only `pytest`'s exit 5 is tolerated; 1 (failed), 2 (interrupted), 3
+  (internal error) and 4 (usage error) all fail the job. `vitest` has no
+  equivalent no-tests code, so its step drops `|| true` and gains
+  `--passWithNoTests`, which handles the empty case by exiting 0.
+
+  Written as `pytest … || rc=$?`, not `pytest …; rc=$?`: a `run:` step's default
+  shell is `bash -e`, under which the latter exits at `pytest` before the
+  assignment is reached — failing the job on exit 5 and undoing the tolerance
+  the block exists to provide. `cases/16` runs the step's real shell body,
+  lifted out of the shipped YAML, under `bash -e` against a fake `pytest`, and
+  catches exactly that mistake.
+
+  Suite 239 → 245.
+
 - **`check-secrets` matches token-shaped rules case-sensitively ([#67]).**
   Every rule used to be matched with `grep -i`. The AWS key-ID rule widened to
   `(AKIA|ASIA|ABIA|ACCA)…` in v0.11.0, and `ACCA` is composed entirely of hex
@@ -80,6 +108,7 @@ versioning follows [SemVer](https://semver.org/).
 
 [#65]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/65
 [#67]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/67
+[#71]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/71
 
 ## [v0.11.0] — 2026-07-19
 
