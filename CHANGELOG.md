@@ -6,6 +6,26 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **The pre-commit hook distinguishes *untracking* a pattern file from
+  *deleting* it ([#65]).** A staged `.forbidden-patterns/*.txt` deletion used
+  to hard-fail unconditionally, but `git rm --cached` (untrack, keep the file
+  on disk, ignore it via `.git/info/exclude`) is a legitimate local-only-tooling
+  move. Every check reads its pattern config from the **working tree** — never
+  from the index — so a file still on disk keeps the scanner fully armed. The
+  hook now fails only when the file is also gone from (or unreadable on) disk,
+  and warns on a pure untrack.
+
+  This does not reopen the neutering paths closed in v0.9.0: a config that is
+  gone, gutted to zero patterns, or renamed away still fails, and server-side
+  an untracked config is absent from the repo entirely, where
+  `check-secrets --ci` fails closed. The warning says so explicitly.
+
+  Four cases cover it, mutation-proven in both directions — including one that
+  asserts the *premise* rather than the behaviour: untracking the config while
+  staging a real secret must still be caught, so the suite turns red if a check
+  ever starts reading pattern config from the index.
+
 ### Fixed
 - **`check-secrets` matches token-shaped rules case-sensitively ([#67]).**
   Every rule used to be matched with `grep -i`. The AWS key-ID rule widened to
@@ -32,6 +52,7 @@ versioning follows [SemVer](https://semver.org/).
   an un-upgraded consumer `secrets.txt` is unaffected until its patterns are
   refreshed. Suite 227 → 230, all three cases mutation-proven.
 
+[#65]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/65
 [#67]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/67
 
 ## [v0.11.0] — 2026-07-19

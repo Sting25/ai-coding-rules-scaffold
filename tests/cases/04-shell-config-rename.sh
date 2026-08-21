@@ -57,6 +57,41 @@ assert_passes "case-sensitive: Console.log not flagged as console.log"
 git rm -q .forbidden-patterns/secrets.txt
 assert_rejects "deleting forbidden-pattern config is refused" "disabling the scanner"
 
+# 27b. UNTRACKING is not DELETING. `git rm --cached` stages a deletion but keeps
+#      the file on disk, and every check reads pattern config from the WORKING
+#      TREE — so the scanner stays fully armed. The hook must warn and PASS here,
+#      not hard-fail like case 27.
+git rm --cached -q .forbidden-patterns/secrets.txt
+if .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  if grep -qF "still present on disk" "$HOOK_OUT"; then
+    echo "  ✓ untracking a pattern file (still on disk) warns and passes"
+    PASS=$((PASS + 1))
+  else
+    echo "  ✗ untracking a pattern file — passed but without the expected warning"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+else
+  echo "  ✗ untracking a pattern file (still on disk) — hook rejected, expected warn+pass"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
+# 27c. THE PREMISE, ASSERTED DIRECTLY. 27b only proves the hook is lenient; it
+#      does not prove leniency is SAFE. Untrack the config AND stage a real
+#      secret in the same commit: the on-disk config must still catch it. If a
+#      check ever starts reading pattern config from the index instead of the
+#      working tree, 27b keeps passing and only this case turns red.
+git rm --cached -q .forbidden-patterns/secrets.txt
+echo "AWS=AKIA""IOSFODNN7EXAMPLE" >untracked-scan.txt
+git add untracked-scan.txt
+assert_rejects "scanner stays armed when its config is untracked but on disk" "AWS access key"
+
+# 27d. Untracked AND removed from disk is a real deletion, however it was
+#      staged — the on-disk check must not be fooled by the two-step form.
+git rm --cached -q .forbidden-patterns/secrets.txt
+rm -f .forbidden-patterns/secrets.txt
+assert_rejects "untracked AND removed from disk is still refused" "disabling the scanner"
+
 # 28. scaffold-allow only exempts when it follows a comment leader; the bare
 #     substring inside a string literal must NOT whitelist a real secret.
 echo 'note = "scaffold-allow AKIA''IOSFODNN7EXAMPLE"' >sneaky2.txt
