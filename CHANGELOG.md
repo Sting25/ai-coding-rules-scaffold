@@ -6,6 +6,34 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **`check-secrets` matches token-shaped rules case-sensitively ([#67]).**
+  Every rule used to be matched with `grep -i`. The AWS key-ID rule widened to
+  `(AKIA|ASIA|ABIA|ACCA)…` in v0.11.0, and `ACCA` is composed entirely of hex
+  characters — so case-folded it matched inside ordinary SHA-256 digests, and
+  any repo with a lockfile could fail the whole-tree scan on content holding no
+  credential at all, over a message telling the reader to "rotate immediately".
+  (`AKIA`/`ASIA`/`ABIA` each contain a non-hex letter and cannot collide; the
+  Twilio `AC` SID prefix is all-hex and was one anchor away from the same bug.)
+
+  `secrets.txt` rules now accept a leading `(?-i)` marker that `check-secrets`
+  strips and turns into a case-sensitive match. Vendor key prefixes, base64
+  segments (JWT `eyJ`, Bedrock, PyPI) and the uppercase PEM banner carry it:
+  those formats are case-sensitive by specification, so folding case could
+  never add a true positive, only false ones. Keyword-shaped rules
+  (`password =`, `secret_key`) and the URL-scheme rules deliberately keep `-i`,
+  since they match human-written prose where case genuinely varies.
+
+  The fast pre-filter stays case-insensitive on purpose: it only decides which
+  files get a closer look, so `-i` keeps its match set a strict superset of the
+  per-rule pass and cannot drop a file a case-sensitive rule would have hit.
+
+  Backward compatible — a rule without the marker behaves exactly as before, so
+  an un-upgraded consumer `secrets.txt` is unaffected until its patterns are
+  refreshed. Suite 227 → 230, all three cases mutation-proven.
+
+[#67]: https://github.com/Sting25/ai-coding-rules-scaffold/issues/67
+
 ## [v0.11.0] — 2026-07-19
 
 A code + security review pass (multi-dimension, each finding adversarially

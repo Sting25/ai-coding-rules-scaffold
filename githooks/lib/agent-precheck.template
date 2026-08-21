@@ -13,8 +13,10 @@
 # Scans the content a Write/Edit is about to introduce — and the text of a Bash
 # command — against the SAME patterns the commit-time scanner uses. One source
 # of truth across agent -> commit -> CI:
-#   - .forbidden-patterns/secrets.txt  (all tool calls, case-insensitive) — a
-#     credential the agent tries to hardcode is refused at write time.
+#   - .forbidden-patterns/secrets.txt  (all tool calls; case-insensitive by
+#     default, case-sensitive for rules carrying the `(?-i)` marker, exactly
+#     as check-secrets does) — a credential the agent tries to hardcode is
+#     refused at write time.
 #   - .forbidden-patterns/shell.txt    (Bash tool calls only, case-sensitive to
 #     match the commit-time semantics) — curl|bash, rm -rf /, chmod 777 etc. are
 #     refused before the agent runs them. RECOMMENDATIONS.md calls this the
@@ -81,34 +83,62 @@ fi
 #   the commit-time check-patterns semantics). A missing file or an unparseable
 #   pattern set returns cleanly (fail-OPEN: this is an advisory pre-check, not
 #   the security boundary — commit + CI are the fail-closed backstops).
+# Join one bucket of patterns into a single alternation and scan $content with
+# it. $1 is the grep case flag ("i" or ""); the rest are the patterns. Prints
+# matching lines, or nothing when the bucket is empty or its combined ERE is
+# invalid (the same fail-open-on-invalid posture the single-bucket scan had).
+scan_bucket() {
+  local iflag=$1; shift
+  [ $# -eq 0 ] && return 0
+  local combined="" p c_err
+  for p in "$@"; do
+    if [ -z "$combined" ]; then combined="(${p})"; else combined="${combined}|(${p})"; fi
+  done
+  c_err=$(printf '' | grep -E -- "$combined" 2>&1 1>/dev/null || true)
+  [ -z "$c_err" ] || return 0
+  # A comment-anchored `scaffold-allow` exempts a line, exactly like the scanners.
+  printf '%s\n' "$content" | grep -an"${iflag}"E -- "$combined" \
+    | grep -ivE '(^[0-9]+:|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true
+}
+
 scan_against() {
   local pfile=$1 iflag=$2 advice=$3
   [ -f "$pfile" ] || return 0
-  local patterns=() line pattern p_err combined p hit
+  # Two buckets: rules matched with this file's DEFAULT case flag, and rules
+  # carrying the `(?-i)` marker, which are matched case-SENSITIVELY regardless.
+  #
+  # The marker MUST be stripped here. It is a scaffold convention, not ERE
+  # syntax (POSIX ERE has no inline flags), and GNU grep rejects `(?-i)…` as an
+  # invalid ERE — which the validity check below would silently treat as a bad
+  # pattern and DROP, disarming every marked rule and failing OPEN. (BSD grep
+  # is laxer, so this divergence hides on macOS and only shows up on Linux.)
+  # See check-secrets for why token-shaped rules need case sensitivity.
+  local pats_def=() pats_cs=() line pattern p_err is_cs hit
   while IFS= read -r line || [ -n "$line" ]; do
     line=${line%$'\r'}
     [ -z "$line" ] && continue
     case "$line" in \#*) continue ;; esac
     case "$line" in *$'\t'*) ;; *) continue ;; esac
     pattern=${line%%$'\t'*}
+    is_cs=0
+    case "$pattern" in
+      '(?-i)'*) is_cs=1; pattern=${pattern#'(?-i)'} ;;
+    esac
     [ -z "$pattern" ] && continue
     # `printf '' | grep -E p` writes to stderr only when p is invalid — drop it.
     p_err=$(printf '' | grep -E -- "$pattern" 2>&1 1>/dev/null || true)
     [ -z "$p_err" ] || continue
-    patterns+=("$pattern")
+    if [ "$is_cs" -eq 1 ]; then pats_cs+=("$pattern"); else pats_def+=("$pattern"); fi
   done <"$pfile"
-  [ ${#patterns[@]} -eq 0 ] && return 0
+  [ $((${#pats_def[@]} + ${#pats_cs[@]})) -eq 0 ] && return 0
 
-  combined=""
-  for p in "${patterns[@]}"; do
-    if [ -z "$combined" ]; then combined="(${p})"; else combined="${combined}|(${p})"; fi
-  done
-  p_err=$(printf '' | grep -E -- "$combined" 2>&1 1>/dev/null || true)
-  [ -z "$p_err" ] || return 0
-
-  # A comment-anchored `scaffold-allow` exempts a line, exactly like the scanners.
-  hit=$(printf '%s\n' "$content" | grep -an"${iflag}"E -- "$combined" \
-          | grep -ivE '(^[0-9]+:|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true)
+  # Guarded by an explicit count so an empty array is never expanded under
+  # `set -u` (bash 3.2 on macOS errors on "${empty[@]}").
+  hit=""
+  [ ${#pats_def[@]} -gt 0 ] && hit=$(scan_bucket "$iflag" "${pats_def[@]}")
+  if [ -z "$hit" ] && [ ${#pats_cs[@]} -gt 0 ]; then
+    hit=$(scan_bucket "" "${pats_cs[@]}")
+  fi
   [ -n "$hit" ] || return 0
 
   {

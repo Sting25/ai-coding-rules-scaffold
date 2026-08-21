@@ -154,3 +154,55 @@ assert_rejects "JWT with a compact payload is detected" "JWT in source"
 echo "AWS=AKIA""IOSFODNN7EXAMPLE" >.forbidden-patterns/creds.env
 git add .forbidden-patterns/creds.env
 assert_rejects "secret in .forbidden-patterns/creds.env is scanned (not skipped)" "AWS access key"
+
+# ── Per-rule case sensitivity: the `(?-i)` marker (issue #67) ────────────────
+# check-secrets used to apply -i to EVERY rule. `ACCA` is composed entirely of
+# hex characters, so case-folded the AWS rule matched inside ordinary SHA-256
+# digests — enough to fail any repo with a lockfile, on content holding no
+# credential at all, while telling the reader to "rotate immediately".
+
+# 22l. THE FALSE POSITIVE. A hex digest containing `acca` + 16 hex characters
+#      must NOT be flagged. Written contiguously on purpose: secrets.txt scans
+#      every text file including this harness, so this line is also a live
+#      canary — drop the `(?-i)` marker from the AWS rule and the scaffold's own
+#      self-lint goes red on this file.
+echo "sha256:accab0123456789abcdef0" >fp1.txt
+git add fp1.txt
+assert_passes "lowercase hex digest containing 'acca' is not an AWS key"
+
+# 22m. THE TRUE POSITIVE it must not cost. A real, correctly-cased ACCA key is
+#      still rejected. This also proves the `(?-i)` marker never reaches grep:
+#      if it did, the rule would be dropped as an invalid ERE and this passes.
+echo "AWS=ACCA""IOSFODNN7EXAMPLE" >tp1.txt
+git add tp1.txt
+assert_rejects "correctly-cased ACCA key is still detected" "AWS access key"
+
+# 22n. Keyword-shaped rules deliberately KEEP -i (they match human-written
+#      prose, where case genuinely varies). An uppercase assignment must still
+#      be caught, or the fix over-corrected into a fail-open. Value split
+#      (`abcdefghij`+`klmnop1234`) so this harness line carries no contiguous
+#      16+ run of its own — secrets.txt scans every text file, this one
+#      included, and the keyword rule has no prefix to make it self-exempt.
+echo 'PASSWORD = "abcdefghij''klmnop1234"' >kw1.txt
+git add kw1.txt
+assert_rejects "keyword rule stays case-insensitive (uppercase PASSWORD)" "Hardcoded credential"
+
+# 22o. LOAD-VALIDITY GUARD. The `(?-i)` marker must never reach grep. Both
+#      check-secrets and agent-precheck DROP a rule whose ERE grep rejects,
+#      rather than failing on it — so a leaked marker does not error, it
+#      silently disarms every rule carrying one (a fail-OPEN). Asserting the
+#      load is clean turns that into a clear, early failure instead of a
+#      confusing "allowed a secret, expected block" further down the suite.
+#      Bites on GNU grep, which rejects `(?-i)`; BSD grep accepts it, so this
+#      is a Linux-side guard for a bug that is invisible on macOS.
+echo "benign content" >clean1.txt
+git add clean1.txt
+printf '%s\0' clean1.txt | .githooks/lib/check-secrets --ci >"$HOOK_OUT" 2>&1 || true
+if grep -qF 'invalid pattern dropped' "$HOOK_OUT"; then
+  echo "  ✗ shipped secrets.txt has rules grep rejects — the (?-i) marker leaked:"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+else
+  echo "  ✓ every shipped secrets.txt rule loads as a valid ERE (no marker leak)"
+  PASS=$((PASS + 1))
+fi
+reset_repo

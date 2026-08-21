@@ -131,5 +131,30 @@ No script edit required — that's the point of the `scaffold-extensions` header
 Splitting by language keeps regexes precise: a pattern targeting Python
 function calls (`(^|[^A-Za-z_])print[[:space:]]*\(`) shouldn't run against
 a TS file containing the string `print` in a comment. The secrets file
-is language-agnostic and case-insensitive because credentials leak from
-config, docs, scripts, and code alike.
+is language-agnostic because credentials leak from config, docs, scripts,
+and code alike.
+
+### Case sensitivity in `secrets.txt`
+
+Rules in `secrets.txt` match **case-insensitively by default**. A rule
+prefixed with the literal marker `(?-i)` is matched **case-sensitively**
+instead:
+
+```
+(?-i)(AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}	AWS access key ID …
+```
+
+The marker is a scaffold convention, not regex syntax — POSIX ERE has no
+inline flags, so `check-secrets` strips it and translates it into the grep
+invocation. Never pass `(?-i)` to grep yourself.
+
+Use it for **token-shaped** rules. Vendor key formats, base64 segments, and
+the PEM banner are case-sensitive by specification, so folding case cannot
+add a true positive — only false ones. The AWS `ACCA` prefix is composed
+entirely of hex characters, so without the marker it matches inside ordinary
+SHA-256 digests and fails any repo with a lockfile.
+
+Omit it for **keyword-shaped** rules (`password =`, `secret_key`) and the
+URL-scheme rules, which match human-written prose where case genuinely
+varies. Omitting the marker is also the pre-existing behaviour, so an older
+`secrets.txt` with no markers keeps working unchanged.
