@@ -31,8 +31,11 @@ LIB="$HOOK_DIR/lib"
 # check is fed from it. (core.quotepath is irrelevant under -z, which never
 # C-quotes; kept only for defence in depth.)
 # Refuse to let a commit silently disable the scanners by deleting their config.
-# A staged deletion of a .forbidden-patterns/*.txt makes the matching check find
-# no config and exit 0 — a one-commit way to land a secret AND neuter the scan.
+# A staged deletion of a .forbidden-patterns/*.txt that also removes the file
+# from disk makes the matching check find no config and exit 0 — a one-commit
+# way to land a secret AND neuter the scan. A staged deletion whose file is
+# still on disk (`git rm --cached`) is a different thing and only warns; see the
+# untrack-vs-delete note below.
 # Checked BEFORE the empty-staged-list exit, since a delete-only commit has an
 # empty ACMR list. Use `git commit --no-verify` if a removal is intended (uninstall).
 # `--no-renames` is load-bearing: git's default rename detection reports a
@@ -41,10 +44,40 @@ LIB="$HOOK_DIR/lib"
 # a rename as delete+add surfaces the OLD path as a D so the guard still fires.
 DELETED_CONFIG=$(git diff --cached --no-renames -z --name-only --diff-filter=D | tr '\0' '\n' | grep -E '^\.forbidden-patterns/.+\.txt$' || true)
 if [ -n "$DELETED_CONFIG" ]; then
-  echo "error: this commit deletes forbidden-pattern config, disabling the scanner:" >&2
+  # UNTRACKING is not DISABLING. `git rm --cached` stages a deletion but leaves
+  # the file on disk — the local-only-tooling pattern, paired with an entry in
+  # .git/info/exclude. Every check reads its pattern config from the WORKING
+  # TREE, never from the index: check-secrets does `done <"$CONFIG"`,
+  # check-patterns iterates `.forbidden-patterns/*.txt`, agent-precheck reads
+  # `$pfile`. (`git show ":0:"` appears in those scripts only for the CONTENT
+  # being scanned, never for the config.) So a file still on disk keeps the
+  # scanner fully armed for this and every later local commit.
+  #
+  # This does not reopen the neutering paths closed by 5ced87a / 3ef4ad9: those
+  # cover a config that is GONE, gutted to zero patterns, or renamed away, and
+  # all three still fail. Server-side the untracked config is absent from the
+  # repo entirely, where `check-secrets --ci` fails CLOSED — so the warn is
+  # local-only leniency, not a hole.
+  #
+  # Treat unreadable or non-regular as gone: the checks cannot read it either.
+  GONE_CONFIG=""
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    if [ ! -f "$f" ] || [ ! -r "$f" ]; then
+      GONE_CONFIG="$GONE_CONFIG$f"$'\n'
+    fi
+  done <<EOF_DELCFG
+$DELETED_CONFIG
+EOF_DELCFG
+  if [ -n "$GONE_CONFIG" ]; then
+    echo "error: this commit deletes forbidden-pattern config, disabling the scanner:" >&2
+    printf '%s' "$GONE_CONFIG" | sed 's/^/       /' >&2
+    echo "       Refusing — re-add it, or use 'git commit --no-verify' if intended." >&2
+    exit 1
+  fi
+  echo "note: forbidden-pattern config untracked but still present on disk — local scanning stays active:" >&2
   printf '%s\n' "$DELETED_CONFIG" | sed 's/^/       /' >&2
-  echo "       Refusing — re-add it, or use 'git commit --no-verify' if intended." >&2
-  exit 1
+  echo "       CI has no copy of an untracked config, so a guardrails job fails closed there." >&2
 fi
 
 STAGED_LIST=$(mktemp)
