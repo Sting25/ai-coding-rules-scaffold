@@ -52,7 +52,8 @@ for case_file in \
   "$HERE/cases/14-shell-install-mode.sh" \
   "$HERE/cases/15-local-checks.sh" \
   "$HERE/cases/16-coverage-gate.sh" \
-  "$HERE/cases/17-whole-tree-configs.sh"; do
+  "$HERE/cases/17-whole-tree-configs.sh" \
+  "$HERE/cases/18-doctor.sh"; do
   # shellcheck source=/dev/null
   . "$case_file"
 done

@@ -80,6 +80,26 @@ else
     else
       echo "  ✗ npm bundle is missing $docs_missing referenced doc(s)"; FAIL=$((FAIL + 1))
     fi
+
+    # Scripts reached through bin/cli.js's subcommand dispatch rather than
+    # through install.sh's $SCAFFOLD_DIR paths. The grep above walks install.sh
+    # only, so it cannot see `doctor`'s target — and an unbundled
+    # scaffold-doctor.sh would ship a CLI subcommand that ENOENTs for every npx
+    # user. Derived from cli.js rather than hardcoded, so a SECOND subcommand
+    # added later is covered the day it lands instead of the day it breaks.
+    cli_missing=0
+    cli_scripts=$(grep -oE "'[A-Za-z0-9_-]+\.sh'" "$SCAFFOLD_DIR/bin/cli.js" | tr -d "'" | sort -u)
+    for s in $cli_scripts; do
+      grep -qxF "$s" <<<"$PACKED" || {
+        echo "  ✗ script dispatched by bin/cli.js missing from npm bundle: $s"
+        cli_missing=$((cli_missing + 1))
+      }
+    done
+    if [ "$cli_missing" -eq 0 ]; then
+      echo "  ✓ every script bin/cli.js can dispatch to is bundled ($(grep -c . <<<"$cli_scripts") checked)"; PASS=$((PASS + 1))
+    else
+      echo "  ✗ npm bundle is missing $cli_missing CLI-dispatched script(s)"; FAIL=$((FAIL + 1))
+    fi
   else
     echo "  ✗ npm pack --dry-run failed"; sed 's/^/      /' "$C11"; FAIL=$((FAIL + 1))
   fi

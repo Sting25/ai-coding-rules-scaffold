@@ -7,6 +7,39 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **`scaffold-doctor.sh` — checks whether an installed scaffold is armed, not
+  just present.** `install.sh` reports what it *wrote*; that's a different
+  question from whether the guardrails it wrote actually *run*, and the gap
+  between the two is where this scaffold's worst bugs have lived: issue #76
+  was a `grep -r` that silently scanned one file instead of a tree, and issue
+  #72 was a check whose call site got reset on upgrade while the check script
+  stayed on disk as decoration. Both were present and neither was running,
+  and nothing said so.
+
+  The doctor never reports "file exists." For each guardrail it reports
+  whether the mechanism that makes it execute is in place, as `✓` armed, `✗`
+  gap (installed but inert — a commit that should be blocked isn't), or `!`
+  note (a deliberate off-switch, or an opt-in surface not opted into; notes
+  never affect the exit status). It covers `core.hooksPath` wiring — the
+  single highest-value check, since `install.sh` deliberately leaves a
+  foreign hooksPath such as Husky's `.husky` alone and only warns, so
+  "installed but never wired" is a state `install.sh` itself can leave
+  behind — the hook entry point's executable bit, the five shipped
+  `lib/check-*` scripts, `.forbidden-patterns/` and `secrets.txt` (measured
+  on a real fixture: once `secrets.txt` is absent, staging a genuine
+  `AKIA…` AWS access key ID and running the hook exits 0 with no output at
+  all), the opt-in `check-gitleaks`/`agent-precheck` surfaces and their
+  external tool dependencies, `.githooks/local.d/` project-local checks
+  (where the executable bit is the on/off switch, so a disabled entry is a
+  note, never a gap), and `.scaffold.toml` overrides going silently ignored
+  when `lib/scaffold-config` is missing.
+
+  Exit status: `0` with no gaps, `1` with at least one, `2` on usage error or
+  outside a git repository. Run it directly (`./scaffold-doctor.sh`, from
+  anywhere inside the working tree) or via `npx ai-coding-rules-scaffold
+  doctor`; `--quiet` prints only gaps plus the summary line, for CI or
+  pre-flight use.
+
 - **Shell-only install mode (`install.sh --shell`) ([#65]).** For projects with
   no Python or TS/JS manifest — plain bash/sh, `shellcheck`-linted — installs
   the git hooks, guard checks, and the shell-relevant plus language-agnostic

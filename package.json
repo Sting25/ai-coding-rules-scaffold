@@ -10,6 +10,7 @@
     "install-lib.sh",
     "install-verify.sh",
     "uninstall.sh",
+    "scaffold-doctor.sh",
     "bin/",
     "githooks/",
     "forbidden-patterns/",
