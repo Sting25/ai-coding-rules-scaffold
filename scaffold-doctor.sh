@@ -45,6 +45,13 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# Captured BEFORE any cd: this is where scaffold-doctor.sh itself lives (the
+# npm package root, the Homebrew libexec dir, or a git clone), which is also
+# where install-lib.sh ships alongside it in all three distribution paths.
+# Used by the "paired artifacts" section below to reuse install.sh's own
+# detection logic instead of duplicating it.
+SCAFFOLD_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 # The shipped checks read their config by BARE RELATIVE PATH
 # (".forbidden-patterns/secrets.txt", ".scaffold.toml"), which works because git
 # invokes hooks from the top of the working tree. A doctor run from a
@@ -272,6 +279,26 @@ else
   if [ -x .githooks/lib/scaffold-audit ] && [ "$QUIET" -eq 0 ]; then
     .githooks/lib/scaffold-audit 2>/dev/null | sed 's/^/      /' || true
   fi
+fi
+
+# --- 8. paired artifacts -----------------------------------------------------
+# Some guardrails ship as two halves that only work together: a config file
+# plus the CI workflow that reads it, or a local pre-commit pass plus the CI
+# gate it defers to. install.sh writes both halves together, but an
+# interrupted install, a later re-run without a flag, or a hand-copied file
+# can leave only one half on disk (#96), and once that happens, nothing
+# checks again. Detection lives in install-lib.sh's check_paired_artifacts so
+# install.sh's own end-of-run summary reports the exact same states with the
+# exact same wording; sourced here rather than duplicated.
+section "paired artifacts"
+if [ -f "$SCAFFOLD_DIR/install-lib.sh" ]; then
+  # shellcheck disable=SC2317,SC2329  # invoked indirectly, by name, from check_paired_artifacts (SC2317 on older shellcheck, SC2329 on newer, same underlying finding)
+  doctor_pair_note() { note "$1"; }
+  # shellcheck source=install-lib.sh
+  . "$SCAFFOLD_DIR/install-lib.sh"
+  check_paired_artifacts gap doctor_pair_note
+else
+  note "install-lib.sh not found next to scaffold-doctor.sh ($SCAFFOLD_DIR): paired-artifact checks skipped; re-fetch the full scaffold bundle, not just this one file"
 fi
 
 # --- summary ----------------------------------------------------------------

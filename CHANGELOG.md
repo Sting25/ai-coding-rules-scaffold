@@ -6,6 +6,22 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **`scaffold-doctor.sh` detects half-installed paired artifacts (#96).** A
+  new "paired artifacts" section, and a matching end-of-run check in
+  `install.sh` itself, flag when only one half of a two-part guardrail is on
+  disk: `.coveragerc` without `.github/workflows/coverage.yml` (and the
+  inverse, on a Python project), a local gitleaks pre-commit pass without the
+  gitleaks CI workflow (and the inverse, which is a valid CI-only posture),
+  and the `tests.yml`/`coverage.yml` selection state from #97 (both installed
+  runs the suite twice; neither installed while `lint.yml` is present means
+  no test ever executes in CI). Genuine half-installs are gaps (affect
+  `scaffold-doctor.sh`'s exit status); deliberate or default-shaped states
+  are notes. The detection logic lives once in `install-lib.sh`'s
+  `check_paired_artifacts`, shared by both callers so the wording can't
+  drift between them. `install.sh`'s own reporting is advisory only and
+  never changes its exit status.
+
 ### Changed
 - **Test execution in CI is default-on (#97).** A plain `install.sh` run now
   installs `.github/workflows/tests.yml` (pytest/vitest, no coverage
