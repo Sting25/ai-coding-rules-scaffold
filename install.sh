@@ -15,9 +15,22 @@
 #   install.sh --gitleaks-hook # also install opt-in local gitleaks pre-commit pass
 #   install.sh --gitleaks-ci # also install the gitleaks CI workflow (unskippable gate)
 #   install.sh --all-langs  # install every language's forbidden-pattern file
-#   install.sh --coverage-gate # also install the opt-in CI patch-coverage gate
+#   install.sh --coverage-gate # install the patch-coverage gate INSTEAD of the
+#                            # plain tests.yml (tests still run, plus a stricter
+#                            # check on top, see below)
+#   install.sh --no-test-workflow # opt out of installing a test-execution CI
+#                            # workflow at all (records a loud skip; for repos
+#                            # that genuinely cannot run tests in CI)
 #   install.sh --no-install # detect missing tools but never auto-run a package manager
 #   install.sh --help       # show this help
+#
+# Test execution in CI is DEFAULT-ON (#97): a plain install writes
+# `.github/workflows/tests.yml` so pytest/vitest run on every PR/push, no
+# coverage threshold. `--coverage-gate` swaps that for `.github/workflows/coverage.yml`
+# (same tests, plus a diff-cover patch-coverage gate) rather than installing both,
+# never both, so a repo's tests never run twice in the same CI run. Only
+# `--no-test-workflow` leaves a repo with no test execution in CI, and it says so
+# loudly in the summary below, per the "record every skip" rule.
 #
 # On re-run (upgrade): scaffold-owned code (the hook, .githooks/lib/*, CI
 # workflows) is REFRESHED when it differs from the shipped version, so security
@@ -42,6 +55,7 @@ GITLEAKS_HOOK=0
 GITLEAKS_CI=0
 ALL_LANGS=0
 COVERAGE_GATE=0
+NO_TEST_WORKFLOW=0
 NO_INSTALL=0
 
 for arg in "$@"; do
@@ -59,8 +73,9 @@ for arg in "$@"; do
     --gitleaks-ci) GITLEAKS_CI=1 ;;
     --all-langs)  ALL_LANGS=1 ;;
     --coverage-gate) COVERAGE_GATE=1 ;;
+    --no-test-workflow) NO_TEST_WORKFLOW=1 ;;
     --no-install) NO_INSTALL=1 ;;
-    --help|-h)    sed -n '2,26p' "$0"; exit 0 ;;
+    --help|-h)    sed -n '2,43p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -367,15 +382,11 @@ if [ "$GITLEAKS_CI" -eq 1 ]; then
   echo "note: gitleaks.yml is the unskippable CI secret scan (runs even without --no-verify locally)."
 fi
 
-# Opt-in CI patch-coverage gate (--coverage-gate). Fails a PR when CHANGED lines
-# ship untested (diff-cover). Kept opt-in: it forces tests on new code, which is
-# a policy choice a team must make deliberately. It gates EXECUTION of changed
-# lines, not assertion quality — see RECOMMENDATIONS.md.
-if [ "$COVERAGE_GATE" -eq 1 ]; then
-  cp_scaffold "$SCAFFOLD_DIR/.github/workflows/coverage.yml.template" ".github/workflows/coverage.yml"
-  echo "note: coverage.yml gates patch coverage (default 100% of changed lines)."
-  echo "      It forces changed lines to be RUN by a test, not verified — pair with review."
-fi
+# Test-execution CI workflow (#97): DEFAULT-ON, exactly one of two shapes,
+# plus a recorded opt-out (--no-test-workflow). See install-lib.sh's
+# install_test_workflow_ci for the full decision order and rationale; it sets
+# TEST_CI_STATE for the summary near the end of this script.
+install_test_workflow_ci
 
 # Wire the hook — preserve existing core.hooksPath if already set (e.g. Husky).
 # Use `git rev-parse --git-dir` so this works in worktrees (where .git is a
@@ -395,6 +406,7 @@ fi
 
 echo ""
 echo "Done (mode: $MODE)."
+echo "CI test state: $TEST_CI_STATE"
 
 # Post-install toolchain check — the scaffold ships CONFIGS and ENFORCEMENT, but
 # the actual tools (ruff/eslint/tsc/prettier/test runner) are project deps. That

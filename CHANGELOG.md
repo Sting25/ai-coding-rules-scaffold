@@ -6,6 +6,40 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **Test execution in CI is default-on (#97).** A plain `install.sh` run now
+  installs `.github/workflows/tests.yml` (pytest/vitest, no coverage
+  threshold) instead of leaving CI lint-only with zero tests ever executing.
+  `--coverage-gate` swaps `tests.yml` for `coverage.yml` (same tests, plus the
+  patch-coverage gate) rather than installing both, so tests never run twice
+  in the same CI run. New `--no-test-workflow` opts out entirely for a repo
+  that genuinely cannot run tests in CI, with a loud recorded skip in the
+  install summary. The installer's end-of-run summary now states plainly
+  which of the three states a repo ended in.
+- **`coverage.yml` installs the project before running pytest, and gates the
+  vitest job on vitest actually being declared (#96).** The pytest job
+  previously installed only `pytest` itself, so any project whose tests
+  import the package under test failed at collection; it now runs
+  `pip install -e ".[dev]"` (falling back to `pip install -e .`, plus any of
+  `requirements.txt`, `requirements-dev.txt`, or `requirements/dev.txt` that
+  exist) first, and only when the project actually has a `[project]` table
+  or a `setup.py` (a pyproject.toml holding only tool config is skipped
+  rather than hard-failed). The frontend job previously ran on any
+  `package.json`; it now only runs when `vitest` is actually declared in
+  `dependencies`/`devDependencies`/`scripts.test`, so a repo that ships
+  `package.json` for lint tooling only no longer hard-fails the job. Both
+  fixes are also applied to the new `tests.yml`.
+- **Fixed a real CI-breaking bug in the shipped `tests.yml.template` before
+  it ever ran in the wild:** the requirements-file install loop's last
+  statement was `[ -f "$req" ] && pip install -r "$req"`, and under the
+  `bash -e` a `run:` step uses, that construct's own exit status (1, from the
+  failed file test) became the whole step's exit status whenever the last
+  candidate file was absent, which is nearly always. The default pytest job
+  would have failed for virtually every Python consumer. Fixed to
+  `if [ -f "$req" ]; then pip install -r "$req"; fi`, verified by running the
+  extracted step body under `bash -e` with pyproject-only, requirements.txt-
+  only, and no fixtures at all: all three now exit 0.
+
 ## [v0.12.0] — 2026-08-21
 
 A release about the difference between a guardrail being *installed* and a

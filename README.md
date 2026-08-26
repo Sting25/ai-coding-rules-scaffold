@@ -94,6 +94,8 @@ From your project root:
 
 The script auto-detects Python (`pyproject.toml` / `requirements.txt` / `setup.py`) or frontend (`package.json`) and installs the matching pieces. If neither is present, it falls back to **shell mode** when the repo contains any `*.sh`/`*.bash` file (tracked or not yet committed); with no manifest and no shell scripts it exits and asks for the stack explicitly. A manifest always wins over the shell fallback, so a `package.json` project that also ships build scripts is still a frontend install.
 
+Tests run in CI by default: a plain install also drops `.github/workflows/tests.yml`, so pytest/vitest execute on every PR/push with no coverage threshold. `--coverage-gate` swaps that for the stricter patch-coverage gate; `--no-test-workflow` opts out entirely (loudly, with a recorded skip in the install summary) for a repo that genuinely cannot run tests in CI.
+
 ```sh
 ./install.sh --python       # Python only
 ./install.sh --frontend     # TS/JS only
@@ -106,14 +108,15 @@ The script auto-detects Python (`pyproject.toml` / `requirements.txt` / `setup.p
 ./install.sh --commit-msg   # also install the Conventional-Commits commit-msg hook
 ./install.sh --gitleaks-hook # also install opt-in local gitleaks pre-commit pass
 ./install.sh --all-langs    # install every language's forbidden-pattern file
-./install.sh --coverage-gate # also install the opt-in CI patch-coverage gate
+./install.sh --coverage-gate # swap the default tests.yml for coverage.yml (tests + patch-coverage gate)
+./install.sh --no-test-workflow # opt out of the default CI test-execution workflow (loud recorded skip)
 ./install.sh --no-install   # detect missing tools but never auto-run a package manager
 ./install.sh --help         # show usage
 ```
 
 **Re-running is the upgrade path.** Running `install.sh` again refreshes
 scaffold-owned code — the pre-commit hook, the `.githooks/lib/*` scanners, the
-`commit-msg` hook, and the `lint.yml` / coverage workflows — whenever it differs
+`commit-msg` hook, and the `lint.yml` / `tests.yml` / coverage workflows, whenever it differs
 from the shipped version, with no `--force` needed, so pulling a new tag and
 re-running delivers security fixes. Your own configs (`ruff.toml`,
 `eslint.config.js`, `.scaffold.toml`, the rules docs, …) are left untouched, and
