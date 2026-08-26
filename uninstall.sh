@@ -137,6 +137,9 @@ done
 # shipped (empty) template; a team that has recorded overrides keeps it.
 remove_if_unmodified ".scaffold.toml"                "$SCAFFOLD_DIR/.scaffold.toml.template"
 remove_if_unmodified ".github/workflows/lint.yml"    "$SCAFFOLD_DIR/.github/workflows/lint.yml.template"
+# Default-on test-execution workflow (only present unless installed with
+# --no-test-workflow, or superseded by --coverage-gate's coverage.yml below).
+remove_if_unmodified ".github/workflows/tests.yml"   "$SCAFFOLD_DIR/.github/workflows/tests.yml.template"
 # The local.d README only — never the directory. Anything else in there is a
 # project's own check scripts, which the scaffold neither wrote nor owns; the
 # rmdir sweep below clears the directory iff it is empty. Not touched by --all
@@ -154,7 +157,8 @@ remove_if_unmodified ".cursor/hooks.json"            "$SCAFFOLD_DIR/cursor-hooks
 remove_if_unmodified ".githooks/commit-msg"          "$SCAFFOLD_DIR/githooks/commit-msg.template"
 # Opt-in local gitleaks pass (only present if installed with --gitleaks-hook).
 remove_if_unmodified ".githooks/lib/check-gitleaks"  "$SCAFFOLD_DIR/githooks/lib/check-gitleaks.template"
-# Opt-in CI patch-coverage gate (only present if installed with --coverage-gate).
+# Opt-in CI patch-coverage gate (only present if installed with --coverage-gate;
+# installed INSTEAD OF tests.yml above, so at most one of the two exists).
 remove_if_unmodified ".github/workflows/coverage.yml" "$SCAFFOLD_DIR/.github/workflows/coverage.yml.template"
 # Opt-in gitleaks CI workflow (only present if installed with --gitleaks-ci).
 remove_if_unmodified ".github/workflows/gitleaks.yml" "$SCAFFOLD_DIR/.github/workflows/gitleaks.yml.template"
