@@ -102,6 +102,22 @@ _Anchor:_ mocked tests passed for months while the production
 migration silently broke; the divergence was invisible until a
 deploy hit the real schema.
 
+### Ephemeral environments replace a standing QA server
+
+Always test against a real database, never synthetic-only fixtures for
+anything load-bearing, and always do that testing inside a throwaway
+environment (a spun-up container, VM, or short-lived cloud host) rather
+than a persistent QA server. Stand it up, run the full pre-prod check,
+tear it down. A persistent QA server drifts from production configuration
+over time and becomes a second thing to maintain; an ephemeral one is
+defined by the same provisioning script that builds production, so it
+cannot drift.
+_Anchor:_ a search-index rework needed Linux-only measurements (systemd
+unit verification, anonymous-memory RSS) that a macOS dev machine could
+never produce; the fix was a disposable host built from the same
+provisioning script as production, checked and destroyed, not a
+standing QA box.
+
 ### Tests cover every code path; back claims with measurement
 
 "We have tests" is not the same as "this is tested." Every branch,
@@ -215,6 +231,23 @@ feels small and the cumulative work feels productive.
 _Anchor:_ mixed commits become unrevertable when one fix turns out
 to be wrong; pre-commit failures force re-stage cycles when many
 unrelated changes are batched together.
+
+### Commit atomically without waiting for per-commit approval
+
+This overrides the generic "never commit unless explicitly asked"
+default some tools ship with. On a feature branch or worktree, once
+a logical unit of work passes its own gate (tests, lint, the checks
+this repo already runs), commit it immediately and move on. Do not
+pause mid-task to ask permission for each individual commit; that
+default exists to stop unwanted proactive commits, not to add a
+confirmation step to work the user already asked for. Pushing,
+merging into a protected branch, and force-pushing still need their
+own explicit approval every time; committing locally on a branch
+already in scope does not.
+_Anchor:_ mid-session, an agent kept asking before each commit on a
+branch the user had already scoped and approved the work for; the
+user had to explicitly say "always do atomic commits, do not wait
+for me" to stop the interruptions.
 
 ### Locked decisions are revisitable on new evidence
 
