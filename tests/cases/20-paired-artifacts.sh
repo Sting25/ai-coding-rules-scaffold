@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# cases/20-paired-artifacts.sh — install-lib.sh's check_paired_artifacts must
+# cases/20-paired-artifacts.sh: install-lib.sh's check_paired_artifacts must
 # report every half-installed pair issue #96 named (a config half without its
 # CI-enforcement half, a local hook half without the CI half it defers to,
 # or the tests.yml/coverage.yml selection state from #97) and stay silent on
@@ -11,11 +11,11 @@
 # Every "reports a finding" assertion below is mutation-shaped: commenting
 # out scaffold-doctor.sh's `check_paired_artifacts gap doctor_pair_note` call
 # turns every one of them into a failure (verified by hand while writing this
-# file — the silence assertions still pass, since silence is also what a
+# file: the silence assertions still pass, since silence is also what a
 # script with no such call produces, which is exactly why both kinds of
 # assertion are needed together).
 
-echo "cases/20 — paired-artifact half-install detection (#96)"
+echo "cases/20: paired-artifact half-install detection (#96)"
 
 pa_python_project() {
   local t
@@ -80,7 +80,7 @@ pa_case() {
 }
 
 # pa_case_absent <name> <project-fn> <not-expect-substring> <mutation cmd...>
-# Proves a matched/healthy pair state produces NO paired-artifacts finding —
+# Proves a matched/healthy pair state produces NO paired-artifacts finding:
 # silence is the assertion, not merely a passing exit code (plenty of other
 # things also exit 0).
 pa_case_absent() {
@@ -103,7 +103,7 @@ pa_case_absent() {
 
 # (A) .coveragerc <-> coverage.yml. install.sh writes .coveragerc for every
 # Python install regardless of --coverage-gate, so the common default state
-# (coveragerc present, no coverage.yml) must be a note, not a gap — a doctor
+# (coveragerc present, no coverage.yml) must be a note, not a gap: a doctor
 # that gapped on this would be red on nearly every default Python install.
 pa_case "a default Python install's .coveragerc-without-coverage.yml is a note" \
   pa_python_project 0 "it has no effect until the patch-coverage gate is installed too" true
@@ -124,7 +124,7 @@ pa_case_absent "coveragerc + coverage.yml together produce no paired-artifact fi
   pa_add_coverage_gate_keep_rc
 
 # A frontend-only --coverage-gate install legitimately has coverage.yml with
-# no .coveragerc (vitest coverage does not read it) — must NOT be a gap.
+# no .coveragerc (vitest coverage does not read it): must NOT be a gap.
 pa_case_absent "coverage.yml without .coveragerc on a non-Python project is not a gap" \
   pa_frontend_coverage_project "pytest-cov has no local config to read coverage settings from" true
 
@@ -134,8 +134,8 @@ pa_case_absent "coverage.yml without .coveragerc on a non-Python project is not 
 pa_case "a local gitleaks hook without the CI gate is a gap" \
   pa_shell_project 1 "there is no CI gate behind it" pa_gitleaks_hook_only
 
-# The inverse (CI-only, no local pass) is a documented, valid strategy —
-# CI remains the unskippable, authoritative gate — so it is a note.
+# The inverse (CI-only, no local pass) is a documented, valid strategy:
+# CI remains the unskippable, authoritative gate, so it is a note.
 pa_case "the gitleaks CI workflow without a local hook is a note (CI-only is valid)" \
   pa_shell_project 0 "valid CI-only posture" pa_gitleaks_ci_only
 
@@ -145,8 +145,8 @@ pa_case_absent "gitleaks hook + CI together produce no paired-artifact finding (
   pa_shell_project "valid CI-only posture" pa_gitleaks_both
 
 # (C) tests.yml <-> coverage.yml (#97's default-on test execution): never
-# both (they would run the suite twice — a note, both DO still run), never
-# neither in a repo that has scaffold CI at all (a gap — exactly #97's bug,
+# both (they would run the suite twice, a note, both DO still run), never
+# neither in a repo that has scaffold CI at all (a gap, exactly #97's bug,
 # now detectable after the fact instead of only at install time).
 pa_case "both tests.yml and coverage.yml present is a note, not a gap" \
   pa_shell_project 0 "this push/PR's suite runs twice" pa_add_coverage_yml_keep_tests
@@ -160,7 +160,7 @@ pa_case_absent "the default tests.yml-only state produces no paired-artifact fin
   pa_shell_project "CI runs lint checks only, and no test ever executes" true
 
 # (D) install.sh's own end-of-run summary must report the SAME finding, not
-# just scaffold-doctor.sh — proves the shared function is actually wired into
+# just scaffold-doctor.sh: proves the shared function is actually wired into
 # both callers, not merely defined and used by one of them.
 IT=$(mktemp -d)
 inst_rc=0
@@ -176,5 +176,27 @@ else
   FAIL=$((FAIL + 1))
 fi
 rm -rf "$IT"
+
+# (E) scaffold-doctor.sh is sometimes copied on its own, separately from the
+# rest of the bundle (README warns against it, but nothing stops it). Run it
+# from a directory that has ONLY scaffold-doctor.sh, no install-lib.sh beside
+# it, against an otherwise-healthy project: the fallback note must fire, the
+# run must not crash under set -euo pipefail, and a healthy project's exit
+# status must stay 0 (this branch alone must never turn a clean project red).
+DOCLESS=$(mktemp -d)
+cp "$SCAFFOLD_DIR/scaffold-doctor.sh" "$DOCLESS/scaffold-doctor.sh"
+chmod +x "$DOCLESS/scaffold-doctor.sh"
+PT=$(pa_shell_project)
+doc_rc=0
+( cd "$PT" && "$DOCLESS/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+if [ "$doc_rc" -eq 0 ] && grep -qF "install-lib.sh not found next to scaffold-doctor.sh" "$HOOK_OUT"; then
+  echo "  ✓ scaffold-doctor.sh copied without install-lib.sh reports a note, not a crash"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ the missing-install-lib fallback misbehaved (exit $doc_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCLESS" "$PT"
 
 reset_repo

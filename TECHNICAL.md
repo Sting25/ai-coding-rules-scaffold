@@ -371,8 +371,8 @@ with no `.github/workflows/coverage.yml` for months, every PR green on
 `scaffold-doctor.sh` sources `install-lib.sh` from its own directory (the same
 one it ships alongside in the npm package, the Homebrew formula, and a git
 clone) to reuse this logic rather than duplicate it; if that file is ever
-missing next to it, the section reports the gap in coverage instead of
-silently skipping it.
+missing next to it, the section reports a note instead of silently skipping
+it.
 
 ## Customize per project
 

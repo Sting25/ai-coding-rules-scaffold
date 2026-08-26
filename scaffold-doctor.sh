@@ -292,7 +292,7 @@ fi
 # exact same wording; sourced here rather than duplicated.
 section "paired artifacts"
 if [ -f "$SCAFFOLD_DIR/install-lib.sh" ]; then
-  # shellcheck disable=SC2329  # invoked indirectly, by name, from check_paired_artifacts
+  # shellcheck disable=SC2317,SC2329  # invoked indirectly, by name, from check_paired_artifacts (SC2317 on older shellcheck, SC2329 on newer, same underlying finding)
   doctor_pair_note() { note "$1"; }
   # shellcheck source=install-lib.sh
   . "$SCAFFOLD_DIR/install-lib.sh"
