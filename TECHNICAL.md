@@ -347,6 +347,33 @@ broken). Notes never affect the exit status. Exit `0` means no gaps, `1`
 means at least one guardrail is installed but not running, `2` means a usage
 error or "not a git repository".
 
+### Paired artifacts (half-installed guardrails)
+
+Some guardrails ship as two halves that only do anything together: a config
+file plus the CI workflow that reads it, or a local pre-commit pass plus the
+CI gate it defers to. An interrupted install, a later re-run without a flag,
+or a hand-copied file can leave only one half on disk, and nothing used to
+check again afterward (issue #96: a real downstream repo kept `.coveragerc`
+with no `.github/workflows/coverage.yml` for months, every PR green on
+`lint.yml` alone). `scaffold-doctor.sh`'s "paired artifacts" section, and
+`install.sh`'s own end-of-run summary (same detection, same wording, from
+`install-lib.sh`'s `check_paired_artifacts`), name three pairs:
+
+| Pair | Half missing | Severity |
+|---|---|---|
+| `.coveragerc` / `.github/workflows/coverage.yml` | `.coveragerc` present, `coverage.yml` absent | note (the common default: `.coveragerc` ships with every Python install regardless of `--coverage-gate`) |
+| `.coveragerc` / `.github/workflows/coverage.yml` | `coverage.yml` present, `.coveragerc` absent, on a Python project | gap (`--coverage-gate` writes both in the same run; only a later deletion produces this) |
+| local gitleaks hook (`.githooks/lib/check-gitleaks`) / `.github/workflows/gitleaks.yml` | hook present, CI absent | gap (the hook tells every commit that CI is the authoritative gate; there is none) |
+| local gitleaks hook / gitleaks CI | CI present, hook absent | note (CI-only is a valid, documented posture) |
+| `tests.yml` / `coverage.yml` | both present | note (both run the suite; wasteful, not silent) |
+| `tests.yml` / `coverage.yml` | neither present, `lint.yml` installed | gap (#97's bug restated: CI runs lint only, no test ever executes) |
+
+`scaffold-doctor.sh` sources `install-lib.sh` from its own directory (the same
+one it ships alongside in the npm package, the Homebrew formula, and a git
+clone) to reuse this logic rather than duplicate it; if that file is ever
+missing next to it, the section reports the gap in coverage instead of
+silently skipping it.
+
 ## Customize per project
 
 - **`coding-rules.md`** — short by design. Add a "Project-specific" section at the bottom for stack rules (SQLAlchemy column quirks, import conventions, architectural constraints).
