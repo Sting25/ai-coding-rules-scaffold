@@ -174,6 +174,19 @@ install_claude_md() {
   echo "merged:       appended @AGENTS.md import to existing CLAUDE.md (your content kept)"
 }
 
+# warn_pair_gap / warn_pair_note: install.sh's reporters for install-lib.sh's
+# check_paired_artifacts (#96). install.sh never fails the run over one of
+# these findings (they are advisory, not install errors), so both just print;
+# the gap/note distinction stays in the wording, matching how scaffold-doctor.sh
+# reports the exact same states with a real exit-status difference.
+warn_pair_gap() {
+  echo "warning: $1"
+  echo "         fix: $2"
+}
+warn_pair_note() {
+  echo "note: $1"
+}
+
 # install_agents_md — AGENTS.md carries a Project section the user fills in,
 # so an existing one is never clobbered (even with --force). Skip if present;
 # create from template only when absent.
@@ -403,6 +416,15 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
 else
   echo "warning: not in a git repo — run 'git config core.hooksPath .githooks' after 'git init'"
 fi
+
+# Paired-artifact consistency check (#96): install.sh can leave a config half
+# without its CI-enforcement half if an earlier run used a different flag
+# set, or a file was hand-copied in isolation, and nothing used to check
+# again after the run finished. Runs last, once everything THIS run would
+# write is already on disk; advisory only, so it never changes install.sh's
+# own exit status. Same detection + wording scaffold-doctor.sh reports later,
+# from install-lib.sh's check_paired_artifacts.
+check_paired_artifacts warn_pair_gap warn_pair_note
 
 echo ""
 echo "Done (mode: $MODE)."
