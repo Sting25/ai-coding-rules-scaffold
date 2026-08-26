@@ -54,7 +54,8 @@ for case_file in \
   "$HERE/cases/16-coverage-gate.sh" \
   "$HERE/cases/17-whole-tree-configs.sh" \
   "$HERE/cases/18-doctor.sh" \
-  "$HERE/cases/19-test-workflow.sh"; do
+  "$HERE/cases/19-test-workflow.sh" \
+  "$HERE/cases/20-paired-artifacts.sh"; do
   # shellcheck source=/dev/null
   . "$case_file"
 done
