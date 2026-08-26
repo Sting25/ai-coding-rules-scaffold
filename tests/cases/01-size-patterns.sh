@@ -154,8 +154,9 @@ printf 'h = %s\n' 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b
 git add sha.txt
 assert_passes "SHA-256 hash is not a false positive"
 
-# 10g. NEGATIVE: an UNQUOTED assignment stays uncaught by design — quoted-only;
-#      unquoted/env-var forms are the gitleaks layer's job (see README).
+# 10g. NEGATIVE: an UNQUOTED assignment stays uncaught by design, quoted-only;
+#      unquoted/env-var forms are the gitleaks layer's job (see TECHNICAL.md,
+#      Opt-in layers).
 printf 'api_key = %s\n' 'my_config_variable_name_here' >unq.txt
 git add unq.txt
 assert_passes "unquoted credential assignment is not flagged (quoted-only by design)"

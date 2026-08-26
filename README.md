@@ -155,7 +155,7 @@ If your project already uses Husky or lefthook, `install.sh` detects the existin
    .githooks/pre-commit
    ```
 
-Either way, the four `lib/check-*` scripts in `.githooks/lib/` are also runnable directly (`git ls-files | .githooks/lib/check-secrets`), so you can wire them into any orchestrator.
+Either way, the `lib/check-*` scripts in `.githooks/lib/` are also runnable directly (`git ls-files | .githooks/lib/check-secrets`), so you can wire them into any orchestrator.
 
 ## AI agent integration
 
@@ -206,6 +206,8 @@ git add some_module.py
 git commit -m "should be rejected"
 # → hook prints: ✗ some_module.py: Use structlog (or the project's logger), not print()
 ```
+
+Want to confirm the guardrails are actually wired up, not just present? Run `./scaffold-doctor.sh`; see [Check whether it's armed](./TECHNICAL.md#check-whether-its-armed) in TECHNICAL.md for what it checks.
 
 ## Platform notes
 
