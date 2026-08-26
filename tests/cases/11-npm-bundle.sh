@@ -28,7 +28,8 @@ else
     #
     # The workflow glob is load-bearing: gitleaks.yml.template and
     # dependency-review.yml.template are "copy it in" templates the user applies
-    # by hand (README §gitleaks/§dependency-review; install.sh only names them),
+    # by hand (TECHNICAL.md's Opt-in layers section covers gitleaks and
+    # dependency-review; install.sh only names them),
     # so install.sh never READS them via $SCAFFOLD_DIR and the grep above can't
     # see them. Without this glob an npm/npx user silently lacks two security-CI
     # gates git-clone/Homebrew users get (audit B3). Globbing every
