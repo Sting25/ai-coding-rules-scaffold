@@ -26,7 +26,7 @@ Two always-on enforcement layers (pre-commit hook + CI mirror) plus optional age
   - **React** — `dangerouslySetInnerHTML` (XSS); opt-in `react-hooks` + `jsx-a11y` blocks.
   - **Vue** — `.vue` scanned; `v-html` (XSS).
   - **Svelte** — `.svelte` scanned; `{@html}` (XSS).
-- **Testing** — a runner config ships per stack (`vitest.config.ts` for TS/JS unless the project already uses Jest; `pytest.ini` + `.coveragerc` for Python). A runner alone forces nothing; the **opt-in patch-coverage gate** (`--coverage-gate`) fails a PR when *changed* lines ship untested. It gates execution of changed lines, not assertion quality — see [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) on why you can't fully machine-force meaningful tests.
+- **Testing** — a runner config ships per stack (`vitest.config.ts` for TS/JS unless the project already uses Jest; `pytest.ini` + `.coveragerc` for Python), and `install.sh` installs `.github/workflows/tests.yml` by **default** so pytest/vitest actually run on every PR/push, no coverage threshold. On top of that, the **opt-in patch-coverage gate** (`--coverage-gate`) swaps `tests.yml` for `coverage.yml`, which runs the same tests and additionally fails a PR when *changed* lines ship untested. It gates execution of changed lines, not assertion quality: see [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) on why you can't fully machine-force meaningful tests. `--no-test-workflow` opts out of installing either (a loud, recorded skip) for a repo that genuinely cannot run tests in CI.
 - **PHP** — `php -l` syntax + `phpcs` (when configured) **+** `php.txt`: `var_dump`/`print_r`, `->dd()`/`dump()`, `die`/`exit` (opt-in).
 - **Go** — `go.txt`: `fmt.Println`/`Printf` debug, `panic`/`print` (opt-in); ready-to-uncomment golangci-lint CI job.
 - **Rust** — `rust.txt`: `dbg!`, `println!`, `.unwrap()`/`.expect()` (opt-in); clippy CI job stub.
@@ -60,6 +60,7 @@ Language pattern files auto-install when their manifest is detected (`go.mod`, `
 | `githooks/local.d/README.md.template` | `.githooks/local.d/README.md` | Documents the project-local check contract. The **directory** is yours: drop executables in and hook + CI both run them, and `install.sh` never writes into it |
 | `.scaffold.toml.template` | `.scaffold.toml` | Per-project rule overrides — ships empty (commented), enforces nothing until edited |
 | `.github/workflows/lint.yml.template` | `.github/workflows/lint.yml` | CI mirror — invokes the same `lib/check-*` scripts as the hook, scoped to the PR/push diff (`lib/ci-changed-files`) for quality gates, whole-tree for the secret/credential scans |
+| `.github/workflows/tests.yml.template` | `.github/workflows/tests.yml` | Default-on test execution: runs pytest/vitest on every PR/push, no coverage threshold. Skipped by `--no-test-workflow`; replaced by `coverage.yml` under `--coverage-gate` |
 | `githooks/lib/ci-changed-files.template` | `.githooks/lib/ci-changed-files` | Resolves the PR/push diff so CI quality gates scan only changed files; fails open to the whole tree when there's no diff base |
 | `.github/dependabot.yml.template` | `.github/dependabot.yml` | Weekly grouped version bumps for the SHA-pinned GitHub Actions |
 | `forbidden-patterns/backend.txt.template` | `.forbidden-patterns/backend.txt` | Python patterns consumed by hook + CI |
@@ -115,7 +116,7 @@ Build-breaking (`ruff` / `eslint`, on every lint + commit + in CI):
 | Re-throwing in `catch` while discarding the original error cause/stack | `eslint preserve-caught-error` (needs ESLint ≥ 9.35) |
 | TypeScript type errors | `tsc --noEmit` (hook + CI, when `tsconfig.json` present) |
 | Unformatted TS/JS | `prettier --check` (hook + CI, when a prettier config is present; `prettier --write` fixes) |
-| Changed lines shipped without a test (opt-in) | `diff-cover` patch-coverage gate (`--coverage-gate`, CI) |
+| Changed lines shipped without a test (opt-in strictness layer on default-on test execution) | `diff-cover` patch-coverage gate (`--coverage-gate`, CI) |
 
 Commit + CI-breaking (pre-commit hook + `lint.yml`):
 
@@ -193,10 +194,39 @@ severity = "warn"
   guardrails job prints it into the build log. Treat changes to `.scaffold.toml`
   as security-relevant in review, the same as edits to `.githooks/**`.
 
+## Default-on test execution
+
+`install.sh` installs `.github/workflows/tests.yml` by default (#97): a pytest
+job and a vitest job, each gated on the matching stack actually being present
+(a pytest job on a repo with no `pyproject.toml`/`pytest.ini`/`setup.py`, or a
+vitest job where `package.json` never declares `vitest`, no-ops with a logged
+reason instead of failing). No coverage threshold: the point is only that
+tests actually **run** on every PR/push, closing the gap where a default
+install produced lint-only CI and a green check meant "nothing is malformed",
+never "nothing is broken." The pytest job installs the project itself first
+(`pip install -e ".[dev]"` when a `dev` extra is declared, else
+`pip install -e .`, plus any `requirements*.txt`) so tests that import the
+package under test can actually collect.
+
+Two ways to change this:
+
+- **`install.sh --coverage-gate`** swaps `tests.yml` for `coverage.yml`:
+  same tests, plus a patch-coverage gate on top (see below). Installing both
+  would run the suite twice for the same push/PR, so it's always one or the
+  other, never both; an upgrade that adds `--coverage-gate` on top of a prior
+  default install retires the now-redundant `tests.yml` if it's still
+  untouched since install.
+- **`install.sh --no-test-workflow`** installs neither. For a repo that
+  genuinely cannot run tests in CI. The installer prints a loud recorded skip
+  when this flag is used, and its end-of-run summary always states plainly
+  which of the three states (`tests.yml`, `coverage.yml`, or no test
+  execution at all) the repo ended up in.
+
 ## Opt-in layers
 
-Beyond the always-on hook + CI mirror, three extras are available. They're off
-by default so the scaffold stays minimal; turn them on per project.
+Beyond the always-on hook + CI mirror and the default-on test workflow above,
+further extras are available. They're off by default so the scaffold stays
+minimal; turn them on per project.
 
 - **Agent-runtime guardrails (`install.sh --claude`).** The opt-in third layer —
   catching bad input *before* the agent writes it, not at commit time.
@@ -251,7 +281,8 @@ by default so the scaffold stays minimal; turn them on per project.
   repos (caveat documented in the template header).
 
 - **Patch-coverage gate (`install.sh --coverage-gate` →
-  `.github/workflows/coverage.yml`).** The one mechanism here that *forces tests
+  `.github/workflows/coverage.yml`, installed *instead of* the default-on
+  `tests.yml` above).** The one mechanism here that *forces tests
   to be written*: it fails a PR when lines you **added or changed** aren't
   executed by any test (`diff-cover`, default 100% of changed lines; lower the
   `DIFF_COVER_FAIL_UNDER` env to ease adoption, then ratchet up). It deliberately
@@ -260,7 +291,8 @@ by default so the scaffold stays minimal; turn them on per project.
   never **verified** by one — an assertion-free test still counts as covered.
   Pair it with required human review; for real test-*quality* signal, layer on
   mutation testing (see [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md), "Forcing
-  tests"). Opt-in because forcing tests on new code is a policy a team must
+  tests"). The gate itself stays opt-in because forcing a strict bar on new code
+  is a policy choice a team must
   choose deliberately.
 
   The job also **fails on failing tests**, not only on uncovered lines. That is
