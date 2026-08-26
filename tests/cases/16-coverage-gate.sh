@@ -57,7 +57,13 @@ _run_step_with_fake() {
   fi
   printf '%s\n' "$body" >"$d/step.sh"
   local rc=0
-  ( PATH="$d:$PATH" bash -e "$d/step.sh" ) >/dev/null 2>&1 || rc=$?
+  # cd into the SAME empty dir the fake binaries live in, not $WORK, which the
+  # driver's bootstrap seeds with a throwaway pyproject.toml (#96/#97). Running
+  # from an empty dir makes the body's `[ -f pyproject.toml ]` project-install
+  # guard evaluate false on its own, so the real `pip install -e .` it gates
+  # never fires here; no per-line filtering of those calls is needed on top of
+  # the unconditional `pip install pytest…` line _run_block already drops.
+  ( cd "$d" && PATH="$d:$PATH" bash -e "$d/step.sh" ) >/dev/null 2>&1 || rc=$?
   rm -rf "$d"
   printf '%s' "$rc"
 }

@@ -53,7 +53,8 @@ for case_file in \
   "$HERE/cases/15-local-checks.sh" \
   "$HERE/cases/16-coverage-gate.sh" \
   "$HERE/cases/17-whole-tree-configs.sh" \
-  "$HERE/cases/18-doctor.sh"; do
+  "$HERE/cases/18-doctor.sh" \
+  "$HERE/cases/19-test-workflow.sh"; do
   # shellcheck source=/dev/null
   . "$case_file"
 done
