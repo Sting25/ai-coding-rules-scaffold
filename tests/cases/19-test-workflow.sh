@@ -201,7 +201,123 @@ _check_vitest_gating() {
 _check_vitest_gating tests "$TESTS_TPL" 2 present
 _check_vitest_gating coverage "$COV_TPL" 1 frontend
 
-# --- (G) tests.yml.template is a valid GitHub Actions workflow -------------
+# --- (G) "Install project" step: the requirements-loop exit-code bug and the
+#     installable-pyproject guard. Lifts the REAL step body (same technique as
+#     (F) above and cases/16) and runs it under `bash -e` with a fake `pip`
+#     that logs its own argv instead of touching the network, so both the
+#     step's EXIT CODE and WHICH pip commands it ran are observable.
+#
+# The bug this regresses: the requirements loop's body used to be
+# `[ -f "$req" ] && pip install -r "$req"`, whose own exit status (1, from the
+# failed `[ -f ]` test) becomes the exit status of the whole step under
+# `bash -e` whenever the LAST candidate file is absent, which is nearly
+# always, so the default pytest job would fail for virtually every Python
+# consumer even though nothing went wrong. Scenario (c) below is that exact case.
+_install_project_body() {
+  awk -v step="      - name: Install project (so tests importing the package can collect)" '
+    $0 == step { found = 1 }
+    found && /run: \|/ { inrun = 1; next }
+    inrun {
+      if ($0 ~ /^[[:space:]]*$/) next
+      if ($0 !~ /^          /) exit
+      sub(/^          /, "")
+      print
+    }
+  ' "$TESTS_TPL"
+}
+
+# _run_with_fake_pip BODY [FIXTURE_FILE=CONTENT ...]: writes each fixture
+# file, then runs BODY under `bash -e` from that same directory with a fake
+# `pip` on PATH that appends its argv to pip.log and exits 0. Sets
+# INSTALL_RC (the step's exit code) and INSTALL_LOG (every pip invocation,
+# empty if pip was never called) as globals, since a shell function can only
+# return a single exit-code integer.
+_run_with_fake_pip() {
+  local body=$1; shift
+  local d fixture path content
+  d=$(mktemp -d)
+  mkdir -p "$d/bin"
+  {
+    printf '#!/bin/sh\n'
+    printf 'echo "pip $*" >>"%s/pip.log"\n' "$d"
+    printf 'exit 0\n'
+  } >"$d/bin/pip"
+  chmod +x "$d/bin/pip"
+  for fixture in "$@"; do
+    path=${fixture%%=*}
+    content=${fixture#*=}
+    printf '%s\n' "$content" >"$d/$path"
+  done
+  printf '%s\n' "$body" >"$d/step.sh"
+  ( cd "$d" && PATH="$d/bin:$PATH" bash -e "$d/step.sh" ) >/dev/null 2>&1
+  INSTALL_RC=$?
+  INSTALL_LOG=$(cat "$d/pip.log" 2>/dev/null || true)
+  rm -rf "$d"
+}
+
+IBODY=$(_install_project_body)
+if [ -z "$IBODY" ]; then
+  echo "  ✗ could not lift the 'Install project' step out of tests.yml.template (step renamed?)"
+  FAIL=$((FAIL + 1))
+else
+  # (a) An installable pyproject.toml alone: exits 0, and DOES run the
+  #     editable install (no dev extra declared, so plain `pip install -e .`).
+  _run_with_fake_pip "$IBODY" 'pyproject.toml=[project]
+name = "x"
+version = "0.1"
+'
+  if [ "$INSTALL_RC" -eq 0 ] && printf '%s' "$INSTALL_LOG" | grep -qF "pip install -e ."; then
+    echo "  ✓ (a) installable pyproject.toml alone: exits 0 and runs the editable install"
+    PASS=$((PASS + 1))
+  else
+    echo "  ✗ (a) installable pyproject.toml: rc=$INSTALL_RC log=[$INSTALL_LOG]"
+    FAIL=$((FAIL + 1))
+  fi
+
+  # (b) requirements.txt alone, no pyproject.toml/setup.py at all: exits 0,
+  #     skips the editable install, and DOES install the requirements file.
+  _run_with_fake_pip "$IBODY" 'requirements.txt=pytest==9.1.1
+'
+  if [ "$INSTALL_RC" -eq 0 ] \
+     && printf '%s' "$INSTALL_LOG" | grep -qF "pip install -r requirements.txt" \
+     && ! printf '%s' "$INSTALL_LOG" | grep -qF "install -e"; then
+    echo "  ✓ (b) requirements.txt alone: exits 0 and installs it, no editable install attempted"
+    PASS=$((PASS + 1))
+  else
+    echo "  ✗ (b) requirements.txt alone: rc=$INSTALL_RC log=[$INSTALL_LOG]"
+    FAIL=$((FAIL + 1))
+  fi
+
+  # (c) THE REGRESSION CASE: nothing at all (no pyproject.toml, no setup.py,
+  #     no requirements file). Every candidate in the loop is absent, so under
+  #     the old `[ -f "$req" ] && pip install -r "$req"` body this exited 1
+  #     even though the step correctly did nothing. Must exit 0 with no pip
+  #     invocation at all.
+  _run_with_fake_pip "$IBODY"
+  if [ "$INSTALL_RC" -eq 0 ] && [ -z "$INSTALL_LOG" ]; then
+    echo "  ✓ (c) nothing present: exits 0 with no pip invocation (regression fixed)"
+    PASS=$((PASS + 1))
+  else
+    echo "  ✗ (c) nothing present: rc=$INSTALL_RC (want 0) log=[$INSTALL_LOG] (want empty)"
+    FAIL=$((FAIL + 1))
+  fi
+
+  # (d) A pyproject.toml that holds only tool config (no [project] table) and
+  #     no setup.py: exits 0, and must NOT attempt an editable install; there
+  #     is no build backend for `pip install -e .` to target.
+  _run_with_fake_pip "$IBODY" 'pyproject.toml=[tool.pytest.ini_options]
+testpaths = ["tests"]
+'
+  if [ "$INSTALL_RC" -eq 0 ] && ! printf '%s' "$INSTALL_LOG" | grep -qF "install -e"; then
+    echo "  ✓ (d) tool-config-only pyproject.toml: exits 0, editable install correctly skipped"
+    PASS=$((PASS + 1))
+  else
+    echo "  ✗ (d) tool-config-only pyproject.toml: rc=$INSTALL_RC log=[$INSTALL_LOG]"
+    FAIL=$((FAIL + 1))
+  fi
+fi
+
+# --- (H) tests.yml.template is a valid GitHub Actions workflow -------------
 if command -v actionlint >/dev/null 2>&1; then
   G=$(mktemp -d); mkdir -p "$G/.github/workflows"
   cp "$TESTS_TPL" "$G/.github/workflows/tests.yml"

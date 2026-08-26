@@ -181,3 +181,97 @@ cp_pattern() {
 # via a chmod that follows a broken link and fails under set -e — nor should we
 # flip the mode of a skipped, user-owned file.
 mkx() { if [ -f "$1" ]; then chmod +x "$1"; fi; }
+
+# install_test_workflow_ci, the test-execution CI workflow (#97): DEFAULT-ON,
+# exactly one of two shapes, plus a recorded opt-out. Extracted here (like
+# install-verify.sh's run_toolchain_verify) once install.sh neared its own
+# 500-line cap; reads the caller's globals (NO_TEST_WORKFLOW, COVERAGE_GATE,
+# SCAFFOLD_DIR) and sets TEST_CI_STATE for the caller's end-of-run summary.
+#
+# A default install used to produce lint-only CI (green checks with zero
+# tests ever executing), which is the bug this closes. Three end states,
+# decided in this order:
+#
+#   1. --no-test-workflow -> install NEITHER workflow. The one way a repo ends
+#      up with no test execution in CI, and it must say so loudly, per
+#      operational-rules.md's "record every skip" (unless a workflow from a
+#      prior run is already on disk, CI keeps running it either way).
+#   2. --coverage-gate (or coverage.yml already on disk from a prior run) ->
+#      install coverage.yml, which already runs the tests AND gates patch
+#      coverage. It gates EXECUTION of changed lines, not assertion quality;
+#      see RECOMMENDATIONS.md.
+#   3. default -> install tests.yml: pytest/vitest run on every PR/push, no
+#      coverage threshold.
+#
+# Never both: coverage.yml already runs the tests, so installing tests.yml
+# alongside it would run the suite twice for the same push/PR. If an upgrade
+# adds --coverage-gate on top of a prior default install, the now-redundant
+# tests.yml (if untouched since install) is retired rather than left to
+# double-run.
+install_test_workflow_ci() {
+  if [ "$NO_TEST_WORKFLOW" -eq 1 ]; then
+    if [ "$COVERAGE_GATE" -eq 1 ]; then
+      echo "warning: --no-test-workflow overrides --coverage-gate: neither tests.yml nor coverage.yml will be installed."
+    fi
+    if [ -f ".github/workflows/tests.yml" ] || [ -f ".github/workflows/coverage.yml" ]; then
+      echo "note: an existing tests.yml/coverage.yml was left in place. --no-test-workflow only skips a NEW install, it does not remove one."
+      echo "note: this repo's CI still runs tests via that existing workflow; --no-test-workflow only affects what THIS run installs."
+    else
+      echo "SKIPPED: test-execution CI workflow (--no-test-workflow). This repo's CI will NOT run tests."
+      echo "         Recorded skip (operational-rules.md, 'no silent failures'): add tests.yml or coverage.yml"
+      echo "         by hand, or re-run without --no-test-workflow, before trusting this repo's CI as a real gate."
+    fi
+  elif [ "$COVERAGE_GATE" -eq 1 ] || { [ -f ".github/workflows/coverage.yml" ] && [ ! -f ".github/workflows/tests.yml" ]; }; then
+    cp_scaffold "$SCAFFOLD_DIR/.github/workflows/coverage.yml.template" ".github/workflows/coverage.yml"
+    echo "note: coverage.yml gates patch coverage (default 100% of changed lines)."
+    echo "      It forces changed lines to be RUN by a test, not verified — pair with review."
+    if [ -f ".github/workflows/tests.yml" ]; then
+      if cmp -s "$SCAFFOLD_DIR/.github/workflows/tests.yml.template" ".github/workflows/tests.yml"; then
+        # Only remove the stale file once it's actually backed up (mirrors
+        # cp_scaffold's own `_backup "$dst" || return 0` policy): never delete
+        # without a recoverable copy, even if that means leaving both
+        # workflows in place (with the warning above) on the rare
+        # backup-cap exhaustion.
+        if _backup ".github/workflows/tests.yml"; then
+          rm -f ".github/workflows/tests.yml"
+          echo "removed:      .github/workflows/tests.yml (superseded by coverage.yml: running both would run tests twice)"
+        fi
+      else
+        echo "warning: .github/workflows/tests.yml also exists and looks customized, left in place."
+        echo "         Remove it by hand so tests don't run twice; coverage.yml already runs them."
+      fi
+    fi
+  else
+    # `tests.yml` is a common consumer-authored filename, and this path is
+    # cp_scaffold (scaffold-owned: refreshed/overwritten on every run). On a
+    # FIRST install that collision is invisible unless we say so: a project
+    # that already had its own hand-written tests.yml would otherwise see it
+    # silently replaced (backed up, per cp_scaffold's policy, but with no
+    # explanation of why a file it didn't ask the scaffold to manage changed).
+    if [ -f ".github/workflows/tests.yml" ] && ! cmp -s "$SCAFFOLD_DIR/.github/workflows/tests.yml.template" ".github/workflows/tests.yml"; then
+      echo "warning: .github/workflows/tests.yml already exists and is not the scaffold's version."
+      echo "         tests.yml is a scaffold-claimed filename (install.sh treats it as scaffold-owned"
+      echo "         and refreshes it on every re-run); your version is backed up to .scaffold-bak."
+    fi
+    cp_scaffold "$SCAFFOLD_DIR/.github/workflows/tests.yml.template" ".github/workflows/tests.yml"
+    echo "note: tests.yml runs pytest/vitest on every PR/push with no coverage threshold."
+    echo "      Add --coverage-gate for the patch-coverage strictness layer on top."
+  fi
+
+  # Final state for the caller's summary line: read back from disk rather
+  # than the flags alone, so an upgrade that already had one file installed
+  # (independent of THIS run's flags) is reported accurately. TEST_CI_STATE is
+  # a deliberate global: install.sh (which sources this file) reads it after
+  # calling this function, but shellcheck lints install-lib.sh on its own and
+  # can't see that cross-file use.
+  # shellcheck disable=SC2034
+  if [ -f ".github/workflows/coverage.yml" ]; then
+    TEST_CI_STATE="tests + patch-coverage gate via coverage.yml"
+  elif [ -f ".github/workflows/tests.yml" ]; then
+    TEST_CI_STATE="tests run in CI via tests.yml"
+  elif [ "$NO_TEST_WORKFLOW" -eq 1 ]; then
+    TEST_CI_STATE="NO test execution in CI (--no-test-workflow given)"
+  else
+    TEST_CI_STATE="NO test execution in CI (no workflow installed)"
+  fi
+}

@@ -88,7 +88,14 @@ jobs:
           # grep (same style install.sh uses for its pytest-config detection)
           # rather than a full TOML parse, no extra dependency, and the two
           # states that matter (extra present / absent) are simple string shapes.
-          if [ -f pyproject.toml ]; then
+          #
+          # Only attempt the editable install when the project is actually
+          # installable: a `[project]` table (PEP 621) or a `setup.py`. A
+          # pyproject.toml that only holds tool config (`[tool.ruff]`,
+          # `[tool.pytest.ini_options]`, a poetry package-mode-false project)
+          # has no build backend for `pip install -e .` to target, and would
+          # hard-fail this step for a project that never claimed to be a package.
+          if [ -f pyproject.toml ] && grep -q '^\[project\]' pyproject.toml; then
             if grep -q '^\[project.optional-dependencies\]' pyproject.toml && grep -qE '^dev[[:space:]]*=' pyproject.toml; then
               pip install -e ".[dev]"
             else
@@ -98,9 +105,14 @@ jobs:
             pip install -e .
           fi
           # Some projects pin test deps in a requirements file instead of (or
-          # in addition to) a pyproject extra: install any that exist.
+          # in addition to) a pyproject extra: install any that exist. `if`/`fi`,
+          # not `[ -f "$req" ] && pip install -r "$req"` as the loop body (see
+          # tests.yml.template for why that form can exit the STEP non-zero
+          # under bash -e when the file is absent, even though nothing failed).
           for req in requirements.txt requirements-dev.txt requirements/dev.txt; do
-            [ -f "$req" ] && pip install -r "$req"
+            if [ -f "$req" ]; then
+              pip install -r "$req"
+            fi
           done
           # Pinned: an unpinned `pip install` executes whatever version is newest
           # at run time, minutes after publish — contradicting the cooldown posture

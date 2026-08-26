@@ -203,10 +203,19 @@ vitest job where `package.json` never declares `vitest`, no-ops with a logged
 reason instead of failing). No coverage threshold: the point is only that
 tests actually **run** on every PR/push, closing the gap where a default
 install produced lint-only CI and a green check meant "nothing is malformed",
-never "nothing is broken." The pytest job installs the project itself first
-(`pip install -e ".[dev]"` when a `dev` extra is declared, else
-`pip install -e .`, plus any `requirements*.txt`) so tests that import the
-package under test can actually collect.
+never "nothing is broken." The pytest job installs the project itself first,
+but only when it looks actually installable (a `[project]` table or a
+`setup.py`, not a pyproject.toml that only holds tool config): `pip install
+-e ".[dev]"` when a `dev` extra is declared, else `pip install -e .`, plus
+any of `requirements.txt`, `requirements-dev.txt`, or `requirements/dev.txt`
+that exist, so tests that import the package under test can actually
+collect.
+
+`.github/workflows/tests.yml` is a scaffold-claimed filename: `install.sh`
+treats it as scaffold-owned code (like `lint.yml`) and refreshes it on every
+re-run, so a project that already has its own hand-written `tests.yml` will
+have it replaced (backed up to `.scaffold-bak` first, with a warning printed
+at install time).
 
 Two ways to change this:
 

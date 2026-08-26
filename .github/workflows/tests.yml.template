@@ -52,10 +52,17 @@ jobs:
       # (same style as install.sh's pytest-config detection below) rather than
       # a full TOML parse, no extra dependency, and the two states that
       # matter (extra present / absent) are simple string shapes.
+      #
+      # Only attempt the editable install when the project is actually
+      # installable: a `[project]` table (PEP 621) or a `setup.py`. A
+      # pyproject.toml that only holds tool config (`[tool.ruff]`,
+      # `[tool.pytest.ini_options]`, a poetry package-mode-false project) has
+      # no build backend for `pip install -e .` to target, and would hard-fail
+      # this step for a project that never claimed to be a package.
       - name: Install project (so tests importing the package can collect)
         if: steps.detect.outputs.present == 'true'
         run: |
-          if [ -f pyproject.toml ]; then
+          if [ -f pyproject.toml ] && grep -q '^\[project\]' pyproject.toml; then
             if grep -q '^\[project.optional-dependencies\]' pyproject.toml && grep -qE '^dev[[:space:]]*=' pyproject.toml; then
               pip install -e ".[dev]"
             else
@@ -66,8 +73,20 @@ jobs:
           fi
           # Some projects pin test deps in a requirements file instead of (or
           # in addition to) a pyproject extra: install any that exist.
+          #
+          # `if`/`fi`, not `[ -f "$req" ] && pip install -r "$req"` as the loop
+          # body. Under `bash -e` (the default shell for a `run:` step), a
+          # standalone `&&` list that ends this loop and this step is not an
+          # exempt context, so on whichever iteration the file is absent, the
+          # list's own exit status (1, from the failed `[ -f ]` test) becomes
+          # the exit status of the step itself, failing the job even though
+          # nothing actually went wrong. Confirmed by running the extracted
+          # body under `bash -e` with none of the three files present (the
+          # common case): the old form exited 1, this form exits 0.
           for req in requirements.txt requirements-dev.txt requirements/dev.txt; do
-            [ -f "$req" ] && pip install -r "$req"
+            if [ -f "$req" ]; then
+              pip install -r "$req"
+            fi
           done
       - name: Run pytest
         if: steps.detect.outputs.present == 'true'
