@@ -1,7 +1,10 @@
 name: coverage
 
-# OPT-IN patch-coverage gate. Copy to your project as
-# `.github/workflows/coverage.yml` (or `install.sh --coverage-gate`).
+# OPT-IN patch-coverage gate: the strictness layer on top of the default-on
+# `tests.yml` (#97). Copy to your project as `.github/workflows/coverage.yml`
+# (or `install.sh --coverage-gate`, which installs this INSTEAD OF tests.yml:
+# this workflow already runs the tests, so installing both would run them
+# twice for the same push/PR).
 #
 # WHAT THIS DOES — and what it cannot do.
 # It fails the PR when lines you ADDED OR CHANGED in this PR are not executed by
@@ -45,7 +48,13 @@ jobs:
           if [ -f pyproject.toml ] || [ -f pytest.ini ] || [ -f setup.py ]; then
             echo "python=true" >> "$GITHUB_OUTPUT"
           fi
-          if [ -f package.json ]; then
+          # Gate on vitest actually being DECLARED, not merely on package.json
+          # existing (#96). A repo can ship package.json for lint tooling only
+          # (eslint/prettier/tsc, no test runner) and this step used to run
+          # `vitest` there anyway, hard-failing a stack that opted into lint
+          # but never into testing.
+          if [ -f package.json ] && { grep -q '"vitest"' package.json \
+               || grep -qE '"test"[[:space:]]*:[[:space:]]*"[^"]*vitest' package.json; }; then
             echo "frontend=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -73,6 +82,26 @@ jobs:
         # undo the tolerance this block exists to provide. A command on the left
         # of `||` is a tested command and exempt from -e.
         run: |
+          # Install the project itself before running its tests (#96). A pytest
+          # job that installs only pytest dies at import for any project whose
+          # tests import the package under test. Detect a `dev` extra with a
+          # grep (same style install.sh uses for its pytest-config detection)
+          # rather than a full TOML parse, no extra dependency, and the two
+          # states that matter (extra present / absent) are simple string shapes.
+          if [ -f pyproject.toml ]; then
+            if grep -q '^\[project.optional-dependencies\]' pyproject.toml && grep -qE '^dev[[:space:]]*=' pyproject.toml; then
+              pip install -e ".[dev]"
+            else
+              pip install -e .
+            fi
+          elif [ -f setup.py ]; then
+            pip install -e .
+          fi
+          # Some projects pin test deps in a requirements file instead of (or
+          # in addition to) a pyproject extra: install any that exist.
+          for req in requirements.txt requirements-dev.txt requirements/dev.txt; do
+            [ -f "$req" ] && pip install -r "$req"
+          done
           # Pinned: an unpinned `pip install` executes whatever version is newest
           # at run time, minutes after publish — contradicting the cooldown posture
           # the scaffold's dependabot.yml.template documents. Dependabot bumps these.
