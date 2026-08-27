@@ -22,6 +22,14 @@ versioning follows [SemVer](https://semver.org/).
   `check_paired_artifacts`, shared by both callers so the wording can't
   drift between them. `install.sh`'s own reporting is advisory only and
   never changes its exit status.
+- **`self-lint.yml` runs a real eslint pass over the shipped
+  `eslint.config.js.template` (#83).** The repo lints shell, workflows,
+  Python, and its installed docs, but never executed the eslint config it
+  ships; a rule violation once sat in the template unnoticed for months.
+  The self-lint workflow now installs the template's documented peer set
+  (version-pinned) and lints both a sample file and the config file itself,
+  so a template that breaks its own rules fails CI here instead of in a
+  consumer's repo.
 
 ### Changed
 
@@ -57,6 +65,35 @@ versioning follows [SemVer](https://semver.org/).
   `if [ -f "$req" ]; then pip install -r "$req"; fi`, verified by running the
   extracted step body under `bash -e` with pyproject-only, requirements.txt-
   only, and no fixtures at all: all three now exit 0.
+- **Every tracked markdown file must pass the shipped prettier config
+  (#82).** The self-lint gate previously covered only the docs installed
+  into consumer projects; README.md, CHANGELOG.md, RECOMMENDATIONS.md and
+  four more tracked files failed the config the scaffold itself ships. All
+  tracked markdown is now formatted, and the gate covers the whole set
+  instead of the installed subset.
+
+### Fixed
+
+- **`install.sh` no longer silently overwrites a customized `lint.yml`
+  (#105).** A re-run used to back up and refresh a drifted
+  `.github/workflows/lint.yml`, discarding consumer CI setup (measured in a
+  real downstream repo: 23 deletions, 0 insertions, reported as a bare
+  `updated:` line). The workflow file is now drift-preserving like the
+  pattern files: kept in place with a `note (drift):` line, and replaced
+  (with backup) only under `--force`.
+- **The six optional pre-commit lint checks announce their skips (#105).**
+  ruff, eslint, prettier, tsc, `php -l` and phpcs used to skip with no
+  output at all when their tool was off `PATH`, so a green hook run was not
+  evidence that lint ran. Each check now prints a one-line note to stderr
+  when staged files matched but the tool was unavailable; exit codes are
+  unchanged, so a missing optional tool still never blocks a commit.
+- **The eslint-template syntax check in `tests/cases/17` can no longer skip
+  invisibly in CI (#85).** When `GITHUB_ACTIONS` is set and node is absent,
+  the case now fails loudly instead of printing a local-style skip line
+  that is indistinguishable from a pass in the final tally.
+- **`RELEASING.md` states the required release commit message (#92).** The
+  prep commit must be `chore(release): vX.Y.Z`; the historical bare
+  `release:` type is rejected by the shipped commit-msg hook.
 
 ## [v0.12.0] — 2026-08-21
 
