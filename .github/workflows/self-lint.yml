@@ -98,11 +98,16 @@ jobs:
         # from "docs that actually exist" the way a hand-maintained file list can.
         #
         # Checked under each file's real relative path in a temp dir (not the
-        # working tree): prettier picks its parser from the extension, so
-        # AGENTS.md.template is not seen as markdown at all and would silently
-        # "pass" unchecked in place, hence the explicit rename below. Copies
-        # preserve directory structure (mkdir -p per file) rather than flattening
-        # to basenames, since two tracked files share a basename
+        # working tree): prettier picks its parser from the extension, so a
+        # `.template` file is not seen as markdown at all and would silently
+        # "pass" unchecked in place. The `git ls-files '*.md'` glob above also
+        # cannot see it, for the same reason. Both gaps apply to
+        # AGENTS.md.template and to githooks/local.d/README.md.template
+        # (#107), hence the explicit rename-copies below, each landing at the
+        # same relative path install.sh writes so directory-relative links in
+        # the prose resolve the same way they would in an installed tree.
+        # Copies preserve directory structure (mkdir -p per file) rather than
+        # flattening to basenames, since two tracked files share a basename
         # (forbidden-patterns/README.md and the root README.md); a flat copy
         # would silently clobber one with the other and under-check it. A bare
         # directory argument to `prettier --check` walks it recursively, so no
@@ -120,6 +125,8 @@ jobs:
             cp "$f" "$docs/$f"
           done
           cp AGENTS.md.template "$docs/AGENTS.md"
+          mkdir -p "$docs/.githooks/local.d"
+          cp githooks/local.d/README.md.template "$docs/.githooks/local.d/README.md"
           if ! npx --no-install prettier --check "$docs"; then
             echo "::error::A tracked markdown file fails the .prettierrc.json this"
             echo "scaffold ships. A consumer installing coding-rules.md/"
