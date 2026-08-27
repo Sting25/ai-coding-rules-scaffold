@@ -9,8 +9,9 @@ or `.github/workflows/lint.yml` to add a call site. `.githooks/pre-commit` is
 scaffold-owned, so a re-run of `install.sh` refreshes it to the shipped
 version: a call site added there disappears while the check script stays on
 disk, and the check silently becomes decoration (issue #72).
-`.github/workflows/lint.yml` is scaffold-owned too, but drift-preserving as of
-#105: a customized file is kept with a note, and only `install.sh --force`
+The installed workflow files (`lint.yml`, `tests.yml`, `coverage.yml`,
+`gitleaks.yml`) are scaffold-owned too, but drift-preserving as of #105 and
+#110: a customized file is kept with a note, and only `install.sh --force`
 replaces it. Put local checks here instead of either, since this directory is
 never written by an upgrade, in the hook or in CI.
 

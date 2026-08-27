@@ -71,6 +71,23 @@ versioning follows [SemVer](https://semver.org/).
   four more tracked files failed the config the scaffold itself ships. All
   tracked markdown is now formatted, and the gate covers the whole set
   instead of the installed subset.
+- **All installer-managed CI workflows are now drift-preserving (#110).**
+  `tests.yml`, `coverage.yml` and `gitleaks.yml` follow the policy #105 set
+  for `lint.yml`: a customized file is kept with a `note (drift):` line and
+  replaced (with backup) only under `--force`. The old pre-existing-version
+  warning for `tests.yml`/`coverage.yml` was folded into the drift note
+  rather than printed alongside it. The case-21 drift tests were
+  generalized to cover all four workflow files.
+- **self-lint installs its npm tooling from committed lockfiles (#108).**
+  The prettier and eslint gates now `npm ci` against
+  `.github/self-lint/{prettier,eslint}/package-lock.json` instead of ad-hoc
+  `npm install pkg@version` steps, so zizmor 1.26+'s `adhoc-packages` audit
+  passes ahead of the next pin bump. The lockfile directory is excluded
+  from the npm package.
+- **The cases/17 eslint syntax check is a standalone, mutation-tested
+  script (#111).** Extracted to `tests/lib/eslint-syntax-check.sh` and
+  exercised under a curated node-free PATH, proving the CI-fails and
+  local-skips branches instead of trusting them.
 
 ### Fixed
 
@@ -94,6 +111,16 @@ versioning follows [SemVer](https://semver.org/).
 - **`RELEASING.md` states the required release commit message (#92).** The
   prep commit must be `chore(release): vX.Y.Z`; the historical bare
   `release:` type is rejected by the shipped commit-msg hook.
+- **`local.d/README.md.template` is formatted, gated, and truthful
+  (#107).** The shipped doc failed the prettier config, escaped the
+  markdown gate (the `*.md` glob misses `.template` files), and still
+  claimed CI workflows are refreshed on re-run. It now passes the config,
+  is copied into the gate like `AGENTS.md.template`, and describes the
+  drift-preserving policy.
+- **The consumer PEERS list includes `@eslint/compat` (#109).** The shipped
+  eslint config imports it, but the `npm i -D` hint in `lint.yml.template`
+  (and its copy in `install-verify.sh`) omitted it, leaving consumers one
+  package short after following the error message.
 
 ## [v0.12.0] — 2026-08-21
 
