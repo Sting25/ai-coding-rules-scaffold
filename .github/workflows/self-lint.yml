@@ -103,15 +103,22 @@ jobs:
         # "pass" unchecked in place. The `git ls-files '*.md'` glob above also
         # cannot see it, for the same reason. Both gaps apply to
         # AGENTS.md.template and to githooks/local.d/README.md.template
-        # (#107), hence the explicit rename-copies below, each landing at the
-        # same relative path install.sh writes so directory-relative links in
-        # the prose resolve the same way they would in an installed tree.
-        # Copies preserve directory structure (mkdir -p per file) rather than
-        # flattening to basenames, since two tracked files share a basename
-        # (forbidden-patterns/README.md and the root README.md); a flat copy
-        # would silently clobber one with the other and under-check it. A bare
-        # directory argument to `prettier --check` walks it recursively, so no
-        # glob is needed to reach the nested copy.
+        # (#107), hence the explicit rename-copies below. AGENTS.md.template
+        # lands at the same relative path install.sh writes (repo root).
+        # githooks/local.d/README.md.template does NOT: it lands at
+        # `githooks-local.d/README.md`, a non-hidden name, not
+        # `.githooks/local.d/README.md`. Prettier's directory walk under a
+        # bare directory argument SKIPS dot-directories, so a copy nested
+        # under `.githooks/` would sit in the checked tree yet never actually
+        # be inspected, a silent no-op gate (confirmed: a mutated copy under
+        # a dot-directory stayed green while the same mutation under a
+        # visible directory was flagged). Copies preserve directory structure
+        # (mkdir -p per file) rather than flattening to basenames, since two
+        # tracked files share a basename (forbidden-patterns/README.md and
+        # the root README.md); a flat copy would silently clobber one with
+        # the other and under-check it. A bare directory argument to
+        # `prettier --check` walks it recursively, so no glob is needed to
+        # reach a nested, non-hidden copy.
         run: |
           # Pinned, like the repo's other CI tool installs (ruff, zizmor,
           # actionlint), and lockfile-driven (#108): .github/self-lint/prettier/
@@ -134,8 +141,8 @@ jobs:
             cp "$f" "$docs/$f"
           done
           cp AGENTS.md.template "$docs/AGENTS.md"
-          mkdir -p "$docs/.githooks/local.d"
-          cp githooks/local.d/README.md.template "$docs/.githooks/local.d/README.md"
+          mkdir -p "$docs/githooks-local.d"
+          cp githooks/local.d/README.md.template "$docs/githooks-local.d/README.md"
           if ! "$PRETTIER" --check "$docs"; then
             echo "::error::A tracked markdown file fails the .prettierrc.json this"
             echo "scaffold ships. A consumer installing coding-rules.md/"
