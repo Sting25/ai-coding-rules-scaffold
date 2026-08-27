@@ -132,9 +132,10 @@ fi
 # --- file ownership & the install/upgrade model -----------------------------
 # The install/upgrade policy helpers — cp_scaffold (scaffold-owned CODE, refreshed
 # on re-run), cp_safe (USER-OWNED, never auto-replaced), cp_pattern
-# (.forbidden-patterns/*.txt, notify-on-drift), and the shared _cp_replace /
-# _backup mechanism (where the A7 symlink defenses live) plus mkx — are defined in
-# install-lib.sh. They're SOURCED (not exec'd) so they run in this shell with its
+# (.forbidden-patterns/*.txt, notify-on-drift), cp_scaffold_preserve
+# (scaffold-owned CI workflows a project hand-edits, notify-on-drift like
+# cp_pattern), and the shared _cp_replace / _backup mechanism (where the A7
+# symlink defenses live) plus mkx — are defined in install-lib.sh. They're SOURCED (not exec'd) so they run in this shell with its
 # globals (FORCE) and `set -euo pipefail`. Extracted to keep this script under the
 # scaffold's own 500-line module-size cap; see install-lib.sh for the full policy
 # rationale.
@@ -223,15 +224,20 @@ for check in check-size check-patterns check-filenames check-secrets check-hygie
   cp_scaffold "$SCAFFOLD_DIR/githooks/lib/${check}.template" ".githooks/lib/${check}"
   mkx ".githooks/lib/${check}"
 done
-cp_scaffold "$SCAFFOLD_DIR/.github/workflows/lint.yml.template" ".github/workflows/lint.yml"
+# lint.yml is the CI half of the local check contract, and a project commonly
+# hand-edits it (adding setup steps for a local.d check) — cp_scaffold_preserve
+# so a plain re-run keeps that edit and notifies on drift instead of silently
+# discarding it (#105); --force still replaces it, backed up first.
+cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/lint.yml.template" ".github/workflows/lint.yml"
 # .githooks/local.d/ — the project-local check extension point (#72). The
 # DIRECTORY is user-owned territory: nothing here ever writes into it beyond
 # this one README, and the README goes through cp_safe so even --force backs it
 # up rather than discarding an edit. It is what makes the directory exist in a
 # fresh install and, being tracked, survive a clone; it is not executable, so
 # the hook's `-x` guard skips it. This is the whole point of the fix — pre-commit
-# and lint.yml above are cp_scaffold (refreshed on upgrade), so a call site added
-# to either is reset, while anything in local.d/ is left strictly alone.
+# above is cp_scaffold (refreshed on upgrade, so a call site added there is
+# reset), lint.yml above is cp_scaffold_preserve (#105: drift is kept, not
+# reset), and anything in local.d/ is left strictly alone either way.
 cp_safe "$SCAFFOLD_DIR/githooks/local.d/README.md.template" ".githooks/local.d/README.md"
 # dependabot.yml is user-owned config (teams add their own ecosystems) → cp_safe.
 cp_safe "$SCAFFOLD_DIR/.github/dependabot.yml.template" ".github/dependabot.yml"
