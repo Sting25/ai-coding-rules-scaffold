@@ -125,20 +125,44 @@ fi
 #     shipped template, and test.yml has no setup-node step, so it relies on
 #     the runner image happening to ship node. If that ever stops being true,
 #     the check must go red instead of quietly stop running.
-if command -v node >/dev/null 2>&1; then
-  ESM=$(mktemp -d)/eslint.config.mjs
-  mkdir -p "$(dirname "$ESM")"
-  cp "$ESLINT_TPL" "$ESM"
-  if node --check "$ESM" >"$HOOK_OUT" 2>&1; then
-    echo "  ✓ eslint.config.js.template is syntactically valid ESM"; PASS=$((PASS + 1))
-  else
-    echo "  ✗ eslint.config.js.template has a syntax error"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
-  fi
-  rm -rf "$(dirname "$ESM")"
-elif [ -n "${GITHUB_ACTIONS:-}" ]; then
-  echo "  ✗ node not installed: eslint config syntax check cannot run in CI (#85)"; FAIL=$((FAIL + 1))
+#
+#     Extracted to tests/lib/eslint-syntax-check.sh (#111): it is invoked here
+#     as a subprocess so the node-absent branches below can be mutation-tested
+#     under a curated PATH, the same way check-gitleaks is tested in cases/08:
+#     an inline block sourced into this whole file's shell could not be
+#     exercised that cheaply. The PASS/FAIL tally still lives here, driven by
+#     the subprocess's exit code; the status line itself is the script's output.
+ESC="$SCAFFOLD_DIR/tests/lib/eslint-syntax-check.sh"
+if bash "$ESC" "$ESLINT_TPL" >"$HOOK_OUT" 2>&1; then
+  cat "$HOOK_OUT"; PASS=$((PASS + 1))
 else
-  echo "  - skipped eslint config syntax check (node not installed)"
+  cat "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
+
+# (T) node-absent branches of eslint-syntax-check.sh, proven under a curated
+#     PATH with no node on it (mirrors mk_glbin in cases/08's check-gitleaks
+#     coverage). GITHUB_ACTIONS is explicitly overridden (not just set/unset)
+#     on each invocation so this stays correct whether or not the suite itself
+#     is currently running inside real CI.
+NONODE=$(mktemp -d); ln -sf "$(command -v bash)" "$NONODE/bash"
+# node absent + GITHUB_ACTIONS set must be a hard FAILURE (#85), not a skip.
+if PATH="$NONODE" GITHUB_ACTIONS=true bash "$ESC" "$ESLINT_TPL" >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ eslint-syntax-check: allowed a missing node to pass under GITHUB_ACTIONS (#85)"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "cannot run in CI (#85)" "$HOOK_OUT"; then
+  echo "  ✓ eslint-syntax-check fails when node is absent under GITHUB_ACTIONS (#85)"; PASS=$((PASS + 1))
+else
+  echo "  ✗ eslint-syntax-check: failed without the expected CI message"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+# node absent, not CI, must be a clean skip (exit 0), not a failure.
+if PATH="$NONODE" GITHUB_ACTIONS="" bash "$ESC" "$ESLINT_TPL" >"$HOOK_OUT" 2>&1 \
+   && grep -qF "skipped eslint config syntax check" "$HOOK_OUT"; then
+  echo "  ✓ eslint-syntax-check skips cleanly when node is absent locally"; PASS=$((PASS + 1))
+else
+  echo "  ✗ eslint-syntax-check: expected a clean local skip when node is absent"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$NONODE"
 
 reset_repo
