@@ -114,9 +114,18 @@ jobs:
         # glob is needed to reach the nested copy.
         run: |
           # Pinned, like the repo's other CI tool installs (ruff, zizmor,
-          # actionlint): an unpinned install runs whatever published minutes ago.
-          # --ignore-scripts: no lifecycle scripts from the dependency tree.
-          npm install --no-audit --no-fund --ignore-scripts prettier@3.9.6
+          # actionlint), and lockfile-driven (#108): .github/self-lint/prettier/
+          # holds a committed package.json + package-lock.json pinning
+          # prettier@3.9.6, installed with `npm ci` instead of `npm install
+          # prettier@<version>`. zizmor's adhoc-packages audit (added in
+          # zizmor 1.26) flags an ad-hoc `npm install <pkg>@<version>` run
+          # step because the sub-dependencies it pulls are still unpinned
+          # even when the top-level package is; a lockfile-driven `npm ci`
+          # install pins the whole tree and reads as the audit's own
+          # documented remediation. --ignore-scripts: no lifecycle scripts
+          # from the dependency tree.
+          npm ci --prefix .github/self-lint/prettier --no-audit --no-fund --ignore-scripts
+          PRETTIER=.github/self-lint/prettier/node_modules/.bin/prettier
           docs="$RUNNER_TEMP/docs"
           mkdir -p "$docs"
           cp .prettierrc.json.template "$docs/.prettierrc.json"
@@ -127,7 +136,7 @@ jobs:
           cp AGENTS.md.template "$docs/AGENTS.md"
           mkdir -p "$docs/.githooks/local.d"
           cp githooks/local.d/README.md.template "$docs/.githooks/local.d/README.md"
-          if ! npx --no-install prettier --check "$docs"; then
+          if ! "$PRETTIER" --check "$docs"; then
             echo "::error::A tracked markdown file fails the .prettierrc.json this"
             echo "scaffold ships. A consumer installing coding-rules.md/"
             echo "operational-rules.md would get the same red format check on"
@@ -152,14 +161,21 @@ jobs:
         # template unnoticed until someone ran eslint on it by hand (#76).
         #
         # Peers come from the template's own header comment (its documented
-        # install command), pinned like the prettier step above: eslint,
+        # install command), pinned like the prettier step above and, as of
+        # #108, installed the same lockfile-driven way:
+        # .github/self-lint/eslint/package.json + package-lock.json pin eslint,
         # @eslint/js, @eslint/compat (needed for includeIgnoreFile),
         # typescript-eslint, eslint-plugin-import-x, eslint-plugin-unused-imports,
         # plus typescript itself, since strictTypeChecked needs a real
         # tsconfig.json to resolve type information. typescript is pinned below
         # its own "latest" tag on purpose: typescript-eslint 8.68.0 declares a
         # peer range of ">=4.8.4 <6.1.0", so 6.0.3 is the newest release that
-        # range still allows, not the 7.x line.
+        # range still allows, not the 7.x line. The lockfile is copied into the
+        # scratch work dir and installed there with `npm ci`, not installed in
+        # place and referenced remotely: eslint's flat config resolves plugin
+        # imports (`@eslint/js`, `typescript-eslint`, ...) via Node module
+        # resolution starting from eslint.config.mjs's own directory, so
+        # node_modules has to sit next to it.
         #
         # Copied to eslint.config.mjs, not eslint.config.js: the template uses
         # `import` and `import.meta.dirname`, which only parses unconditionally
@@ -180,6 +196,7 @@ jobs:
           work="$RUNNER_TEMP/eslint-template-check"
           mkdir -p "$work"
           cp eslint.config.js.template "$work/eslint.config.mjs"
+          cp .github/self-lint/eslint/package.json .github/self-lint/eslint/package-lock.json "$work/"
 
           # Minimal project so strictTypeChecked's projectService can resolve
           # real type information; without a tsconfig.json the type-aware
@@ -203,9 +220,7 @@ jobs:
             '}' > "$work/sample.ts"
 
           cd "$work"
-          npm install --no-audit --no-fund --ignore-scripts \
-            eslint@10.9.1 @eslint/js@10.0.1 @eslint/compat@2.1.0 typescript-eslint@8.68.0 \
-            eslint-plugin-import-x@4.17.1 eslint-plugin-unused-imports@4.4.1 typescript@6.0.3
+          npm ci --no-audit --no-fund --ignore-scripts
 
           echo "eslint: linting the shipped template (as eslint.config.mjs) plus a sample file"
           npx --no-install eslint -c eslint.config.mjs sample.ts eslint.config.mjs
