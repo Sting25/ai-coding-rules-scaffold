@@ -9,7 +9,7 @@ Agent-agnostic: works with Cursor, Claude Code, Copilot, Cline, Aider, or no AI 
 
 ## What it does
 
-Drop-in guardrails that **block bad code from being committed or merged**. One `./install.sh` wires up a local pre-commit hook *and* a matching CI check — both running the same scripts, so nothing slips through and `--no-verify` can't quietly become the team habit.
+Drop-in guardrails that **block bad code from being committed or merged**. One `./install.sh` wires up a local pre-commit hook _and_ a matching CI check — both running the same scripts, so nothing slips through and `--no-verify` can't quietly become the team habit.
 
 **What it stops, out of the box:**
 
@@ -38,13 +38,13 @@ That setup hits four compounding failure modes that ordinary linting alone doesn
 
 1. **AI writes inconsistent or conflicting patterns across sessions.** A teammate prompts the agent Monday and it picks one convention; on Wednesday, a different teammate prompts the agent on the same area and it picks a different one. Without machine-checkable rules, the codebase grows three flavors of the same thing — different error-handling shapes, different import styles, different naming. Tools that fail the build on rule violations are the only thing that survives across sessions.
 
-2. **Files grow unboundedly.** Agents add to existing files rather than extract new modules — every request becomes a new function in the same file. Past a certain size the agent can no longer fit the file in context, and the bugs that follow are subtle (the agent can't see the whole file either, so it stops noticing the duplication and inconsistency *it* introduced). The 500-line cap is calibrated well below that threshold so extraction stays cheap.
+2. **Files grow unboundedly.** Agents add to existing files rather than extract new modules — every request becomes a new function in the same file. Past a certain size the agent can no longer fit the file in context, and the bugs that follow are subtle (the agent can't see the whole file either, so it stops noticing the duplication and inconsistency _it_ introduced). The 500-line cap is calibrated well below that threshold so extraction stays cheap.
 
 3. **Debug statements ship silently.** `print()`, `console.log`, `breakpoint()`, `pdb.set_trace()` — agents add them while diagnosing a bug and forget to remove them on the way out. They survive code review because they look like intentional logging at first glance. Commit-time rejection is the only layer that catches them every time.
 
 4. **Forbidden patterns recur.** Agents reach for old import paths, deprecated service names, and outdated idioms because their training data still has them. A per-stack regex deny-list (`backend.txt`, `frontend.txt`, `secrets.txt`, `shell.txt`) is the only durable fix — the agent can't be talked out of recurrent muscle memory, but the build can fail on it.
 
-This scaffold ships the **enforcement layer** that addresses all four directly. Two layers are always-on: commit-time (the pre-commit hook) and merge-time (the CI mirror), both running the same `lib/check-*` scripts. A third opt-in layer — agent-runtime hooks that block bad patterns *before* they're written — ships via `install.sh --claude` (Claude Code) and `install.sh --cursor` (Cursor); see [Opt-in layers](./TECHNICAL.md#opt-in-layers) in TECHNICAL.md and [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) for the design space and tradeoffs.
+This scaffold ships the **enforcement layer** that addresses all four directly. Two layers are always-on: commit-time (the pre-commit hook) and merge-time (the CI mirror), both running the same `lib/check-*` scripts. A third opt-in layer — agent-runtime hooks that block bad patterns _before_ they're written — ships via `install.sh --claude` (Claude Code) and `install.sh --cursor` (Cursor); see [Opt-in layers](./TECHNICAL.md#opt-in-layers) in TECHNICAL.md and [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) for the design space and tradeoffs.
 
 What the scaffold doesn't try to solve: parallel-session collisions, context-window discipline across long projects, and spec-first workflows. Those belong to git workflow (`git worktree` per session), nested `CLAUDE.md` files, and project-specific spec docs respectively. Recommended patterns for each are documented in `AGENTS.md` and `RECOMMENDATIONS.md`.
 
@@ -116,13 +116,13 @@ Tests run in CI by default: a plain install also drops `.github/workflows/tests.
 
 **Re-running is the upgrade path.** Running `install.sh` again refreshes
 scaffold-owned code — the pre-commit hook, the `.githooks/lib/*` scanners, the
-`commit-msg` hook, and the `lint.yml` / `tests.yml` / coverage workflows, whenever it differs
+`commit-msg` hook, and the `tests.yml` / coverage workflows, whenever it differs
 from the shipped version, with no `--force` needed, so pulling a new tag and
 re-running delivers security fixes. Your own configs (`ruff.toml`,
 `eslint.config.js`, `.scaffold.toml`, the rules docs, …) are left untouched, and
-`.forbidden-patterns/*.txt` files you've edited are kept with a drift notice
-rather than overwritten (use `--force` to take the shipped version, backed up to
-`.scaffold-bak`).
+`.forbidden-patterns/*.txt` files and `.github/workflows/lint.yml` that you've
+edited are kept with a drift notice rather than overwritten (use `--force` to
+take the shipped version, backed up to `.scaffold-bak`).
 
 Language pattern files are auto-installed when their manifest is detected
 (`go.mod`, `Cargo.toml`, `composer.json`, `pom.xml`/`build.gradle`, `Gemfile`,

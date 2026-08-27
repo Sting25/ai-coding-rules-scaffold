@@ -7,6 +7,7 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+
 - **`scaffold-doctor.sh` detects half-installed paired artifacts (#96).** A
   new "paired artifacts" section, and a matching end-of-run check in
   `install.sh` itself, flag when only one half of a two-part guardrail is on
@@ -21,8 +22,17 @@ versioning follows [SemVer](https://semver.org/).
   `check_paired_artifacts`, shared by both callers so the wording can't
   drift between them. `install.sh`'s own reporting is advisory only and
   never changes its exit status.
+- **`self-lint.yml` runs a real eslint pass over the shipped
+  `eslint.config.js.template` (#83).** The repo lints shell, workflows,
+  Python, and its installed docs, but never executed the eslint config it
+  ships; a rule violation once sat in the template unnoticed for months.
+  The self-lint workflow now installs the template's documented peer set
+  (version-pinned) and lints both a sample file and the config file itself,
+  so a template that breaks its own rules fails CI here instead of in a
+  consumer's repo.
 
 ### Changed
+
 - **Test execution in CI is default-on (#97).** A plain `install.sh` run now
   installs `.github/workflows/tests.yml` (pytest/vitest, no coverage
   threshold) instead of leaving CI lint-only with zero tests ever executing.
@@ -55,11 +65,40 @@ versioning follows [SemVer](https://semver.org/).
   `if [ -f "$req" ]; then pip install -r "$req"; fi`, verified by running the
   extracted step body under `bash -e` with pyproject-only, requirements.txt-
   only, and no fixtures at all: all three now exit 0.
+- **Every tracked markdown file must pass the shipped prettier config
+  (#82).** The self-lint gate previously covered only the docs installed
+  into consumer projects; README.md, CHANGELOG.md, RECOMMENDATIONS.md and
+  four more tracked files failed the config the scaffold itself ships. All
+  tracked markdown is now formatted, and the gate covers the whole set
+  instead of the installed subset.
+
+### Fixed
+
+- **`install.sh` no longer silently overwrites a customized `lint.yml`
+  (#105).** A re-run used to back up and refresh a drifted
+  `.github/workflows/lint.yml`, discarding consumer CI setup (measured in a
+  real downstream repo: 23 deletions, 0 insertions, reported as a bare
+  `updated:` line). The workflow file is now drift-preserving like the
+  pattern files: kept in place with a `note (drift):` line, and replaced
+  (with backup) only under `--force`.
+- **The six optional pre-commit lint checks announce their skips (#105).**
+  ruff, eslint, prettier, tsc, `php -l` and phpcs used to skip with no
+  output at all when their tool was off `PATH`, so a green hook run was not
+  evidence that lint ran. Each check now prints a one-line note to stderr
+  when staged files matched but the tool was unavailable; exit codes are
+  unchanged, so a missing optional tool still never blocks a commit.
+- **The eslint-template syntax check in `tests/cases/17` can no longer skip
+  invisibly in CI (#85).** When `GITHUB_ACTIONS` is set and node is absent,
+  the case now fails loudly instead of printing a local-style skip line
+  that is indistinguishable from a pass in the final tally.
+- **`RELEASING.md` states the required release commit message (#92).** The
+  prep commit must be `chore(release): vX.Y.Z`; the historical bare
+  `release:` type is rejected by the shipped commit-msg hook.
 
 ## [v0.12.0] — 2026-08-21
 
-A release about the difference between a guardrail being *installed* and a
-guardrail being *armed*. `scaffold-doctor` reports, for every check the
+A release about the difference between a guardrail being _installed_ and a
+guardrail being _armed_. `scaffold-doctor` reports, for every check the
 scaffold ships, whether the mechanism that makes it actually execute is in
 place — `core.hooksPath` wiring, executable bits, pattern data, opt-in
 surfaces and their external tools. Mutation-testing the doctor immediately
@@ -69,9 +108,10 @@ step to a sourced module, having reached the 500-line cap it enforces on
 everyone else.
 
 ### Added
+
 - **`scaffold-doctor.sh` — checks whether an installed scaffold is armed, not
-  just present.** `install.sh` reports what it *wrote*; that's a different
-  question from whether the guardrails it wrote actually *run*, and the gap
+  just present.** `install.sh` reports what it _wrote_; that's a different
+  question from whether the guardrails it wrote actually _run_, and the gap
   between the two is where this scaffold's worst bugs have lived: issue #76
   was a `grep -r` that silently scanned one file instead of a tree, and issue
   #72 was a check whose call site got reset on upgrade while the check script
@@ -99,7 +139,7 @@ everyone else.
   Exit status: `0` with no gaps, `1` with at least one, `2` on usage error or
   outside a git repository. Run it directly (`./scaffold-doctor.sh`, from
   anywhere inside the working tree) or via `npx ai-coding-rules-scaffold
-  doctor`; `--quiet` prints only gaps plus the summary line, for CI or
+doctor`; `--quiet` prints only gaps plus the summary line, for CI or
   pre-flight use.
 
 - **Shell-only install mode (`install.sh --shell`) ([#65]).** For projects with
@@ -147,6 +187,7 @@ everyone else.
   `.github/workflows/lint.yml`, both scaffold-owned and refreshed on upgrade.
 
 ### Changed
+
 - **`install.sh`'s post-install toolchain check moved to `install-verify.sh`
   ([#84]).** `install.sh` had reached 497 lines against the scaffold's own
   500-line module-size cap — a cap it enforces on every project it installs
@@ -178,8 +219,8 @@ everyone else.
   Applied to itself immediately: the four items this session deferred are filed
   as [#82], [#83], [#84] and [#85] rather than left in PR bodies.
 
-- **The pre-commit hook distinguishes *untracking* a pattern file from
-  *deleting* it ([#65]).** A staged `.forbidden-patterns/*.txt` deletion used
+- **The pre-commit hook distinguishes _untracking_ a pattern file from
+  _deleting_ it ([#65]).** A staged `.forbidden-patterns/*.txt` deletion used
   to hard-fail unconditionally, but `git rm --cached` (untrack, keep the file
   on disk, ignore it via `.git/info/exclude`) is a legitimate local-only-tooling
   move. Every check reads its pattern config from the **working tree** — never
@@ -193,16 +234,17 @@ everyone else.
   `check-secrets --ci` fails closed. The warning says so explicitly.
 
   Four cases cover it, mutation-proven in both directions — including one that
-  asserts the *premise* rather than the behaviour: untracking the config while
+  asserts the _premise_ rather than the behaviour: untracking the config while
   staging a real secret must still be caught, so the suite turns red if a check
   ever starts reading pattern config from the index.
 
 ### Fixed
+
 - **The secret scanner now catches a hardcoded `AWS_SECRET_ACCESS_KEY`
   ([#87]).** The generic hardcoded-credential rule required its keyword to sit
   immediately before the `=` or `:`, so `secret` matched and then wanted the
   separator but found `_ACCESS_KEY`. The AKIA rule above it covers the AWS
-  access key *ID*; nothing covered the paired *secret*, which is the half that
+  access key _ID_; nothing covered the paired _secret_, which is the half that
   actually grants access — and `AWS_SECRET_ACCESS_KEY` is its canonical
   spelling in every AWS SDK and CI config.
 
@@ -215,7 +257,7 @@ everyone else.
   POSIX leftmost-longest `grep -E`.
 
   Both directions are tested: the assignment is rejected, and `secret_name =
-  "billing-prod-key-name"` — an identifier that merely *contains* "secret",
+"billing-prod-key-name"` — an identifier that merely _contains_ "secret",
   with a value long enough to clear the 16-char floor — still passes.
 
 - **Whole-tree checks no longer break on gitignored content ([#76]).**
@@ -243,7 +285,7 @@ everyone else.
   accident — `grep -r` does not recurse for a file argument, only a directory —
   so in a monorepo (`backend/pyproject.toml`) it saw nothing, wrote a root
   `pytest.ini` whose `testpaths = tests` matched nothing, and pytest fell back to
-  collecting from rootdir: inert *and* shadowing the real config (losing e.g.
+  collecting from rootdir: inert _and_ shadowing the real config (losing e.g.
   `asyncio_mode`). Installing without a `./tests` now warns that collection goes
   whole-tree, and the template ships `norecursedirs` — re-listing pytest's
   defaults, since setting the key replaces rather than extends them, and
@@ -389,9 +431,10 @@ affected every scanner on macOS/BSD. The test suite grows 199 → 227, every new
 case mutation-proven.
 
 ### Security
+
 - **`install.sh` no longer writes through a symlinked parent directory (high).**
-  The `cp_*` symlink defenses dropped a symlink at the destination *leaf* file
-  but `mkdir -p "$(dirname …)"` still followed a symlinked *parent* — a repo
+  The `cp_*` symlink defenses dropped a symlink at the destination _leaf_ file
+  but `mkdir -p "$(dirname …)"` still followed a symlinked _parent_ — a repo
   shipping `.githooks -> ~/.ssh` (or any scaffold dir as a symlink) made a
   routine `install.sh` write every scanner/hook/workflow through the link to an
   out-of-repo target, silently overwriting files there with no backup, while the
@@ -401,7 +444,7 @@ case mutation-proven.
   had this (B4) but the user-facing installer never received it. Regression in
   `tests/cases/09` (dir-symlink plant driving `install.sh`).
 - **Two one-commit ways to neuter the secret scanner are closed (high).** The
-  orchestrator's deletion guard refused only a full *removal* of a
+  orchestrator's deletion guard refused only a full _removal_ of a
   `.forbidden-patterns/*.txt`. Gutting `secrets.txt` to comments-only (present but
   zero patterns) made `check-secrets` treat it as "nothing to scan" and exit 0 at
   both the hook and CI; and `git mv secrets.txt secrets.txt.disabled` was reported
@@ -411,11 +454,11 @@ case mutation-proven.
   deletion. Regressions in `tests/cases/08`.
 - **NUL-injection bypass across all scanners (macOS/BSD).** The shared awk
   line-length cap truncates a record at an embedded NUL on a C-string awk, so
-  content *after* a NUL byte was silently lost — a secret placed after a NUL
+  content _after_ a NUL byte was silently lost — a secret placed after a NUL
   slipped `check-secrets` entirely, and a lone NUL prepended to an agent-read
   `.md` reclassified it as "binary" and dodged the hidden-Unicode (Trojan Source /
   Rules File Backdoor) scan. All four scan pipelines now strip NULs (`tr -d '\000'`)
-  before the cap, and the hidden-Unicode binary skip requires a binary *extension*
+  before the cap, and the hidden-Unicode binary skip requires a binary _extension_
   in addition to a NUL, so text/agent files are always scanned while images keep
   their false-positive exemption. Regressions in `tests/cases/03` and `06`.
 - **`check-patterns` fails closed on over-long lines.** A forbidden pattern on a
@@ -438,12 +481,13 @@ case mutation-proven.
 - **CI supply-chain hardening.** The PHP lint job (consumer template) now runs
   `composer install --no-scripts --no-plugins` (matching the frontend job's
   `--ignore-scripts`) and surfaces an install failure instead of swallowing it;
-  the maintainer `actionlint` install downloads the pinned release *asset* and
+  the maintainer `actionlint` install downloads the pinned release _asset_ and
   verifies its per-platform sha256 (OS/arch-aware) rather than trusting a mutable
   asset; and the CI linters (`ruff`, `pytest`/`pytest-cov`, `diff-cover`) are
   version-pinned to match the repo's own cooldown posture.
 
 ### Added
+
 - **`install.sh --gitleaks-ci`** installs the gitleaks CI workflow
   (`.github/workflows/gitleaks.yml`), symmetric with `--coverage-gate`. Previously
   `--gitleaks-hook` only pointed users at `gitleaks.yml.template`, which `npx`
@@ -456,12 +500,14 @@ case mutation-proven.
   `tests/cases/11` bundle guard now fails closed if either drops out.
 
 ### Changed
+
 - **`release.yml` documents the npm-publish gating options** (a protected
   `environment` with required reviewers and/or a tag-protection ruleset). Left
   opt-in — it needs out-of-band GitHub/npm configuration — so a fresh clone's
   tokenless release pipeline keeps working.
 
 ### Documented
+
 - README drift corrected: the "adopting on an existing codebase" section now
   states CI scopes size/pattern/hygiene to the diff (only secret/filename scans
   are whole-tree); agent-runtime hooks are described as a shipped opt-in layer
@@ -472,6 +518,7 @@ case mutation-proven.
   every staged blob regardless of extension.
 
 ### Tests
+
 - Coverage added for eight previously-unpinned guardrail branches: the
   `commit-msg` auto-generated-subject exemptions (`Revert`/`fixup!`/`squash!`/
   `Reapply`) and `feat!:` marker, the `check-size` `severity = "warn"` downgrade,
@@ -488,6 +535,7 @@ key/keystore files), native-Windows / Git-Bash `npm` install support, and a
 set of `install.sh` / `dev-setup.sh` robustness and parity fixes.
 
 ### Security
+
 - **`check-hygiene` fails closed on over-long lines (B2, high).** The A1
   fail-closed fix had only reached `check-secrets`/`check-patterns`; the
   conflict-marker and hidden-Unicode (Trojan Source / CVE-2021-42574 / Rules
@@ -544,7 +592,7 @@ set of `install.sh` / `dev-setup.sh` robustness and parity fixes.
 - **`scripts/dev-setup.sh` guards the `core.hooksPath` wiring like `install.sh`
   (B9, B10, low).** The wiring step ran `git config core.hooksPath .githooks`
   unconditionally, so (B9) run before `git init` it aborted with a raw `fatal:
-  not in a git directory` (exit 128) *after* every file was already rendered, and
+not in a git directory` (exit 128) _after_ every file was already rendered, and
   (B10) it silently clobbered a pre-existing `core.hooksPath` (e.g. a Husky /
   lefthook setup). It now mirrors `install.sh`: a `git rev-parse --git-dir` guard
   warns and continues (exit 0) outside a git repo, and an existing non-`.githooks`
@@ -554,7 +602,7 @@ set of `install.sh` / `dev-setup.sh` robustness and parity fixes.
 - **npm package no longer blocks native-Windows / Git-Bash installs (B8, low).**
   `package.json` carried `os: ["darwin","linux"]`, which npm enforces as a hard
   `EBADPLATFORM` — native Windows (Git Bash and PowerShell) reports `win32`, so the
-  install was refused outright, *before* `cli.js` could print its "run it from Git
+  install was refused outright, _before_ `cli.js` could print its "run it from Git
   Bash or WSL" hint, and in contradiction of the README's Windows support. The `os`
   field is dropped; the runtime already degrades gracefully when `bash` is absent.
   Guarded in `tests/cases/11` (a jq check that `package.json` has no `os` field, or
@@ -580,6 +628,7 @@ set of `install.sh` / `dev-setup.sh` robustness and parity fixes.
   against a crafted CHANGELOG fixture.
 
 ### Changed
+
 - **`install.sh` file-write helpers extracted to a sourced `install-lib.sh`.**
   Internal refactor, no behavior change: the `cp_scaffold`/`cp_safe`/`cp_pattern`
   policy functions and the shared `_cp_replace`/`_backup`/`mkx` mechanism (~130
@@ -597,6 +646,7 @@ installer upgrade path means existing installs pick up the fixes by just
 re-running `install.sh`.
 
 ### Security
+
 - **`check-secrets` fails closed on over-long lines (A1, critical).** A line
   longer than `MAX_LINE_LENGTH` (50k) is still dropped before the regex (the
   ReDoS guard), but the file is now reported and the commit rejected instead of
@@ -626,6 +676,7 @@ re-running `install.sh`.
   abort the install.
 
 ### Added
+
 - **`githooks/lib/ci-changed-files`** — shared helper that resolves the PR/push
   diff as a NUL-delimited list (failing open to the whole tree when there's no
   diff base). One testable implementation called by every diff-scoped `lint.yml`
@@ -641,6 +692,7 @@ re-running `install.sh`.
   dropped because "that's not what we're working on."
 
 ### Changed
+
 - **`lint.yml` CI scopes its quality gates to the PR/push diff.** The `python`
   (ruff), `frontend` (eslint/prettier), and the size / forbidden-pattern /
   hygiene `guardrails` checks now run only against changed files, so installing
@@ -663,6 +715,7 @@ re-running `install.sh`.
   the workflow runs on older / self-hosted runners too.
 
 ### Fixed
+
 - **`frontend` lint job emits an actionable error when the eslint config is
   present but its peer deps aren't installed**, naming the exact `npm i -D …` to
   run and to commit the lockfile, instead of a cryptic config-load crash.
@@ -675,6 +728,7 @@ re-running `install.sh`.
   behavior.
 
 ### Upgrade note
+
 - Existing installs should re-run `install.sh` to pick up the hardened scanners
   and the new `lint.yml` (which calls the new `ci-changed-files` helper).
   Re-running refreshes scaffold-owned code automatically; your configs and edited
@@ -689,6 +743,7 @@ back under the 500-line cap it enforces on everyone else. Also includes the
 `install.sh` clobber fix previously sitting unreleased.
 
 ### Added
+
 - **`self-lint.yml` — the scaffold now enforces its own guardrails on itself.**
   A maintainer-only CI job renders the `*.template` sources (the installable
   copies are gitignored in this repo) and runs
@@ -703,16 +758,18 @@ back under the 500-line cap it enforces on everyone else. Also includes the
   `dckr_pat_` tokens; frontend raw `innerHTML`/`outerHTML` assignment (XSS sink).
 
 ### Changed
+
 - **`tests/run.sh` split under the 500-line cap.** 1135 lines → a 54-line driver
-  + `tests/lib/common.sh` (shared helpers/bootstrap) + nine `tests/cases/*.sh`,
-  all under 500 and sourced into one shell so the pass/fail tally is preserved.
-  `shellcheck.yml` now lints the new files. Suite: 132 passed, 0 failed.
+  - `tests/lib/common.sh` (shared helpers/bootstrap) + nine `tests/cases/*.sh`,
+    all under 500 and sourced into one shell so the pass/fail tally is preserved.
+    `shellcheck.yml` now lints the new files. Suite: 132 passed, 0 failed.
 - **README leads with a scannable "What it does" section** (what it blocks + how
   it works, in bullets) before the prose rationale, and the `--force` docs now
   match behavior: each replaced file is backed up to `<file>.scaffold-bak` and
   `CLAUDE.md` / `AGENTS.md` are never overwritten.
 
 ### Fixed
+
 - **`uninstall.sh` no longer deletes `CLAUDE.md` content past a lone
   begin-marker.** `clean_claude_md` ran `/begin/,/end/d`, which deletes to
   end-of-file when the `:end` marker is absent (a user-edited block, or an
@@ -721,7 +778,7 @@ back under the 500-line cap it enforces on everyone else. Also includes the
   `awk` that also removes the spacer blank line (no round-trip residue).
   +regression tests.
 - **`install.sh` no longer clobbers user-owned `CLAUDE.md` / `AGENTS.md`.**
-  `CLAUDE.md` is now *merged* — a marked `@AGENTS.md` import block is appended
+  `CLAUDE.md` is now _merged_ — a marked `@AGENTS.md` import block is appended
   once if missing, and existing content is never replaced, even with `--force`
   (previously `--force` overwrote it wholesale with the pointer stub,
   destroying hand-written project memory). An existing `AGENTS.md` is likewise
@@ -733,17 +790,18 @@ back under the 500-line cap it enforces on everyone else. Also includes the
 
 ## [v0.7.0] — 2026-06-16
 
-Toolchain setup: the scaffold now ships the tool *configs* its enforcement
+Toolchain setup: the scaffold now ships the tool _configs_ its enforcement
 already assumed (strict `tsconfig.json`, Prettier, Vitest, pytest+coverage),
-detects and offers to install the *binaries* (safe auto-run only on an
+detects and offers to install the _binaries_ (safe auto-run only on an
 interactive TTY), enforces `prettier --check` in the hook + CI, and adds an
 opt-in CI patch-coverage gate that fails a PR when changed lines ship untested.
 
 ### Added
+
 - **Toolchain setup (configs auto-installed by stack + detect/offer).** The
   scaffold now ships the configs its enforcement already assumed but never
   provided: a strict `tsconfig.json` (the type-aware eslint rules + `tsc
-  --noEmit` depend on it), `.prettierrc.json` + `.prettierignore` (Prettier runs
+--noEmit` depend on it), `.prettierrc.json` + `.prettierignore` (Prettier runs
   separately from eslint — `strictTypeChecked` has no stylistic rules, so there
   is intentionally no `eslint-config-prettier`), `vitest.config.ts` (skipped when
   the project already uses Jest), and `pytest.ini` + `.coveragerc` for Python
@@ -764,7 +822,7 @@ opt-in CI patch-coverage gate that fails a PR when changed lines ship untested.
   `.github/workflows/coverage.yml`).** Fails a PR when changed lines ship
   untested (`diff-cover`, default 100% of changed lines, tunable via
   `DIFF_COVER_FAIL_UNDER`). Covers both stacks via Cobertura XML. It gates
-  *execution* of changed lines, not assertion quality — documented ceiling, with
+  _execution_ of changed lines, not assertion quality — documented ceiling, with
   mutation testing as the deferred follow-up in `RECOMMENDATIONS.md` ("Forcing
   tests"). Action SHAs match `lint.yml` so the pin-drift guard stays green.
 - **+10 tests** (119 total): config delivery by stack, Jest/pytest skip paths,
@@ -779,6 +837,7 @@ agent-runtime hooks (Claude + Cursor), 2025-26 supply-chain / secret-scanning
 hardening, and a delta round of modern-practice deny-patterns.
 
 ### Added
+
 - **`preserve-caught-error` (`eslint.config.js`, default-on).**
   `catch (e) { throw new Error('failed') }` destroys the original error
   cause/stack — a signature AI-agent pattern that makes production failures
@@ -789,7 +848,7 @@ hardening, and a delta round of modern-practice deny-patterns.
   evaluated alongside it and deliberately **not** added: it has open
   false-positives on TS `satisfies` and Vue SFCs, the scaffold's core audience.
 - **`git --no-verify` block (`shell.txt`, default-on).** Converts an existing
-  *prose-only* rule (`AGENTS.md` git discipline + `coding-rules.md` rule 9 + the
+  _prose-only_ rule (`AGENTS.md` git discipline + `coding-rules.md` rule 9 + the
   README "`--no-verify` doesn't become the escape hatch" invariant) into a
   machine check at the agent action boundary — `agent-precheck` already feeds
   `shell.txt` to Claude `PreToolUse` and Cursor `beforeShellExecution`. Stops an
@@ -819,7 +878,7 @@ hardening, and a delta round of modern-practice deny-patterns.
   all documented CI supply-chain entry points; the scaffold previously covered
   only `glpat-`). All prefixes verified against official provider docs. +4 fixtures.
 - **`datetime.utcfromtimestamp()` deny-pattern (`backend.txt`, default-on).**
-  CPython 3.12 deprecated `utcfromtimestamp()` in the *same* change as
+  CPython 3.12 deprecated `utcfromtimestamp()` in the _same_ change as
   `utcnow()` (already banned) — same naive-"UTC" bug class. A steered agent that
   drops `utcnow()` can still emit this and pass the hook; the always-on regex now
   covers it (use `datetime.fromtimestamp(ts, tz=datetime.UTC)`). A commented
@@ -878,7 +937,7 @@ hardening, and a delta round of modern-practice deny-patterns.
   `NODE_TLS_REJECT_UNAUTHORIZED` and `rejectUnauthorized: false` — the canonical
   AI-agent shortcut when a request fails against a self-signed cert, which
   silently disables MITM protection for every subsequent connection. It's an
-  option *value*, not syntax, so no `eslint` rule catches it. +3 fixtures
+  option _value_, not syntax, so no `eslint` rule catches it. +3 fixtures
   (incl. a negative proving `rejectUnauthorized: true` passes).
 - **`switch-exhaustiveness-check` (default-on, type-aware).** The one widely-
   recommended typed `eslint` rule no preset (incl. `strictTypeChecked`) enables.
@@ -900,14 +959,14 @@ hardening, and a delta round of modern-practice deny-patterns.
   non-`Annotated` dependencies and unused path params, no-op on non-FastAPI code,
   backing rule 4. `G`/`LOG` (flake8-logging) fail on f-string/`%`/`.format()`
   inside log calls, backing rules 10-11; the idiomatic `logger.info("event",
-  key=val)` form is not flagged. A **curated** flake8-bandit `S` subset
+key=val)` form is not flagged. A **curated** flake8-bandit `S` subset
   (`S301/307/113/324/602/605/701/105/106`) adds AST-level security checks the
   regex secret-scanner can't see — deliberately NOT the whole `S` category
   (`S603/607/404/608/310` are FP-noisy on subprocess/SQL/urllib). `S311` is
   ignored; tests exempt `S101/105/106`.
 - **Deprecated `datetime.utcnow()` deny-pattern (`backend.txt`).** Caught by the
   always-on regex layer (no `ruff` dependency); the AST `DTZ` group is
-  deliberately not enabled — flagging every naive `datetime` is timezone *policy*
+  deliberately not enabled — flagging every naive `datetime` is timezone _policy_
   with a high false-positive rate, and the deprecated idiom is fully covered by
   the one regex. A commented opt-in 12-factor `localhost`-URL line is added too
   (off by default — Python test clients legitimately target localhost).
@@ -985,6 +1044,7 @@ hardening, and a delta round of modern-practice deny-patterns.
   +13 harness fixtures (a reject + a look-alike negative per language).
 
 ### Documented
+
 - **Six new `RECOMMENDATIONS.md` entries** (dated, with explicit "adopt if"
   triggers, per the file's convention — deliberate omissions, not shipped
   features): `ruff` FURB group; commit-time Python type-check via `ty`/`pyrefly`;
@@ -994,6 +1054,7 @@ hardening, and a delta round of modern-practice deny-patterns.
   releases (cross-linked from the `--commit-msg` opt-in bullet).
 
 ### Changed
+
 - **`coding-rules.md` rule 12** now prefers the W3C `traceparent` header
   (OpenTelemetry's auto-propagated default) over `X-Request-Id` (the 2018-era
   norm, kept as the lighter fallback) — an agent following the old text would
@@ -1004,6 +1065,7 @@ hardening, and a delta round of modern-practice deny-patterns.
   mutating it) and falls back to `npm install` only when no lockfile exists.
 
 ### Fixed
+
 - **Docs/enforcement reconciliation.** `coding-rules.md` rule 6 now covers TS
   floating-promise discipline and rule 9 describes what actually runs at commit
   time vs CI; the README "What the tooling enforces" matrix gains rows for
@@ -1011,6 +1073,7 @@ hardening, and a delta round of modern-practice deny-patterns.
   hygiene.
 
 ### Security
+
 - **Rename-to-skipped-extension secret bypass (audit HIGH).** `check-secrets`
   skipped files by extension (`*.png`, `*.zip`, `package-lock.json`, …), so a
   plaintext secret renamed to a skipped name passed the scan in both the hook
@@ -1026,6 +1089,7 @@ hardening, and a delta round of modern-practice deny-patterns.
   crafted filename or description can't forge or truncate a CI annotation.
 
 ### Documented
+
 - **`lint.yml.template` guardrails job: two inherent limitations** now spelled
   out in-file — it runs check scripts/configs from the PR head (defense in
   depth, not a trust boundary against hostile forks; pair with branch
@@ -1034,8 +1098,9 @@ hardening, and a delta round of modern-practice deny-patterns.
   you keep scannable text in LFS).
 
 ### Fixed
+
 - **`README.md` stale claims.** The size check is the staged blob's line count
-  (`git show :0:<path>`), not `wc -l`; the secret scan covers *every* tracked
+  (`git show :0:<path>`), not `wc -l`; the secret scan covers _every_ tracked
   file (no extension allowlist), not a vague "all files"; and the
   hook-vs-CI file-scope asymmetry (changed-only vs all-tracked) is now noted
   for all four checks, not just size.
@@ -1043,6 +1108,7 @@ hardening, and a delta round of modern-practice deny-patterns.
 ## [v0.5.2] — 2026-05-25
 
 ### Fixed
+
 - **Pinned actions ran on Node 20, force-deprecated 2026-06-02.** GitHub
   forces all Node-20 actions to Node 24 on 2026-06-02 and removes the
   Node-20 runtime 2026-09-16; every consumer's workflow runs were already
@@ -1054,15 +1120,17 @@ hardening, and a delta round of modern-practice deny-patterns.
   with `actionlint` + the full test harness.
 
 ### Changed
+
 - `README.md` install pin bumped to `v0.5.2`.
 
 ## [v0.5.1] — 2026-05-25
 
 ### Fixed
+
 - **`lint.yml.template`: workflow was invalid for every consumer.** The
   `python` and `frontend` jobs gated execution with a **job-level**
   `if: hashFiles(...)`. `hashFiles()` is only available once a runner is
-  assigned and the repo is checked out, so GitHub rejected the *entire*
+  assigned and the repo is checked out, so GitHub rejected the _entire_
   workflow file as invalid — meaning **no job ran at all**, including
   `guardrails` (the server-side mirror of the pre-commit hook). Every push
   reported a startup failure with no jobs and no annotations. File
@@ -1072,6 +1140,7 @@ hardening, and a delta round of modern-practice deny-patterns.
   `python` job instead of a hard workflow error.
 
 ### Added
+
 - **`tests/run.sh` + `test.yml`: workflow-validity regression guard.** The
   harness now renders `lint.yml` via `install.sh` and validates it with
   `actionlint` (pinned 1.7.12), so a job-level `hashFiles()` — or any
@@ -1079,11 +1148,13 @@ hardening, and a delta round of modern-practice deny-patterns.
   again. `actionlint` is skipped locally when absent; CI always runs it.
 
 ### Changed
+
 - `README.md` install pin bumped to `v0.5.1`.
 
 ## [v0.5.0] — 2026-05-20
 
 ### Added
+
 - **`coding-rules.md`: "Testing" section (items 8–9).** Four-category
   baseline (linter, type-checker, test runner, property-based) every
   project picks per stack. Pre-commit runs linter + type-checker.
@@ -1099,27 +1170,29 @@ hardening, and a delta round of modern-practice deny-patterns.
   renames/removals/type changes require a version bump + consumer
   notice. Silent breaking changes fail downstream, far from cause.
 - **`operational-rules.md`: five new Engineering entries.**
-  - *Integration tests hit a real database, not mocks.* Mocked tests
+  - _Integration tests hit a real database, not mocks._ Mocked tests
     pass against the mock, not the schema; migration drift hides.
-  - *Tests cover every code path; back claims with measurement.*
+  - _Tests cover every code path; back claims with measurement._
     "We have tests" ≠ "this is tested." Numbers from real runs beat
     narrative correctness.
-  - *No silent failures.* When work fails, log WARN+ AND surface in
+  - _No silent failures._ When work fails, log WARN+ AND surface in
     response. Catch-and-return-success is the most expensive habit
     in production code.
-  - *Hold shared-resource locks for contiguous work, not per
-    operation.* Per-op locking causes thrash + starvation under
+  - _Hold shared-resource locks for contiguous work, not per
+    operation._ Per-op locking causes thrash + starvation under
     contention (GPU, DB pool, hardware port).
-  - *Never print, cat, or echo secret files.* AI agents' habit of
+  - _Never print, cat, or echo secret files._ AI agents' habit of
     `cat .env` lands secrets in chat transcripts / logs forever;
     rotation cost is high. Verify by length / hash / count instead.
 
 ### Changed
+
 - `README.md` install pin bumped to `v0.5.0`.
 
 ## [v0.4.0] — 2026-05-03
 
 ### Added
+
 - **Per-line `scaffold-allow` marker.** Lines containing `scaffold-allow`
   (case-insensitive) are exempt from `check-patterns` and `check-secrets`
   — an inline `# noqa`-style escape valve for legitimate `print` calls,
@@ -1135,6 +1208,7 @@ hardening, and a delta round of modern-practice deny-patterns.
   new ruff-integration test case actually exercises lint at hook time.
 
 ### Changed
+
 - `check-patterns` and `check-secrets` rewritten to combine all patterns
   into one ERE per scan and run a single `grep` per file as a fast-path
   filter. Per-pattern attribution only runs on files that already
@@ -1143,6 +1217,7 @@ hardening, and a delta round of modern-practice deny-patterns.
   files.
 
 ### Fixed
+
 - `uninstall.sh` uses `git rev-parse --git-dir` (matching `install.sh`)
   so `core.hooksPath` is correctly unset in worktrees and submodules.
 - Pre-commit header comment described the pattern format as
@@ -1163,6 +1238,7 @@ hardening, and a delta round of modern-practice deny-patterns.
   requires now that the hook lints.
 
 ### Security
+
 - **Unicode filename bypass closed.** `git diff --cached --name-only`
   honoured `core.quotepath=on` (the default), C-quoting non-ASCII names
   like `"caf\303\251.py"`. The downstream `[ -f "$file" ]` check then
@@ -1185,6 +1261,7 @@ hardening, and a delta round of modern-practice deny-patterns.
 ## [v0.3.2] — 2026-05-02
 
 ### Added
+
 - `operational-rules.md` — process, collaboration, and judgment rules
   extracted from real failure modes (pre-flight checks before long
   jobs, smoke at the smallest scale that exercises the full path,
@@ -1196,6 +1273,7 @@ hardening, and a delta round of modern-practice deny-patterns.
   don't want the rest of the scaffolding.
 
 ### Changed
+
 - `AGENTS.md.template` gains an "Operational rules" section pointing
   at `operational-rules.md` alongside the existing "Coding rules"
   section.
@@ -1210,12 +1288,14 @@ hardening, and a delta round of modern-practice deny-patterns.
 ## [v0.3.1] — 2026-05-01
 
 ### Added
+
 - `RECOMMENDATIONS.md` — entries for ideas the scaffold deliberately doesn't
   ship (agent-runtime hooks, `SPEC.md` templates, language-agnostic forbidden
   patterns) with explicit triggering conditions and a maintenance protocol so
   entries don't bit-rot. Closes the documented gap from the v0.3.0 audit cycle.
 
 ### Changed
+
 - README `Why this exists` rewritten with concrete failure-mode mechanics
   (Monday/Wednesday inconsistency, agents-grow-files-they-can't-see, debug
   statements that look like logging, recurrent training-data muscle memory)
@@ -1230,6 +1310,7 @@ hardening, and a delta round of modern-practice deny-patterns.
   overwrite each other.
 
 ### Fixed
+
 - `install.sh` post-install smoke test now distinguishes a bad ruff config
   (exit ≥ 2) from successful runs (exit 0 or 1). The previous
   `--exit-zero` form silently passed even when ruff hit a config error.
@@ -1237,6 +1318,7 @@ hardening, and a delta round of modern-practice deny-patterns.
 ## [v0.3.0] — 2026-04-28
 
 ### Added
+
 - Scaffold self-tests (`tests/run.sh`) — 10 fixture cases verifying hook
   behaviour, matrix-run on `ubuntu-latest` and `macos-latest` via CI.
 - `permissions: contents: read` on all GitHub workflows.
@@ -1248,10 +1330,11 @@ hardening, and a delta round of modern-practice deny-patterns.
 - `CHANGELOG.md` (this file).
 
 ### Changed
+
 - Function-size limit raised from 60 to 80 (`ruff max-statements`,
   `eslint max-lines-per-function`); README and `coding-rules.md` aligned.
 - Pre-commit hook checks extracted into `.githooks/lib/check-{size,patterns,
-  filenames,secrets}`. The CI workflow invokes the same scripts, so the hook
+filenames,secrets}`. The CI workflow invokes the same scripts, so the hook
   and CI cannot drift in behaviour.
 - Forbidden-patterns separator switched from `|` to TAB. Patterns can now
   contain literal `|` for ERE alternation (e.g. `(TODO|FIXME|XXX)`). v0.3
@@ -1270,6 +1353,7 @@ hardening, and a delta round of modern-practice deny-patterns.
   — single source of truth for the rule matrix.
 
 ### Fixed
+
 - Test-fixture AKIA string in `tests/run.sh` split across adjacent quoted
   segments so the secrets scan does not false-positive on its own data.
 - File-size check now uses `grep -c ''` instead of `wc -l`, correctly
@@ -1287,6 +1371,7 @@ hardening, and a delta round of modern-practice deny-patterns.
 ## [v0.2.0] — 2026-04-23
 
 ### Added
+
 - Secret / credential pattern scanning across all tracked text files
   (AWS, Google, GitHub, Slack, OpenAI/Anthropic prefixes; private keys;
   URL-embedded credentials; hardcoded password/token assignments).
@@ -1298,6 +1383,7 @@ hardening, and a delta round of modern-practice deny-patterns.
 ## [v0.1.0]
 
 ### Added
+
 - Initial release: agent-agnostic scaffold (`AGENTS.md` + `CLAUDE.md` pointer).
 - Pre-commit hook: file-size cap and Python/JS forbidden patterns.
 - CI mirror (`.github/workflows/lint.yml.template`).

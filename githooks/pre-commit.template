@@ -165,9 +165,11 @@ if [ -d "$HOOK_DIR/local.d" ]; then
 fi
 
 # Lint staged files with ruff / eslint when configs exist and the tool is
-# installed. CI is the source of truth — running here just shortens the
-# feedback loop. Silently skipped if a tool isn't on PATH so the hook
-# stays usable on machines that haven't run `pip install ruff` yet.
+# installed. CI is the source of truth: running here just shortens the
+# feedback loop. When matching files are staged but the tool isn't on PATH,
+# each check below prints a one-line notice to stderr and skips (exit stays
+# 0), so the hook stays usable on machines that haven't run `pip install
+# ruff` yet while still telling the developer why nothing ran.
 STAGED_PY=()
 STAGED_JS=()
 STAGED_PHP=()
@@ -182,54 +184,73 @@ done <"$STAGED_LIST"
 
 # Config detection mirrors `lint.yml`'s `hashFiles(...)` predicate so the
 # hook fires in the same projects where CI does.
-if [ ${#STAGED_PY[@]} -gt 0 ] \
-   && { [ -f ruff.toml ] || [ -f pyproject.toml ]; } \
-   && command -v ruff >/dev/null 2>&1; then
-  ruff check -- "${STAGED_PY[@]}" || FAILED=1
+if [ ${#STAGED_PY[@]} -gt 0 ] && { [ -f ruff.toml ] || [ -f pyproject.toml ]; }; then
+  if command -v ruff >/dev/null 2>&1; then
+    ruff check -- "${STAGED_PY[@]}" || FAILED=1
+  else
+    echo "note: ruff not installed, skipping the local lint pass on staged .py files." >&2
+    echo "      CI's lint job is the authoritative gate; install ruff for local feedback." >&2
+  fi
 fi
 
-if [ ${#STAGED_JS[@]} -gt 0 ] \
-   && { [ -f eslint.config.js ] || [ -f package.json ]; } \
-   && command -v npx >/dev/null 2>&1 \
-   && npx --no-install eslint --version >/dev/null 2>&1; then
-  npx --no-install eslint -- "${STAGED_JS[@]}" || FAILED=1
+if [ ${#STAGED_JS[@]} -gt 0 ] && { [ -f eslint.config.js ] || [ -f package.json ]; }; then
+  if command -v npx >/dev/null 2>&1 && npx --no-install eslint --version >/dev/null 2>&1; then
+    npx --no-install eslint -- "${STAGED_JS[@]}" || FAILED=1
+  else
+    echo "note: eslint not installed (or not resolvable via npx), skipping the local lint pass on staged JS/TS files." >&2
+    echo "      CI's lint job is the authoritative gate; run 'npm install' for local feedback." >&2
+  fi
 fi
 
-# Prettier formats; eslint checks correctness — they don't overlap (the eslint
+# Prettier formats; eslint checks correctness: they don't overlap (the eslint
 # config ships no stylistic rules, so there's no eslint-config-prettier). Run
 # --check on staged files when a prettier config exists and prettier is
-# installed. Silently skipped otherwise, like the linters above. `prettier
-# --write` is the fix.
+# installed. A missing/unresolvable prettier prints a notice and skips, like
+# the linter above. `prettier --write` is the fix.
 if [ ${#STAGED_JS[@]} -gt 0 ] \
-   && { [ -f .prettierrc ] || [ -f .prettierrc.json ] || [ -f .prettierrc.js ] || [ -f prettier.config.js ] || grep -qs '"prettier"' package.json; } \
-   && command -v npx >/dev/null 2>&1 \
-   && npx --no-install prettier --version >/dev/null 2>&1; then
-  npx --no-install prettier --check -- "${STAGED_JS[@]}" || FAILED=1
+   && { [ -f .prettierrc ] || [ -f .prettierrc.json ] || [ -f .prettierrc.js ] || [ -f prettier.config.js ] || grep -qs '"prettier"' package.json; }; then
+  if command -v npx >/dev/null 2>&1 && npx --no-install prettier --version >/dev/null 2>&1; then
+    npx --no-install prettier --check -- "${STAGED_JS[@]}" || FAILED=1
+  else
+    echo "note: prettier not installed (or not resolvable via npx), skipping the local format check on staged JS/TS files." >&2
+    echo "      CI's lint job is the authoritative gate; run 'npm install' for local feedback." >&2
+  fi
 fi
 
 # Type-check with tsc when a tsconfig.json exists and TypeScript is installed.
-# Run PROJECT-WIDE (no file args) — passing individual files makes tsc ignore
-# tsconfig.json and its compiler options. Silently skipped when absent, like
-# the linters above; CI is the authoritative backstop.
-if [ ${#STAGED_JS[@]} -gt 0 ] \
-   && [ -f tsconfig.json ] \
-   && command -v npx >/dev/null 2>&1 \
-   && npx --no-install tsc --version >/dev/null 2>&1; then
-  npx --no-install tsc --noEmit || FAILED=1
+# Run PROJECT-WIDE (no file args): passing individual files makes tsc ignore
+# tsconfig.json and its compiler options. A missing/unresolvable tsc prints a
+# notice and skips, like the checks above; CI is the authoritative backstop.
+if [ ${#STAGED_JS[@]} -gt 0 ] && [ -f tsconfig.json ]; then
+  if command -v npx >/dev/null 2>&1 && npx --no-install tsc --version >/dev/null 2>&1; then
+    npx --no-install tsc --noEmit || FAILED=1
+  else
+    echo "note: TypeScript not installed (or not resolvable via npx), skipping the local tsc type check." >&2
+    echo "      CI's lint job is the authoritative gate; run 'npm install' for local feedback." >&2
+  fi
 fi
 
 # PHP: zero-config syntax check (`php -l`) on each staged file when php is on
 # PATH, plus phpcs when a ruleset/composer project is present and phpcs is
-# installed. Silently skipped otherwise, like the linters above.
-if [ ${#STAGED_PHP[@]} -gt 0 ] && command -v php >/dev/null 2>&1; then
-  for f in "${STAGED_PHP[@]}"; do
-    php -l "$f" >/dev/null 2>&1 || { echo "✗ $f: PHP syntax error (php -l)"; FAILED=1; }
-  done
+# installed. A missing php/phpcs prints a notice and skips, like the checks
+# above.
+if [ ${#STAGED_PHP[@]} -gt 0 ]; then
+  if command -v php >/dev/null 2>&1; then
+    for f in "${STAGED_PHP[@]}"; do
+      php -l "$f" >/dev/null 2>&1 || { echo "✗ $f: PHP syntax error (php -l)"; FAILED=1; }
+    done
+  else
+    echo "note: php not installed, skipping the local syntax check (php -l) on staged PHP files." >&2
+    echo "      CI's lint job is the authoritative gate; install php for local feedback." >&2
+  fi
 fi
-if [ ${#STAGED_PHP[@]} -gt 0 ] \
-   && { [ -f phpcs.xml ] || [ -f phpcs.xml.dist ] || [ -f composer.json ]; } \
-   && command -v phpcs >/dev/null 2>&1; then
-  phpcs -- "${STAGED_PHP[@]}" || FAILED=1
+if [ ${#STAGED_PHP[@]} -gt 0 ] && { [ -f phpcs.xml ] || [ -f phpcs.xml.dist ] || [ -f composer.json ]; }; then
+  if command -v phpcs >/dev/null 2>&1; then
+    phpcs -- "${STAGED_PHP[@]}" || FAILED=1
+  else
+    echo "note: phpcs not installed, skipping the local coding-standard check on staged PHP files." >&2
+    echo "      CI's lint job is the authoritative gate; install phpcs for local feedback." >&2
+  fi
 fi
 
 if [ "$FAILED" -ne 0 ]; then

@@ -3,18 +3,18 @@
 Pattern files consumed by `.githooks/lib/check-patterns` and
 `.githooks/lib/check-secrets`. Same format, different scope:
 
-| File           | Scans                                              | Case-sensitive |
-|----------------|----------------------------------------------------|----------------|
-| `backend.txt`  | `*.py`                                             | yes            |
-| `frontend.txt` | `*.ts`, `*.tsx`, `*.js`, `*.jsx`, `*.vue`, `*.svelte` | yes        |
-| `shell.txt`    | `*.sh`, `*.bash`                                   | yes            |
-| `php.txt`      | `*.php`, `*.phtml`, …                              | yes            |
-| `go.txt`       | `*.go`                                             | yes            |
-| `rust.txt`     | `*.rs`                                             | yes            |
-| `java.txt`     | `*.java`                                           | yes            |
-| `kotlin.txt`   | `*.kt`, `*.kts`                                    | yes            |
-| `ruby.txt`     | `*.rb`, `*.rake`                                   | yes            |
-| `secrets.txt`  | all tracked files (every staged blob, regardless of extension) | no    |
+| File           | Scans                                                          | Case-sensitive |
+| -------------- | -------------------------------------------------------------- | -------------- |
+| `backend.txt`  | `*.py`                                                         | yes            |
+| `frontend.txt` | `*.ts`, `*.tsx`, `*.js`, `*.jsx`, `*.vue`, `*.svelte`          | yes            |
+| `shell.txt`    | `*.sh`, `*.bash`                                               | yes            |
+| `php.txt`      | `*.php`, `*.phtml`, …                                          | yes            |
+| `go.txt`       | `*.go`                                                         | yes            |
+| `rust.txt`     | `*.rs`                                                         | yes            |
+| `java.txt`     | `*.java`                                                       | yes            |
+| `kotlin.txt`   | `*.kt`, `*.kts`                                                | yes            |
+| `ruby.txt`     | `*.rb`, `*.rake`                                               | yes            |
+| `secrets.txt`  | all tracked files (every staged blob, regardless of extension) | no             |
 
 `check-patterns` **auto-discovers** every `*.txt` here (except `secrets.txt`,
 which is `check-secrets`' domain). Each file declares which extensions it
@@ -49,7 +49,7 @@ Patterns in this scaffold use the **POSIX-portable** subset only:
 - **Word boundaries:** `(^|[^A-Za-z_])` for word-start, `($|[^A-Za-z0-9_])`
   for word-end. Verbose but works everywhere ERE works. Avoid `\b`
   (GNU + modern BSD only) and `[[:<:]]` / `[[:>:]]` (BSD only — does
-  *not* work on GNU grep, contrary to its POSIX-class-shaped syntax).
+  _not_ work on GNU grep, contrary to its POSIX-class-shaped syntax).
 - **Whitespace:** `[[:space:]]`. POSIX character class, supported on
   every grep. `\s` is a GNU/BSD extension; not used here.
 - **Alternation:** patterns can contain literal `|` since the field
@@ -91,11 +91,11 @@ print("entering CLI")  # scaffold-allow — no logger configured yet
 ```
 
 ```ts
-console.log(banner);  // scaffold-allow — pre-init log, before logger ready
+console.log(banner); // scaffold-allow — pre-init log, before logger ready
 ```
 
 ```md
-Example AWS key: AKIAIOSFODNN7EXAMPLE  <!-- scaffold-allow docs example -->
+Example AWS key: AKIAIOSFODNN7EXAMPLE <!-- scaffold-allow docs example -->
 ```
 
 The marker only suppresses **its own line**. Other matches in the same

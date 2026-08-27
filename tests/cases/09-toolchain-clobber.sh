@@ -355,18 +355,27 @@ else
 fi
 rm -rf "$URS"
 
-# (T) re-run refreshes a stale scaffold-owned WORKFLOW (lint.yml) too — the
-#     guardrails job hardening has to reach upgraders, not just the scanners.
+# (T) re-run PRESERVES a drifted scaffold-owned WORKFLOW (lint.yml) rather than
+#     refreshing it. lint.yml used to be cp_scaffold like the scanners above, but
+#     that meant a plain re-run silently discarded a project's own CI edits
+#     (#105: a real downstream repo measured 23 deletions, 0 insertions from one
+#     upgrade). It moved to cp_scaffold_preserve, so it now behaves like a
+#     drifted .forbidden-patterns file: kept, with a drift note. Full drift /
+#     --force / pristine coverage for cp_scaffold_preserve lives in
+#     cases/21-lint-workflow-drift.sh; this one assertion keeps this section's
+#     own "re-runs refresh scaffold-owned code" framing honest, since it used to
+#     claim the opposite for lint.yml specifically.
 URW=$(mktemp -d)
 ( cd "$URW" && git init --quiet && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify >/dev/null 2>&1 )
-echo '# stale workflow' >"$URW/.github/workflows/lint.yml"
+echo '# local CI customization' >"$URW/.github/workflows/lint.yml"
 ( cd "$URW" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
-if cmp -s "$SCAFFOLD_DIR/.github/workflows/lint.yml.template" "$URW/.github/workflows/lint.yml" \
-   && grep -q 'updated:.*lint.yml' "$HOOK_OUT"; then
-  echo "  ✓ re-run refreshes a stale scaffold-owned workflow"; PASS=$((PASS + 1))
+if grep -q 'local CI customization' "$URW/.github/workflows/lint.yml" \
+   && grep -q 'note (drift):.*lint.yml' "$HOOK_OUT" \
+   && [ ! -e "$URW/.github/workflows/lint.yml.scaffold-bak" ]; then
+  echo "  ✓ re-run preserves a drifted lint.yml instead of refreshing it (#105)"; PASS=$((PASS + 1))
 else
-  echo "  ✗ re-run did not refresh the stale workflow"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  echo "  ✗ re-run should preserve drifted lint.yml, not refresh it"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$URW"
 

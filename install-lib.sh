@@ -31,8 +31,17 @@
 #                would clobber those rows, so a re-run only NOTIFIES on drift and
 #                keeps the user's file; --force backs up + replaces so the user's
 #                additions survive in .scaffold-bak for manual merge-back.
+#   cp_scaffold_preserve  scaffold-owned CI workflow that a project is expected
+#                to hand-edit (today: only .github/workflows/lint.yml, to add
+#                local CI steps). Same drift-preserving behavior as cp_pattern:
+#                a re-run only NOTIFIES on drift and keeps the user's edits;
+#                --force backs up + replaces. Added for #105: a plain cp_scaffold
+#                refresh here silently discarded a consumer's CI customization
+#                (measured on a real downstream repo: 23 deletions, 0 insertions)
+#                with no signal beyond a log line and no way back except the
+#                .scaffold-bak.
 #
-# The three policies share one write MECHANISM (_cp_replace) and one backup
+# The four policies share one write MECHANISM (_cp_replace) and one backup
 # routine (_backup), so the A7 symlink defenses live in exactly one place.
 
 # _mkdir_safe DIR — create DIR as real directories, never following a symlink at
@@ -123,15 +132,18 @@ cp_safe() {
 # old policy skipped the routine-refresh backup on the premise that "the prior
 # bytes are scaffold code, recoverable from git history and the scaffold repo."
 # That premise is TRUE for an untouched destination and FALSE for an edited one,
-# and nothing tested which it was. .githooks/pre-commit and .github/workflows/
-# lint.yml are the two files a project MUST edit to wire in a local check, so
-# the false case was the likely one — and its symptom was silent: the local
-# check script stayed on disk, its call sites were reset, nothing errored, and
-# the guardrail became decoration. Backing up unconditionally makes the loss
-# recoverable AND prints a "backed up:" line, which is the signal that was
-# missing. Cost is a .scaffold-bak beside each file that actually changed in the
-# upgrade; `.githooks/local.d/` now exists so local checks need not live in a
-# scaffold-owned file at all.
+# and nothing tested which it was. .githooks/pre-commit is the file a project
+# MUST edit to wire in a local check (.github/workflows/lint.yml used to be the
+# other one, until #105 moved it to cp_scaffold_preserve below: a project
+# customizing its CI turned out to be at least as common as one customizing the
+# hook, and losing it needed more than a backup, it needed not being
+# overwritten at all), so the false case was the likely one, and its symptom
+# was silent: the local check script stayed on disk, its call site was reset,
+# nothing errored, and the guardrail became decoration. Backing up unconditionally
+# makes the loss recoverable AND prints a "backed up:" line, which is the
+# signal that was missing. Cost is a .scaffold-bak beside each file that
+# actually changed in the upgrade; `.githooks/local.d/` now exists so local
+# checks need not live in a scaffold-owned file at all.
 #
 # If _backup fails (>99 slots), we skip this ONE file rather than overwrite it
 # unbacked — same policy as cp_safe/cp_pattern (B12). That defers a scanner
@@ -167,6 +179,33 @@ cp_pattern() {
         echo "skip (exists, symlink): $dst — left untouched; a scaffold path that is a symlink is suspicious. Replace it with --force."
       else
         echo "note (drift):  $dst differs from the shipped patterns — your customizations are kept. Diff against forbidden-patterns/$(basename "$dst").template for new rules to merge, or re-run with --force to replace (backs yours up to .scaffold-bak)."
+      fi
+      return
+    fi
+    _backup "$dst" || return 0
+  fi
+  _cp_replace "$src" "$dst"
+  echo "installed:    $dst"
+}
+
+# cp_scaffold_preserve SRC DST: a scaffold-owned CI workflow the project is
+# expected to hand-edit (today: only .github/workflows/lint.yml, see the
+# policy comment above). Install if absent; on drift NOTIFY and keep the
+# user's file rather than overwriting it, same shape as cp_pattern, because a
+# plain cp_scaffold refresh here silently discards a consumer's CI
+# customization (#105) instead of merely risking it. --force still backs up +
+# replaces, matching cp_scaffold/cp_pattern's --force semantics.
+cp_scaffold_preserve() {
+  local src=$1 dst=$2
+  if [ -e "$dst" ] || [ -L "$dst" ]; then
+    if [ ! -L "$dst" ] && cmp -s "$src" "$dst"; then
+      return
+    fi
+    if [ "$FORCE" -eq 0 ]; then
+      if [ -L "$dst" ]; then
+        echo "skip (exists, symlink): $dst, left untouched; a scaffold path that is a symlink is suspicious. Replace it with --force."
+      else
+        echo "note (drift):  $dst differs from the shipped version: your customizations are kept. Diff against $src for upstream changes to merge, or re-run with --force to replace (backs yours up to .scaffold-bak)."
       fi
       return
     fi

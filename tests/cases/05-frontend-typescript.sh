@@ -125,3 +125,47 @@ else
 fi
 rm -rf "$ESB"
 reset_repo
+
+# 42c. skip notice: when npx can't resolve eslint (a matching .js file is
+#      staged and eslint.config.js ships from the scaffold install), the hook
+#      must print a one-line notice to stderr and still exit 0. Stub `npx` so
+#      `--no-install eslint --version` always fails, regardless of whether
+#      eslint happens to be resolvable on this machine.
+NPXFAIL=$(mktemp -d)
+cat >"$NPXFAIL/npx" <<'STUB'
+#!/bin/sh
+exit 1
+STUB
+chmod +x "$NPXFAIL/npx"
+echo 'const y = 1' >noeslint.js
+git add noeslint.js
+if PATH="$NPXFAIL:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1 \
+   && grep -qF "note: eslint not installed" "$HOOK_OUT"; then
+  echo "  ✓ eslint-unresolvable skip prints a notice and still exits 0"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ eslint-unresolvable skip: expected a note on stderr and exit 0"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$NPXFAIL"
+reset_repo
+
+# 42d. NEGATIVE: a repo with no staged .py/.js/.php files must print NO
+#      lint-skip notices at all, even though none of ruff/eslint/prettier/tsc/
+#      php/phpcs are proven present here. The notices are scoped to "there was
+#      matching staged work this check could not run", not "the tool merely
+#      happens to be absent".
+echo '# just docs' >readme-notes.md
+git add readme-notes.md
+.githooks/pre-commit >"$HOOK_OUT" 2>&1
+rc=$?
+if [ "$rc" -eq 0 ] && ! grep -qE "note: (ruff|eslint|prettier|TypeScript|php|phpcs)" "$HOOK_OUT"; then
+  echo "  ✓ no matching staged files produces no lint-skip notices"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ unexpected notice (or failure, rc=$rc) with no matching staged files"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+reset_repo
