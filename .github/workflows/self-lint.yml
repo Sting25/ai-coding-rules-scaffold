@@ -73,28 +73,40 @@ jobs:
           rm -f "$STAGED_LIST"
           exit $FAILED
 
-      - name: Docs installed into consumer projects must pass the shipped prettier config
+      - name: All tracked markdown must pass the shipped prettier config (#82)
         # The other half of dogfooding: not just "our files pass our scanners"
-        # but "the files we INSTALL pass the config we install beside them".
+        # but "the files we INSTALL pass the config we install beside them", and
+        # (as of #82) every markdown file a reviewer of THIS repo reads too.
         #
         # coding-rules.md and operational-rules.md land in a consumer's project
         # root, next to a .prettierrc.json this scaffold also writes, and the
         # shipped lint.yml runs `prettier --check` over every changed file. Both
-        # docs failed that config (#73) — so a consumer following the documented
+        # docs failed that config (#73), so a consumer following the documented
         # workflow (README: "add a Project-specific section to coding-rules.md")
         # put a scaffold-authored file in the changed set and got a red format
         # check on prose they never wrote, on their first commit after install.
         #
-        # Formatting them once fixes today; this step is what stops it rotting
-        # back, since nothing else in this repo runs prettier. Checked under
-        # their INSTALLED names in a temp dir: prettier picks its parser from the
-        # extension, so AGENTS.md.template is not seen as markdown at all and
-        # would silently "pass" unchecked in place.
+        # Scope used to stop at that installed set: README.md, CHANGELOG.md and
+        # RECOMMENDATIONS.md also failed this config, on the theory that they
+        # stay in the scaffold clone / npm package and never reach a consumer's
+        # tree, so no consumer CI would ever check them. That theory undercounted
+        # the audience: a maintainer editing THIS repo's own docs deserves the
+        # same green/red signal a consumer gets on coding-rules.md, and #82 found
+        # 7 of the 9 tracked markdown files dirty against the shipped config, not
+        # just the 3 originally named. Every tracked markdown file is now
+        # reformatted and gated, git ls-files being the one list that can't drift
+        # from "docs that actually exist" the way a hand-maintained file list can.
         #
-        # Scope is deliberately the installed set. README.md, CHANGELOG.md and
-        # RECOMMENDATIONS.md also fail this config, but they stay in the scaffold
-        # clone / npm package and never reach a consumer's tree, so no consumer
-        # CI ever checks them. Reformatting them would be churn without a bug.
+        # Checked under each file's real relative path in a temp dir (not the
+        # working tree): prettier picks its parser from the extension, so
+        # AGENTS.md.template is not seen as markdown at all and would silently
+        # "pass" unchecked in place, hence the explicit rename below. Copies
+        # preserve directory structure (mkdir -p per file) rather than flattening
+        # to basenames, since two tracked files share a basename
+        # (forbidden-patterns/README.md and the root README.md); a flat copy
+        # would silently clobber one with the other and under-check it. A bare
+        # directory argument to `prettier --check` walks it recursively, so no
+        # glob is needed to reach the nested copy.
         run: |
           # Pinned, like the repo's other CI tool installs (ruff, zizmor,
           # actionlint): an unpinned install runs whatever published minutes ago.
@@ -103,12 +115,17 @@ jobs:
           docs="$RUNNER_TEMP/docs"
           mkdir -p "$docs"
           cp .prettierrc.json.template "$docs/.prettierrc.json"
-          cp coding-rules.md operational-rules.md "$docs/"
+          git ls-files -z -- '*.md' | while IFS= read -r -d '' f; do
+            mkdir -p "$docs/$(dirname "$f")"
+            cp "$f" "$docs/$f"
+          done
           cp AGENTS.md.template "$docs/AGENTS.md"
-          if ! npx --no-install prettier --check "$docs"/*.md; then
-            echo "::error::A doc install.sh copies into consumer projects fails the"
-            echo ".prettierrc.json this scaffold ships beside it. A consumer editing"
-            echo "that file would get a red format check on prose they did not write."
+          if ! npx --no-install prettier --check "$docs"; then
+            echo "::error::A tracked markdown file fails the .prettierrc.json this"
+            echo "scaffold ships. A consumer installing coding-rules.md/"
+            echo "operational-rules.md would get the same red format check on"
+            echo "prose they did not write; every other tracked .md file gets it"
+            echo "here, in review, instead."
             echo "Fix: npx prettier --write --config .prettierrc.json.template <file>"
             exit 1
           fi
