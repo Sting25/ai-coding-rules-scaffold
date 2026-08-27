@@ -112,3 +112,76 @@ jobs:
             echo "Fix: npx prettier --write --config .prettierrc.json.template <file>"
             exit 1
           fi
+
+      - name: Set up Node (eslint.config.js.template check)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: "20"
+
+      - name: eslint.config.js.template lints with its documented peers (#83)
+        # A third self-application gap, beside the two above: the scaffold ships
+        # eslint.config.js.template, but nothing in its OWN CI ever loads it
+        # through eslint, so a real rule violation in the template has no CI
+        # signal. tests/cases/17 only runs `node --check`, which parses JS
+        # syntax and stops there: it never resolves a plugin or validates a
+        # rule's option schema. A real import-x/order violation once sat in the
+        # template unnoticed until someone ran eslint on it by hand (#76).
+        #
+        # Peers come from the template's own header comment (its documented
+        # install command), pinned like the prettier step above: eslint,
+        # @eslint/js, @eslint/compat (needed for includeIgnoreFile),
+        # typescript-eslint, eslint-plugin-import-x, eslint-plugin-unused-imports,
+        # plus typescript itself, since strictTypeChecked needs a real
+        # tsconfig.json to resolve type information. typescript is pinned below
+        # its own "latest" tag on purpose: typescript-eslint 8.68.0 declares a
+        # peer range of ">=4.8.4 <6.1.0", so 6.0.3 is the newest release that
+        # range still allows, not the 7.x line.
+        #
+        # Copied to eslint.config.mjs, not eslint.config.js: the template uses
+        # `import` and `import.meta.dirname`, which only parses unconditionally
+        # as ESM under the .mjs extension, matching the flat-config/ESLint 9+
+        # module style its own header documents.
+        #
+        # Running eslint against a real file is the check that matters here,
+        # not `eslint --print-config`: --print-config only resolves and merges
+        # config layers, it does not validate a rule's option schema (confirmed
+        # locally: feeding it a corrupted max-depth option still exits 0 under
+        # --print-config, but exits 2 with a schema error under a real lint
+        # run). A real lint run exercises both plugin/rule loading and rule
+        # validity in a single pass. The template file itself is one of the
+        # files linted below (not just a throwaway sample), which is exactly
+        # the self-application that caught the import-x/order bug this step
+        # exists to keep from recurring silently.
+        run: |
+          work="$RUNNER_TEMP/eslint-template-check"
+          mkdir -p "$work"
+          cp eslint.config.js.template "$work/eslint.config.mjs"
+
+          # Minimal project so strictTypeChecked's projectService can resolve
+          # real type information; without a tsconfig.json the type-aware
+          # rules (no-floating-promises, switch-exhaustiveness-check, ...)
+          # cannot load at all.
+          printf '%s\n' \
+            '{' \
+            '  "compilerOptions": {' \
+            '    "target": "ES2022",' \
+            '    "module": "ESNext",' \
+            '    "moduleResolution": "Bundler",' \
+            '    "strict": true' \
+            '  },' \
+            '  "include": ["**/*.ts", "**/*.js"]' \
+            '}' > "$work/tsconfig.json"
+
+          # A trivial, rule-clean file to lint alongside the config file itself.
+          printf '%s\n' \
+            'export function add(a: number, b: number): number {' \
+            '  return a + b;' \
+            '}' > "$work/sample.ts"
+
+          cd "$work"
+          npm install --no-audit --no-fund --ignore-scripts \
+            eslint@10.9.1 @eslint/js@10.0.1 @eslint/compat@2.1.0 typescript-eslint@8.68.0 \
+            eslint-plugin-import-x@4.17.1 eslint-plugin-unused-imports@4.4.1 typescript@6.0.3
+
+          echo "eslint: linting the shipped template (as eslint.config.mjs) plus a sample file"
+          npx --no-install eslint -c eslint.config.mjs sample.ts eslint.config.mjs
