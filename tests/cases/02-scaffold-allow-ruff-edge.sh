@@ -35,7 +35,7 @@ else
   echo "  - skipped ruff test (ruff not installed)"
 fi
 
-# 13b. skip notice — a staged .py file with ruff unavailable must print a
+# 13b. skip notice: a staged .py file with ruff unavailable must print a
 #      one-line notice to stderr and still exit 0 (pyproject.toml, present
 #      since the bootstrap fixture, is enough to satisfy the check's config
 #      gate). Strip any directory that provides ruff from the real PATH,
@@ -57,7 +57,7 @@ if PATH="$NOTOOL_PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1 \
   echo "  ✓ ruff-unavailable skip prints a notice and still exits 0"
   PASS=$((PASS + 1))
 else
-  echo "  ✗ ruff-unavailable skip — expected a note on stderr and exit 0"
+  echo "  ✗ ruff-unavailable skip: expected a note on stderr and exit 0"
   sed 's/^/      /' "$HOOK_OUT"
   FAIL=$((FAIL + 1))
 fi

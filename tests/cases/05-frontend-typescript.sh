@@ -126,7 +126,7 @@ fi
 rm -rf "$ESB"
 reset_repo
 
-# 42c. skip notice — when npx can't resolve eslint (a matching .js file is
+# 42c. skip notice: when npx can't resolve eslint (a matching .js file is
 #      staged and eslint.config.js ships from the scaffold install), the hook
 #      must print a one-line notice to stderr and still exit 0. Stub `npx` so
 #      `--no-install eslint --version` always fails, regardless of whether
@@ -144,7 +144,7 @@ if PATH="$NPXFAIL:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1 \
   echo "  ✓ eslint-unresolvable skip prints a notice and still exits 0"
   PASS=$((PASS + 1))
 else
-  echo "  ✗ eslint-unresolvable skip — expected a note on stderr and exit 0"
+  echo "  ✗ eslint-unresolvable skip: expected a note on stderr and exit 0"
   sed 's/^/      /' "$HOOK_OUT"
   FAIL=$((FAIL + 1))
 fi
