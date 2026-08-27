@@ -33,14 +33,14 @@
 # loudly in the summary below, per the "record every skip" rule.
 #
 # On re-run (upgrade): scaffold-owned code (the hook, .githooks/lib/*, the
-# commit-msg hook, tests.yml/coverage.yml) is REFRESHED when it differs from
-# the shipped version, so security fixes reach you just by re-running, and
-# every file it overwrites is BACKED UP to .scaffold-bak first, so an edit you
-# made to one is recoverable and the "backed up:" line tells you it happened.
-# User-owned configs are left alone. A drifted .forbidden-patterns/*.txt or
-# .github/workflows/lint.yml only prints a notice and keeps your file (use
-# --force to replace it: your customizations are backed up to .scaffold-bak
-# first).
+# commit-msg hook) is REFRESHED when it differs from the shipped version, so
+# security fixes reach you just by re-running, and every file it overwrites
+# is BACKED UP to .scaffold-bak first, so an edit you made to one is
+# recoverable and the "backed up:" line tells you it happened. User-owned
+# configs are left alone. A drifted .forbidden-patterns/*.txt, or a drifted
+# CI workflow (lint.yml, tests.yml, coverage.yml, gitleaks.yml), only prints
+# a notice and keeps your file (use --force to replace it: your
+# customizations are backed up to .scaffold-bak first).
 # .githooks/local.d/ is never written to at all: it's where project-local checks
 # live precisely so an upgrade cannot unwire them.
 
@@ -132,15 +132,16 @@ if [ "$MODE" = "auto" ]; then
 fi
 
 # --- file ownership & the install/upgrade model -----------------------------
-# The install/upgrade policy helpers — cp_scaffold (scaffold-owned CODE, refreshed
-# on re-run), cp_safe (USER-OWNED, never auto-replaced), cp_pattern
+# The install/upgrade policy helpers: cp_scaffold (scaffold-owned CODE,
+# refreshed on re-run), cp_safe (USER-OWNED, never auto-replaced), cp_pattern
 # (.forbidden-patterns/*.txt, notify-on-drift), cp_scaffold_preserve
-# (scaffold-owned CI workflows a project hand-edits, notify-on-drift like
-# cp_pattern), and the shared _cp_replace / _backup mechanism (where the A7
-# symlink defenses live) plus mkx, are defined in install-lib.sh. They're SOURCED (not exec'd) so they run in this shell with its
-# globals (FORCE) and `set -euo pipefail`. Extracted to keep this script under the
-# scaffold's own 500-line module-size cap; see install-lib.sh for the full policy
-# rationale.
+# (scaffold-owned CI workflows: lint.yml, tests.yml, coverage.yml,
+# gitleaks.yml, notify-on-drift like cp_pattern, since #110), and the shared
+# _cp_replace / _backup mechanism (where the A7 symlink defenses live) plus
+# mkx, are defined in install-lib.sh. They're SOURCED (not exec'd) so they
+# run in this shell with its globals (FORCE) and `set -euo pipefail`.
+# Extracted to keep this script under the scaffold's own 500-line
+# module-size cap; see install-lib.sh for the full policy rationale.
 # shellcheck source=install-lib.sh
 . "$SCAFFOLD_DIR/install-lib.sh"
 
@@ -396,10 +397,13 @@ fi
 
 # Opt-in gitleaks CI workflow (--gitleaks-ci). The unskippable server-side gate
 # that pairs with --gitleaks-hook's local pass. A dedicated flag (mirroring
-# --coverage-gate) actually INSTALLS the workflow, so npx users — who have no
-# persistent copy of gitleaks.yml.template on disk — can wire the CI gate too.
+# --coverage-gate) actually INSTALLS the workflow, so npx users (who have no
+# persistent copy of gitleaks.yml.template on disk) can wire the CI gate too.
+# cp_scaffold_preserve, not cp_scaffold (#110, same drift-preserving policy as
+# lint.yml since #105): a re-run keeps a hand-edited or pre-existing
+# gitleaks.yml and prints a drift note instead of silently overwriting it.
 if [ "$GITLEAKS_CI" -eq 1 ]; then
-  cp_scaffold "$SCAFFOLD_DIR/.github/workflows/gitleaks.yml.template" ".github/workflows/gitleaks.yml"
+  cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/gitleaks.yml.template" ".github/workflows/gitleaks.yml"
   echo "note: gitleaks.yml is the unskippable CI secret scan (runs even without --no-verify locally)."
 fi
 

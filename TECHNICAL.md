@@ -211,11 +211,13 @@ any of `requirements.txt`, `requirements-dev.txt`, or `requirements/dev.txt`
 that exist, so tests that import the package under test can actually
 collect.
 
-`.github/workflows/tests.yml` is a scaffold-claimed filename: `install.sh`
-treats it as scaffold-owned code (the same policy as the pre-commit hook and
-`lib/check-*` scanners) and refreshes it on every re-run, so a project that
-already has its own hand-written `tests.yml` will have it replaced (backed up
-to `.scaffold-bak` first, with a warning printed at install time).
+`.github/workflows/tests.yml` is a scaffold-claimed filename, but unlike the
+pre-commit hook and `lib/check-*` scanners it is drift-preserving, not
+refreshed on re-run (`cp_scaffold_preserve`, #110, the same policy `lint.yml`
+got in #105): a project that already has its own hand-written `tests.yml`, or
+one it edited after a scaffold install, keeps it, with a `note (drift):` line
+explaining how to merge or replace it. `install.sh --force` replaces it
+anyway, backed up to `.scaffold-bak` first.
 
 Two ways to change this:
 
@@ -387,7 +389,7 @@ it.
 
 ## Update & uninstall
 
-**Update:** re-running `install.sh` is the upgrade path. Scaffold-owned code (the hook, the `lib/check-*` scanners, the `commit-msg` hook, `tests.yml`/`coverage.yml`) is refreshed whenever it differs from the shipped version (that's how you receive security fixes), and **any file it overwrites is backed up to `<file>.scaffold-bak` first, with a `backed up:` line in the output**, so an edit you made to one is recoverable rather than silently gone. `.github/workflows/lint.yml` is scaffold-owned but commonly project-edited (to add local CI steps), so it follows a drift-preserving policy instead (#105): a re-run that finds it changed from the shipped version keeps your edit and prints a `note (drift):` line rather than overwriting it; `install.sh --force` replaces it anyway, backed up first. If you have been wiring project-local checks into `.githooks/pre-commit` or `.github/workflows/lint.yml`, move them to `.githooks/local.d/` (see [Customize per project](#customize-per-project)); that directory is never written by an upgrade.
+**Update:** re-running `install.sh` is the upgrade path. Scaffold-owned code (the hook, the `lib/check-*` scanners, the `commit-msg` hook) is refreshed whenever it differs from the shipped version (that's how you receive security fixes), and **any file it overwrites is backed up to `<file>.scaffold-bak` first, with a `backed up:` line in the output**, so an edit you made to one is recoverable rather than silently gone. The four shipped CI workflows (`.github/workflows/lint.yml`, `tests.yml`, `coverage.yml`, `gitleaks.yml`) are scaffold-owned but commonly project-edited (adding local CI steps to `lint.yml`) or pre-existing under a scaffold-claimed filename (`tests.yml` especially), so they all follow a drift-preserving policy instead: `lint.yml` since #105, the other three since #110. A re-run that finds one changed from the shipped version keeps your edit and prints a `note (drift):` line rather than overwriting it; `install.sh --force` replaces it anyway, backed up first. If you have been wiring project-local checks into `.githooks/pre-commit` or `.github/workflows/lint.yml`, move them to `.githooks/local.d/` (see [Customize per project](#customize-per-project)); that directory is never written by an upgrade.
 
 Your own config files are a separate case: they're local forks of the templates and are left alone entirely unless you pass `--force`. `install.sh --force` replaces them, backing up each changed file to `<file>.scaffold-bak` first so no edit is lost — and it never overwrites your `CLAUDE.md` (the import block is merged in once) or `AGENTS.md` (left as-is, since its Project section is yours). Diff first:
 

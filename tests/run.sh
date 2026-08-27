@@ -56,7 +56,7 @@ for case_file in \
   "$HERE/cases/18-doctor.sh" \
   "$HERE/cases/19-test-workflow.sh" \
   "$HERE/cases/20-paired-artifacts.sh" \
-  "$HERE/cases/21-lint-workflow-drift.sh"; do
+  "$HERE/cases/21-ci-workflow-drift.sh"; do
   # shellcheck source=/dev/null
   . "$case_file"
 done

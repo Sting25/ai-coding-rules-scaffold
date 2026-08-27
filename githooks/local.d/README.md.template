@@ -5,10 +5,15 @@ pre-commit hook and the CI `guardrails` job. **`install.sh` never writes into
 this directory**, so upgrading the scaffold cannot unwire your checks.
 
 This exists because the alternative used to be editing `.githooks/pre-commit`
-or `.github/workflows/lint.yml` to add a call site. Both are scaffold-owned:
-a re-run of `install.sh` refreshes them to the shipped version, so the call
-site disappeared while the check script stayed on disk — the check silently
-became decoration (issue #72). Put local checks here instead.
+or `.github/workflows/lint.yml` to add a call site. `.githooks/pre-commit` is
+scaffold-owned, so a re-run of `install.sh` refreshes it to the shipped
+version: a call site added there disappears while the check script stays on
+disk, and the check silently becomes decoration (issue #72).
+The installed workflow files (`lint.yml`, `tests.yml`, `coverage.yml`,
+`gitleaks.yml`) are scaffold-owned too, but drift-preserving as of #105 and
+#110: a customized file is kept with a note, and only `install.sh --force`
+replaces it. Put local checks here instead of either, since this directory is
+never written by an upgrade, in the hook or in CI.
 
 ## Contract
 
@@ -27,9 +32,9 @@ what the shipped `lib/check-*` scripts receive:
 
 Which files are in the list differs by caller, matching the shipped split:
 
-| Caller | List |
-| --- | --- |
-| pre-commit hook | staged files (`--diff-filter=ACMR`) |
+| Caller              | List                                                                           |
+| ------------------- | ------------------------------------------------------------------------------ |
+| pre-commit hook     | staged files (`--diff-filter=ACMR`)                                            |
 | CI `guardrails` job | the PR/push **diff**, falling open to the whole tree when there's no diff base |
 
 The diff scope is deliberate: installing the scaffold onto an existing repo

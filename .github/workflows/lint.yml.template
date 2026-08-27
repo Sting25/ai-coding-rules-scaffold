@@ -127,7 +127,7 @@ jobs:
           # lint anything. The scaffold ships eslint.config.js whose peer deps must
           # be in package.json + the lockfile, or `npm ci` won't install them and
           # eslint crashes cryptically. Turn that into an actionable error instead.
-          PEERS='eslint @eslint/js typescript-eslint eslint-plugin-import-x eslint-plugin-unused-imports'
+          PEERS='eslint @eslint/js @eslint/compat typescript-eslint eslint-plugin-import-x eslint-plugin-unused-imports'
           if [ -f eslint.config.js ]; then
             if ! npx --no-install eslint --version >/dev/null 2>&1; then
               echo "::error file=eslint.config.js::eslint is not installed. Run: npm i -D $PEERS  — then commit package-lock.json (CI installs from the lockfile)."

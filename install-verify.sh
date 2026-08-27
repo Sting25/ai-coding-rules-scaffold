@@ -84,7 +84,7 @@ run_toolchain_verify() {
     case "$MODE" in
       frontend|both)
         JSI=$(js_install_cmd)
-        offer "eslint" "npx --no-install eslint --version" "$JSI" "eslint @eslint/js typescript-eslint eslint-plugin-import-x eslint-plugin-unused-imports"
+        offer "eslint" "npx --no-install eslint --version" "$JSI" "eslint @eslint/js @eslint/compat typescript-eslint eslint-plugin-import-x eslint-plugin-unused-imports"
         offer "typescript (tsc)" "npx --no-install tsc --version" "$JSI" "typescript"
         offer "prettier" "npx --no-install prettier --version" "$JSI" "prettier"
         offer "vitest" "npx --no-install vitest --version" "$JSI" "vitest @vitest/coverage-v8"
