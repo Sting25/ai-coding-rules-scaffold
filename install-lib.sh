@@ -16,12 +16,16 @@
 # Re-running install.sh is the supported UPGRADE path, so each destination is
 # copied through the policy its OWNERSHIP demands:
 #
-#   cp_scaffold  scaffold-owned CODE — scanners, libs, hooks, CI workflows. These
-#                carry security fixes, so a plain re-run REFRESHES them whenever
-#                they differ from the shipped version (no --force needed); that's
-#                how an upgrader who just re-runs install.sh actually receives the
-#                fixes. Every overwrite is backed up first (#72) — a project may
-#                have edited one, and that edit must never vanish silently.
+#   cp_scaffold  scaffold-owned CODE: scanners, libs, hooks. These carry
+#                security fixes, so a plain re-run REFRESHES them whenever they
+#                differ from the shipped version (no --force needed); that's
+#                how an upgrader who just re-runs install.sh actually receives
+#                the fixes. Every overwrite is backed up first (#72), a project
+#                may have edited one, and that edit must never vanish silently.
+#                No CI workflow file uses this policy any more (as of #110,
+#                every shipped workflow goes through cp_scaffold_preserve
+#                below instead: a project commonly hand-edits or pre-authors
+#                these, and a plain refresh risks silently discarding that).
 #   cp_safe      USER-OWNED files — ruff.toml, eslint config, .scaffold.toml,
 #                dependabot.yml, the rules docs, etc. A project customizes these,
 #                so they're never auto-replaced: skip unless --force (which backs
@@ -31,15 +35,21 @@
 #                would clobber those rows, so a re-run only NOTIFIES on drift and
 #                keeps the user's file; --force backs up + replaces so the user's
 #                additions survive in .scaffold-bak for manual merge-back.
-#   cp_scaffold_preserve  scaffold-owned CI workflow that a project is expected
-#                to hand-edit (today: only .github/workflows/lint.yml, to add
-#                local CI steps). Same drift-preserving behavior as cp_pattern:
+#   cp_scaffold_preserve  scaffold-owned CI workflows that a project is expected
+#                to hand-edit or that commonly arrive pre-authored: today,
+#                .github/workflows/lint.yml, tests.yml, coverage.yml and
+#                gitleaks.yml. Same drift-preserving behavior as cp_pattern:
 #                a re-run only NOTIFIES on drift and keeps the user's edits;
-#                --force backs up + replaces. Added for #105: a plain cp_scaffold
-#                refresh here silently discarded a consumer's CI customization
-#                (measured on a real downstream repo: 23 deletions, 0 insertions)
-#                with no signal beyond a log line and no way back except the
-#                .scaffold-bak.
+#                --force backs up + replaces. Added for lint.yml in #105: a
+#                plain cp_scaffold refresh there silently discarded a
+#                consumer's CI customization (measured on a real downstream
+#                repo: 23 deletions, 0 insertions) with no signal beyond a log
+#                line and no way back except the .scaffold-bak. #110 extended
+#                the same policy to tests.yml, coverage.yml and gitleaks.yml:
+#                the same silent-discard risk applies to any hand-edited or
+#                pre-existing workflow file, not just lint.yml, and there was
+#                no principled reason to keep those three on the overwrite
+#                policy once the mechanism existed.
 #
 # The four policies share one write MECHANISM (_cp_replace) and one backup
 # routine (_backup), so the A7 symlink defenses live in exactly one place.
@@ -188,12 +198,13 @@ cp_pattern() {
   echo "installed:    $dst"
 }
 
-# cp_scaffold_preserve SRC DST: a scaffold-owned CI workflow the project is
-# expected to hand-edit (today: only .github/workflows/lint.yml, see the
-# policy comment above). Install if absent; on drift NOTIFY and keep the
-# user's file rather than overwriting it, same shape as cp_pattern, because a
-# plain cp_scaffold refresh here silently discards a consumer's CI
-# customization (#105) instead of merely risking it. --force still backs up +
+# cp_scaffold_preserve SRC DST: a scaffold-owned CI workflow (today:
+# lint.yml, tests.yml, coverage.yml, gitleaks.yml, see the policy comment
+# above). Install if absent; on drift NOTIFY and keep the user's file rather
+# than overwriting it, same shape as cp_pattern, because a plain cp_scaffold
+# refresh here silently discards a consumer's hand-edit or pre-existing
+# version of the file (#105 for lint.yml, extended to the other three CI
+# workflows in #110) instead of merely risking it. --force still backs up +
 # replaces, matching cp_scaffold/cp_pattern's --force semantics.
 cp_scaffold_preserve() {
   local src=$1 dst=$2
@@ -247,6 +258,11 @@ mkx() { if [ -f "$1" ]; then chmod +x "$1"; fi; }
 # adds --coverage-gate on top of a prior default install, the now-redundant
 # tests.yml (if untouched since install) is retired rather than left to
 # double-run.
+#
+# Both files are written through cp_scaffold_preserve, not cp_scaffold
+# (#110): a re-run that finds either file changed from the shipped version
+# keeps the drifted file and prints a "note (drift):" line instead of
+# refreshing it, same policy as lint.yml since #105.
 install_test_workflow_ci() {
   if [ "$NO_TEST_WORKFLOW" -eq 1 ]; then
     if [ "$COVERAGE_GATE" -eq 1 ]; then
@@ -261,7 +277,7 @@ install_test_workflow_ci() {
       echo "         by hand, or re-run without --no-test-workflow, before trusting this repo's CI as a real gate."
     fi
   elif [ "$COVERAGE_GATE" -eq 1 ] || { [ -f ".github/workflows/coverage.yml" ] && [ ! -f ".github/workflows/tests.yml" ]; }; then
-    cp_scaffold "$SCAFFOLD_DIR/.github/workflows/coverage.yml.template" ".github/workflows/coverage.yml"
+    cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/coverage.yml.template" ".github/workflows/coverage.yml"
     echo "note: coverage.yml gates patch coverage (default 100% of changed lines)."
     echo "      It forces changed lines to be RUN by a test, not verified — pair with review."
     if [ -f ".github/workflows/tests.yml" ]; then
@@ -282,17 +298,16 @@ install_test_workflow_ci() {
     fi
   else
     # `tests.yml` is a common consumer-authored filename, and this path is
-    # cp_scaffold (scaffold-owned: refreshed/overwritten on every run). On a
-    # FIRST install that collision is invisible unless we say so: a project
-    # that already had its own hand-written tests.yml would otherwise see it
-    # silently replaced (backed up, per cp_scaffold's policy, but with no
-    # explanation of why a file it didn't ask the scaffold to manage changed).
-    if [ -f ".github/workflows/tests.yml" ] && ! cmp -s "$SCAFFOLD_DIR/.github/workflows/tests.yml.template" ".github/workflows/tests.yml"; then
-      echo "warning: .github/workflows/tests.yml already exists and is not the scaffold's version."
-      echo "         tests.yml is a scaffold-claimed filename (install.sh treats it as scaffold-owned"
-      echo "         and refreshes it on every re-run); your version is backed up to .scaffold-bak."
-    fi
-    cp_scaffold "$SCAFFOLD_DIR/.github/workflows/tests.yml.template" ".github/workflows/tests.yml"
+    # cp_scaffold_preserve (scaffold-owned but drift-preserving, #110): a
+    # FIRST install that finds a differing, already-existing tests.yml (hand
+    # written, or edited since a prior scaffold install) is kept as-is, with
+    # cp_scaffold_preserve's own "note (drift): ..." line explaining why and
+    # how to replace it. No separate warning is printed here: a second message
+    # saying the same thing in different words would just be noise, and (pre
+    # #110) it also went stale the moment the underlying policy changed, since
+    # this file used to claim the pre-existing version gets backed up and
+    # refreshed on every re-run, which is no longer true.
+    cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/tests.yml.template" ".github/workflows/tests.yml"
     echo "note: tests.yml runs pytest/vitest on every PR/push with no coverage threshold."
     echo "      Add --coverage-gate for the patch-coverage strictness layer on top."
   fi

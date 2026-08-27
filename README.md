@@ -115,14 +115,14 @@ Tests run in CI by default: a plain install also drops `.github/workflows/tests.
 ```
 
 **Re-running is the upgrade path.** Running `install.sh` again refreshes
-scaffold-owned code — the pre-commit hook, the `.githooks/lib/*` scanners, the
-`commit-msg` hook, and the `tests.yml` / coverage workflows, whenever it differs
-from the shipped version, with no `--force` needed, so pulling a new tag and
-re-running delivers security fixes. Your own configs (`ruff.toml`,
-`eslint.config.js`, `.scaffold.toml`, the rules docs, …) are left untouched, and
-`.forbidden-patterns/*.txt` files and `.github/workflows/lint.yml` that you've
-edited are kept with a drift notice rather than overwritten (use `--force` to
-take the shipped version, backed up to `.scaffold-bak`).
+scaffold-owned code: the pre-commit hook, the `.githooks/lib/*` scanners, and
+the `commit-msg` hook, whenever it differs from the shipped version, with no
+`--force` needed, so pulling a new tag and re-running delivers security
+fixes. Your own configs (`ruff.toml`, `eslint.config.js`, `.scaffold.toml`,
+the rules docs, …) are left untouched, and `.forbidden-patterns/*.txt` files
+and the CI workflows (`lint.yml`, `tests.yml`, `coverage.yml`, `gitleaks.yml`)
+that you've edited are kept with a drift notice rather than overwritten (use
+`--force` to take the shipped version, backed up to `.scaffold-bak`).
 
 Language pattern files are auto-installed when their manifest is detected
 (`go.mod`, `Cargo.toml`, `composer.json`, `pom.xml`/`build.gradle`, `Gemfile`,

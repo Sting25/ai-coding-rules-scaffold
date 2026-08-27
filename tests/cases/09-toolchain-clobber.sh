@@ -330,11 +330,14 @@ rm -rf "$UCI"
 reset_repo
 
 # --- installer upgrade story: re-runs refresh scaffold-owned code -------------
-# A plain re-run must REFRESH scaffold-owned code (check-*, libs, hooks,
-# workflows) so security fixes reach an upgrader who just re-runs install.sh,
-# LEAVE user-owned files alone, and NOTIFY (never silently overwrite) on
-# .forbidden-patterns/*.txt drift. Each upgrade scenario installs once, mutates
-# one file to simulate the prior state, then re-runs and asserts the outcome.
+# A plain re-run must REFRESH scaffold-owned code (check-*, libs, hooks) so
+# security fixes reach an upgrader who just re-runs install.sh, LEAVE
+# user-owned files alone, and NOTIFY (never silently overwrite) on
+# .forbidden-patterns/*.txt drift. The shipped CI workflows are NOT part of
+# the refresh set (see the next case below), so "workflows" is deliberately
+# absent from that list: every one of them is drift-preserving, not
+# refreshed. Each upgrade scenario installs once, mutates one file to
+# simulate the prior state, then re-runs and asserts the outcome.
 
 # (T) re-run refreshes a STALE scaffold-owned scanner to the shipped version,
 #     without --force — the core upgrade path the design note called for.
@@ -360,11 +363,13 @@ rm -rf "$URS"
 #     that meant a plain re-run silently discarded a project's own CI edits
 #     (#105: a real downstream repo measured 23 deletions, 0 insertions from one
 #     upgrade). It moved to cp_scaffold_preserve, so it now behaves like a
-#     drifted .forbidden-patterns file: kept, with a drift note. Full drift /
-#     --force / pristine coverage for cp_scaffold_preserve lives in
-#     cases/21-lint-workflow-drift.sh; this one assertion keeps this section's
-#     own "re-runs refresh scaffold-owned code" framing honest, since it used to
-#     claim the opposite for lint.yml specifically.
+#     drifted .forbidden-patterns file: kept, with a drift note. #110 moved
+#     tests.yml, coverage.yml and gitleaks.yml to the same policy for the same
+#     reason. Full drift / --force / pristine coverage for cp_scaffold_preserve,
+#     across all four workflows, lives in cases/21-ci-workflow-drift.sh; this
+#     one assertion keeps this section's own "re-runs refresh scaffold-owned
+#     code" framing honest, since it used to claim the opposite for lint.yml
+#     specifically.
 URW=$(mktemp -d)
 ( cd "$URW" && git init --quiet && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify >/dev/null 2>&1 )
