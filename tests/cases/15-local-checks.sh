@@ -4,9 +4,10 @@
 # into the driver's shell, so the globals (PASS/FAIL/HOOK_OUT/SCAFFOLD_DIR) and
 # helpers are already in scope. Its own file: cases/09 is near the 500-line cap.
 #
-# What #72 was: .githooks/pre-commit and .github/workflows/lint.yml are the only
-# places a project can wire in a local check, both are cp_scaffold (refreshed on
-# a plain re-run), and cp_scaffold took no backup without --force. So an upgrade
+# What #72 was: .githooks/pre-commit and .github/workflows/lint.yml were the only
+# places a project could wire in a local check, both were cp_scaffold at the time
+# (refreshed on a plain re-run; lint.yml has since moved to cp_scaffold_preserve,
+# #105), and cp_scaffold took no backup without --force. So an upgrade
 # reset the call site with no backup and no signal — the check script stayed on
 # disk, nothing errored, and the guardrail became decoration.
 
