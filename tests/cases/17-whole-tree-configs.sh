@@ -120,7 +120,11 @@ fi
 
 # (T) The shipped config must PARSE. It is ESM with imports, so it is checked as
 #     .mjs; a syntax error here means every consumer's eslint fails to load.
-#     Skipped when node is absent rather than silently passing.
+#     Skipped when node is absent locally, but a missing node in CI (#85) is a
+#     FAILURE rather than a silent skip: this is the only syntax check on the
+#     shipped template, and test.yml has no setup-node step, so it relies on
+#     the runner image happening to ship node. If that ever stops being true,
+#     the check must go red instead of quietly stop running.
 if command -v node >/dev/null 2>&1; then
   ESM=$(mktemp -d)/eslint.config.mjs
   mkdir -p "$(dirname "$ESM")"
@@ -131,6 +135,8 @@ if command -v node >/dev/null 2>&1; then
     echo "  ✗ eslint.config.js.template has a syntax error"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
   fi
   rm -rf "$(dirname "$ESM")"
+elif [ -n "${GITHUB_ACTIONS:-}" ]; then
+  echo "  ✗ node not installed: eslint config syntax check cannot run in CI (#85)"; FAIL=$((FAIL + 1))
 else
   echo "  - skipped eslint config syntax check (node not installed)"
 fi
