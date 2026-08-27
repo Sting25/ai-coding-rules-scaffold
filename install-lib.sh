@@ -33,7 +33,7 @@
 #                additions survive in .scaffold-bak for manual merge-back.
 #   cp_scaffold_preserve  scaffold-owned CI workflow that a project is expected
 #                to hand-edit (today: only .github/workflows/lint.yml, to add
-#                local CI steps). Same drift-preserving behavior as cp_pattern —
+#                local CI steps). Same drift-preserving behavior as cp_pattern:
 #                a re-run only NOTIFIES on drift and keeps the user's edits;
 #                --force backs up + replaces. Added for #105: a plain cp_scaffold
 #                refresh here silently discarded a consumer's CI customization
@@ -134,12 +134,12 @@ cp_safe() {
 # That premise is TRUE for an untouched destination and FALSE for an edited one,
 # and nothing tested which it was. .githooks/pre-commit is the file a project
 # MUST edit to wire in a local check (.github/workflows/lint.yml used to be the
-# other one, until #105 moved it to cp_scaffold_preserve below — a project
+# other one, until #105 moved it to cp_scaffold_preserve below: a project
 # customizing its CI turned out to be at least as common as one customizing the
-# hook, and losing it needed more than a backup: it needed not being overwritten
-# at all), so the false case was the likely one — and its symptom was silent:
-# the local check script stayed on disk, its call site was reset, nothing
-# errored, and the guardrail became decoration. Backing up unconditionally
+# hook, and losing it needed more than a backup, it needed not being
+# overwritten at all), so the false case was the likely one, and its symptom
+# was silent: the local check script stayed on disk, its call site was reset,
+# nothing errored, and the guardrail became decoration. Backing up unconditionally
 # makes the loss recoverable AND prints a "backed up:" line, which is the
 # signal that was missing. Cost is a .scaffold-bak beside each file that
 # actually changed in the upgrade; `.githooks/local.d/` now exists so local
@@ -188,8 +188,8 @@ cp_pattern() {
   echo "installed:    $dst"
 }
 
-# cp_scaffold_preserve SRC DST — a scaffold-owned CI workflow the project is
-# expected to hand-edit (today: only .github/workflows/lint.yml — see the
+# cp_scaffold_preserve SRC DST: a scaffold-owned CI workflow the project is
+# expected to hand-edit (today: only .github/workflows/lint.yml, see the
 # policy comment above). Install if absent; on drift NOTIFY and keep the
 # user's file rather than overwriting it, same shape as cp_pattern, because a
 # plain cp_scaffold refresh here silently discards a consumer's CI
@@ -203,9 +203,9 @@ cp_scaffold_preserve() {
     fi
     if [ "$FORCE" -eq 0 ]; then
       if [ -L "$dst" ]; then
-        echo "skip (exists, symlink): $dst — left untouched; a scaffold path that is a symlink is suspicious. Replace it with --force."
+        echo "skip (exists, symlink): $dst, left untouched; a scaffold path that is a symlink is suspicious. Replace it with --force."
       else
-        echo "note (drift):  $dst differs from the shipped version — your customizations are kept. Diff against $src for upstream changes to merge, or re-run with --force to replace (backs yours up to .scaffold-bak)."
+        echo "note (drift):  $dst differs from the shipped version: your customizations are kept. Diff against $src for upstream changes to merge, or re-run with --force to replace (backs yours up to .scaffold-bak)."
       fi
       return
     fi

@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# cases/21-lint-workflow-drift.sh — cp_scaffold_preserve, install-lib.sh's
+# cases/21-lint-workflow-drift.sh: cp_scaffold_preserve, install-lib.sh's
 # drift-preserving policy for .github/workflows/lint.yml (#105). Sourced into
 # the driver's shell, so PASS/FAIL/HOOK_OUT/SCAFFOLD_DIR and helpers are
 # already in scope.
@@ -14,7 +14,7 @@
 # .forbidden-patterns/*.txt via cp_pattern; --force still replaces it, backed
 # up first.
 
-echo "cases/21 — lint.yml drift-preserving install policy (#105)"
+echo "cases/21: lint.yml drift-preserving install policy (#105)"
 
 _lwd_fixture() {
   local t
@@ -25,7 +25,7 @@ _lwd_fixture() {
 }
 
 # (T) drifted lint.yml is PRESERVED and the drift note is printed, with no
-#     .scaffold-bak — cp_scaffold_preserve only backs up under --force, same
+#     .scaffold-bak: cp_scaffold_preserve only backs up under --force, same
 #     as cp_pattern.
 LWD1=$(_lwd_fixture)
 printf '\n# local CI customization: setup-node for a local.d check\n' >>"$LWD1/.github/workflows/lint.yml"
@@ -41,7 +41,7 @@ fi
 rm -rf "$LWD1"
 
 # (T) --force on a drifted lint.yml backs up the user's version, then installs
-#     the shipped one — the documented escape hatch from the drift note,
+#     the shipped one: the documented escape hatch from the drift note,
 #     mirroring cp_pattern's --force behavior on forbidden-patterns files.
 LWD2=$(_lwd_fixture)
 printf '\n# local CI customization: setup-node for a local.d check\n' >>"$LWD2/.github/workflows/lint.yml"
@@ -55,7 +55,7 @@ else
 fi
 rm -rf "$LWD2"
 
-# (T) a PRISTINE (unchanged) lint.yml is a silent no-op on re-run — matches
+# (T) a PRISTINE (unchanged) lint.yml is a silent no-op on re-run: matches
 #     the shipped version, so nothing is "updated:", no drift note fires, and
 #     the file is untouched. Guards against cp_scaffold_preserve churning an
 #     already-current install (same guarantee cp_scaffold and cp_pattern give).
