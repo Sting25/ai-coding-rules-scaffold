@@ -34,6 +34,8 @@ The version lives in these places — all must agree on `vX.Y.Z`:
      for t in forbidden-patterns/*.txt.template; do cp "$t" ".forbidden-patterns/$(basename "$t" .template)"; done
      git -c core.quotepath=off ls-files -z | .githooks/lib/check-secrets --ci
      ```
+   - Commit these changes with message `chore(release): vX.Y.Z` (the commit-msg
+     hook requires conventional commit types; bare "release:" type is rejected).
    - Open the PR, wait for CI green on **both** runners, merge (`--merge`, never
      `--auto` — this repo has no branch protection).
 
