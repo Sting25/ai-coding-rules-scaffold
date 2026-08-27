@@ -14,14 +14,14 @@ _Added 2026-04-23. **Minimal version shipped 2026-06-10** — `install.sh --clau
 
 **Adopt if:** you have ≥3 concurrent agents, OR CI is rejecting more than ~1 violation/week that the agent could have caught at write-time, OR a single security incident from agent-issued shell commands has happened.
 
-**What it is.** IDE-level hooks fire at the agent's action boundary — *before* the agent edits a file or runs a shell command. Git hooks (this scaffold) fire at the commit boundary, after the agent has already written the code. Different boundary, different class of problem caught:
+**What it is.** IDE-level hooks fire at the agent's action boundary — _before_ the agent edits a file or runs a shell command. Git hooks (this scaffold) fire at the commit boundary, after the agent has already written the code. Different boundary, different class of problem caught:
 
-| Layer | Catches | This scaffold has it? |
-|---|---|---|
+| Layer                      | Catches                                                                    | This scaffold has it?                             |
+| -------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------- |
 | Agent hooks (pre-tool-use) | Agent about to exfiltrate a secret, run `curl \| bash`, edit outside scope | Yes — opt-in (`install.sh --claude` / `--cursor`) |
-| Linters (`ruff`, `eslint`) | Code quality once code is written | Yes |
-| Git pre-commit | Debug leaks, file size, forbidden patterns at commit | Yes |
-| CI mirror | All of the above, server-side, unskippable | Yes |
+| Linters (`ruff`, `eslint`) | Code quality once code is written                                          | Yes                                               |
+| Git pre-commit             | Debug leaks, file size, forbidden patterns at commit                       | Yes                                               |
+| CI mirror                  | All of the above, server-side, unskippable                                 | Yes                                               |
 
 **The minimal version (now shipped).** `install.sh --claude` wires `PreToolUse` to `.githooks/lib/agent-precheck`, which scans the content of a Write/Edit/Bash call against `.forbidden-patterns/secrets.txt` — the same patterns the commit-time `check-secrets` uses. For **Bash** tool calls it additionally scans the command against `.forbidden-patterns/shell.txt` (case-sensitive, matching commit-time semantics) — blocking `curl|bash`, `rm -rf /`, `chmod 777` before the agent runs them, which is the shell-command security scan called out below as the highest-ROI hook. The same rule set runs in three places: agent → commit → CI. The bundled `.claude/settings.json` also denies the agent reading credential files (`.env`, `*.pem`, `~/.ssh/**`, `~/.aws/**`, …) outright, and sets `enableAllProjectMcpServers: false` with an empty `enabledMcpjsonServers` allowlist — so a cloned/forked repo's `.mcp.json` can't auto-approve a source/env-exfiltrating MCP server (CVE-2026-21852).
 
@@ -39,7 +39,7 @@ _Added 2026-04-23._
 
 **Adopt if:** team includes junior developers using AI as a senior engineer, OR features regularly land that don't match what was asked for, OR scope creep is the dominant failure mode in code review.
 
-**What it is.** An opt-in `SPEC.md` template at the project root with sections for Problem / Non-goals / Constraints / Acceptance criteria / Open questions. Filled out *before* code starts. Anchors the agent to a defined scope and forces explicit non-goals — the section that catches AI scope creep most reliably.
+**What it is.** An opt-in `SPEC.md` template at the project root with sections for Problem / Non-goals / Constraints / Acceptance criteria / Open questions. Filled out _before_ code starts. Anchors the agent to a defined scope and forces explicit non-goals — the section that catches AI scope creep most reliably.
 
 **Why not in the scaffold.** Spec discipline is project-specific and team-specific. Imposing a template would push the scaffold from "rule enforcement" toward "process opinion," which is a different category of tool.
 
@@ -54,7 +54,7 @@ _Added 2026-04-22._
 - **Git conflict markers** — handled by `.githooks/lib/check-hygiene`, which scans every staged blob for `<<<<<<<` / `|||||||` / `>>>>>>>` markers (and also flags case-only filename collisions).
 - **AWS keys / credentials in any text file** — `check-secrets` already scans **every** tracked file's staged blob as text (no extension allowlist), so a key in Markdown / YAML / JSON is caught.
 
-**Still open:** a general-purpose `common.txt` for *project-defined* cross-language deny patterns (e.g. an internal hostname that should never appear in any file type). Held back pending demand — `check-patterns` could gain a `common.txt` consumed across all extensions if a concrete need appears.
+**Still open:** a general-purpose `common.txt` for _project-defined_ cross-language deny patterns (e.g. an internal hostname that should never appear in any file type). Held back pending demand — `check-patterns` could gain a `common.txt` consumed across all extensions if a concrete need appears.
 
 ---
 
@@ -84,12 +84,12 @@ _Added 2026-06-16. **Patch-coverage gate shipped 2026-06-16** — `install.sh --
 
 **Adopt mutation testing if:** a coverage gate is already in place **and** assertion-free / trivially-passing tests are getting through review (a signature agent pattern when coverage is the target).
 
-**What you can and can't machine-force.** You cannot force *meaningful* tests with a build gate — only mechanical proxies, every one gameable, most of all by an agent optimizing to pass the gate. The proxies, weakest to strongest:
+**What you can and can't machine-force.** You cannot force _meaningful_ tests with a build gate — only mechanical proxies, every one gameable, most of all by an agent optimizing to pass the gate. The proxies, weakest to strongest:
 
 - **"source changed ⇒ a test file changed"** — trivially satisfied by touching a test; high false-positive on refactors/docs. Not worth shipping.
 - **Whole-repo coverage threshold** (`≥ 80%`) — old untested code masks new gaps. Weak for a scaffold.
-- **Patch / diff coverage** (changed lines must be covered) — the strongest *defensible* gate, and what the scaffold ships (`--coverage-gate`). The honest ceiling: it forces changed lines to be **executed** by a test, never **verified** by one. An assertion-free test that just calls the function gives 100% patch coverage.
-- **Mutation testing** (`Stryker` for TS/JS, `mutmut` / `cosmic-ray` for Python) — the only tool that measures test *quality*: it injects faults and checks the tests catch them. It closes the assertion-free hole, but it's slow, needs tuning, and still requires tests to exist first. Gate on mutation score for the changed files only.
+- **Patch / diff coverage** (changed lines must be covered) — the strongest _defensible_ gate, and what the scaffold ships (`--coverage-gate`). The honest ceiling: it forces changed lines to be **executed** by a test, never **verified** by one. An assertion-free test that just calls the function gives 100% patch coverage.
+- **Mutation testing** (`Stryker` for TS/JS, `mutmut` / `cosmic-ray` for Python) — the only tool that measures test _quality_: it injects faults and checks the tests catch them. It closes the assertion-free hole, but it's slow, needs tuning, and still requires tests to exist first. Gate on mutation score for the changed files only.
 
 **Why mutation testing stays deferred.** Default-on mutation testing makes CI minutes-to-tens-of-minutes slower and is flaky on some code shapes — too heavy to impose by default. Wire it as a separate opt-in job (or a nightly run) over the diff, not the whole tree. Until then this is docs-only; the patch-coverage gate plus required human review is the shipped answer to "how do we force tests."
 

@@ -7,13 +7,13 @@ keeps them from drifting.
 
 The version lives in these places — all must agree on `vX.Y.Z`:
 
-| Place | File | What to change |
-|-------|------|----------------|
-| git tag | — | annotated tag `vX.Y.Z` |
-| changelog | `CHANGELOG.md` | promote `[Unreleased]` → `[vX.Y.Z] — DATE` |
-| README pin | `README.md` | the `git clone --branch vX.Y.Z` line |
-| npm | `package.json` | `"version": "X.Y.Z"` |
-| Homebrew | `packaging/homebrew/ai-coding-rules-scaffold.rb` + the tap | `url` (tag) + `sha256` |
+| Place      | File                                                       | What to change                             |
+| ---------- | ---------------------------------------------------------- | ------------------------------------------ |
+| git tag    | —                                                          | annotated tag `vX.Y.Z`                     |
+| changelog  | `CHANGELOG.md`                                             | promote `[Unreleased]` → `[vX.Y.Z] — DATE` |
+| README pin | `README.md`                                                | the `git clone --branch vX.Y.Z` line       |
+| npm        | `package.json`                                             | `"version": "X.Y.Z"`                       |
+| Homebrew   | `packaging/homebrew/ai-coding-rules-scaffold.rb` + the tap | `url` (tag) + `sha256`                     |
 
 ## 1. Prepare (PR to `main`)
 
@@ -65,6 +65,7 @@ OIDC publishing depends on a **Trusted Publisher** registered on npmjs.com. Do
 this ONCE per package (all fields case-sensitive, exact):
 
 npmjs.com → the package → **Settings → Trusted Publisher → GitHub Actions**:
+
 - **Organization or user:** `Sting25`
 - **Repository:** `ai-coding-rules-scaffold`
 - **Workflow filename:** `release.yml`
@@ -140,6 +141,7 @@ brew install sting25/tap/ai-coding-rules-scaffold && ai-coding-rules-scaffold --
 ## Fully automated — no secrets anywhere
 
 The whole pipeline is now hands-off and **tokenless**:
+
 - **npm publish + GitHub Release** — `release.yml` on tag push, via OIDC trusted
   publishing (no `NPM_TOKEN`).
 - **Homebrew tap** — the tap's own `bump-formula` workflow, via its own

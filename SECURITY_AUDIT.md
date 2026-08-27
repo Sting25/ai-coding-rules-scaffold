@@ -2,8 +2,8 @@
 
 ## Audit 2026-06-30 — packaging / release / dev-setup pass (latest)
 
-**Date:** 2026-06-30  ·  **Base:** HEAD of `main` (commit `79fbb91`, v0.9.0 + the
-post-release npm / Homebrew / dev-setup surface added in PRs #34–#36)  ·  **Method:**
+**Date:** 2026-06-30 · **Base:** HEAD of `main` (commit `79fbb91`, v0.9.0 + the
+post-release npm / Homebrew / dev-setup surface added in PRs #34–#36) · **Method:**
 15-dimension multi-agent fan-out → per-finding adversarial reproduction (each candidate
 reproduced in a throwaway git repo under a scratch dir; verifiers never touched the
 tracked tree) → maintainer re-reproduction of both High findings. New packaging/release/CI
@@ -12,12 +12,12 @@ baseline.
 
 **Result:** 17 candidates · **16 survived** (15 CONFIRMED + 1 PARTIAL) · 1 refuted · 10 novel.
 
-| Severity | Count | Novel | Already tracked / by-design |
-|---|---|---|---|
-| high | 2 | 1 (B1 ✅) | 1 (B2 ✅ — A1 fix never reached check-hygiene) |
-| medium | 4 | 2 (B3 ✅, B4 ✅) | 2 (B5 ✅, B6 ✅) |
-| low | 6 | 4 (B8 ✅, B9 ✅, B10 ✅, B11 ✅) | 2 (B7 ✅ variant, B12 ✅) |
-| info / by-design | 1 | 0 | B13 |
+| Severity         | Count | Novel                            | Already tracked / by-design                    |
+| ---------------- | ----- | -------------------------------- | ---------------------------------------------- |
+| high             | 2     | 1 (B1 ✅)                        | 1 (B2 ✅ — A1 fix never reached check-hygiene) |
+| medium           | 4     | 2 (B3 ✅, B4 ✅)                 | 2 (B5 ✅, B6 ✅)                               |
+| low              | 6     | 4 (B8 ✅, B9 ✅, B10 ✅, B11 ✅) | 2 (B7 ✅ variant, B12 ✅)                      |
+| info / by-design | 1     | 0                                | B13                                            |
 
 > Two High findings were the actionable headline; **both are now ✅ FIXED**. **B1** was a genuinely
 > new location of the already-fixed A7 symlink class. **B2** showed the A1 "fail-closed on over-cap
@@ -29,6 +29,7 @@ baseline.
 ### 🟠 High
 
 **B1 — `install_claude_md` / `install_agents_md` write THROUGH a symlink (A7-class, in the two handlers the A7 fix never touched)** — `install.sh:218,233,241` · **NOVEL** · ✅ **FIXED** (`fix/audit-b1-claude-agents-symlink`)
+
 - **What:** the A7 symlink defense (`[ -e ] || [ -L ]`, `rm -f` before `cp`, `cp -P` backups)
   lives only in `_cp_replace`/`_backup`/`cp_safe`/`cp_scaffold`/`cp_pattern`. The two bespoke
   merge handlers still use the pre-A7 `[ -e ]`-only guard around a raw `cp`/`>>` redirect.
@@ -49,14 +50,15 @@ baseline.
   redirecting through the link. Add a `tests/cases/09`-style regression for both handlers.
 - **Fixed (as landed):** both handlers now test `[ -L ]` **first** and SKIP with a "symlink,
   suspicious" notice — never writing through the link, for the dangling-create, live-append, and
-  AGENTS.md-create branches alike. Chose the `cp_safe` *user-owned* policy (skip + surface) over the
-  `cp_scaffold` *replace* policy, because `CLAUDE.md`/`AGENTS.md` are explicitly never clobbered (not
+  AGENTS.md-create branches alike. Chose the `cp_safe` _user-owned_ policy (skip + surface) over the
+  `cp_scaffold` _replace_ policy, because `CLAUDE.md`/`AGENTS.md` are explicitly never clobbered (not
   even with `--force`); a symlink there is left untouched and reported, never silently replaced.
   Locked with three red→green tests in `tests/cases/09` (dangling `CLAUDE.md` create, live `CLAUDE.md`
   append, dangling `AGENTS.md` create); each fails against the pre-fix handler and passes after — full
   suite **178/0**, `shellcheck -S info` clean.
 
 **B2 — `check-hygiene` fails OPEN on over-cap lines: the A1 fail-closed fix never reached the hidden-Unicode (Trojan Source) and conflict-marker branches** — `githooks/lib/check-hygiene.template:106,163` · **already tracked but mis-prioritized + contradicts the A1 "FIXED" claim** · ✅ **FIXED** (`fix/audit-b2-hygiene-fail-closed`)
+
 - **What:** `check-secrets.template:159` carries the A1 fix (`awk '… { d=1; next } … END { exit (d ? 9 : 0) }'`,
   then reports the un-scannable line and sets `FAILED`). `check-hygiene`'s conflict-marker (`:106`)
   and hidden-Unicode (`:163`) branches still use the plain `awk 'length > n { next } { print }'`
@@ -66,7 +68,7 @@ baseline.
   Trojan Source (CVE-2021-42574) and the Rules-File-Backdoor in agent-read files — and rides through
   with exit 0. This propagates into every consumer repo.
 - **Repro (re-reproduced by maintainer):** a U+202E bidi override on a short line → `✗ … hidden
-  Unicode control char`, exit 1; the **identical bytes** padded past the cap → no output, exit 0,
+Unicode control char`, exit 1; the **identical bytes** padded past the cap → no output, exit 0,
   at both `MAX_LINE_LENGTH=100` and the default 50000 (and identically in `--ci`). Conflict-marker
   variant on an over-cap line: exit 0.
 - **Fix:** bring both hygiene awk passes to parity with `check-secrets` (`END { exit (d ? 9 : 0) }`,
@@ -89,18 +91,19 @@ baseline.
 ### 🟡 Medium
 
 **B3 — npm `files` allowlist omits `gitleaks.yml.template` + `dependency-review.yml.template` that README + `install.sh` tell users to copy in; `tests/cases/11` does not catch it** — `package.json:8-32`, `tests/cases/11-npm-bundle.sh:33-37` · **NOVEL** (merges the npm-package, docs-accuracy, and test-harness finders) · ✅ **FIXED** (`fix/audit-b3-npm-bundle-security-templates`)
+
 - **What:** the two security-CI templates are git-tracked but absent from the npm `files`
   allowlist, so `npm pack` ships only `lint.yml.template` + `coverage.yml.template` from
   `.github/workflows/`. Yet `install.sh:371` prints (on every `--gitleaks-hook` run) `… see
-  gitleaks.yml.template …`, and `README.md:409,425` tell the user to "Copy it in" — files the
+gitleaks.yml.template …`, and `README.md:409,425` tell the user to "Copy it in" — files the
   npm/`npx` consumer does not have (git-clone and Homebrew users do; the formula bundles the whole
   tree). `tests/cases/11` advertises "every install.sh source file is in the npm bundle" but derives
   its REQUIRED set only from `$SCAFFOLD_DIR/…` reads + three globbed dirs, so manually-"copy it in"
   templates are out of scope and the case stays green — a false negative on exactly the bundle-drift
   guard, for two security gates.
 - **Repro:** `npm pack --dry-run --json | … grep workflows` → only coverage + lint; `test -f
-  package/.github/workflows/gitleaks.yml.template` → MISSING; `tests/cases/11` → `PASS=1 FAIL=0`
-  despite the gap (mutation: removing `coverage.yml.template` from `files` *does* turn it red — that
+package/.github/workflows/gitleaks.yml.template` → MISSING; `tests/cases/11` → `PASS=1 FAIL=0`
+  despite the gap (mutation: removing `coverage.yml.template` from `files` _does_ turn it red — that
   one is in REQUIRED; the gitleaks/dependency-review omission is invisible).
 - **Fix:** add both templates to `package.json` `files`, **and** extend `cases/11`'s REQUIRED set to
   glob `.github/workflows/*.yml.template` (or any README/`install.sh`-referenced template) so the
@@ -108,13 +111,14 @@ baseline.
 - **Fixed (as landed):** both templates added to `package.json` `files` (bundle now ships all four
   `.github/workflows/*.yml.template`, verified via `npm pack --dry-run`), and `cases/11`'s REQUIRED
   set globs `.github/workflows/*.yml.template` — chosen over hardcoding the two names so the guard
-  fails closed on *any* future workflow template, not just today's two. Now checks 45 files (was 43).
+  fails closed on _any_ future workflow template, not just today's two. Now checks 45 files (was 43).
   Teeth: mutation-removing either (or both) template(s) from `files` turns `cases/11` red and **names
   the exact missing path(s)** ("missing 2 of 45"), the class that was invisible before. Suite
   **181/0**, `shellcheck -S info` clean. (Verified the install.sh/README references by hand:
   `install.sh:387` names `gitleaks.yml.template`; `README.md:409,425` say "Copy it in" for both.)
 
 **B4 — `scripts/dev-setup.sh` renders scanners with bare `cp`, regressing the A7 symlink write-through fix (arbitrary out-of-repo overwrite)** — `scripts/dev-setup.sh:27-40` · **NOVEL** · ✅ **FIXED** (`fix/audit-b4-dev-setup-symlink`)
+
 - **What:** `install.sh` writes every scaffold file through `_cp_replace` (`rm -f "$dst"` before
   `cp`, the A7 fix). `dev-setup.sh` uses bare `cp "$t" ".githooks/lib/…"` with no prior `rm -f`, and
   `mkdir -p .githooks/lib` follows a symlinked dir. Since `.githooks/`/`.forbidden-patterns/` are
@@ -130,7 +134,7 @@ baseline.
   hence medium not high. (`self-lint.yml:43,47` also renders with bare `cp` but runs in an ephemeral
   runner with no planted symlinks.)
 - **Fixed (as landed):** `dev-setup.sh` gained two helpers mirroring `_cp_replace` — `_cp` (`rm -f
-  "$dst"` before `cp`, so a symlink at a rendered file path is dropped and a real file lands in-tree)
+"$dst"` before `cp`, so a symlink at a rendered file path is dropped and a real file lands in-tree)
   and `_mkdir_safe` (drops a symlinked dir before `mkdir -p`, so `.githooks`/`.githooks/lib`/
   `.forbidden-patterns` can't redirect writes outside the repo). Both write-through paths were
   **re-reproduced by hand first** (file symlink → victim's first line became `#!/usr/bin/env bash`;
@@ -142,15 +146,16 @@ baseline.
   symlinks, so it's out of scope here rather than silently swept in.
 
 **B5 — Non-dotfile env files (`config.env`, `prod.env`) bypass `check-filenames`; chains with the deferred A5 unquoted-value gap for a dual-layer leak** — `githooks/lib/check-filenames.template:54-59` · **already tracked (stale section, never carried forward)** · ✅ **FIXED** (`fix/audit-b5-nondotfile-env-filenames`)
+
 - **What:** the `.env` arm matches only `.env`/`.env.*` (case-folded). `config.env`/`prod.env`/
   `staging.env` match no arm, so the file commits. With an unquoted `KEY=value` secret it also evades
   the content scanner (the deliberately-deferred A5 quoted-only rule), so **both** layers pass. This is
   `SECURITY_AUDIT.md:469` ("`foo.env` and arbitrary env files are not blocked"), recorded ⬜ Open in
-  the *stale* 2026-06-09/10 Info table and never carried into the authoritative 2026-06-30 section
+  the _stale_ 2026-06-09/10 Info table and never carried into the authoritative 2026-06-30 section
   (whose only `check-filenames` work was the A4 case-fold). Zero test coverage.
 - **Repro:** `printf 'CONFIG_TOKEN=supersecretvalue12345\n' > config.env`; both `check-filenames` and
   `check-secrets` exit 0 (hook + `--ci`); end-to-end the commit lands. Control: `.env` is blocked; a
-  *quoted* value in `config.env` IS caught by `check-secrets` (so the filename layer is the only gap
+  _quoted_ value in `config.env` IS caught by `check-secrets` (so the filename layer is the only gap
   for the unquoted case).
 - **Fix:** add a `*.env` case to the env arm (keeping the `.env.example` allowlist); add a
   `cases/04` fixture asserting `prod.env` is rejected, mutation-proven.
@@ -161,10 +166,11 @@ baseline.
   (`config.env`, `prod.env`, and case-folded `PROD.ENV` → blocked) plus #36g NEGATIVE
   (`config.env.example` still passes — guards against over-matching). Mutation-reverting the `*.env`
   glob turns exactly #36e/#36f red (3 cases) and leaves #36g green. Suite **187/0**, `shellcheck -S
-  info` clean. The unquoted-value content-scanner gap (A5) remains deliberately deferred to the
+info` clean. The unquoted-value content-scanner gap (A5) remains deliberately deferred to the
   gitleaks layer; this closes the filename layer so the two no longer fail open together.
 
 **B6 — `agent-precheck` over-long-line filter still FAILS OPEN (allow): the A1 fail-closed upgrade was never applied to the agent-write layer** — `githooks/lib/agent-precheck.template:58-59,127` · **already tracked** (`SECURITY_AUDIT.md:50`; A1 header listed `:57-59`, fix said "should fail closed on the Bash path") · ✅ **FIXED** (`fix/audit-b6-agent-precheck-fail-closed`)
+
 - **What:** line 58 drops any line over `MAX_LINE_LENGTH` with the plain `awk 'length > n { next }'`
   and line 59 (`[ -n "$content" ] || exit 0`) then exits 0 = ALLOW. Both Claude and Cursor treat any
   non-2 exit as allow. So a secret (Claude `Write` content) or a dangerous shell command (Cursor
@@ -181,7 +187,7 @@ baseline.
   prints a `BLOCKED by agent-precheck: … too long to scan …` message and `exit 2`, before the
   `[ -n "$content" ] || exit 0` allow-path. This is the **one place agent-precheck blocks rather than
   failing open** — a deliberate carve-out from the file's "never brick the session" philosophy, on the
-  grounds that an *unscannable* line differs from a *missing scanner* (jq/config still fail open) and
+  grounds that an _unscannable_ line differs from a _missing scanner_ (jq/config still fail open) and
   must not be less strict than the short-input block. No `printf | head` on this path, so the A2
   SIGPIPE class doesn't apply. Locked with `tests/cases/07` #48h (secret on a >`MAX_LINE_LENGTH` line
   → exit exactly 2 + the too-long message; mutation-reverting the template drops it to exit 0 and turns
@@ -190,6 +196,7 @@ baseline.
 ### ⚪ Low
 
 **B7 — Binary key/keystore files (`*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.ppk`) bypass the filename block; the content scanner can't backstop binary key material** — `githooks/lib/check-filenames.template:43-64` · **new variant of the existing extension list** · ✅ **FIXED** (`fix/audit-b7-keystore-filenames`)
+
 - **What:** the filename block knows only `*.pem`, `.env*`, and the four `id_*` SSH names. The other
   ubiquitous private-key/keystore extensions have no arm, and the only key content rule
   (`secrets.txt.template:43` PEM armor `-----BEGIN … PRIVATE KEY-----`) never matches a binary
@@ -214,13 +221,14 @@ baseline.
   positives red and leaves #36j green. Suite **194/0**, `shellcheck -S info` clean.
 
 **B8 — `package.json` `os: ["darwin","linux"]` hard-blocks native-Windows / Git-Bash npm install, contradicting `cli.js` + README Windows support** — `package.json:36-39` · **NOVEL** · ✅ **FIXED** (`fix/audit-b8-drop-os-gate`)
+
 - **What:** npm enforces `os` as `EBADPLATFORM` (hard exit 1, package not installed) when
   `process.platform` is not listed. Native Windows (Git Bash and PowerShell) reports `win32`; only WSL
   reports `linux`. Yet `cli.js:38-41` emits a "run it from Git Bash or WSL" hint and `README.md:93-94,
-  499-500` promise Git Bash "runs it fine". So the Git-Bash user can never reach the hint — npm refuses
+499-500` promise Git Bash "runs it fine". So the Git-Bash user can never reach the hint — npm refuses
   the install first.
 - **Repro:** `npm install` of a package with `os:["win32"]` on darwin → `npm error code EBADPLATFORM
-  … (current: {"os":"darwin"})`, exit 1, `node_modules` empty — the symmetric mirror of `win32` hitting
+… (current: {"os":"darwin"})`, exit 1, `node_modules` empty — the symmetric mirror of `win32` hitting
   `["darwin","linux"]`.
 - **Fix:** drop the `os` field (the bash/Windows guidance already lives in `cli.js` + README), or
   replace the hard gate with a non-fatal guidance check inside `cli.js`. Security-neutral; usability only.
@@ -233,13 +241,15 @@ baseline.
   Suite **198/0**.
 
 **B9 — `dev-setup.sh` aborts with raw `fatal: not in a git directory` (exit 128) when run before `git init`, unlike `install.sh`'s graceful guard** — `scripts/dev-setup.sh:44` · **NOVEL** · ✅ **FIXED** (`fix/audit-b9-b10-dev-setup-hookspath-guards`)
+
 - **What:** `git config core.hooksPath .githooks` runs unconditionally under `set -euo pipefail`; with
-  no `.git` it exits 128 and `set -e` propagates a hard failure *after* every file is already rendered
+  no `.git` it exits 128 and `set -e` propagates a hard failure _after_ every file is already rendered
   and chmod'd. `install.sh:387-398` handles the same case with a `git rev-parse --git-dir` guard and an
   actionable warning (exit 0).
 - **Fix:** mirror `install.sh`'s guard around line 44 (warn + exit 0 with a "run `git init` first" hint).
 
 **B10 — `dev-setup.sh` unconditionally clobbers a pre-existing `core.hooksPath` (e.g. Husky), unlike `install.sh` which preserves it** — `scripts/dev-setup.sh:44` · **NOVEL** · ✅ **FIXED** (`fix/audit-b9-b10-dev-setup-hookspath-guards`)
+
 - **What:** `install.sh:387-398` only sets `core.hooksPath` when unset or already `.githooks`, warning
   otherwise (deliberate Husky/lefthook protection). `dev-setup.sh` overwrites it unconditionally.
 - **Repro:** `git config core.hooksPath .husky` then `dev-setup.sh` → silently becomes `.githooks`;
@@ -257,18 +267,19 @@ baseline.
   preserve check reddens only B10-preserve. Suite **197/0**, `shellcheck -S info` clean.
 
 **B11 — RELEASING.md release-notes `awk` emits EMPTY notes when the literal `vX.Y.Z` placeholder isn't substituted (ships a blank GitHub Release), and uses an unanchored version guard** — `RELEASING.md:47-48` · **NOVEL** · ✅ **FIXED** (`fix/audit-b11-releasing-notes-guard`)
+
 - **What:** if the maintainer copy-pastes the line without replacing `vX.Y.Z`, no heading matches, awk
   emits 0 bytes, and the next command `gh release create … --notes-file /tmp/notes.md` publishes a
   blank-body Release with no error. Separately, the exit guard `!/vX\.Y\.Z/` is an unanchored substring
   match, so an adjacent `## [...]` heading containing the version as a substring would leak its body
   (latent — the project's flat SemVer tags never collide today).
 - **Fix:** anchor the guard to the heading (`!/^## \[vX\.Y\.Z\]/`) and add `[ -s /tmp/notes.md ] || {
-  echo "ERROR: empty release notes" >&2; exit 1; }` before `gh release create`. Maintainer-procedure
+echo "ERROR: empty release notes" >&2; exit 1; }` before `gh release create`. Maintainer-procedure
   doc defect, recoverable post-hoc — low.
 - **Fixed (as landed):** both applied. The end-of-section guard is now
   `!/^## \[vX\.Y\.Z\]/` (anchored, so an adjacent `## [vX.Y.Z-hotfix]`-style heading no longer leaks its
   body), and a `[ -s /tmp/notes.md ] || { echo "ERROR: empty release notes — did you substitute
-  vX.Y.Z?"; exit 1; }` gate sits before `gh release create` so an un-substituted placeholder aborts
+vX.Y.Z?"; exit 1; }` gate sits before `gh release create` so an un-substituted placeholder aborts
   loudly instead of shipping a blank Release. **No permanent regression test:** RELEASING.md is a
   copy-paste maintainer procedure with no shipped code path to regress, and a test that greps + evals the
   awk out of the markdown would be brittle theater. Instead both bugs were **reproduced empirically** and
@@ -277,6 +288,7 @@ baseline.
   excluded under the anchored one). Suite unchanged at **199/0** (doc-only change).
 
 **B12 — `_backup` >99-cap `return 1` aborts the whole install mid-run with no rollback (a concrete trigger of the already-tracked `set -e` mid-script-abort limitation)** — `install.sh:127` · **already tracked** (`SECURITY_AUDIT.md:45`, Medium, open) · ✅ **FIXED** (`fix/audit-b12-backup-cap-skip`)
+
 - **What:** with 100 stale `.scaffold-bak[.N]` files for a destination, `_backup` returns 1; callers do
   `_backup "$dst" || return 1`; under `set -euo pipefail` the bare top-level `cp_*` call aborts the
   script. On a first install this happens before the `core.hooksPath` wiring, leaving hooks unwired with
@@ -310,13 +322,14 @@ baseline.
 ### ℹ️ By design / re-confirmed (captured, not new work)
 
 **B13 — Security-grade `shell.txt` rules (`curl|bash`, `rm -rf /`, `chmod 777`, `--no-verify`, TLS-bypass) are disableable via a committed `.scaffold.toml`** — `forbidden-patterns/shell.txt.template:5-10`, `githooks/lib/check-patterns.template:195-196` · **PARTIAL · documented design**
+
 - The pattern engine has no non-overridable tier; only `check-secrets`/`check-filenames` are locked
   (`scaffold-config.template:19-23`, README "What you cannot override"). `forbidden-patterns/README.md:85-87`
   already disclaims the pattern engine as a hostile-committer boundary (the attacker owns the file and can
   pass `--no-verify`); the CI fork-PR variant + base-ref recommendation are in `lint.yml.template:301-314`
   and recommendation #3 below. Reproduced (exit 1 → exit 0 for all six rules) but not a new exploit. The
   only genuinely new angle — it applies on the local hook side too — adds no surface since a local committer
-  is already trusted. *Option, if desired:* add a `# scaffold-locked` / `nonoverridable = true` marker the
+  is already trusted. _Option, if desired:_ add a `# scaffold-locked` / `nonoverridable = true` marker the
   config refuses to disable, and apply it to the security-grade `shell.txt` rules.
 - **Re-confirmed, already tracked (no new entry):** `uninstall --all` `rm -rf .forbidden-patterns`
   destroys user-authored pattern files (`uninstall.sh:159`; already at `SECURITY_AUDIT.md:62,462`).
@@ -335,56 +348,58 @@ and the cross-grep / bash-3.2 portability sweep (no BSD-vs-GNU or bash-4-ism div
 
 ## Audit 2026-06-30 — full-tree re-audit
 
-**Date:** 2026-06-30  ·  **Base:** HEAD of `main` (post-v0.8.0, commit `4ad17a9`)  ·  **Method:** 11-dimension multi-agent fan-out (68 agents) → per-finding adversarial verification (each finding reproduced in a throwaway git repo) → maintainer re-reproduction of the critical/high tier.
+**Date:** 2026-06-30 · **Base:** HEAD of `main` (post-v0.8.0, commit `4ad17a9`) · **Method:** 11-dimension multi-agent fan-out (68 agents) → per-finding adversarial verification (each finding reproduced in a throwaway git repo) → maintainer re-reproduction of the critical/high tier.
 
 **Result:** 57 confirmed · 49 confirmed-as-stated · 8 partial · 0 refuted.
 
 | Severity | Confirmed | Fixed on `fix/audit-2026-06-30` |
-|---|---|---|
-| critical | 1 | 1 |
-| high | 9 | 3 |
-| medium | 10 | 0 |
-| low | 37 | 0 |
+| -------- | --------- | ------------------------------- |
+| critical | 1         | 1                               |
+| high     | 9         | 3                               |
+| medium   | 10        | 0                               |
+| low      | 37        | 0                               |
 
-> ⚠️ **The historical sections below (2026-06-09/10, base `89ac255`, pre-PR #6) are STALE.** Several findings they mark `⬜ Open` have since been FIXED in shipped code, and one fix introduced a new critical bug. Trust *this* section over the per-finding `✅/⬜` markers further down:
-> - *"sk- regex misses modern OpenAI/Anthropic keys"* → **FIXED**: `secrets.txt` now ships `sk-ant-`, `sk-proj-`, `sk-svcacct-`/`sk-admin-`.
-> - *"Deleting the forbidden-patterns config disables the scan"* → **FIXED**: `pre-commit` now has the `DELETED_CONFIG` guard.
-> - *"Combined-ERE ReDoS hang"* → **FIXED** with a `MAX_LINE_LENGTH` line cap — but that cap **fails OPEN** (new finding **A1** below).
-> - *"scaffold-allow substring anywhere"* → **PARTIALLY fixed** (a comment leader is now required) but still bypassable (new finding **A3** below).
+> ⚠️ **The historical sections below (2026-06-09/10, base `89ac255`, pre-PR #6) are STALE.** Several findings they mark `⬜ Open` have since been FIXED in shipped code, and one fix introduced a new critical bug. Trust _this_ section over the per-finding `✅/⬜` markers further down:
+>
+> - _"sk- regex misses modern OpenAI/Anthropic keys"_ → **FIXED**: `secrets.txt` now ships `sk-ant-`, `sk-proj-`, `sk-svcacct-`/`sk-admin-`.
+> - _"Deleting the forbidden-patterns config disables the scan"_ → **FIXED**: `pre-commit` now has the `DELETED_CONFIG` guard.
+> - _"Combined-ERE ReDoS hang"_ → **FIXED** with a `MAX_LINE_LENGTH` line cap — but that cap **fails OPEN** (new finding **A1** below).
+> - _"scaffold-allow substring anywhere"_ → **PARTIALLY fixed** (a comment leader is now required) but still bypassable (new finding **A3** below).
 
 ### 🔴 Critical
 
 **A1 — Secret on a line longer than `MAX_LINE_LENGTH` is silently dropped (scanner fails OPEN)** — `githooks/lib/check-secrets.template:154-157` (same hole: `check-patterns.template:171-174`, `check-hygiene.template:106,163`, `agent-precheck.template:57-59`)
+
 - **What:** the ReDoS guard drops any line longer than `MAX_LINE_LENGTH` (default 50000) via `awk 'length > n { next }'`, emits only a stderr warning, and never sets `FAILED` — exit stays `0`, in the local hook **and** `--ci` mode. A credential on a single >50k-char line (minified/no-newline blob) is never scanned.
 - **Repro:** a 60000-char line + `AKIA…` → `--ci` prints "line(s) … dropped" and exits 0; the same key on a normal line exits 1. Verified end-to-end and via the awk pre-pass in isolation.
 - **Fix:** the secret scanner must **fail closed** on a dropped line (report + `exit 1`), or scan the long line with a linear matcher (fixed-string prescreen / fixed-width windows). `agent-precheck` should fail closed on the Bash path.
 
 ### 🟠 High
 
-- **A2 — `agent-precheck` block path fails OPEN via SIGPIPE** — `githooks/lib/agent-precheck.template:99-106`. `{ …; printf '%s\n' "$hit" | head -3; } >&2` then `exit 2`, under `set -euo pipefail`: with ≥4 matched lines, `head` closes the pipe, `printf`→SIGPIPE→141, `pipefail`+`set -e` abort **before `exit 2`**. Claude/Cursor treat only exit 2 as "block", so the matched Write/Bash is **allowed**. *Fix:* `printf … | head -3 || true`.
-- **A3 — `scaffold-allow` can smuggle a real secret; documented "can't be smuggled" guarantee is false** — `check-secrets.template:167`, `check-patterns.template:188`, `check-hygiene.template:109,169`, `agent-precheck.template:96`. The exemption accepts a bare `--` anywhere on the line; secret charsets contain `-`, so `const k = "AKIA… -- scaffold-allow";` (marker inside the string, `--` not a comment in JS) suppresses the finding and exits 0. *Fix:* drop bare `--`, require the leader at start-of-line/after-whitespace, and correct the docs (inline suppression is inherently author-usable, like `# noqa`).
-- **A4 — `check-filenames` matches credential filenames case-sensitively** — `check-filenames.template:39,48-57`. `*.pem`, `.env`, `id_rsa` are byte-compared, so `key.PEM`/`.ENV`/`ID_RSA` bypass on the case-insensitive filesystems (macOS/Windows) the project targets. Dual-layer bypass: `.ENV` with `INTERNAL_TOKEN=plainword` passes both scanners. *Fix:* lowercase via `tr` before matching (bash-3.2-safe).
-- **A5 — Generic credential regex requires QUOTED values** — `secrets.txt.template:53`. `['"]…{16,}['"]` misses unquoted `.env`/YAML/shell/Dockerfile assignments (the dominant leak surface), JS backticks, and `=>` values. *Fix:* optional quotes + value terminator.
-- **A6 — Underscore-prefixed credential names evade the same rule** — `secrets.txt.template:53`. `(^|[^A-Za-z_])` treats `_` as a word char, so `db_password`, `MY_API_KEY`, `DATABASE_PASSWORD` aren't matched even when quoted. *Fix:* change the boundary to `(^|[^A-Za-z])`.
-- **A7 — `cp_safe` follows symlink destinations (arbitrary-path write; installed scanner left as a symlink)** — `install.sh:78-105`. `[ -e "$dst" ]` dereferences symlinks: a dangling symlink at a scaffold path makes `cp` write outside the repo and leaves the installed scanner as a symlink; a symlink→outside-file with `--force` overwrites that file. Gated on a planted symlink. *Fix:* `[ -e "$dst" ] || [ -L "$dst" ]`, `rm -f` before copy, `cp -P` for backups, guard the `cmp -s` no-op.
-- **A8 — Several common cloud/SaaS credential formats have no prefix rule** — `secrets.txt.template:12-35`. SendGrid, Twilio (AC-SID + auth token), Mailgun, Square, Shopify, Azure Storage/AD, Mailchimp, Telegram bot tokens fall through to the (weakened) generic rule → unscanned. *Fix:* add prefix-anchored lines.
-- **A9 — `scaffold-allow` exemption also smuggles past `check-hygiene`** — `check-hygiene.template:109,169` (hidden-Unicode / conflict markers). Same root cause as A3; *fix:* anchor the marker to a real trailing comment token.
+- **A2 — `agent-precheck` block path fails OPEN via SIGPIPE** — `githooks/lib/agent-precheck.template:99-106`. `{ …; printf '%s\n' "$hit" | head -3; } >&2` then `exit 2`, under `set -euo pipefail`: with ≥4 matched lines, `head` closes the pipe, `printf`→SIGPIPE→141, `pipefail`+`set -e` abort **before `exit 2`**. Claude/Cursor treat only exit 2 as "block", so the matched Write/Bash is **allowed**. _Fix:_ `printf … | head -3 || true`.
+- **A3 — `scaffold-allow` can smuggle a real secret; documented "can't be smuggled" guarantee is false** — `check-secrets.template:167`, `check-patterns.template:188`, `check-hygiene.template:109,169`, `agent-precheck.template:96`. The exemption accepts a bare `--` anywhere on the line; secret charsets contain `-`, so `const k = "AKIA… -- scaffold-allow";` (marker inside the string, `--` not a comment in JS) suppresses the finding and exits 0. _Fix:_ drop bare `--`, require the leader at start-of-line/after-whitespace, and correct the docs (inline suppression is inherently author-usable, like `# noqa`).
+- **A4 — `check-filenames` matches credential filenames case-sensitively** — `check-filenames.template:39,48-57`. `*.pem`, `.env`, `id_rsa` are byte-compared, so `key.PEM`/`.ENV`/`ID_RSA` bypass on the case-insensitive filesystems (macOS/Windows) the project targets. Dual-layer bypass: `.ENV` with `INTERNAL_TOKEN=plainword` passes both scanners. _Fix:_ lowercase via `tr` before matching (bash-3.2-safe).
+- **A5 — Generic credential regex requires QUOTED values** — `secrets.txt.template:53`. `['"]…{16,}['"]` misses unquoted `.env`/YAML/shell/Dockerfile assignments (the dominant leak surface), JS backticks, and `=>` values. _Fix:_ optional quotes + value terminator.
+- **A6 — Underscore-prefixed credential names evade the same rule** — `secrets.txt.template:53`. `(^|[^A-Za-z_])` treats `_` as a word char, so `db_password`, `MY_API_KEY`, `DATABASE_PASSWORD` aren't matched even when quoted. _Fix:_ change the boundary to `(^|[^A-Za-z])`.
+- **A7 — `cp_safe` follows symlink destinations (arbitrary-path write; installed scanner left as a symlink)** — `install.sh:78-105`. `[ -e "$dst" ]` dereferences symlinks: a dangling symlink at a scaffold path makes `cp` write outside the repo and leaves the installed scanner as a symlink; a symlink→outside-file with `--force` overwrites that file. Gated on a planted symlink. _Fix:_ `[ -e "$dst" ] || [ -L "$dst" ]`, `rm -f` before copy, `cp -P` for backups, guard the `cmp -s` no-op.
+- **A8 — Several common cloud/SaaS credential formats have no prefix rule** — `secrets.txt.template:12-35`. SendGrid, Twilio (AC-SID + auth token), Mailgun, Square, Shopify, Azure Storage/AD, Mailchimp, Telegram bot tokens fall through to the (weakened) generic rule → unscanned. _Fix:_ add prefix-anchored lines.
+- **A9 — `scaffold-allow` exemption also smuggles past `check-hygiene`** — `check-hygiene.template:109,169` (hidden-Unicode / conflict markers). Same root cause as A3; _fix:_ anchor the marker to a real trailing comment token.
 - ~~**A10 — Test gap: `check-filenames` `*.pem` and SSH-key branches have zero tests**~~ **FIXED** — `tests/cases/04` #36c/#36d add lowercase `key.pem`/`id_rsa` plus every untested SSH alternative (`id_ed25519`/`id_ecdsa`/`id_dsa`) and the remaining `.env` allowlist entries (`.env.sample`/`.env.template`), each with the expected-substring guard. Teeth verified by mutation (breaking `*.pem` / dropping `id_ed25519` turns exactly the right cases red).
 
 ### 🟡 Medium
 
-| Title | Location |
-|---|---|
-| Mid-script `cp`/`mkdir` failure aborts under `set -e` with no rollback/summary | `install.sh:103-104,145-274` |
-| ~~Plain re-run keeps stale scaffold-owned scanners — security fixes never reach upgraders~~ **FIXED** — `cp_scaffold` refreshes scaffold-owned code on diff (see "installer upgrade story" below) | `install.sh` |
-| Uninstall never removes `.githooks/lib/ci-changed-files` (install adds 8 libs, uninstall removes 7) | `uninstall.sh:133` |
-| Generic credential keyword list omits `secret`, `client_secret`, `private_key`, `credential`, `pwd`, `auth` | `secrets.txt.template:53` |
-| URL-embedded-credentials rule misses empty-username userinfo (a redis-style URL with an empty user) | `secrets.txt.template:48` |
-| `agent-precheck` long-line filter empties content → exit 0, skipping a one-line Bash command scan | `agent-precheck.template:57-59` |
-| Template-only action pins get neither Dependabot updates nor drift-guard coverage; rot silently | `gitleaks.yml.template:38` (+ `dependency-review`/`coverage`/opt-in `lint` jobs) |
-| `dependency-review` defaults to `fail-on-severity: moderate`, allowing low-severity advisories | `dependency-review.yml.template:49` |
-| `scaffold-allow` over-broad in hygiene (substring after any leader, in files with no comments) | `check-hygiene.template:109,169` |
-| pre-commit stash push-failure and pop-conflict recovery paths are untested | `pre-commit.template:62-69,74-88` |
+| Title                                                                                                                                                                                             | Location                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Mid-script `cp`/`mkdir` failure aborts under `set -e` with no rollback/summary                                                                                                                    | `install.sh:103-104,145-274`                                                     |
+| ~~Plain re-run keeps stale scaffold-owned scanners — security fixes never reach upgraders~~ **FIXED** — `cp_scaffold` refreshes scaffold-owned code on diff (see "installer upgrade story" below) | `install.sh`                                                                     |
+| Uninstall never removes `.githooks/lib/ci-changed-files` (install adds 8 libs, uninstall removes 7)                                                                                               | `uninstall.sh:133`                                                               |
+| Generic credential keyword list omits `secret`, `client_secret`, `private_key`, `credential`, `pwd`, `auth`                                                                                       | `secrets.txt.template:53`                                                        |
+| URL-embedded-credentials rule misses empty-username userinfo (a redis-style URL with an empty user)                                                                                               | `secrets.txt.template:48`                                                        |
+| `agent-precheck` long-line filter empties content → exit 0, skipping a one-line Bash command scan                                                                                                 | `agent-precheck.template:57-59`                                                  |
+| Template-only action pins get neither Dependabot updates nor drift-guard coverage; rot silently                                                                                                   | `gitleaks.yml.template:38` (+ `dependency-review`/`coverage`/opt-in `lint` jobs) |
+| `dependency-review` defaults to `fail-on-severity: moderate`, allowing low-severity advisories                                                                                                    | `dependency-review.yml.template:49`                                              |
+| `scaffold-allow` over-broad in hygiene (substring after any leader, in files with no comments)                                                                                                    | `check-hygiene.template:109,169`                                                 |
+| pre-commit stash push-failure and pop-conflict recovery paths are untested                                                                                                                        | `pre-commit.template:62-69,74-88`                                                |
 
 ### ⚪ Low (themes; 37 findings)
 
@@ -393,8 +408,8 @@ and the cross-grep / bash-3.2 portability sweep (no BSD-vs-GNU or bash-4-ism div
 - **CI:** `check-hygiene` case-collision is diff-scoped in CI but the header claims whole-tree (`lint.yml.template:365`); `test.yml:66-68` pin-drift regex misses quoted `uses:`.
 - **`DELETED_CONFIG` gap** (`pre-commit.template:38`, partial): blocks deleting `.forbidden-patterns/*.txt` but not the `check-*` scripts, `scaffold-config`, or the hook itself.
 - **Uninstall** (partial): `--all` `rm -rf .forbidden-patterns` destroys user-authored pattern files (`uninstall.sh:159`); `awk`/`mv` failure in `clean_claude_md` aborts the rest of cleanup; `core.hooksPath --unset` can fail on a multivar value.
-- **Test gaps:** ~~the `MAX_LINE_LENGTH` drop~~ **FIXED** (cases/04 #31/#31b — an over-cap line is reported and the commit rejected, while a short secret on a normal line is still caught); ~~invalid-pattern-dropped~~ **FIXED** via the shared validation (cases/02 #17 — an invalid ERE is dropped with a warning and valid patterns still scan; `check-secrets:120` is a literal twin of that branch); **combined-regex-invalid (`USE_PREFILTER=0`) — DEFERRED, not portably reproducible**: by construction the per-pattern pass drops any individually-invalid pattern *before* `COMBINED` is built and wraps each survivor as `(p)`, so a valid pattern can only break the combined ERE through an unbalanced paren a lenient grep (GNU) reads as a literal — which a strict grep (BSD) rejects alone and drops first; the valid-alone→invalid-combined window is empty across both CI greps, so the `USE_PREFILTER=0` fail-closed fallback is retained as defense-in-depth but isn't deterministically testable; ~~CI fail-closed-on-missing-config~~ **FIXED** (cases/04 #30 — `check-secrets --ci` with `secrets.txt` removed exits non-zero, "secret scanner is disabled"); ~~`ci-changed-files` fail-open branches~~ **FIXED** (cases/10 #6/#7 lock the `have()`-false fall-through for absent PR-base/push-before SHAs; #8 locks `changed_or_all`'s internal diff-error→whole-tree fallback, mutation-proven isolated). ~~the `.env.example` allowlist, and the `assert_rejects` that omit the expected-substring guard~~ **FIXED** — the `.env` allowlist entries are covered (A10 fix) and every `assert_rejects` across the whole suite (cases/01/02/04/05) now carries an expected-substring guard, so a test can no longer pass merely because the hook crashed for an unrelated reason.
-- **Docs:** ~~`README.md` advertises `password=`/`token=` detection that only fires on quoted values (A5)~~ **FIXED** (the secret-scan row now says "quoted … assignments — unquoted/env-var forms are better caught by the gitleaks layer"); ~~"what lands" table omits `.github/dependabot.yml`~~ **FIXED** (present); ~~`--cursor` bullet omits the jq fail-open caveat~~ **FIXED** (says "needs `jq` and fails open"); ~~`forbidden-patterns/README.md` omits `.svelte`~~ **FIXED** (frontend.txt row now lists `*.svelte`, matching its `scaffold-extensions` header; the main README already documented it). Remaining: `SECURITY_AUDIT.md` (historical) stale "Open" statuses — mitigated by the "trust *this* section" banner atop the historical block; per-marker reconciliation deferred as high-churn/low-value.
+- **Test gaps:** ~~the `MAX_LINE_LENGTH` drop~~ **FIXED** (cases/04 #31/#31b — an over-cap line is reported and the commit rejected, while a short secret on a normal line is still caught); ~~invalid-pattern-dropped~~ **FIXED** via the shared validation (cases/02 #17 — an invalid ERE is dropped with a warning and valid patterns still scan; `check-secrets:120` is a literal twin of that branch); **combined-regex-invalid (`USE_PREFILTER=0`) — DEFERRED, not portably reproducible**: by construction the per-pattern pass drops any individually-invalid pattern _before_ `COMBINED` is built and wraps each survivor as `(p)`, so a valid pattern can only break the combined ERE through an unbalanced paren a lenient grep (GNU) reads as a literal — which a strict grep (BSD) rejects alone and drops first; the valid-alone→invalid-combined window is empty across both CI greps, so the `USE_PREFILTER=0` fail-closed fallback is retained as defense-in-depth but isn't deterministically testable; ~~CI fail-closed-on-missing-config~~ **FIXED** (cases/04 #30 — `check-secrets --ci` with `secrets.txt` removed exits non-zero, "secret scanner is disabled"); ~~`ci-changed-files` fail-open branches~~ **FIXED** (cases/10 #6/#7 lock the `have()`-false fall-through for absent PR-base/push-before SHAs; #8 locks `changed_or_all`'s internal diff-error→whole-tree fallback, mutation-proven isolated). ~~the `.env.example` allowlist, and the `assert_rejects` that omit the expected-substring guard~~ **FIXED** — the `.env` allowlist entries are covered (A10 fix) and every `assert_rejects` across the whole suite (cases/01/02/04/05) now carries an expected-substring guard, so a test can no longer pass merely because the hook crashed for an unrelated reason.
+- **Docs:** ~~`README.md` advertises `password=`/`token=` detection that only fires on quoted values (A5)~~ **FIXED** (the secret-scan row now says "quoted … assignments — unquoted/env-var forms are better caught by the gitleaks layer"); ~~"what lands" table omits `.github/dependabot.yml`~~ **FIXED** (present); ~~`--cursor` bullet omits the jq fail-open caveat~~ **FIXED** (says "needs `jq` and fails open"); ~~`forbidden-patterns/README.md` omits `.svelte`~~ **FIXED** (frontend.txt row now lists `*.svelte`, matching its `scaffold-extensions` header; the main README already documented it). Remaining: `SECURITY_AUDIT.md` (historical) stale "Open" statuses — mitigated by the "trust _this_ section" banner atop the historical block; per-marker reconciliation deferred as high-churn/low-value.
 
 ### Fixed on this branch (`fix/audit-2026-06-30`)
 
@@ -441,17 +456,17 @@ Blob-scanning via `git show ":0:<path>"` (defeats symlink/NUL/post-stage edits);
 
 ## Historical audit — 2026-06-09/10
 
-**Date:** 2026-06-09  ·  **Base commit audited:** `89ac255` (pre–PR #6)  ·  **Method:** multi-agent fan-out audit (86 agents, 6 dimensions) → adversarial empirical verification (PoCs reproduced in throwaway git repos) → completeness critic.
+**Date:** 2026-06-09 · **Base commit audited:** `89ac255` (pre–PR #6) · **Method:** multi-agent fan-out audit (86 agents, 6 dimensions) → adversarial empirical verification (PoCs reproduced in throwaway git repos) → completeness critic.
 
 **Result:** 73 candidates · **67 confirmed** (65 reproduced end-to-end) · 6 rejected by verification.
 
 | Severity | Confirmed | Fixed in `fix/audit-blob-scan-and-revert-node20` |
-|---|---|---|
-| critical | 1 | 1 |
-| high | 11 | 5 |
-| medium | 13 | 2 (+1 partial) |
-| low | 38 | 6 (+1 partial) |
-| info | 4 | 1 |
+| -------- | --------- | ------------------------------------------------ |
+| critical | 1         | 1                                                |
+| high     | 11        | 5                                                |
+| medium   | 13        | 2 (+1 partial)                                   |
+| low      | 38        | 6 (+1 partial)                                   |
+| info     | 4         | 1                                                |
 
 > This scaffold is **installed into other repos**, so any scanner bypass propagates to every consumer. The findings below reflect that blast radius.
 
@@ -520,7 +535,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ✅ Fixed · `critical` — Single NUL byte in a source-extension file bypasses secret + pattern scans (whole-file binary detection), silently on GNU grep and on CI
 
-- **Location:** `githooks/lib/check-secrets.template:79-92 (prefilter L79, attribution L83-84); identical defect in githooks/lib/check-patterns.template L81-87`  ·  *(reproduced: yes, confidence: high, dimension: completeness-probe)*
+- **Location:** `githooks/lib/check-secrets.template:79-92 (prefilter L79, attribution L83-84); identical defect in githooks/lib/check-patterns.template L81-87` · _(reproduced: yes, confidence: high, dimension: completeness-probe)_
 - **What:** check-secrets and check-patterns scan files with bare GNU/POSIX grep, passing neither -a nor --text nor --binary-files=text. grep's content-based binary detection trips on a single NUL byte anywhere in the file, treating the WHOLE file as binary. The scaffold's two-stage design then fails in two different ways depending on the grep implementation, and BOTH l…
 - **Impact:** Defeats the core security promise (block secrets / forbidden patterns) for any file an attacker or careless committer can put a single NUL byte into while keeping a scannable source extension. Verified end-to-end against the real check-secr…
 - **Recommendation:** Force text scanning so NUL no longer flips files to binary: add `-a` (GNU) / `--text` (or `--binary-files=text`) to BOTH the prefilter and the attribution grep calls in check-secrets.template and check-patterns.template. This makes GNU grep emit matching lines to stdout and makes ugrep scan the file…
@@ -530,7 +545,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ⬜ Open · `high` — sk- secret regex misses ALL modern OpenAI (sk-proj-) and Anthropic (sk-…) keys despite claiming to cover them
 
-- **Location:** `forbidden-patterns/secrets.txt.template:17`  ·  *(reproduced: yes, confidence: high, dimension: detection-efficacy)*
+- **Location:** `forbidden-patterns/secrets.txt.template:17` · _(reproduced: yes, confidence: high, dimension: detection-efficacy)_
 - **What:** The pattern is `sk-[A-Za-z0-9]{48,}` with description 'OpenAI / Anthropic-style API key'. The character class `[A-Za-z0-9]` excludes `-` and `_`. Every current OpenAI and Anthropic key format contains those separators after the `sk-` prefix: OpenAI project keys are `sk-proj-...` and Anthropic keys are `sk-…...`. The segment immediately after `sk-` is only `p…
 - **Impact:** A consumer who commits a real present-day OpenAI or Anthropic API key (the dominant case for the named providers) is NOT blocked by either the pre-commit hook or CI. The tool reports success and the secret merges. Because modern keys are us…
 - **Recommendation:** Add explicit modern-key patterns: `sk-ant-[A-Za-z0-9_-]{20,}` and `sk-proj-[A-Za-z0-9_-]{20,}`, and broaden the legacy form to `sk-[A-Za-z0-9_-]{20,}` (or keep both). Test each against current real key shapes. Update the description/README claim to match what actually ships.
@@ -538,7 +553,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ⬜ Open · `high` — curl|bash shell guard misses the most common real form `curl -fsSL <url> | bash` (and sudo/multi-space/wget -qO-)
 
-- **Location:** `forbidden-patterns/shell.txt.template:4`  ·  *(reproduced: yes, confidence: high, dimension: detection-efficacy)*
+- **Location:** `forbidden-patterns/shell.txt.template:4` · _(reproduced: yes, confidence: high, dimension: detection-efficacy)_
 - **What:** Pattern `(^\|[^A-Za-z_])(curl\|wget)[[:space:]][^[:space:]]*[[:space:]]*\\|[[:space:]]*(bash\|sh\|zsh)([[:space:]]\|$)` allows exactly ONE whitespace-delimited token between the tool name and the pipe: `[[:space:]][^[:space:]]*[[:space:]]*\\|`. Real invocations almost always have flags AND a URL (two+ tokens). Verified on GNU grep 3.11: `curl https://x.sh \|…
 - **Impact:** The README lists `curl \| bash` as one of three headline shell protections, but the single most common real-world spelling sails through both hook and CI. A consumer (or an AI agent writing a deploy script) commits `curl -fsSL https://get.e…
 - **Recommendation:** Allow zero-or-more tokens before the pipe and an optional privilege-escalation word after it, e.g. `(^\|[^A-Za-z_])(curl\|wget)([[:space:]]+[^\|]*)?\\|[[:space:]]*(sudo[[:space:]]+)?(bash\|sh\|zsh)`. Add positive test fixtures for `-fsSL`, `-qO-`, `sudo bash`, and multi-space variants in tests/run.s…
@@ -546,7 +561,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ⬜ Open · `high` — Deleting the forbidden-patterns config in the SAME commit disables the scan — config removal is not itself flagged
 
-- **Location:** `githooks/lib/check-secrets.template:19-20`  ·  *(reproduced: yes, confidence: high, dimension: scanner-bypass)*
+- **Location:** `githooks/lib/check-secrets.template:19-20` · _(reproduced: yes, confidence: high, dimension: scanner-bypass)_
 - **What:** check-secrets does `[ -f "$CONFIG" ] \|\| exit 0` and check-patterns does `[ -f "$config" ] \|\| return 0`. Because the hook stashes unstaged changes so the working tree matches the index, a single commit that `git rm`s `.forbidden-patterns/secrets.txt` makes the config absent at scan time, so check-secrets exits 0 (no-op) for that same commit. check-filenam…
 - **Impact:** A malicious or compromised contributor can land a secret AND silently neuter the secret/pattern scanner for the whole repo in one atomic commit that passes the hook and CI. Verified: `git rm .forbidden-patterns/secrets.txt` + add `AKIA...`…
 - **Recommendation:** Treat a missing/removed config as fail-closed in CI (the guardrails job should error if `.forbidden-patterns/secrets.txt` is absent), and have the hook/CI refuse a commit that deletes or empties a `.forbidden-patterns/*.txt` file (or warn loudly). At minimum, CI should assert the expected config fil…
@@ -554,7 +569,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ⬜ Open · `high` — scaffold-allow opt-out is a case-insensitive substring match anywhere on the line — trivially whitelists real secrets and over-matches
 
-- **Location:** `githooks/lib/check-secrets.template:83`  ·  *(reproduced: yes, confidence: high, dimension: scanner-bypass)*
+- **Location:** `githooks/lib/check-secrets.template:83` · _(reproduced: yes, confidence: high, dimension: scanner-bypass)_
 - **What:** Exemption is implemented as `grep -niE -- "$pat" file \| grep -iv 'scaffold-allow'` (and identically in check-patterns line 86). Any line containing the substring `scaffold-allow` ANYWHERE — including inside a string literal, a URL, a variable name, or arbitrary prose — is dropped from the violation set for BOTH the pattern and secret checks. It is not a tra…
 - **Impact:** An attacker who can get any text containing 'scaffold-allow' onto the same physical line as a secret exfiltrates it past the scanner. Even benign-looking lines like `note = "see scaffold-allow ticket"; password = "<a real 16+ char secret>"` smu…
 - **Recommendation:** Require the marker as a strict end-of-line comment token (e.g. match `(#\|//)\s*scaffold-allow\b` at line end only), and consider NOT honoring scaffold-allow for the secrets check at all (or require an explicit secret-specific token), so a code-style opt-out cannot whitelist credentials. Document th…
@@ -574,15 +589,15 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 > legitimate large data. Renaming code to dodge the line cap has no security
 > impact.
 
-- **Location:** `githooks/lib/check-secrets.template:25-34`  ·  *(reproduced: yes, confidence: high, dimension: scanner-bypass)*
-- **What:** check-secrets skips a large extension list (*.svg,*.png,*.jpg,*.lock,*.zip,... and package-lock.json/pnpm-lock.yaml/go.sum) and the entire `.forbidden-patterns/*` directory. check-size (check-size.template line 27-30) skips *.md,*.json,*.toml,*.yaml,*.yml,*.lock,*.txt,*.csv,*.sql and image types. These are name-based, not content-based, so renaming a text pa…
+- **Location:** `githooks/lib/check-secrets.template:25-34` · _(reproduced: yes, confidence: high, dimension: scanner-bypass)_
+- **What:** check-secrets skips a large extension list (_.svg,_.png,_.jpg,_.lock,_.zip,... and package-lock.json/pnpm-lock.yaml/go.sum) and the entire `.forbidden-patterns/*` directory. check-size (check-size.template line 27-30) skips *.md,*.json,_.toml,_.yaml,_.yml,_.lock,_.txt,_.csv,_.sql and image types. These are name-based, not content-based, so renaming a text pa…
 - **Impact:** A plaintext AWS key in `secret.png` or `package-lock.json`, or a 600-line code file renamed to data.sql/big.txt, passes silently in both hook and CI. Storing real credentials in any file under `.forbidden-patterns/` is wholly unscanned. Ver…
 - **Recommendation:** For check-secrets, gate the skip on actual binary content (e.g. NUL-byte sniff via `grep -qI`) rather than extension, so a text file with a binary extension is still scanned. Do not blanket-skip `.txt`/`.csv`/`.sql` for size, or at least scan them for secrets. Reconsider skipping the whole `.forbidd…
 - **Verifier note:** The finder's "passes silently in both hook and CI" is accurate and verified (I confirmed CI --ci mode also returns exit 0). One nuance: the pure rename attack (e.g. secret.png) requires deliberate int…
 
 ### ✅ Fixed · `high` — Dangling-symlink blob is a total secret bypass: [ -f "$f" ] is false, so the secret-carrying link blob is never scanned (hook AND CI)
 
-- **Location:** `githooks/lib/check-secrets.template:36, 78-79`  ·  *(reproduced: yes, confidence: high, dimension: completeness-probe)*
+- **Location:** `githooks/lib/check-secrets.template:36, 78-79` · _(reproduced: yes, confidence: high, dimension: completeness-probe)_
 - **What:** A symlink's committed blob content is its target path STRING. When the target does not exist (a dangling symlink), git still stages and commits the link as an ordinary Added (A) blob — it is NOT a type-change (T), so it survives the pre-commit `--diff-filter=ACMR` filter (githooks/pre-commit.template:28) and appears in CI's `git ls-files` (lint.yml.template:…
 - **Impact:** Any contributor (or compromised dependency / malicious PR) can commit an AWS key, GitHub PAT, Slack token, OpenAI key, or URL-embedded credential to any consumer repo by encoding it as a dangling-symlink target string. The scanner the tool…
 - **Recommendation:** Scan the COMMITTED BLOB, not the filesystem-resolved file. In the hook, derive content via `git show :"$f"` (index) and in CI via `git show "HEAD:$f"` / `git cat-file -p`, piping that to grep instead of passing the path. At minimum, explicitly detect symlinks (`[ -L "$f" ]` or `git ls-files -s`/`git…
@@ -590,7 +605,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ✅ Fixed · `high` — Live symlink: grep follows the link and scans the resolved target's content, never the committed blob — a secret-bearing target string ships undetected even when [ -f ] passes
 
-- **Location:** `githooks/lib/check-secrets.template:79, 83`  ·  *(reproduced: yes, confidence: high, dimension: completeness-probe)*
+- **Location:** `githooks/lib/check-secrets.template:79, 83` · _(reproduced: yes, confidence: high, dimension: completeness-probe)_
 - **What:** Even when a symlink IS live (`[ -f "$f" ]` true because it resolves to a real regular file), the scanner still never inspects the blob. `grep -niE -- "$COMBINED" "$file"` (check-secrets:79) and the per-pattern `grep` at :83 follow the symlink and read the RESOLVED TARGET's bytes, while the committed blob is the target PATH STRING. The two are completely disj…
 - **Impact:** A second, complementary bypass for the same root cause: secrets/forbidden content can be smuggled in a symlink's target-path string even when the link resolves (so it passes `[ -f ]`), because the scanner reads the wrong bytes. Combined wit…
 - **Recommendation:** Same fix as the dangling-link finding: scan blob bytes (`git show :"$f"` / `git cat-file -p`) rather than the filesystem path. If symlinks are genuinely needed in consumer repos, scan the link's target string as the content of interest. Never let grep follow a committed link to filesystem content th…
@@ -598,7 +613,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ⬜ Open · `high` — Combined-ERE pre-filter exhibits superlinear (≈O(n²)) blowup on long single lines — pre-commit hook and CI hang indefinitely (ReDoS)
 
-- **Location:** `githooks/lib/check-secrets.template:68-79`  ·  *(reproduced: yes, confidence: high, dimension: completeness-probe)*
+- **Location:** `githooks/lib/check-secrets.template:68-79` · _(reproduced: yes, confidence: high, dimension: completeness-probe)_
 - **What:** check-secrets builds COMBINED='(p1)\|(p2)\|...' from all secret patterns and runs `grep -niE -- "$COMBINED" "$file"` as a per-file pre-filter (line 79). GNU grep 3.11 (the grep a bash script invokes on consumer/CI Linux machines — verified `bash script.sh` resolves `grep` to /usr/bin/grep, not the host's ugrep shim) does NOT blow up on any single pattern, bu…
 - **Impact:** A single committed/staged file containing one long line of mixed alphanumeric content (a minified JS/CSS vendor bundle, a webpack chunk, a base64 data-URI, a source-map) hangs the pre-commit hook forever. The user must Ctrl-C; and the CI gu…
 - **Recommendation:** Do not rely on a single combined ERE as the speed pre-filter. (1) Cap line length / file size before scanning (e.g. skip or hard-fail files with any line > N KB, or feed grep a length guard); (2) prefer `grep -F`-able fixed prefixes where possible and/or run patterns individually (the per-pattern gr…
@@ -606,7 +621,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ✅ Fixed · `high` — Filenames containing newline/tab control chars bypass ALL scanners (hook + CI) — core.quotepath=off does not stop control-char C-quoting
 
-- **Location:** `githooks/pre-commit.template:24-28, 64-67`  ·  *(reproduced: yes, confidence: high, dimension: scanner-bypass)*
+- **Location:** `githooks/pre-commit.template:24-28, 64-67` · _(reproduced: yes, confidence: high, dimension: scanner-bypass)_
 - **What:** STAGED is computed with `git -c core.quotepath=off diff --cached --name-only` (newline-separated, no -z). The in-code comment (lines 24-27) claims core.quotepath=off prevents the C-quoting bypass, but quotepath=off only disables OCTAL escaping of non-ASCII/high-bit bytes — it does NOT disable C-quoting of control characters. A path containing a newline or ta…
 - **Impact:** An attacker (or a careless AI agent) can commit a file named `a<newline>b.py` (or with a tab) containing an AWS key / private key / oversized blob and it passes both the pre-commit hook (exit 0) and the CI guardrails job (exit 0). Defeats t…
 - **Recommendation:** Use NUL-delimited iteration end-to-end: `git -c core.quotepath=off diff --cached -z --name-only --diff-filter=ACMR` (and `ls-files -z`) piped to `while IFS= read -r -d '' f`. NUL-mode does not C-quote any path. Alternatively, after reading, detect/reject paths that begin with `"` and end with `"` (t…
@@ -614,7 +629,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ✅ Fixed · `high` — EXIT-trap `git stash pop` corrupts working tree and orphans stash on partial-staging (data loss)
 
-- **Location:** `githooks/pre-commit.template:44-61`  ·  *(reproduced: yes, confidence: high, dimension: shell-robustness)*
+- **Location:** `githooks/pre-commit.template:44-61` · _(reproduced: yes, confidence: high, dimension: shell-robustness)_
 - **What:** When a file is partially staged — staged changes AND further unstaged edits to overlapping lines (git's "MM" state, the normal `git add -p` / edit-after-add workflow) — the hook runs `git stash push --keep-index` (line 44), then on EXIT the trap runs `git stash pop --quiet 2>/dev/null \|\| true` (line 58). The `--keep-index` stash records both the index and…
 - **Impact:** A developer who stages part of a file and keeps editing it (an everyday git workflow) silently gets conflict markers injected into their working file, the index left in an unmerged state, and a dangling stash they were never told about — wh…
 - **Recommendation:** Detect a failed/conflicted pop and surface it loudly instead of swallowing it: capture `git stash pop` output and exit code; on non-zero, print a clear error pointing the user at `git stash list` / how to recover, and FAIL the hook (exit non-zero) so the commit does not silently proceed over a corru…
@@ -622,7 +637,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ✅ Fixed · `high` — Newline / control-char filenames bypass BOTH hook and CI; quotepath=off fix only covers high-byte UTF-8
 
-- **Location:** `githooks/pre-commit.template:24-28,64-67`  ·  *(reproduced: yes, confidence: high, dimension: correctness-quality)*
+- **Location:** `githooks/pre-commit.template:24-28,64-67` · _(reproduced: yes, confidence: high, dimension: correctness-quality)_
 - **What:** The hook (line 28) and CI (lint.yml.template line 71) both fix the C-quoting bypass by passing `-c core.quotepath=off`, and the comment (lines 24-27) plus CHANGELOG v0.4.0 'Security' entry frame this as closing the filename-based scan bypass. But `core.quotepath=off` only stops C-quoting of bytes >0x7F (non-ASCII); git STILL C-quotes filenames containing con…
 - **Impact:** A file whose name contains a newline (or tab/quote) and contains a secret, debug statement, blocked content, or is oversized passes every scanner in both the local hook and server-side CI. This is a complete bypass of the tool's core promis…
 - **Recommendation:** Use NUL-delimited enumeration end-to-end: `git -c core.quotepath=off diff --cached -z --name-only --diff-filter=ACMR` (and `ls-files -z` in CI) piped to lib checks reading with `while IFS= read -r -d '' f`. Add harness fixtures for newline/tab/quote filenames so the bypass class is actually tested.
@@ -641,7 +656,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 > on a scan run from the base ref. A full base-ref-checkout restructure is left
 > as a documented consumer option rather than shipped untested.
 
-- **Location:** `.github/workflows/lint.yml.template:60-77`  ·  *(reproduced: yes, confidence: high, dimension: supply-chain-ci)*
+- **Location:** `.github/workflows/lint.yml.template:60-77` · _(reproduced: yes, confidence: high, dimension: supply-chain-ci)_
 - **What:** The `guardrails` job is the server-side mirror of the pre-commit hook. It does `chmod +x .githooks/lib/check-*` and runs `.githooks/lib/check-{size,patterns,filenames,secrets}` (lines 68-76) — but these scripts, and the `.forbidden-patterns/*.txt` config files they read, are taken from the PR HEAD (the checked-out merge ref). On a `pull_request` event the sa…
 - **Impact:** The tool's core promise — 'block secrets, forbidden patterns, oversized files, bad filenames server-side via CI' — is defeated for exactly the PR that is trying to sneak content past it. CI shows a green guardrails check, lowering reviewer…
 - **Recommendation:** Run the check scripts and pattern configs from a TRUSTED ref (e.g., checkout the base branch's .githooks/.forbidden-patterns, or pin/vendor them), then scan the PR's file contents with the trusted scanner. Alternatively gate guardrails behind a separate workflow that fetches the scanner from the bas…
@@ -657,7 +672,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 > documents the limitation and points consumers at `lfs: true` + working-tree
 > scanning if they keep scannable text in LFS.
 
-- **Location:** `.github/workflows/lint.yml.template:65-77`  ·  *(reproduced: yes, confidence: high, dimension: completeness-probe)*
+- **Location:** `.github/workflows/lint.yml.template:65-77` · _(reproduced: yes, confidence: high, dimension: completeness-probe)_
 - **What:** Both check-secrets and check-patterns scan the WORKING TREE by path: they `[ -f "$f" ]`-test a path from `git ls-files` and then `grep -nE -- "$pat" "$file"`. They never read the committed blob (`git show :file` / `git cat-file -p HEAD:file` / `git grep --cached`). Git's content-filtering layer (gitattributes `filter=` clean/smudge, of which Git-LFS is the c…
 - **Impact:** A consumer repo that uses Git-LFS (extremely common for any repo with binary assets, models, datasets, fixtures) gets a server-side scanner that is blind to the real content of every LFS-tracked file. An attacker (or a careless committer) c…
 - **Recommendation:** Scan committed blobs, not the working tree, in the CI guardrails job. Options: (1) set `with: lfs: true` on actions/checkout in lint.yml.template AND `--no-text`/`-a` so smudged content is fetched — but this still trusts the smudge and is fragile; better (2) make the lib/check-* scripts read content…
@@ -665,7 +680,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ⬜ Open · `medium` — Hardcoded-credential regex misses unquoted assignments, env exports, YAML, and common credential keywords
 
-- **Location:** `forbidden-patterns/secrets.txt.template:30`  ·  *(reproduced: yes, confidence: high, dimension: detection-efficacy)*
+- **Location:** `forbidden-patterns/secrets.txt.template:30` · _(reproduced: yes, confidence: high, dimension: detection-efficacy)_
 - **What:** Pattern requires surrounding quotes `['"]` and one of only six keywords `password\|passwd\|token\|api[-_]?key\|secret[-_]?key\|access[-_]?token`. Verified MISS on GNU grep 3.11 for: `password: hunter2supersecretvalue` (YAML, no quotes), `export TOKEN=abcdefghij1234567890longvalue` (unquoted), `PASSWORD=abcdefghij1234567890longvalue` (unquoted), `aws_secret_a…
 - **Impact:** Credentials in .env files, docker-compose env, GitHub Actions YAML, and shell exports are not detected. Combined with the sk- gap above (modern keys are unquoted env vars), the credential-detection story has a large hole exactly where real…
 - **Recommendation:** Make the surrounding quotes optional and add a word-boundary terminator for the value (e.g. value class `[A-Za-z0-9_/+=.-]{16,}` with optional quotes), and broaden keywords to include `secret`, `client_secret`, `private_key`, `auth`, `aws_secret_access_key`, `apikey`. Be mindful that dropping the qu…
@@ -673,7 +688,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ⬜ Open · `medium` — GitHub fine-grained PAT (github_pat_...) prefix not covered by gh[pousr]_ pattern
 
-- **Location:** `forbidden-patterns/secrets.txt.template:15`  ·  *(reproduced: yes, confidence: high, dimension: detection-efficacy)*
+- **Location:** `forbidden-patterns/secrets.txt.template:15` · _(reproduced: yes, confidence: high, dimension: detection-efficacy)_
 - **What:** Pattern `gh[pousr]_[A-Za-z0-9]{36,}` matches classic tokens (ghp_, gho_, ghu_, ghs_, ghr_) — verified `ghp_<40>` FIRES. But GitHub fine-grained personal access tokens use the prefix `github_pat_` followed by base62 plus underscores, which `gh[pousr]_` cannot match (`github_pat_...` MISS verified). Fine-grained PATs are now GitHub's recommended token type, so…
 - **Impact:** A committed fine-grained GitHub PAT is not detected by hook or CI, despite README listing 'GitHub tokens' as covered.
 - **Recommendation:** Add a dedicated pattern `github_pat_[A-Za-z0-9_]{22,}` (the prefix plus the two underscore-separated segments). Keep the existing classic-token pattern.
@@ -681,7 +696,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ⬜ Open · `medium` — BEGIN-PRIVATE-KEY pattern only matches the header line; never validates key body, and is defeated by splitting/concatenating the header
 
-- **Location:** `forbidden-patterns/secrets.txt.template:20`  ·  *(reproduced: yes, confidence: high, dimension: completeness-probe)*
+- **Location:** `forbidden-patterns/secrets.txt.template:20` · _(reproduced: yes, confidence: high, dimension: completeness-probe)_
 - **What:** `-----BEGIN [A-Z ]*PRIVATE KEY-----` matches per-line (grep -nE). It fires ONLY on the literal header line and never inspects the actual key material on subsequent lines. Because the engine is wholly per-line with no multi-line/continuation awareness, the most sensitive credential type is detected by its least-secret token (a public, well-known marker string…
 - **Impact:** Any private key whose PEM header is split across a string concatenation, written with a line break, or emitted programmatically passes the scanner with the full key body intact in the repo. A consumer relying on the scaffold to 'block secre…
 - **Recommendation:** Add a body-shaped pattern in addition to the header (e.g. detect long contiguous base64 runs `[A-Za-z0-9+/]{60,}={0,2}` characteristic of key material, with allowlisting), and/or run a multi-line scan mode (grep -z / pcregrep -M) so the header+body block is matched as a unit. Document that line-spli…
@@ -689,7 +704,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ⬜ Open · `medium` — Hardcoded-credential regex defeated by splitting the value across string-concatenation / continuation lines
 
-- **Location:** `forbidden-patterns/secrets.txt.template:30`  ·  *(reproduced: yes, confidence: high, dimension: completeness-probe)*
+- **Location:** `forbidden-patterns/secrets.txt.template:30` · _(reproduced: yes, confidence: high, dimension: completeness-probe)_
 - **What:** The hardcoded-cred pattern requires keyword + `[:=]` + a single quoted run of `[A-Za-z0-9_/+=-]{16,}` on ONE line. Because matching is per-line, breaking the value into sub-16-char quoted runs concatenated across lines defeats the 16-char minimum. Verified: `password = "Sup3rSecr3t" + "PasswordValue99"` -> exit 0 (neither quoted run is >=16 chars), and `secr…
 - **Impact:** The credential-assignment heuristic — the only pattern meant to catch generic secrets without a known prefix — is bypassed by ordinary multi-line string formatting that linters/formatters often produce anyway. Secrets land undetected in con…
 - **Recommendation:** Accept that a pure per-line regex cannot enforce this; add a multi-line pass and/or relax the 16-char-contiguous requirement to a total-length heuristic after logical-line joining. Document the limitation.
@@ -697,7 +712,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ⬜ Open · `medium` — rm -rf / guard misses `rm -rf /*`, split flags `rm -r -f /`, long-form flags, and `~`/$HOME
 
-- **Location:** `forbidden-patterns/shell.txt.template:5`  ·  *(reproduced: yes, confidence: high, dimension: detection-efficacy)*
+- **Location:** `forbidden-patterns/shell.txt.template:5` · _(reproduced: yes, confidence: high, dimension: detection-efficacy)_
 - **What:** Pattern `(^\|[^A-Za-z_])rm[[:space:]]+-[rfRF]+[[:space:]]+/[[:space:]]*([;&]\|$)` requires the slash to be immediately followed by end/`;`/`&`. Verified on GNU grep 3.11: `rm -rf /` FIRES, but `rm -rf /*` MISSES (the `*` after `/` defeats the trailing anchor) — and `rm -rf /*` is the more destructive, equally common footgun. Also MISSES: `rm -r -f /` (flags…
 - **Impact:** The headline `rm -rf /` protection is bypassed by trivially common variants, including the catastrophic `rm -rf /*`. An agent-generated cleanup script using any of these forms commits clean. False sense of safety.
 - **Recommendation:** Relax the trailing context to also accept `/*`, whitespace then more args, and quotes; recognize split/long flags and root-equivalent targets (`/`, `/*`, `~`, `$HOME`, `"$HOME"`). E.g. allow `rm[[:space:]]+(-[a-zA-Z]+[[:space:]]+)+(/[*]?\|~\|"?\$HOME"?)([[:space:]]\|/\|$)`. Add fixtures for each var…
@@ -705,7 +720,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### 🟡 Partial · `medium` — Combined-ERE pre-filter is fail-open and its concatenation is never validated; literal close-paren and grep-implementation differences can alter semantics
 
-- **Location:** `githooks/lib/check-patterns.template:63-81`  ·  *(reproduced: yes, confidence: high, dimension: scanner-bypass)*
+- **Location:** `githooks/lib/check-patterns.template:63-81` · _(reproduced: yes, confidence: high, dimension: scanner-bypass)_
 - **What:** Patterns are validated INDIVIDUALLY via `printf '' \| grep -E` (empty input, GNU-grep semantics), then concatenated as `(p1)\|(p2)\|...` and used as a fast pre-filter: `grep -nE -- "$combined" "$file" >/dev/null 2>&1 \|\| continue`. The combined form is never validated. If the combined regex ERRORS at runtime (grep exit 2), `\|\| continue` SKIPS the file (fa…
 - **Impact:** A single malformed-but-individually-accepted custom pattern can disable the pre-filter for whole files in the consumer's environment, dropping them from the scan (fail-open). Even without an attacker, cross-grep portability can silently tur…
 - **Recommendation:** Validate the COMBINED regex after building it (printf '' \| grep -E -- "$combined") and fail CLOSED if it errors (scan every matching file per-pattern, or abort the commit), never `\|\| continue` past a grep error. Distinguish grep exit 1 (no match) from exit 2 (error): only treat exit 1 as 'skip fi…
@@ -713,7 +728,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ✅ Fixed · `medium` — CRLF-saved config silently disables any pattern whose line has no description column (fail-open secret bypass)
 
-- **Location:** `githooks/lib/check-secrets.template:43-48`  ·  *(reproduced: yes, confidence: high, dimension: completeness-probe)*
+- **Location:** `githooks/lib/check-secrets.template:43-48` · _(reproduced: yes, confidence: high, dimension: completeness-probe)_
 - **What:** The config parse loop `while IFS=$'\t' read -r pattern description; do` does not strip a trailing carriage return. On a config file saved with CRLF line endings (Windows/many editors, or a checkout under git `core.autocrlf=true`), each physical line ends in `\r`. `read` splits on TAB: if the line HAS a description column the `\r` lands harmlessly on `descrip…
 - **Impact:** A consumer who edits `.forbidden-patterns/secrets.txt` (or backend/frontend/shell.txt) on Windows or in an editor that writes CRLF, and adds a custom pattern without a description, will have that pattern silently neutralized in BOTH the pre…
 - **Recommendation:** Strip a trailing CR during parsing, e.g. `pattern=${pattern%$'\r'}` and `description=${description%$'\r'}` right after `read`, or normalize the whole config with `tr -d '\r'` before the loop. Additionally ship a `.gitattributes` entry (`*.txt text eol=lf` for the forbidden-patterns dir) and document…
@@ -721,7 +736,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ⬜ Open · `medium` — Config line missing a TAB is silently promoted to a whole-line pattern with an empty description
 
-- **Location:** `githooks/lib/check-secrets.template:43-47`  ·  *(reproduced: yes, confidence: high, dimension: completeness-probe)*
+- **Location:** `githooks/lib/check-secrets.template:43-47` · _(reproduced: yes, confidence: high, dimension: completeness-probe)_
 - **What:** `read -r pattern description` with `IFS=$'\t'` puts the entire line into `pattern` when there is no TAB. A maintainer note that forgot the leading `#`, or any malformed line (e.g. `remember to also add the GCP pattern here`), is not a comment (the `case "$pattern" in \#*) continue ;; esac` guard only skips lines literally starting with `#`) and is not empty,…
 - **Impact:** Two consequences: (1) Correctness/false-positive — any committed file containing that text is flagged as a violation and the commit/CI is blocked for a non-secret. (2) In CI mode the violation is reported as `::error file=$file::$desc` with…
 - **Recommendation:** Require a real TAB on each pattern line: skip (with a stderr warning) any non-comment, non-blank line that contains no TAB, or treat the absence of a description as an error. At minimum, refuse to keep a pattern whose description is empty when not intended, and warn loudly so malformed lines are vis…
@@ -729,7 +744,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ✅ Fixed · `medium` — grep's NUL-byte binary auto-detection lets a secret line hide from check-secrets/check-patterns when the file contains any NUL byte (no -a/--text flag)
 
-- **Location:** `githooks/lib/check-secrets.template:79,83`  ·  *(reproduced: yes, confidence: high, dimension: completeness-probe)*
+- **Location:** `githooks/lib/check-secrets.template:79,83` · _(reproduced: yes, confidence: high, dimension: completeness-probe)_
 - **What:** check-secrets (and check-patterns) run `grep -niE -- "$COMBINED" "$file"` and `grep -niE -- "$pat" "$file"` without `-a`/`--text`. grep (both GNU grep on ubuntu-latest CI runners and ugrep on this host) auto-detects a file as binary if it contains a NUL byte and then reports no matches (exit 1) instead of scanning line content. The extension filter only excl…
 - **Impact:** An attacker can append (or embed) a single NUL byte to an otherwise-text file containing a hardcoded secret or forbidden pattern; both the local hook and the CI guardrails job will skip the file as 'binary' and pass green, even though the s…
 - **Recommendation:** Pass `-a` (or `--text` / for ugrep `--text`) to every grep invocation in check-secrets.template and check-patterns.template so files are scanned as text and NUL bytes do not abort the scan: `grep -aniE -- "$pat" "$file"`. Add a tests/run.sh case committing a NUL-containing file with a secret on a te…
@@ -737,7 +752,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ⬜ Open · `medium` — sk-/AWS/URL-cred secrets split across physical lines (backslash continuation or implicit string concatenation) evade detection
 
-- **Location:** `githooks/lib/check-secrets.template:79-83`  ·  *(reproduced: yes, confidence: high, dimension: completeness-probe)*
+- **Location:** `githooks/lib/check-secrets.template:79-83` · _(reproduced: yes, confidence: high, dimension: completeness-probe)_
 - **What:** The whole engine matches per physical line (`grep -nE`), with no continuation/concatenation awareness. Verified bypasses: (a) `API_KEY = (\n  "sk-"\n  "<48 chars>"\n)` — prefix on one line, body on next — exit 0, while the single-line form is flagged. (b) `DB_URL = (\n  "postgres://admin:"\n  "<pass>@host/prod"\n)` — the URL-cred regex needs scheme+user+`:`+…
 - **Impact:** Trivial, well-known evasion: an attacker (or an AI agent told to 'avoid the linter') splits the literal across adjacent lines via Python/JS implicit string concatenation or a backslash continuation, and the secret lands in the repo undetect…
 - **Recommendation:** Add a multi-line scan pass for the high-value secret patterns (e.g. concatenate logical lines, or use grep -Pzo / pcregrep -M against a newline-tolerant variant). At minimum, document the per-line limitation prominently so consumers don't over-trust it.
@@ -745,7 +760,7 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ### ⬜ Open · `medium` — Test harness never exercises the CI (`--ci`) code path it claims is the unskippable backstop
 
-- **Location:** `tests/run.sh:28-52,66-247`  ·  *(reproduced: yes, confidence: high, dimension: correctness-quality)*
+- **Location:** `tests/run.sh:28-52,66-247` · _(reproduced: yes, confidence: high, dimension: correctness-quality)_
 - **What:** Every assertion in run.sh invokes `.githooks/pre-commit` (assert_rejects/assert_passes lines 30, 43; the MAX_LINES cases lines 177/191). The lib/check-* scripts are NEVER called with `--ci`, and the CI guardrails command (lint.yml.template lines 67-77: `git ls-files \| check-* --ci`) is never reproduced. The repo's own CI (test.yml) runs only run.sh + shellc…
 - **Impact:** A regression that breaks only the `--ci` branch (the `::error file=` emission, the ls-files enumeration, exit aggregation in the guardrails step, or a future divergence in how CI feeds paths) would ship green. The marketed server-side enfor…
 - **Recommendation:** Add harness cases that run `git ls-files \| .githooks/lib/check-* --ci` against the fixtures and assert both exit code and the `::error file=...::` output. Optionally add a workflow that renders and runs lint.yml against a fixture repo.
@@ -753,55 +768,55 @@ Locked in with harness fixtures #27–30 (the #30 `--ci` test also begins closin
 
 ## ⚪ Low
 
-| Status | Title | Location |
-|---|---|---|
-| 🟡 Partial | Distributed lint.yml frontend job executes attacker-controlled lifecycle scripts and eslint config from fork P… (now `npm ci --ignore-scripts` blocks pre/postinstall execution; eslint-config execution from PR head remains) | `lint.yml.template:41-58` |
-| 🟡 Partial | All workflows trigger on bare `pull_request` with no concurrency control or runner hardening notes (now `persist-credentials: false` on every checkout; concurrency control still open) | `lint.yml.template:8-14` |
-| ⬜ Open | actionlint binary downloaded via curl\|bash from a mutable git tag with no checksum/signature verification | `test.yml:33-36` |
-| ✅ Fixed | README claims size check uses `wc -l`, but code uses `grep -c ''` (stale doc, contradicts CHANGELOG) | `README.md:186` |
-| ✅ Fixed | Secrets-scan docs overstate coverage: README says 'all files', but lockfiles/binaries are skipped (now every tracked file IS scanned; doc corrected) | `README.md:188` |
-| ⬜ Open | 'Hook and CI can never drift' claim is only true for the 4 lib checks; ruff/eslint are unshared, unpinned, and… | `README.md:6,39,104` |
-| ✅ Fixed | File-scope asymmetry (hook=changed-only, CI=all-tracked) documented only for size, not for secrets/patterns/fi… | `README.md:223` |
-| ⬜ Open | No CR-stripping, no .gitattributes, and no line-ending guidance for distributed config files | `README.md:1` |
-| ⬜ Open | print/console.log/alert/os.path.join patterns fire inside comments and string literals (false positives); os.p… | `backend.txt.template:7-8` |
-| ⬜ Open | AWS key coverage limited to AKIA; temporary (ASIA) and other AWS key-ID prefixes are not detected, contrary to… | `secrets.txt.template:13` |
-| ⬜→✅ | URL-with-credentials pattern misses password-only userinfo (e.g. a redis URL with an empty user) — now FIXED, see "Fixed in follow-ups" above | `secrets.txt.template:25` |
-| ⬜ Open | shell.txt curl\|bash and rm-rf/ patterns miss common real-world forms, overstating shell coverage | `shell.txt.template:4-5` |
-| ✅ Fixed | check-filenames aborts on leading-dash filenames via unguarded basename (confusing failure, order-dependent) | `check-filenames.template:33` |
-| ✅ Fixed | `printf \| head -3 \| sed` aborts check-patterns/check-secrets via SIGPIPE under pipefail (exit 141) | `check-patterns.template:92` |
-| ⬜ Open | Pattern-validation oracle drops functional patterns on any stderr (warnings) and is grep-implementation/locale… | `check-patterns.template:48-56` |
-| ✅ Fixed | Combined-ERE prefilter conflates grep error (exit 2) with no-match, skipping the file (fail-open control flow) | `check-patterns.template:81` |
-| ✅ Fixed | Pattern-config description field is echoed unescaped into ::error workflow command (annotation spoofing in CI) — all four check-* scripts now percent-encode message + file= per GitHub workflow-command rules | `check-patterns.template:85-89` |
-| ✅ Fixed | Committed filename containing `::` corrupts the file= property of every ::error annotation (file-target spoofing) — file= now percent-encodes `%`,CR,LF,`:`,`,` (fixture #35) | `check-patterns.template:89` |
-| ✅ Fixed | Scan reads working-tree/index via filesystem, not the git blob — divergence between scanned bytes and committe… | `check-secrets.template:78-79` |
-| ⬜ Open | scaffold-allow exempts an entire physical line — one marker hides multiple secrets on minified/single-line fil… | `check-secrets.template:83` |
-| ⬜ Open | Case-insensitive secrets scan makes prefix tokens (AKIA, AIza, sk-, BEGIN PRIVATE KEY) match lowercase, enabli… | `check-secrets.template:79` |
-| ⬜ Open | `.forbidden-patterns/` directory is exempt from the secret scan, so secrets hidden in pattern files are never… | `check-secrets.template:34` |
-| ⬜ Open | Whitespace-only pattern column passes the `-z` guard and matches nearly every source file | `check-secrets.template:44` |
-| ✅ Fixed | check-size silently passes oversized files whose name begins with `-` (MAX_LINES bypass) | `check-size.template:33-34` |
-| ⬜ Open | check-size skips `.txt`/`.sql`/`.csv`, but check-secrets scans `.txt`/`.sql`/`.csv` — divergent skip lists und… | `check-size.template:28-29` |
-| ⬜ Open | check-size counts physical lines (grep -c ''), so a multi-megabyte single-line blob trivially passes the MAX_L… | `check-size.template:33-34` |
-| ✅ Fixed | stash pop conflict silently corrupts the working tree and strands unstaged work in a dangling stash | `pre-commit.template:56-61` |
-| 🟡 Partial | Hook diff-filter ACMR omits type-changes (T); symlink content scanned differs from committed blob | `pre-commit.template:28` |
-| ⬜ Open | source==destination guard defeated by symlinked scaffold path | `install.sh:15,34` |
-| ⬜ Open | install.sh --force overwrites customized AGENTS.md / coding-rules.md / pattern files with no backup | `install.sh:57-66,71,80-92` |
-| ⬜ Open | chmod +x runs on a skipped, user-modified hook making it executable | `install.sh:73-78` |
-| ⬜ Open | cp_safe treats a directory at the destination as 'already installed' and skips it | `install.sh:57-66,75-78` |
-| ⬜ Open | eslint smoke test only checks --version, never that eslint.config.js loads | `install.sh:135-142` |
-| ⬜ Open | No test coverage for uninstall.sh, --force, --all, or hooksPath coexistence | `run.sh:63` |
-| ⬜ Open | Reject-class tests assert only non-zero exit, not the reason — several could pass while the targeted check is… | `run.sh:28-39,68-130` |
-| ⬜ Open | Pattern coverage untested: breakpoint/pdb/ipdb/os.path.join, debugger/alert, rm-rf/chmod have zero fixtures | `run.sh:80-123` |
-| ⬜ Open | uninstall.sh reports 'unset' but leaves a global core.hooksPath=.githooks active | `uninstall.sh:94-102` |
-| ⬜ Open | uninstall --all rm -rf .forbidden-patterns destroys user-added pattern files | `uninstall.sh:55-64,81` |
+| Status     | Title                                                                                                                                                                                                                          | Location                        |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
+| 🟡 Partial | Distributed lint.yml frontend job executes attacker-controlled lifecycle scripts and eslint config from fork P… (now `npm ci --ignore-scripts` blocks pre/postinstall execution; eslint-config execution from PR head remains) | `lint.yml.template:41-58`       |
+| 🟡 Partial | All workflows trigger on bare `pull_request` with no concurrency control or runner hardening notes (now `persist-credentials: false` on every checkout; concurrency control still open)                                        | `lint.yml.template:8-14`        |
+| ⬜ Open    | actionlint binary downloaded via curl\|bash from a mutable git tag with no checksum/signature verification                                                                                                                     | `test.yml:33-36`                |
+| ✅ Fixed   | README claims size check uses `wc -l`, but code uses `grep -c ''` (stale doc, contradicts CHANGELOG)                                                                                                                           | `README.md:186`                 |
+| ✅ Fixed   | Secrets-scan docs overstate coverage: README says 'all files', but lockfiles/binaries are skipped (now every tracked file IS scanned; doc corrected)                                                                           | `README.md:188`                 |
+| ⬜ Open    | 'Hook and CI can never drift' claim is only true for the 4 lib checks; ruff/eslint are unshared, unpinned, and…                                                                                                                | `README.md:6,39,104`            |
+| ✅ Fixed   | File-scope asymmetry (hook=changed-only, CI=all-tracked) documented only for size, not for secrets/patterns/fi…                                                                                                                | `README.md:223`                 |
+| ⬜ Open    | No CR-stripping, no .gitattributes, and no line-ending guidance for distributed config files                                                                                                                                   | `README.md:1`                   |
+| ⬜ Open    | print/console.log/alert/os.path.join patterns fire inside comments and string literals (false positives); os.p…                                                                                                                | `backend.txt.template:7-8`      |
+| ⬜ Open    | AWS key coverage limited to AKIA; temporary (ASIA) and other AWS key-ID prefixes are not detected, contrary to…                                                                                                                | `secrets.txt.template:13`       |
+| ⬜→✅      | URL-with-credentials pattern misses password-only userinfo (e.g. a redis URL with an empty user) — now FIXED, see "Fixed in follow-ups" above                                                                                  | `secrets.txt.template:25`       |
+| ⬜ Open    | shell.txt curl\|bash and rm-rf/ patterns miss common real-world forms, overstating shell coverage                                                                                                                              | `shell.txt.template:4-5`        |
+| ✅ Fixed   | check-filenames aborts on leading-dash filenames via unguarded basename (confusing failure, order-dependent)                                                                                                                   | `check-filenames.template:33`   |
+| ✅ Fixed   | `printf \| head -3 \| sed` aborts check-patterns/check-secrets via SIGPIPE under pipefail (exit 141)                                                                                                                           | `check-patterns.template:92`    |
+| ⬜ Open    | Pattern-validation oracle drops functional patterns on any stderr (warnings) and is grep-implementation/locale…                                                                                                                | `check-patterns.template:48-56` |
+| ✅ Fixed   | Combined-ERE prefilter conflates grep error (exit 2) with no-match, skipping the file (fail-open control flow)                                                                                                                 | `check-patterns.template:81`    |
+| ✅ Fixed   | Pattern-config description field is echoed unescaped into ::error workflow command (annotation spoofing in CI) — all four check-* scripts now percent-encode message + file= per GitHub workflow-command rules                 | `check-patterns.template:85-89` |
+| ✅ Fixed   | Committed filename containing `::` corrupts the file= property of every ::error annotation (file-target spoofing) — file= now percent-encodes `%`,CR,LF,`:`,`,` (fixture #35)                                                  | `check-patterns.template:89`    |
+| ✅ Fixed   | Scan reads working-tree/index via filesystem, not the git blob — divergence between scanned bytes and committe…                                                                                                                | `check-secrets.template:78-79`  |
+| ⬜ Open    | scaffold-allow exempts an entire physical line — one marker hides multiple secrets on minified/single-line fil…                                                                                                                | `check-secrets.template:83`     |
+| ⬜ Open    | Case-insensitive secrets scan makes prefix tokens (AKIA, AIza, sk-, BEGIN PRIVATE KEY) match lowercase, enabli…                                                                                                                | `check-secrets.template:79`     |
+| ⬜ Open    | `.forbidden-patterns/` directory is exempt from the secret scan, so secrets hidden in pattern files are never…                                                                                                                 | `check-secrets.template:34`     |
+| ⬜ Open    | Whitespace-only pattern column passes the `-z` guard and matches nearly every source file                                                                                                                                      | `check-secrets.template:44`     |
+| ✅ Fixed   | check-size silently passes oversized files whose name begins with `-` (MAX_LINES bypass)                                                                                                                                       | `check-size.template:33-34`     |
+| ⬜ Open    | check-size skips `.txt`/`.sql`/`.csv`, but check-secrets scans `.txt`/`.sql`/`.csv` — divergent skip lists und…                                                                                                                | `check-size.template:28-29`     |
+| ⬜ Open    | check-size counts physical lines (grep -c ''), so a multi-megabyte single-line blob trivially passes the MAX_L…                                                                                                                | `check-size.template:33-34`     |
+| ✅ Fixed   | stash pop conflict silently corrupts the working tree and strands unstaged work in a dangling stash                                                                                                                            | `pre-commit.template:56-61`     |
+| 🟡 Partial | Hook diff-filter ACMR omits type-changes (T); symlink content scanned differs from committed blob                                                                                                                              | `pre-commit.template:28`        |
+| ⬜ Open    | source==destination guard defeated by symlinked scaffold path                                                                                                                                                                  | `install.sh:15,34`              |
+| ⬜ Open    | install.sh --force overwrites customized AGENTS.md / coding-rules.md / pattern files with no backup                                                                                                                            | `install.sh:57-66,71,80-92`     |
+| ⬜ Open    | chmod +x runs on a skipped, user-modified hook making it executable                                                                                                                                                            | `install.sh:73-78`              |
+| ⬜ Open    | cp_safe treats a directory at the destination as 'already installed' and skips it                                                                                                                                              | `install.sh:57-66,75-78`        |
+| ⬜ Open    | eslint smoke test only checks --version, never that eslint.config.js loads                                                                                                                                                     | `install.sh:135-142`            |
+| ⬜ Open    | No test coverage for uninstall.sh, --force, --all, or hooksPath coexistence                                                                                                                                                    | `run.sh:63`                     |
+| ⬜ Open    | Reject-class tests assert only non-zero exit, not the reason — several could pass while the targeted check is…                                                                                                                 | `run.sh:28-39,68-130`           |
+| ⬜ Open    | Pattern coverage untested: breakpoint/pdb/ipdb/os.path.join, debugger/alert, rm-rf/chmod have zero fixtures                                                                                                                    | `run.sh:80-123`                 |
+| ⬜ Open    | uninstall.sh reports 'unset' but leaves a global core.hooksPath=.githooks active                                                                                                                                               | `uninstall.sh:94-102`           |
+| ⬜ Open    | uninstall --all rm -rf .forbidden-patterns destroys user-added pattern files                                                                                                                                                   | `uninstall.sh:55-64,81`         |
 
 ## ℹ️ Info
 
-| Status | Title | Location |
-|---|---|---|
-| ⬜ Open | Action SHA pins verified accurate; no SHA-pin defects found in the four actions used | `lint.yml.template:26,33,45,52,65` |
-| ⬜ Open | check-filenames only blocks dotfile-leading `.env*`; `foo.env` and arbitrary env files are not blocked | `check-filenames.template:34-39` |
-| ✅ Fixed | Lint step passes staged filenames to ruff/eslint without `--`, allowing option injection via filename | `pre-commit.template:88` |
-| ⬜ Open | core.hooksPath set with absent/partial pre-commit fails open (commits run unguarded) | `install.sh:98-109` |
+| Status   | Title                                                                                                  | Location                           |
+| -------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------- |
+| ⬜ Open  | Action SHA pins verified accurate; no SHA-pin defects found in the four actions used                   | `lint.yml.template:26,33,45,52,65` |
+| ⬜ Open  | check-filenames only blocks dotfile-leading `.env*`; `foo.env` and arbitrary env files are not blocked | `check-filenames.template:34-39`   |
+| ✅ Fixed | Lint step passes staged filenames to ruff/eslint without `--`, allowing option injection via filename  | `pre-commit.template:88`           |
+| ⬜ Open  | core.hooksPath set with absent/partial pre-commit fails open (commits run unguarded)                   | `install.sh:98-109`                |
 
 ## Rejected by adversarial verification
 
@@ -818,11 +833,12 @@ These candidates were surfaced by finders but **disproven** on verification (kep
 
 Grouped by root cause; ordered by leverage.
 
-1. **Detection efficacy (Root Cause B)** — broaden patterns and add a multi-line pass: modern key prefixes (`sk-ant-`, `sk-proj-`, `github_pat_`), unquoted/YAML credential assignments, `curl -fsSL <url> | bash`, `rm -rf /*` and split/long-form flags, private-key *body* detection. **Strongly recommended:** layer a purpose-built secret scanner (gitleaks/trufflehog) as the secrets backstop — a per-line ERE is a hygiene tool, not a security boundary — and align the README's coverage claims with reality.
+1. **Detection efficacy (Root Cause B)** — broaden patterns and add a multi-line pass: modern key prefixes (`sk-ant-`, `sk-proj-`, `github_pat_`), unquoted/YAML credential assignments, `curl -fsSL <url> | bash`, `rm -rf /*` and split/long-form flags, private-key _body_ detection. **Strongly recommended:** layer a purpose-built secret scanner (gitleaks/trufflehog) as the secrets backstop — a per-line ERE is a hygiene tool, not a security boundary — and align the README's coverage claims with reality.
 2. **Fail-closed config trust (Root Cause C/D)** — CI must error if `.forbidden-patterns/*.txt` is absent; refuse commits that delete/empty a pattern file; require a real TAB per pattern line; make `scaffold-allow` a strict end-of-line `# scaffold-allow` token (and consider not honoring it for secrets at all); escape `::error` annotation fields.
 3. **CI/supply-chain** — pin the actionlint installer to a commit SHA + checksum (it's a `curl|bash` from a mutable tag); run the `guardrails` job's scanner/config from a **trusted base ref** so a fork PR can't neuter its own server-side check; document fork-PR lifecycle-script execution; set `lfs: true` (or scan blobs) for LFS consumers.
 4. **ReDoS** — cap line length / file size before the combined-ERE pre-filter so a single long line can't hang the hook and CI.
 5. **Test & docs integrity** — add `--ci`-path fixtures and per-pattern coverage fixtures; add uninstall/`--force`/`--all` tests; fix stale/overstated README claims (`wc -l` vs `grep -c ''`, "scans all files", "hook and CI can never drift"); ship `.gitattributes` + line-ending guidance for distributed config files.
 
 ---
-*Generated from the audit run; full per-finding PoCs and verifier reasoning are in the workflow transcript.*
+
+_Generated from the audit run; full per-finding PoCs and verifier reasoning are in the workflow transcript._
