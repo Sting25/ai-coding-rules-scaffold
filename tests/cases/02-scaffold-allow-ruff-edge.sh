@@ -35,6 +35,34 @@ else
   echo "  - skipped ruff test (ruff not installed)"
 fi
 
+# 13b. skip notice — a staged .py file with ruff unavailable must print a
+#      one-line notice to stderr and still exit 0 (pyproject.toml, present
+#      since the bootstrap fixture, is enough to satisfy the check's config
+#      gate). Strip any directory that provides ruff from the real PATH,
+#      rather than assuming it's absent, so this holds even on a machine
+#      that has ruff installed.
+NOTOOL_PATH=
+OLDIFS=$IFS
+IFS=:
+for rd in $PATH; do
+  [ -x "$rd/ruff" ] && continue
+  NOTOOL_PATH="$NOTOOL_PATH:$rd"
+done
+IFS=$OLDIFS
+NOTOOL_PATH=${NOTOOL_PATH#:}
+echo 'ok = True' >noruff.py
+git add noruff.py
+if PATH="$NOTOOL_PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1 \
+   && grep -qF "note: ruff not installed" "$HOOK_OUT"; then
+  echo "  ✓ ruff-unavailable skip prints a notice and still exits 0"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ ruff-unavailable skip — expected a note on stderr and exit 0"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+reset_repo
+
 # 14. unicode filename — `core.quotepath=on` (git default) would emit the
 #     name as a C-quoted string, the downstream `[ -f "$file" ]` check
 #     would fail, and the file would slip past every scanner. The hook
