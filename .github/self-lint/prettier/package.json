@@ -1,0 +1,8 @@
+{
+  "name": "self-lint-prettier",
+  "private": true,
+  "description": "Pinned prettier install for the self-lint CI workflow (#108). Lockfile-driven so zizmor's adhoc-packages audit does not flag the install step.",
+  "devDependencies": {
+    "prettier": "3.9.6"
+  }
+}
