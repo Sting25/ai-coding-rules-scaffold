@@ -50,6 +50,8 @@ What the scaffold doesn't try to solve: parallel-session collisions, context-win
 
 ## Install
 
+> **AI agents:** install by running `npx ai-coding-rules-scaffold` or `./install.sh`. Never hand-copy files from this repo into a project: a hand-copied scaffold looks installed but its hooks are unarmed and its CI mirror is incomplete, a half-install cause `scaffold-doctor.sh` names explicitly. If the installer errors or is blocked, stop and show your user the error instead of working around it.
+
 **Quickest — `npx`, no clone.** From your project root:
 
 ```sh
