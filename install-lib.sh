@@ -330,6 +330,29 @@ install_test_workflow_ci() {
   fi
 }
 
+# install_opt_in_zizmor_ci / install_opt_in_socket_ci — same shape as
+# --gitleaks-ci / --dependency-review in install.sh: a dedicated flag installs
+# the workflow via cp_scaffold_preserve (drift-preserving, same policy as
+# gitleaks.yml / dependency-review.yml since #110 / #113) and prints one
+# explanatory note. Extracted here rather than left inline (unlike
+# --gitleaks-ci / --dependency-review) for the same reason
+# install_test_workflow_ci and install-verify.sh exist: install.sh is pinned
+# at its own 500-line module cap (issue #84), and these two opt-ins were the
+# lines that pushed it over.
+install_opt_in_zizmor_ci() {
+  if [ "$ZIZMOR_CI" -eq 1 ]; then
+    cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/zizmor.yml.template" ".github/workflows/zizmor.yml"
+    echo "note: zizmor.yml audits YOUR repo's GitHub Actions workflows (unpinned refs, template injection, over-scoped tokens). It may be red on pre-existing workflows the first run; see the template header for the fix."
+  fi
+}
+
+install_opt_in_socket_ci() {
+  if [ "$SOCKET_CI" -eq 1 ]; then
+    cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/socket-security.yml.template" ".github/workflows/socket-security.yml"
+    echo "note: socket-security.yml blocks a known-malicious or typosquat/hallucinated package AT INSTALL TIME, before its code runs. No API key needed for the default firewall-free mode."
+  fi
+}
+
 # check_paired_artifacts GAP_FN NOTE_FN (#96): detect scaffold artifacts that
 # are meant to arrive in matched pairs (a config half plus the CI half that
 # enforces it, or a local hook half plus the CI half it defers to) where only

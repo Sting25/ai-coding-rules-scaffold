@@ -1,9 +1,9 @@
 name: zizmor
 
-# OPT-IN GitHub Actions static-audit backstop. Copy to your project as
-# `.github/workflows/zizmor.yml`. NOT installed by install.sh (it adds a
-# third-party pip package, so opt in deliberately, same posture as
-# gitleaks.yml.template (`install.sh --gitleaks-ci`) and
+# OPT-IN GitHub Actions static-audit backstop. Install via `install.sh
+# --zizmor-ci`, which copies this in as `.github/workflows/zizmor.yml`. Off
+# by default: it adds a third-party pip package, so opt in deliberately,
+# same posture as gitleaks.yml.template (`install.sh --gitleaks-ci`) and
 # dependency-review.yml.template (`install.sh --dependency-review`).
 #
 # Why this exists:

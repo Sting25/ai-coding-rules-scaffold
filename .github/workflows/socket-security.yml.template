@@ -1,10 +1,11 @@
 name: socket-security
 
 # OPT-IN supply-chain scan: verifies a package is legitimate BEFORE it is
-# installed. Copy to your project as `.github/workflows/socket-security.yml`.
-# NOT installed by install.sh, it adds a third-party action dependency, same
-# posture as gitleaks.yml.template (`install.sh --gitleaks-ci`) and
-# dependency-review.yml.template (`install.sh --dependency-review`).
+# installed. Install via `install.sh --socket-ci`, which copies this in as
+# `.github/workflows/socket-security.yml`. Off by default: it adds a
+# third-party action dependency, same posture as gitleaks.yml.template
+# (`install.sh --gitleaks-ci`) and dependency-review.yml.template
+# (`install.sh --dependency-review`).
 #
 # Why this exists:
 #   An LLM coding agent hallucinates plausible-but-nonexistent package names

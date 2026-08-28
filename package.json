@@ -37,7 +37,9 @@
     ".github/workflows/tests.yml.template",
     ".github/workflows/coverage.yml.template",
     ".github/workflows/gitleaks.yml.template",
-    ".github/workflows/dependency-review.yml.template"
+    ".github/workflows/dependency-review.yml.template",
+    ".github/workflows/zizmor.yml.template",
+    ".github/workflows/socket-security.yml.template"
   ],
   "engines": {
     "node": ">=14"

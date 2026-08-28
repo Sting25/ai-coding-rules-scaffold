@@ -18,6 +18,8 @@
 #                            # (opt-in: needs GitHub Advanced Security on a
 #                            # private repo, or it errors, so it is never
 #                            # default-on)
+#   install.sh --zizmor-ci   # also install the zizmor GitHub Actions audit gate
+#   install.sh --socket-ci   # also install the Socket Firewall supply-chain gate
 #   install.sh --all-langs  # install every language's forbidden-pattern file
 #   install.sh --coverage-gate # install the patch-coverage gate INSTEAD of the
 #                            # plain tests.yml (tests still run, plus a stricter
@@ -42,7 +44,8 @@
 # is BACKED UP to .scaffold-bak first, so an edit you made to one is
 # recoverable and the "backed up:" line tells you it happened. User-owned
 # configs are left alone. A drifted .forbidden-patterns/*.txt, or a drifted
-# CI workflow (lint.yml, tests.yml, coverage.yml, gitleaks.yml, dependency-review.yml), only prints
+# CI workflow (lint.yml, tests.yml, coverage.yml, gitleaks.yml,
+# dependency-review.yml, zizmor.yml, socket-security.yml), only prints
 # a notice and keeps your file (use --force to replace it: your
 # customizations are backed up to .scaffold-bak first).
 # .githooks/local.d/ is never written to at all: it's where project-local checks
@@ -60,6 +63,8 @@ COMMIT_MSG=0
 GITLEAKS_HOOK=0
 GITLEAKS_CI=0
 DEPENDENCY_REVIEW=0
+ZIZMOR_CI=0
+SOCKET_CI=0
 ALL_LANGS=0
 COVERAGE_GATE=0
 NO_TEST_WORKFLOW=0
@@ -79,11 +84,13 @@ for arg in "$@"; do
     --gitleaks-hook) GITLEAKS_HOOK=1 ;;
     --gitleaks-ci) GITLEAKS_CI=1 ;;
     --dependency-review) DEPENDENCY_REVIEW=1 ;;
+    --zizmor-ci)  ZIZMOR_CI=1 ;;
+    --socket-ci)  SOCKET_CI=1 ;;
     --all-langs)  ALL_LANGS=1 ;;
     --coverage-gate) COVERAGE_GATE=1 ;;
     --no-test-workflow) NO_TEST_WORKFLOW=1 ;;
     --no-install) NO_INSTALL=1 ;;
-    --help|-h)    sed -n '2,49p' "$0"; exit 0 ;;
+    --help|-h)    sed -n '2,52p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -142,8 +149,8 @@ fi
 # refreshed on re-run), cp_safe (USER-OWNED, never auto-replaced), cp_pattern
 # (.forbidden-patterns/*.txt, notify-on-drift), cp_scaffold_preserve
 # (scaffold-owned CI workflows: lint.yml, tests.yml, coverage.yml,
-# gitleaks.yml, dependency-review.yml, notify-on-drift like cp_pattern, since
-# #110), and the shared
+# gitleaks.yml, dependency-review.yml, zizmor.yml, socket-security.yml,
+# notify-on-drift like cp_pattern, since #110), and the shared
 # _cp_replace / _backup mechanism (where the A7 symlink defenses live) plus
 # mkx, are defined in install-lib.sh. They're SOURCED (not exec'd) so they
 # run in this shell with its globals (FORCE) and `set -euo pipefail`.
@@ -427,6 +434,13 @@ if [ "$DEPENDENCY_REVIEW" -eq 1 ]; then
   cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/dependency-review.yml.template" ".github/workflows/dependency-review.yml"
   echo "note: dependency-review.yml needs GitHub's Dependency Graph (on by default for public repos; needs GitHub Advanced Security for private repos, or it errors)."
 fi
+
+# Opt-in zizmor / Socket Firewall CI gates (--zizmor-ci, --socket-ci). Same
+# shape as --gitleaks-ci / --dependency-review above (cp_scaffold_preserve,
+# opt-in, --force replaces); the function bodies live in install-lib.sh to
+# keep this file under its own 500-line cap (issue #84).
+install_opt_in_zizmor_ci
+install_opt_in_socket_ci
 
 # Test-execution CI workflow (#97): DEFAULT-ON, exactly one of two shapes,
 # plus a recorded opt-out (--no-test-workflow). See install-lib.sh's

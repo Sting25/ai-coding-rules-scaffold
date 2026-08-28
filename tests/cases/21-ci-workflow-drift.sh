@@ -33,8 +33,14 @@
 # same fifth _wd_case slot. It stays opt-in (never default-on) because the
 # action errors on a private repo without GitHub Advanced Security; the extra
 # case below proves a plain, no-flag install never creates it.
+#
+# zizmor.yml and socket-security.yml (P-19 installer wave) shipped the same
+# way dependency-review.yml did: templates on disk, documented in their own
+# headers, but no install.sh call site. Wired up identically: --zizmor-ci and
+# --socket-ci each install their workflow via cp_scaffold_preserve, so they
+# get the same _wd_case slot as every other opt-in CI workflow here.
 
-echo "cases/21: CI workflow drift-preserving install policy (lint.yml #105, tests/coverage/gitleaks.yml #110, dependency-review.yml #113)"
+echo "cases/21: CI workflow drift-preserving install policy (lint.yml #105, tests/coverage/gitleaks.yml #110, dependency-review.yml #113, zizmor/socket-security P-19)"
 
 # _wd_fixture EXTRA_FLAG: a throwaway frontend-mode repo with the scaffold
 # installed. EXTRA_FLAG is the flag (if any) needed for this run to touch the
@@ -130,6 +136,8 @@ _wd_case "tests.yml"    ".github/workflows/tests.yml"    "$SCAFFOLD_DIR/.github/
 _wd_case "coverage.yml" ".github/workflows/coverage.yml" "$SCAFFOLD_DIR/.github/workflows/coverage.yml.template" "--coverage-gate"
 _wd_case "gitleaks.yml" ".github/workflows/gitleaks.yml" "$SCAFFOLD_DIR/.github/workflows/gitleaks.yml.template" "--gitleaks-ci"
 _wd_case "dependency-review.yml" ".github/workflows/dependency-review.yml" "$SCAFFOLD_DIR/.github/workflows/dependency-review.yml.template" "--dependency-review"
+_wd_case "zizmor.yml" ".github/workflows/zizmor.yml" "$SCAFFOLD_DIR/.github/workflows/zizmor.yml.template" "--zizmor-ci"
+_wd_case "socket-security.yml" ".github/workflows/socket-security.yml" "$SCAFFOLD_DIR/.github/workflows/socket-security.yml.template" "--socket-ci"
 
 # (T) a DEFAULT install (no flag at all) never creates dependency-review.yml:
 # the action errors on a private repo without GitHub Advanced Security, so
