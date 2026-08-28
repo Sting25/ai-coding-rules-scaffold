@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Pre-commit hook orchestrator — calls the four check scripts in lib/.
+# Pre-commit hook orchestrator: calls the check scripts in lib/.
 # Each lib/check-* script is independently runnable; the CI workflow
 # invokes the same scripts so the hook and CI can never drift.
 #
 # Install (from project root) — install.sh handles all of this:
 #   .githooks/pre-commit
-#   .githooks/lib/{check-size,check-patterns,check-filenames,check-secrets}
+#   .githooks/lib/{check-size,check-large-files,check-patterns,check-filenames,check-secrets}
 #   git config core.hooksPath .githooks
 #
 # Patterns are read from:
@@ -126,11 +126,12 @@ cleanup() {
 trap cleanup EXIT
 
 FAILED=0
-"$LIB/check-size"      <"$STAGED_LIST" || FAILED=1
-"$LIB/check-patterns"  <"$STAGED_LIST" || FAILED=1
-"$LIB/check-filenames" <"$STAGED_LIST" || FAILED=1
-"$LIB/check-secrets"   <"$STAGED_LIST" || FAILED=1
-"$LIB/check-hygiene"   <"$STAGED_LIST" || FAILED=1
+"$LIB/check-size"        <"$STAGED_LIST" || FAILED=1
+"$LIB/check-large-files" <"$STAGED_LIST" || FAILED=1
+"$LIB/check-patterns"    <"$STAGED_LIST" || FAILED=1
+"$LIB/check-filenames"   <"$STAGED_LIST" || FAILED=1
+"$LIB/check-secrets"     <"$STAGED_LIST" || FAILED=1
+"$LIB/check-hygiene"     <"$STAGED_LIST" || FAILED=1
 # Opt-in only: present iff installed with `install.sh --gitleaks-hook`. The
 # existence guard is the opt-in switch — a project that didn't opt in has no
 # such file and skips it entirely.

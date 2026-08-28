@@ -156,6 +156,11 @@ then narrowly and with a recorded reason. A check weakened to turn
 green silently lowers the bar for every later commit and every
 consumer that inherits it — catching the thing was the point. If the
 check itself is wrong, fix the check and add a test; don't bypass it.
+When you do take one, name it in the summary you give the person you
+are working for: which check, which file, which marker or config
+entry, and why. A one-line suppression is invisible to anyone not
+reading the diff, and the person deciding whether it was justified
+is usually not reading the diff.
 _Anchor:_ a guardrail flagged a file; exempting it was one line and
 fixing it a few — but an exemption, unlike a fix, never expires, so
 suppressions accrete until the scanner no longer scans.
@@ -186,6 +191,34 @@ expose the secret in the first place.
 _Anchor:_ AI-agent-driven `cat .env` to "verify the file is
 loaded" landed credentials into a permanent chat transcript;
 rotation across multiple services took hours.
+
+### Create a restore point before risky work
+
+Before a sweeping or multi-step change, tag or branch a
+known-good point and name it out loud. Confirming a destructive
+command is not the same as being able to get back: the
+confirmation happens once, the restore point survives the
+mistake. Tag a green point rather than committing whatever is
+on disk, which the commit gate will reject. An editor's rewind
+feature is not the restore point either; those track edits made
+through the tool's own file editing, so whatever a shell
+command moved or deleted is outside them.
+_Anchor:_ an agent told to tidy up branch history ran a hard
+reset and destroyed a day of work; nothing had been tagged, and
+the tool's rewind had never seen the files.
+
+### Back up and confirm before destructive work on live data
+
+A `DROP`, a `TRUNCATE`, an unbounded `DELETE` or `UPDATE`, or a
+migration against anything but a local throwaway store is a
+two-step action: confirm a current backup exists, then get an
+explicit yes that names the target and what will be lost.
+Automatic backups are the cheap half; the confirmation is the
+half that catches the wrong connection string. Quote the blast
+radius in table names and row counts, not as a pasted command.
+_Anchor:_ an agent ran a destructive operation against a
+production database it believed was a test instance and emptied
+it in seconds; there was no staging tier and no recent backup.
 
 ---
 

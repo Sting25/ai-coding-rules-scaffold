@@ -330,6 +330,29 @@ install_test_workflow_ci() {
   fi
 }
 
+# install_opt_in_zizmor_ci / install_opt_in_socket_ci: same shape as
+# --gitleaks-ci / --dependency-review in install.sh: a dedicated flag installs
+# the workflow via cp_scaffold_preserve (drift-preserving, same policy as
+# gitleaks.yml / dependency-review.yml since #110 / #113) and prints one
+# explanatory note. Extracted here rather than left inline (unlike
+# --gitleaks-ci / --dependency-review) for the same reason
+# install_test_workflow_ci and install-verify.sh exist: install.sh is pinned
+# at its own 500-line module cap (issue #84), and these two opt-ins were the
+# lines that pushed it over.
+install_opt_in_zizmor_ci() {
+  if [ "$ZIZMOR_CI" -eq 1 ]; then
+    cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/zizmor.yml.template" ".github/workflows/zizmor.yml"
+    echo "note: zizmor.yml audits YOUR repo's GitHub Actions workflows (unpinned refs, template injection, over-scoped tokens). It may be red on pre-existing workflows the first run; see the template header for the fix."
+  fi
+}
+
+install_opt_in_socket_ci() {
+  if [ "$SOCKET_CI" -eq 1 ]; then
+    cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/socket-security.yml.template" ".github/workflows/socket-security.yml"
+    echo "note: socket-security.yml blocks a known-malicious or typosquat/hallucinated package AT INSTALL TIME, before its code runs. No API key needed for the default firewall-free mode."
+  fi
+}
+
 # check_paired_artifacts GAP_FN NOTE_FN (#96): detect scaffold artifacts that
 # are meant to arrive in matched pairs (a config half plus the CI half that
 # enforces it, or a local hook half plus the CI half it defers to) where only
@@ -400,5 +423,72 @@ check_paired_artifacts() {
        && [ ! -f .github/workflows/coverage.yml ]; then
     "$gap_fn" ".github/workflows/lint.yml is installed but neither tests.yml nor coverage.yml is: CI runs lint checks only, and no test ever executes on a PR or push" \
       "re-run install.sh to install the default tests.yml (or install.sh --coverage-gate for the stricter gate)"
+  fi
+}
+
+# print_not_enabled_summary (P-19a): this scaffold's users typically do not
+# read code, and this installer is typically RUN BY AN AI AGENT on their
+# behalf, not by the human at a terminal (the real incident this responds to:
+# an agent hand-copied files instead of running the installer, hooks ended up
+# unarmed, gitleaks was never enabled, and a secret shipped that the disabled
+# layers would have caught). Every opt-in that is NOT enabled in the PROJECT
+# gets listed here, by name, with the exact command to turn it on: "silently
+# absent" is the failure mode this exists to close.
+#
+# Opens with a block addressed to the installing AGENT specifically, since
+# that is the actual reader roughly half the time, asking it to relay the
+# list to its human before treating the install as finished; the same text
+# reads fine for a human running this by hand.
+#
+# Presence checks, not this-run flags: a plain re-run of install.sh with no
+# flags passes GITLEAKS_HOOK=0, CLAUDE=0, etc. even when a prior run already
+# installed those gates, so checking the flag globals falsely reports an
+# already-armed gate as "not enabled". Check what is actually on disk in the
+# target project instead, same file-presence signals scaffold-doctor.sh's
+# "Protections not enabled" section uses (kept in sync with it by hand; there
+# is no shared list to source since this runs before scaffold-doctor.sh
+# exists in a fresh install).
+print_not_enabled_summary() {
+  local any=0
+  echo ""
+  echo "If you are an AI agent running this install: relay the list below to"
+  echo "your user verbatim, and ask which of these opt-in protections to"
+  echo "enable, before you consider this install finished."
+  echo ""
+  echo "Opt-in protections not enabled in this project:"
+  [ -f .githooks/lib/check-gitleaks ]            || { echo "  - gitleaks hook (local secret scan, pre-commit): not enabled. Enable with ./install.sh --gitleaks-hook"; any=1; }
+  [ -f .github/workflows/gitleaks.yml ]          || { echo "  - gitleaks CI gate (unskippable secret scan): not enabled. Enable with ./install.sh --gitleaks-ci"; any=1; }
+  echo "  - GitHub push protection (free, blocks a push containing a known secret pattern; on by default for public repos): not this installer's to enable. Turn it on in Repo Settings > Code security > Push protection."
+  [ -f .github/workflows/dependency-review.yml ] || { echo "  - dependency-review CI gate (blocks vulnerable/malicious deps on a PR): not enabled. Enable with ./install.sh --dependency-review"; any=1; }
+  [ -f .github/workflows/zizmor.yml ]            || { echo "  - zizmor CI gate (audits your own GitHub Actions workflows): not enabled. Enable with ./install.sh --zizmor-ci"; any=1; }
+  [ -f .github/workflows/socket-security.yml ]   || { echo "  - Socket Firewall CI gate (blocks a malicious/typosquat package at install time): not enabled. Enable with ./install.sh --socket-ci"; any=1; }
+  [ -f .claude/settings.json ]                   || { echo "  - Claude Code agent guardrails: not enabled. Enable with ./install.sh --claude"; any=1; }
+  [ -f .cursor/hooks.json ]                      || { echo "  - Cursor agent guardrails: not enabled. Enable with ./install.sh --cursor"; any=1; }
+  [ -f .githooks/commit-msg ]                    || { echo "  - commit-msg hook (Conventional Commits): not enabled. Enable with ./install.sh --commit-msg"; any=1; }
+  if [ "$any" -eq 0 ]; then
+    echo "  (none: every opt-in protection above is already enabled in this project)"
+  fi
+  echo ""
+  echo "Check what is armed at any time: ./scaffold-doctor.sh, or 'npx ai-coding-rules-scaffold doctor' if you did not clone this repo."
+}
+
+# print_history_scan_note (P-05): check-secrets and gitleaks.yml only ever
+# look at commits made AFTER this install, so a repo with pre-existing
+# history may already carry a secret from before the scaffold existed, and
+# nothing in the shipped inventory can see it. Printed only when HEAD
+# already resolves (a brand-new `git init` has nothing to scan yet); the
+# rotate-first framing and the force-push warning match README.md's "Already
+# have commit history?" section, so the two never contradict each other.
+print_history_scan_note() {
+  if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
+    echo ""
+    echo "This repo already has commit history: run a one-time full-history secret"
+    echo "scan before trusting this install for anything committed before today:"
+    echo "  gitleaks git .   (or trufflehog's history mode)"
+    echo "A hit means rotate or revoke that credential first: that is the actual"
+    echo "fix. History rewriting (git-filter-repo or BFG, never git filter-branch)"
+    echo "is optional cleanup afterward, not a substitute, and it force-pushes and"
+    echo "rewrites every clone, so route it through your human rather than doing"
+    echo "it yourself. See README.md's 'Already have commit history?' section."
   fi
 }

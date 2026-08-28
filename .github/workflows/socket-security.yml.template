@@ -1,0 +1,106 @@
+name: socket-security
+
+# OPT-IN supply-chain scan: verifies a package is legitimate BEFORE it is
+# installed. Install via `install.sh --socket-ci`, which copies this in as
+# `.github/workflows/socket-security.yml`. Off by default: it adds a
+# third-party action dependency, same posture as gitleaks.yml.template
+# (`install.sh --gitleaks-ci`) and dependency-review.yml.template
+# (`install.sh --dependency-review`).
+#
+# Why this exists:
+#   An LLM coding agent hallucinates plausible-but-nonexistent package names
+#   at a measurable rate, and attackers pre-register those exact names as
+#   real packages ("slopsquatting"). Neither the scaffold's own commit-time
+#   secret scan nor dependency-review.yml.template (advisory-DB / known-CVE
+#   scoped) catches a freshly registered, plausible-looking package with no
+#   CVE yet. A non-programmer cannot eyeball a package.json/requirements.txt
+#   diff and spot a typosquat or a hallucinated name an attacker beat them
+#   to, so this has to run automatically and block the install, not depend
+#   on someone reading a manifest diff.
+#
+# What it does:
+#   Uses SocketDev/action in "firewall-free" mode, which downloads Socket
+#   Firewall (free tier) and makes the `sfw` binary available on PATH in
+#   subsequent steps. It protects only the commands explicitly prefixed with
+#   `sfw` (`sfw npm ci`, `sfw pip install ...`, `sfw cargo fetch`); there is
+#   no shims input and no automatic interception of unprefixed commands.
+#   Socket Firewall blocks a known-malicious or typosquat package AT INSTALL
+#   TIME, before its code ever runs, instead of only reporting on it after
+#   the fact, but only for the `sfw`-prefixed commands below. A blocked
+#   install fails this job with a named package and a reason, which a
+#   non-coder can hand to their agent verbatim.
+#
+# NO API KEY OR ACCOUNT NEEDED for firewall-free mode used below. If you
+# want Socket's paid Enterprise firewall edition instead (more ecosystems:
+# .NET, Go, Ruby, plus org-wide policy controls), switch the job's
+# `mode: firewall-free` to `mode: firewall-enterprise`, add
+# `socket-token: ${{ secrets.SOCKET_API_KEY }}` alongside it, and:
+#   1. Create a Socket account and an API token at https://socket.dev
+#   2. Repo Settings > Secrets and variables > Actions > New repository
+#      secret, name it SOCKET_API_KEY, and paste the token.
+#
+# Actions are pinned to a full commit SHA (supply-chain hardening); the
+# trailing comment records the human-readable tag. Bump via Dependabot (see
+# dependabot.yml.template). SHA verified against the action's current
+# release, v1.3.2, via `gh api repos/SocketDev/action/releases/latest` and
+# `gh api repos/SocketDev/action/git/refs/tags/v1.3.2`, not from memory.
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  socket-firewall:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false  # don't leave GITHUB_TOKEN in .git/config
+      - uses: SocketDev/action@ba6de6cc0565af1f42295590380973573297e31f  # v1.3.2
+        with:
+          mode: firewall-free
+
+      # Each install command below is prefixed with `sfw` so it is actually
+      # routed through Socket Firewall; an unprefixed command would run
+      # unprotected. Each step only runs when the matching manifest is
+      # present, the same detect-in-a-step pattern lint.yml.template uses,
+      # so a repo missing that stack sees a clean no-op instead of a
+      # failure.
+      #
+      # --ignore-scripts on the JS install: Socket Firewall blocks a
+      # malicious/typosquat PACKAGE from being resolved at all, which is a
+      # different protection from not running a (legitimate) package's
+      # lifecycle scripts. Same Shai-Hulud-class hardening as lint.yml's
+      # frontend job; the two protections stack. If a dependency genuinely
+      # needs a lifecycle script (esbuild, @swc/core, sharp, cypress), add a
+      # follow-up `npm rebuild <pkg>` step rather than dropping the flag.
+      - name: Install JS/TS dependencies through Socket Firewall
+        if: hashFiles('package.json') != ''
+        run: |
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            sfw npm ci --ignore-scripts
+          else
+            sfw npm install --ignore-scripts
+          fi
+      - name: Install Python dependencies through Socket Firewall
+        if: hashFiles('requirements.txt', 'requirements-dev.txt', 'requirements/dev.txt', 'pyproject.toml') != ''
+        run: |
+          for req in requirements.txt requirements-dev.txt requirements/dev.txt; do
+            if [ -f "$req" ]; then
+              sfw pip install -r "$req"
+            fi
+          done
+          # Only attempt an editable install when the project actually
+          # declares a build backend (a `[project]` table), same guard
+          # coverage.yml.template uses, so a pyproject.toml that only holds
+          # tool config doesn't hard-fail this step.
+          if [ -f pyproject.toml ] && grep -q '^\[project\]' pyproject.toml; then
+            sfw pip install -e .
+          fi
+      - name: Fetch Rust dependencies through Socket Firewall
+        if: hashFiles('Cargo.toml') != ''
+        run: sfw cargo fetch

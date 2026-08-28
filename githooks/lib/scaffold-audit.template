@@ -8,7 +8,8 @@
 # Informational only: always exits 0. Pure bash + awk, same TOML subset as
 # lib/scaffold-config (the parser of record — this is a reporting view of it).
 #
-# Output: a heading plus one stanza per [size] cap and per [rules."..."] entry.
+# Output: a heading plus one stanza per [size] cap, per [large-files] cap, and
+# per [rules."..."] entry.
 
 set -euo pipefail
 
@@ -27,6 +28,7 @@ out=$(awk '
   function flush(){
     if (cur=="") return
     if (cur=="size") return            # [size] entries print inline as parsed
+    if (cur=="large-files") return     # [large-files] entries print inline too
     line="  rule \"" rid "\""
     if (disabled) line=line "  — DISABLED"
     else if (sev!="") line=line "  — severity=" sev
@@ -36,7 +38,7 @@ out=$(awk '
     if (by!="")     print "      by:     " by
     count++
   }
-  BEGIN { cur=""; rid=""; disabled=0; sev=""; reason=""; by=""; sizehdr=0; count=0 }
+  BEGIN { cur=""; rid=""; disabled=0; sev=""; reason=""; by=""; sizehdr=0; largehdr=0; count=0 }
   {
     t=$0; sub(/\r$/,"",t); t=trim(t)
     if (t=="" || t ~ /^#/) next
@@ -45,6 +47,7 @@ out=$(awk '
       disabled=0; sev=""; reason=""; by=""
       sec=t; sub(/^\[/,"",sec); sub(/\]$/,"",sec)
       if (sec=="size") { cur="size"; rid="" }
+      else if (sec=="large-files") { cur="large-files"; rid="" }
       else if (sec ~ /^rules\./) { cur="rule"; rid=unq(substr(sec,7)) }
       else { cur="" }            # unknown section — ignored, like the reader
       next
@@ -54,6 +57,12 @@ out=$(awk '
     key=unq(trim(substr(t,1,eq-1))); val=unq(trim(substr(t,eq+1)))
     if (cur=="size") {
       if (!sizehdr) { print "  [size] caps:"; sizehdr=1 }
+      print "      " key " = " val
+      count++
+      next
+    }
+    if (cur=="large-files") {
+      if (!largehdr) { print "  [large-files] caps:"; largehdr=1 }
       print "      " key " = " val
       count++
       next

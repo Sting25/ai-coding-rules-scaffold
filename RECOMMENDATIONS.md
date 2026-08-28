@@ -107,11 +107,9 @@ _Added 2026-06-11._
 
 ## Pin the CI `ruff` version
 
-_Added 2026-06-11._
+_Added 2026-06-11. **Shipped 2026-08-28:** `lint.yml.template` now pins `pip install ruff==0.15.22`, matching `test.yml`/`coverage.yml`'s supply-chain posture. Nothing left to adopt: every install picks this up already._
 
-**Adopt if:** you depend on hook/CI lint parity being byte-reproducible across runs, or you treat CI PyPI installs as a supply-chain surface.
-
-**What it is.** `lint.yml`'s `pip install ruff` pulls whatever PyPI serves that day, so lint behavior can shift between runs. Pin it: `pip install ruff==X.Y.Z  # bump manually on upgrades`. **Honest caveat:** Dependabot's `pip` ecosystem scans manifests (`requirements`/`pyproject`), **not** a version literal embedded in workflow YAML — so a `ruff==X` pin in `lint.yml` is maintained by hand, or by pinning `ruff` in the project's own `pyproject`/`requirements` and installing from there. (This is the corrected scope of the `SECURITY_AUDIT.md` "ruff/eslint are unshared, unpinned" Low finding.)
+**What it was.** `lint.yml`'s `pip install ruff` used to pull whatever PyPI served that day, so lint behavior could shift between runs. Now pinned: `pip install ruff==0.15.22  # bump manually on upgrades`. **Honest caveat, still true:** Dependabot's `pip` ecosystem scans manifests (`requirements`/`pyproject`), **not** a version literal embedded in workflow YAML, so this pin is maintained by hand on future bumps, not auto-updated. (This is the corrected scope of the `SECURITY_AUDIT.md` "ruff/eslint are unshared, unpinned" Low finding.)
 
 ---
 
@@ -132,3 +130,18 @@ _Added 2026-06-11._
 **Adopt if:** you publish a versioned package or tagged releases **and** already run `install.sh --commit-msg`. Skip for internal deploy-from-`main` services.
 
 **What it is.** `release-please` maintains a release PR that bumps SemVer from your commit types, writes `CHANGELOG.md`, and tags the release — the natural payoff of the Conventional-Commits hook the scaffold already ships opt-in. **Why not in the scaffold:** it adds a third-party action dependency and sits downstream of the scaffold's enforcement boundary. If you adopt it, SHA-pin the action like the existing workflows and let Dependabot bump it.
+
+---
+
+## Go-live checks no hook can run (per-table auth rules, backups on)
+
+_Added 2026-08-28._
+
+**Adopt if:** the project has a hosted database or backend-as-a-service (Supabase, Firebase, a managed Postgres) and is about to be reachable by anyone other than the person who built it.
+
+**What it is.** Two questions to answer before calling a project ready to ship. Both are provider-console state rather than code, which is exactly why nothing in this scaffold can see them:
+
+- **Row Level Security, or whatever the platform calls its per-row auth rules, is on for every table holding user data, and each of those tables has a policy that actually says who may read and write it.** Tables created during AI-assisted building are routinely left with RLS off, which leaves them readable by anyone holding the project URL and the public anon key. The caveat matters as much as the rule: RLS switched on with no policies blocks all access, and that is precisely when builders switch it back off and ship. Write the policies, then confirm with a real non-owner session, rather than disabling the protection to make the app work again.
+- **Automatic backups are enabled on the data store, and you know how old the most recent one is.** This is the half that makes a destructive mistake survivable. `AGENTS.md` > "Destructive actions and live data" has the agent confirm a backup before anything irreversible, and that rule is worth no more than the backup schedule sitting behind it.
+
+**Why it stays advisory.** The shipped checks scan staged file content; RLS state and a backup schedule have no file in the repo to scan, so no hook or CI job here can reach them. `forbidden-patterns/secrets.txt` already catches the leaked service-role key shape, the other half of the same failure. Keep this entry to the two questions above: general app security (headers, CORS, rate limits) stays out of scope per `TECHNICAL.md` > "What this scaffold deliberately omits".

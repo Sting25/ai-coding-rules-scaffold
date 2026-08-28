@@ -15,7 +15,7 @@ Enforcement runs in two places, sharing the same scripts:
 - **Pre-commit hook** — blocks the commit locally, scanning only your **staged** files. Fast feedback, skippable with `--no-verify`.
 - **CI workflow** — blocks the PR server-side. Unskippable.
 
-Both invoke the same `lib/check-*` scripts (`check-size`, `check-patterns`, `check-filenames`, `check-secrets`, `check-hygiene`). The hook and CI can't drift apart because there's nothing to keep in sync — they call the same code. What differs is _scope_. The hook scans your staged files; CI scopes its **quality gates** (ruff, eslint/prettier, and the size / forbidden-pattern / hygiene guardrails) to the **PR/push diff** via the shared `.githooks/lib/ci-changed-files` helper, so installing onto an existing repo doesn't retroactively fail pre-existing code. The **secret and credential-filename scans stay whole-tree** in CI — the non-overridable security boundary, where catching an already-committed key is the whole point. Same scripts everywhere: scoped to the diff for quality gates, whole-tree for secrets. Each script is also runnable on its own (`git ls-files | .githooks/lib/check-secrets`), so you can wire it into Husky, lefthook, or any other orchestrator without rewriting the logic.
+Both invoke the same `lib/check-*` scripts (`check-size`, `check-large-files`, `check-patterns`, `check-filenames`, `check-secrets`, `check-hygiene`). The hook and CI can't drift apart because there's nothing to keep in sync — they call the same code. What differs is _scope_. The hook scans your staged files; CI scopes its **quality gates** (ruff, eslint/prettier, and the size / forbidden-pattern / hygiene guardrails) to the **PR/push diff** via the shared `.githooks/lib/ci-changed-files` helper, so installing onto an existing repo doesn't retroactively fail pre-existing code. The **secret and credential-filename scans stay whole-tree** in CI — the non-overridable security boundary, where catching an already-committed key is the whole point. Same scripts everywhere: scoped to the diff for quality gates, whole-tree for secrets. Each script is also runnable on its own (`git ls-files | .githooks/lib/check-secrets`), so you can wire it into Husky, lefthook, or any other orchestrator without rewriting the logic.
 
 ## Supported stacks
 
@@ -128,6 +128,7 @@ Commit + CI-breaking (pre-commit hook + `lint.yml`):
 | Focused tests (`.only`), `@ts-ignore` / `@ts-nocheck`, hardcoded `localhost`/`127.0.0.1` URLs, TLS-verification-disable (`NODE_TLS_REJECT_UNAUTHORIZED`, `rejectUnauthorized: false`)                                                                                                                                 | regex (frontend.txt)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Dangerous shell in `*.sh`/`*.bash` — `curl \| bash`, `rm -rf /`, `chmod 777`, `git --no-verify` (hook bypass)                                                                                                                                                                                                         | regex (shell.txt)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | File size > 500 lines                                                                                                                                                                                                                                                                                                 | line count of the staged blob (`git show :0:<path>`, counting a final line with no trailing newline)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Large binary file > 500 KB (`check-large-files`, P-15)                                                                                                                                                                                                                                                                | byte size of the staged blob (`git cat-file -s :0:<path>`); default cap raisable via `.scaffold.toml [large-files] default = <bytes>`. No extension skip list, unlike `check-size`, so a video, model checkpoint, database dump, or zipped export is caught even though it would pass the line-count cap untouched                                                                                                                                                                                                                                                                                                                             |
 | TODO/FIXME without ticket ref                                                                                                                                                                                                                                                                                         | regex (opt-in; commented in template)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Secret / credential leaks (AWS `AKIA`/Bedrock, GitHub/GitLab tokens, Stripe, Supabase, OpenRouter, OpenAI/Anthropic, structural JWTs, private keys, URLs with embedded credentials, quoted hardcoded `password`/`token`/`api_key` assignments — unquoted/env-var forms are better caught by the gitleaks layer below) | regex (case-insensitive for keyword rules; token-shaped rules are case-sensitive via a `(?-i)` marker, so an all-hex prefix like AWS `ACCA` cannot collide with a SHA-256 digest). Scans **every** tracked file's staged blob as text (no extension allowlist, so renaming a payload can't skip it); NUL bytes are stripped so they can't hide content. A single line longer than `MAX_LINE_LENGTH` (50000) is dropped before the regex (so a minified/binary blob can't hang the scan) and the file is then **rejected as unscannable** (fail-closed) — split/relocate the asset, raise `MAX_LINE_LENGTH`, or point a dedicated scanner at it |
 | Committed `.env` / `*.pem` / SSH private keys (`id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`)                                                                                                                                                                                                                          | filename check (`.env.example` / `.env.sample` / `.env.template` allowed)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -143,8 +144,8 @@ credential — append `scaffold-allow` (any case) after a comment leader
 (`#`, `//`, `/*`, or `<!--`) on the matched line. The marker must follow
 a comment leader; a bare `scaffold-allow` inside a string literal is NOT
 exempt. `check-patterns` and `check-secrets` skip lines containing the
-marker; `check-filenames` and `check-size` are file-level and
-unaffected. See `forbidden-patterns/README.md` for examples and the full
+marker; `check-filenames`, `check-size`, and `check-large-files` are file-level
+and unaffected. See `forbidden-patterns/README.md` for examples and the full
 leader spec.
 
 **Reviewers: every PR that adds or moves a `scaffold-allow` marker is
@@ -178,7 +179,8 @@ severity = "warn"
 
 - **Rule ids.** Forbidden-pattern rules are keyed `"<patternfile-stem>/<description>"`
   (the text after the TAB in `.forbidden-patterns/<lang>.txt`). Hygiene rules
-  use `conflict-marker` / `case-collision` / `hidden-unicode`; the size cap uses `size`.
+  use `conflict-marker` / `case-collision` / `hidden-unicode`; the size cap uses
+  `size`; the large-file byte cap uses `large-files`.
 - **Disable vs downgrade.** `disabled = true` turns the rule off; `severity =
 "warn"` keeps emitting the finding (a CI `::warning::`) without failing the
   build — a relaxed rule stays visible, never silent.
@@ -292,7 +294,38 @@ minimal; turn them on per project.
   requiring GitHub Advanced Security for private repos, where it errors
   without that entitlement (caveat documented in the template header, same
   "needs a GitHub entitlement" shape as gitleaks for organizations). Pinned to
-  a commit SHA; bump via Dependabot.
+  a commit SHA; bump via Dependabot. Also ships a conservative AGPL deny-list
+  license gate (the action's own license-compliance inputs, left unused by
+  the template until now): fails loudly on the one license family that can
+  force a consumer's own product open, without the constant false positives
+  a broader allow-list would produce for this audience.
+
+- **zizmor CI gate (`install.sh --zizmor-ci` →
+  `.github/workflows/zizmor.yml`).** Runs zizmor, a static analyzer for
+  GitHub Actions workflows, against your own repo's `.github/workflows/`.
+  Its findings map onto real incident classes: unpinned `uses:` refs (the
+  mutable-tag vector behind the 2025 tj-actions and 2026 Trivy incidents),
+  template-injection via `${{ github.event.* }}` interpolated into a `run:`
+  block, credential-persisting checkouts, and over-scoped `GITHUB_TOKEN`
+  permissions. Runs `--offline` (static audits only, no `GITHUB_TOKEN` or
+  network round-trip, no account or secret needed). Opt-in, not default-on:
+  it adds a third-party pip package. Pinned to a commit SHA; bump via
+  Dependabot.
+
+- **Socket Firewall CI gate (`install.sh --socket-ci` →
+  `.github/workflows/socket-security.yml`).** Verifies a package is
+  legitimate _before_ it is installed, not after: an LLM coding agent
+  hallucinates plausible-but-nonexistent package names at a measurable rate,
+  and attackers pre-register those exact names as real packages
+  ("slopsquatting"). Neither `check-secrets` nor the dependency-review gate
+  above (advisory-DB / known-CVE scoped) catches a freshly registered,
+  plausible-looking package with no CVE yet. Uses SocketDev/action in
+  firewall-free mode, which shims `npm`/`pnpm`/`yarn`, `pip`/`pip3`/`uv`, and
+  `cargo` so install commands are transparently routed through Socket
+  Firewall (free tier) and a known-malicious or typosquat package fails the
+  install, at install time, with a named package and a reason. No API key or
+  account needed for firewall-free mode. Opt-in, not default-on: it adds a
+  third-party action dependency. Pinned to a commit SHA; bump via Dependabot.
 
 - **Patch-coverage gate (`install.sh --coverage-gate` →
   `.github/workflows/coverage.yml`, installed _instead of_ the default-on

@@ -41,6 +41,21 @@
 
 set -euo pipefail
 
+# Plain (NOT exported) assignment: bash's OWN length/substring/pattern-match
+# operations on $content below (${#content}, ${content:0:3}, ${content#...})
+# are locale-aware for MULTIBYTE character boundaries, not just the explicit
+# `LC_ALL=C` already on every subprocess call in this file (git/tr/awk/grep).
+# Under the ambient UTF-8 locale this scaffold assumes, those bash-internal
+# ops silently count BOM/bidi/zero-width bytes as single characters instead
+# of the "each byte is one character" contract the header above documents,
+# which desyncs a byte-index substring check from the actual bytes, and (far
+# worse, measured) makes a large multibyte-locale string catastrophically
+# slow in bash 3.2's pattern matcher: ~77s for an 820 KB file on the
+# `${content#$'\xef\xbb\xbf'}` BOM strip below, versus ~0.002s once this line
+# forces byte-wise semantics. Left un-exported so it never reaches a child
+# process (they already carry their own explicit LC_ALL=C where it matters).
+LC_ALL=C
+
 CI_MODE=0
 [ "${1:-}" = "--ci" ] && CI_MODE=1
 
@@ -198,8 +213,14 @@ if [ "$HIDDEN_STATE" != disabled ]; then
     fi
     [ -n "$content" ] || continue
     # A legitimate leading BOM is allowed; strip one before scanning so only a
-    # mid-file occurrence trips the EF-BB-BF branch.
-    content=${content#$'\xef\xbb\xbf'}
+    # mid-file occurrence trips the EF-BB-BF branch. Index-based check-and-slice,
+    # not the equivalent-looking pattern strip ${content#$'\xef\xbb\xbf'}: even
+    # with the LC_ALL=C above, the pattern form still routes through bash's
+    # glob matcher and was measurably slow on a large file (see LC_ALL=C note
+    # near the top); substring extraction by index never invokes it.
+    if [ "${content:0:3}" = $'\xef\xbb\xbf' ]; then
+      content=${content:3}
+    fi
     m=$(LC_ALL=C grep -anE -- "$HIDDEN_RE" <<<"$content" \
           | grep -ivE '(^[0-9]+:|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true)
     if [ -n "$m" ]; then

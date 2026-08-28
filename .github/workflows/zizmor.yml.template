@@ -1,0 +1,74 @@
+name: zizmor
+
+# OPT-IN GitHub Actions static-audit backstop. Install via `install.sh
+# --zizmor-ci`, which copies this in as `.github/workflows/zizmor.yml`. Off
+# by default: it adds a third-party pip package, so opt in deliberately,
+# same posture as gitleaks.yml.template (`install.sh --gitleaks-ci`) and
+# dependency-review.yml.template (`install.sh --dependency-review`).
+#
+# Why this exists:
+#   This scaffold audits its OWN workflows with zizmor in maintainer CI (see
+#   this repo's test.yml), which is why the shipped *.yml.template files are
+#   clean. That coverage stops at the scaffold's own files: the moment your
+#   agent adds a deploy, release, or preview workflow of its own, nothing
+#   here audits it. zizmor is a static analyzer for GitHub Actions workflows.
+#   Its findings map onto real incident classes: unpinned `uses:` refs (the
+#   mutable-tag vector behind the 2025 tj-actions and 2026 Trivy incidents),
+#   template-injection via `${{ github.event.* }}` interpolated into a
+#   `run:` block, credential-persisting checkouts, and over-scoped
+#   GITHUB_TOKEN permissions. Findings are named, severity-rated, and most
+#   carry a documented fix, no code reading required, which fits this
+#   audience the same way gitleaks and dependency-review do.
+#
+# --offline: static audits only, no GITHUB_TOKEN or network round-trip
+# needed. No account, no secret, no setup step beyond this file.
+#
+# Actions are pinned to a full commit SHA (supply-chain hardening); the
+# trailing comment records the human-readable tag. Bump via Dependabot (see
+# dependabot.yml.template). The `pip install zizmor` below is pinned the
+# same way but is NOT a Dependabot-tracked line: bump it manually on
+# upgrades (Dependabot's pip ecosystem scans manifests like
+# requirements/pyproject, not a version literal embedded in workflow YAML).
+#
+# Heads-up before you enable this: zizmor's default persona (`regular`) is
+# stricter than most of this scaffold's other opt-in checks. Since zizmor
+# 1.20, its unpinned-uses audit requires SHA-pinning EVERY `uses:`,
+# including first-party `actions/*` ones, not just third-party actions. A
+# hand-written `uses: actions/checkout@v5` elsewhere in your repo will fail
+# this gate the first time you turn it on. That's the point (it's the exact
+# mutable-tag class this check exists to catch), but it means your first run
+# may be red on pre-existing workflows, not just new ones. Fix it by pinning
+# those `uses:` lines to a commit SHA (many zizmor findings, including this
+# one, are auto-fixable with `zizmor --fix`) rather than disabling the check.
+#
+# permissions below matches this scaffold's usual `contents: read` floor.
+# zizmor's own excessive-permissions remediation for a job that does no
+# checkout-write work recommends going further, to `permissions: {}`, which
+# is safe once you've confirmed nothing here needs even read access.
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  zizmor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false  # don't leave GITHUB_TOKEN in .git/config
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install zizmor
+        # Pinned (see header). Bump manually on upgrades.
+        run: pip install zizmor==1.29.0
+      - name: Audit workflows (zizmor)
+        # --offline: static audits only. --persona regular is zizmor's
+        # default; named explicitly here so a future zizmor release
+        # changing its default doesn't silently change what this gate does.
+        run: zizmor --offline --persona regular .github/workflows/*.yml

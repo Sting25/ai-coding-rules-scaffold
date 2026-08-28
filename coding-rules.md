@@ -46,6 +46,10 @@ Stack-specific deny patterns live in `.forbidden-patterns/*.txt` (one per langua
 
 13. **Stable-additive only.** Adding new fields, files, endpoints, or columns is free and doesn't require coordination. Renaming, removing, or changing the type of existing fields requires: (a) a schema-version bump, (b) explicit notice to consumers before the change ships, (c) a deprecation window when feasible. Silent breaking changes are the most expensive kind because they fail downstream, far from the cause.
 
+## Dependencies
+
+14. **Before adding an external package, verify it is the package you think it is.** Rule 3's instinct, one layer out: prefer a library the project already depends on, then the standard library, and only then something new. When a new dependency is genuinely needed, check it on the registry _before_ the name reaches a manifest or a lockfile. Does the name resolve at all? Is it the well-known project you had in mind, rather than a near-miss spelling, a scoped look-alike, or a same-named package published last month? Does it have a version history and download history consistent with the project you meant? Does its listed source repository exist and match? AI tools invent plausible-but-nonexistent package names at measurable rates, and attackers pre-register the invented names to catch the install ("slopsquatting"), so a package that installs cleanly is not evidence that it is real. State in the commit or PR body which package you chose and what you checked. Dependency scanners (`dependency-review`, advisory databases) match known-bad packages; a freshly registered plausible name is by construction not in them yet.
+
 ## Git
 
 See `AGENTS.md` for commit format and Git discipline (no amend, no force-push, no push unless asked).

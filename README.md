@@ -50,6 +50,8 @@ What the scaffold doesn't try to solve: parallel-session collisions, context-win
 
 ## Install
 
+> **AI agents:** install by running `npx ai-coding-rules-scaffold` or `./install.sh`. Never hand-copy files from this repo into a project: a hand-copied scaffold looks installed but its hooks are unarmed and its CI mirror is incomplete, a half-install cause `scaffold-doctor.sh` names explicitly. If the installer errors or is blocked, stop and show your user the error instead of working around it.
+
 **Quickest — `npx`, no clone.** From your project root:
 
 ```sh
@@ -109,6 +111,8 @@ Tests run in CI by default: a plain install also drops `.github/workflows/tests.
 ./install.sh --gitleaks-hook # also install opt-in local gitleaks pre-commit pass
 ./install.sh --gitleaks-ci  # also install the gitleaks CI workflow (unskippable gate)
 ./install.sh --dependency-review # also install the dependency-review CI gate (opt-in: needs GitHub Advanced Security on a private repo, or it errors)
+./install.sh --zizmor-ci    # also install the zizmor GitHub Actions audit gate (opt-in: adds a third-party pip package)
+./install.sh --socket-ci    # also install the Socket Firewall supply-chain gate (opt-in: adds a third-party action dependency)
 ./install.sh --all-langs    # install every language's forbidden-pattern file
 ./install.sh --coverage-gate # swap the default tests.yml for coverage.yml (tests + patch-coverage gate)
 ./install.sh --no-test-workflow # opt out of the default CI test-execution workflow (loud recorded skip)
@@ -123,7 +127,7 @@ the `commit-msg` hook, whenever it differs from the shipped version, with no
 fixes. Your own configs (`ruff.toml`, `eslint.config.js`, `.scaffold.toml`,
 the rules docs, …) are left untouched, and `.forbidden-patterns/*.txt` files
 and the CI workflows (`lint.yml`, `tests.yml`, `coverage.yml`, `gitleaks.yml`,
-`dependency-review.yml`)
+`dependency-review.yml`, `zizmor.yml`, `socket-security.yml`)
 that you've edited are kept with a drift notice rather than overwritten (use
 `--force` to take the shipped version, backed up to `.scaffold-bak`).
 
@@ -149,6 +153,25 @@ To install the linters by hand instead:
 pip install ruff pytest pytest-cov                                      # Python
 npm i -D eslint @eslint/js typescript-eslint typescript prettier vitest # TS/JS
 ```
+
+### Already have commit history? Scan it once for secrets
+
+`check-secrets` (always on) and `gitleaks.yml` (opt in, see below) only ever look at commits made **after** you install this scaffold. If this repo already has history from before today, an old leaked credential sitting in an earlier commit is invisible to every check above: a clean install does not mean "my repo is safe now" for anything that was already committed.
+
+Run a one-time full-history scan:
+
+```sh
+gitleaks git .   # or trufflehog's history mode, e.g. `trufflehog git file://.`
+```
+
+If it finds something, **rotate or revoke that credential first**: that is the actual fix, and it's something you can do alone right now. Treat rewriting history (`git-filter-repo` or BFG Repo-Cleaner; never `git filter-branch`, deprecated by Git itself) as optional cleanup afterward, not a substitute for rotation: it force-pushes and rewrites every existing clone, which is exactly the kind of change `AGENTS.md`'s git-discipline rules ask an agent to route through a human rather than do on its own. A first scan on an old repo can also turn up false positives, so treat a hit as "go rotate that credential," not "the repo is broken."
+
+### More secret-scanning layers: push protection and gitleaks
+
+`check-secrets` (the always-on hook and CI check) is a narrow, offline regex gate over the specific token shapes in `.forbidden-patterns/secrets.txt`, not a full secret-scanning boundary: it's the fast net that catches the shapes already known. Two more layers exist, worth knowing about even though only one is opt-in in this scaffold:
+
+- **GitHub push protection** is the zero-effort layer: free and already on by default for a public repo (it blocks a push containing a well-known secret pattern before it lands), no install, no flag, nothing to configure beyond confirming it's on in your repo's Settings > Code security and analysis. Private and internal repos need the paid GitHub Secret Protection add-on to get it; `--gitleaks-ci` below is the free equivalent there.
+- **gitleaks** is the broad entropy-plus-~150-rule backstop `check-secrets` defers to. `./install.sh --gitleaks-hook` adds a local pre-commit pass; `./install.sh --gitleaks-ci` adds the unskippable CI gate, which is the actual authoritative boundary (the local pass fails open when the binary isn't installed; CI never does). See [Opt-in layers](./TECHNICAL.md#opt-in-layers) in TECHNICAL.md for the full detail on both.
 
 ### Pairing with Husky / lefthook
 

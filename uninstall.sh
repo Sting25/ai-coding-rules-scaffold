@@ -130,7 +130,7 @@ remove_if_unmodified ".prettierrc.json"              "$SCAFFOLD_DIR/.prettierrc.
 remove_if_unmodified ".prettierignore"               "$SCAFFOLD_DIR/.prettierignore.template"
 remove_if_unmodified "vitest.config.ts"              "$SCAFFOLD_DIR/vitest.config.ts.template"
 remove_if_unmodified ".githooks/pre-commit"          "$SCAFFOLD_DIR/githooks/pre-commit.template"
-for check in check-size check-patterns check-filenames check-secrets check-hygiene scaffold-config scaffold-audit ci-changed-files; do
+for check in check-size check-large-files check-patterns check-filenames check-secrets check-hygiene scaffold-config scaffold-audit ci-changed-files; do
   remove_if_unmodified ".githooks/lib/${check}" "$SCAFFOLD_DIR/githooks/lib/${check}.template"
 done
 # Per-project override file — removed only if still byte-identical to the
@@ -165,6 +165,11 @@ remove_if_unmodified ".github/workflows/gitleaks.yml" "$SCAFFOLD_DIR/.github/wor
 # Opt-in dependency-review CI gate (only present if installed with
 # --dependency-review).
 remove_if_unmodified ".github/workflows/dependency-review.yml" "$SCAFFOLD_DIR/.github/workflows/dependency-review.yml.template"
+# Opt-in zizmor CI gate (only present if installed with --zizmor-ci).
+remove_if_unmodified ".github/workflows/zizmor.yml" "$SCAFFOLD_DIR/.github/workflows/zizmor.yml.template"
+# Opt-in Socket Firewall supply-chain CI gate (only present if installed
+# with --socket-ci).
+remove_if_unmodified ".github/workflows/socket-security.yml" "$SCAFFOLD_DIR/.github/workflows/socket-security.yml.template"
 
 # Likely-customized files — only with --all
 if [ "$REMOVE_ALL" -eq 1 ]; then

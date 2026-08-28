@@ -116,7 +116,11 @@ jobs:
           done
           # Pinned: an unpinned `pip install` executes whatever version is newest
           # at run time, minutes after publish — contradicting the cooldown posture
-          # the scaffold's dependabot.yml.template documents. Dependabot bumps these.
+          # the scaffold's dependabot.yml.template documents. That file's default
+          # config only declares the github-actions ecosystem (see its own
+          # comments): these pip version literals are NOT Dependabot-tracked and
+          # need a manual bump on upgrades, same as lint.yml's ruff pin, unless
+          # you uncomment dependabot.yml's example pip block for your own project.
           pip install pytest==9.1.1 pytest-cov==7.1.0
           rc=0
           pytest --cov --cov-report=xml || rc=$?
@@ -152,7 +156,7 @@ jobs:
       # ── Gate: every changed line must be covered ──────────────────────────
       - name: Enforce patch coverage (diff-cover)
         run: |
-          pip install diff-cover==10.3.0  # pinned (see note above); Dependabot bumps
+          pip install diff-cover==10.3.0  # pinned (see note above); NOT Dependabot-tracked, bump by hand
           git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
           REPORTS=""
           [ -f coverage.xml ] && REPORTS="$REPORTS coverage.xml"
