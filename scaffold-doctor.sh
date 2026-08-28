@@ -132,11 +132,11 @@ if [ -f .githooks/commit-msg ] && [ ! -x .githooks/commit-msg ]; then
 fi
 
 # --- 3. the shipped checks --------------------------------------------------
-# The orchestrator calls these five unguarded, so a missing or non-executable
+# The orchestrator calls these six unguarded, so a missing or non-executable
 # one makes the hook error out and BLOCK the commit — noisy, not silent, but
 # still broken, and worth naming precisely rather than leaving to a stack trace.
 section "shipped checks"
-for chk in check-size check-patterns check-filenames check-secrets check-hygiene; do
+for chk in check-size check-large-files check-patterns check-filenames check-secrets check-hygiene; do
   if [ ! -f ".githooks/lib/$chk" ]; then
     gap "lib/$chk is missing — the hook calls it unguarded and every commit will error" \
         "re-run install.sh to restore it"
