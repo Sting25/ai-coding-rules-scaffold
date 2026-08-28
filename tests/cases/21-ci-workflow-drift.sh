@@ -25,8 +25,16 @@
 # three checks per file: the mechanism is identical, only the destination
 # path, shipped template, and the install flag needed to bring the file into
 # existence differ.
+#
+# What #113 is: dependency-review.yml.template shipped and documented but no
+# install.sh call site ever wrote it, so it was dead weight (issue #113).
+# Wired up the same way as gitleaks.yml (#110): a dedicated opt-in flag,
+# --dependency-review, installs it via cp_scaffold_preserve, so it gets the
+# same fifth _wd_case slot. It stays opt-in (never default-on) because the
+# action errors on a private repo without GitHub Advanced Security; the extra
+# case below proves a plain, no-flag install never creates it.
 
-echo "cases/21: CI workflow drift-preserving install policy (lint.yml #105, tests/coverage/gitleaks.yml #110)"
+echo "cases/21: CI workflow drift-preserving install policy (lint.yml #105, tests/coverage/gitleaks.yml #110, dependency-review.yml #113)"
 
 # _wd_fixture EXTRA_FLAG: a throwaway frontend-mode repo with the scaffold
 # installed. EXTRA_FLAG is the flag (if any) needed for this run to touch the
@@ -121,5 +129,19 @@ _wd_case "lint.yml"     ".github/workflows/lint.yml"     "$SCAFFOLD_DIR/.github/
 _wd_case "tests.yml"    ".github/workflows/tests.yml"    "$SCAFFOLD_DIR/.github/workflows/tests.yml.template"    ""
 _wd_case "coverage.yml" ".github/workflows/coverage.yml" "$SCAFFOLD_DIR/.github/workflows/coverage.yml.template" "--coverage-gate"
 _wd_case "gitleaks.yml" ".github/workflows/gitleaks.yml" "$SCAFFOLD_DIR/.github/workflows/gitleaks.yml.template" "--gitleaks-ci"
+_wd_case "dependency-review.yml" ".github/workflows/dependency-review.yml" "$SCAFFOLD_DIR/.github/workflows/dependency-review.yml.template" "--dependency-review"
+
+# (T) a DEFAULT install (no flag at all) never creates dependency-review.yml:
+# the action errors on a private repo without GitHub Advanced Security, so
+# default-on would break consumer CI (#113). Same shape as the opt-in check
+# _wd_case already proves per-workflow above, but this asserts ABSENCE on the
+# plain, no-flag install path rather than presence behind its own flag.
+T4=$(_wd_fixture "")
+if [ ! -e "$T4/.github/workflows/dependency-review.yml" ]; then
+  echo "  ✓ [dependency-review.yml] a default install does not create it"; PASS=$((PASS + 1))
+else
+  echo "  ✗ [dependency-review.yml] a default install should not create dependency-review.yml"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$T4"
 
 reset_repo

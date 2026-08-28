@@ -1,9 +1,11 @@
 name: dependency-review
 
-# OPT-IN dependency supply-chain gate. Copy to your project as
-# `.github/workflows/dependency-review.yml`. NOT installed by install.sh — it
-# adds a third-party action dependency and relies on GitHub's Dependency Graph,
-# so opt in deliberately (same posture as gitleaks.yml.template).
+# OPT-IN dependency supply-chain gate. Install via `install.sh
+# --dependency-review`, which copies this in as
+# `.github/workflows/dependency-review.yml`. Off by default: it adds a
+# third-party action dependency and relies on GitHub's Dependency Graph
+# (see the availability caveat below), so opt in deliberately, same posture
+# as gitleaks.yml.template (`install.sh --gitleaks-ci`), both opt-in flags.
 #
 # What it does:
 #   On a pull request, diffs the dependency manifests/lockfiles the PR changes

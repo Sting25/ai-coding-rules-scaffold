@@ -162,6 +162,9 @@ remove_if_unmodified ".githooks/lib/check-gitleaks"  "$SCAFFOLD_DIR/githooks/lib
 remove_if_unmodified ".github/workflows/coverage.yml" "$SCAFFOLD_DIR/.github/workflows/coverage.yml.template"
 # Opt-in gitleaks CI workflow (only present if installed with --gitleaks-ci).
 remove_if_unmodified ".github/workflows/gitleaks.yml" "$SCAFFOLD_DIR/.github/workflows/gitleaks.yml.template"
+# Opt-in dependency-review CI gate (only present if installed with
+# --dependency-review).
+remove_if_unmodified ".github/workflows/dependency-review.yml" "$SCAFFOLD_DIR/.github/workflows/dependency-review.yml.template"
 
 # Likely-customized files — only with --all
 if [ "$REMOVE_ALL" -eq 1 ]; then

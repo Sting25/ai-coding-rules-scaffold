@@ -315,6 +315,26 @@ else
 fi
 rm -rf "$UGC"
 
+# (T) --dependency-review installs the CI gate (same shape as --gitleaks-ci
+#     above, #113), so npx users, who have no on-disk copy of
+#     dependency-review.yml.template, can wire it too; uninstall then removes
+#     it (no half-uninstall).
+UDR=$(mktemp -d)
+( cd "$UDR" && git init --quiet && echo '{"name":"x"}' >package.json \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --dependency-review --no-verify >/dev/null 2>&1 )
+if [ -f "$UDR/.github/workflows/dependency-review.yml" ] \
+   && cmp -s "$SCAFFOLD_DIR/.github/workflows/dependency-review.yml.template" "$UDR/.github/workflows/dependency-review.yml"; then
+  ( cd "$UDR" && "$SCAFFOLD_DIR/uninstall.sh" >/dev/null 2>&1 )
+  if [ ! -e "$UDR/.github/workflows/dependency-review.yml" ]; then
+    echo "  ✓ --dependency-review installs dependency-review.yml and uninstall removes it"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ uninstall left dependency-review.yml behind (half-uninstall)"; FAIL=$((FAIL + 1))
+  fi
+else
+  echo "  ✗ --dependency-review did not install .github/workflows/dependency-review.yml"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UDR"
+
 # (T) uninstall removes ci-changed-files too (install adds 8 libs; the uninstall
 #     loop dropped this one, leaving the scaffold half-uninstalled).
 UCI=$(mktemp -d)
@@ -365,11 +385,11 @@ rm -rf "$URS"
 #     upgrade). It moved to cp_scaffold_preserve, so it now behaves like a
 #     drifted .forbidden-patterns file: kept, with a drift note. #110 moved
 #     tests.yml, coverage.yml and gitleaks.yml to the same policy for the same
-#     reason. Full drift / --force / pristine coverage for cp_scaffold_preserve,
-#     across all four workflows, lives in cases/21-ci-workflow-drift.sh; this
-#     one assertion keeps this section's own "re-runs refresh scaffold-owned
-#     code" framing honest, since it used to claim the opposite for lint.yml
-#     specifically.
+#     reason; #113 added dependency-review.yml as a fifth. Full drift /
+#     --force / pristine coverage for cp_scaffold_preserve, across all five
+#     workflows, lives in cases/21-ci-workflow-drift.sh; this one assertion
+#     keeps this section's own "re-runs refresh scaffold-owned code" framing
+#     honest, since it used to claim the opposite for lint.yml specifically.
 URW=$(mktemp -d)
 ( cd "$URW" && git init --quiet && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify >/dev/null 2>&1 )

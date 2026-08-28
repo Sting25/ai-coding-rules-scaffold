@@ -107,6 +107,8 @@ Tests run in CI by default: a plain install also drops `.github/workflows/tests.
 ./install.sh --cursor       # also install opt-in Cursor agent guardrails
 ./install.sh --commit-msg   # also install the Conventional-Commits commit-msg hook
 ./install.sh --gitleaks-hook # also install opt-in local gitleaks pre-commit pass
+./install.sh --gitleaks-ci  # also install the gitleaks CI workflow (unskippable gate)
+./install.sh --dependency-review # also install the dependency-review CI gate (opt-in: needs GitHub Advanced Security on a private repo, or it errors)
 ./install.sh --all-langs    # install every language's forbidden-pattern file
 ./install.sh --coverage-gate # swap the default tests.yml for coverage.yml (tests + patch-coverage gate)
 ./install.sh --no-test-workflow # opt out of the default CI test-execution workflow (loud recorded skip)
@@ -120,7 +122,8 @@ the `commit-msg` hook, whenever it differs from the shipped version, with no
 `--force` needed, so pulling a new tag and re-running delivers security
 fixes. Your own configs (`ruff.toml`, `eslint.config.js`, `.scaffold.toml`,
 the rules docs, …) are left untouched, and `.forbidden-patterns/*.txt` files
-and the CI workflows (`lint.yml`, `tests.yml`, `coverage.yml`, `gitleaks.yml`)
+and the CI workflows (`lint.yml`, `tests.yml`, `coverage.yml`, `gitleaks.yml`,
+`dependency-review.yml`)
 that you've edited are kept with a drift notice rather than overwritten (use
 `--force` to take the shipped version, backed up to `.scaffold-bak`).
 

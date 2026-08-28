@@ -26,15 +26,16 @@ else
     # workflow template) expanded to their real members, plus the installer
     # scripts and the npm wrapper.
     #
-    # The workflow glob is load-bearing: gitleaks.yml.template and
-    # dependency-review.yml.template are "copy it in" templates the user applies
-    # by hand (TECHNICAL.md's Opt-in layers section covers gitleaks and
-    # dependency-review; install.sh only names them),
-    # so install.sh never READS them via $SCAFFOLD_DIR and the grep above can't
-    # see them. Without this glob an npm/npx user silently lacks two security-CI
-    # gates git-clone/Homebrew users get (audit B3). Globbing every
-    # .github/workflows/*.yml.template makes the guard fail closed on any
-    # documented-but-unbundled workflow — present or added later.
+    # The workflow glob is load-bearing. gitleaks.yml.template and
+    # dependency-review.yml.template are both read via a literal $SCAFFOLD_DIR
+    # path today (install.sh's --gitleaks-ci and --dependency-review blocks,
+    # #110 and #113), so the primary grep above already catches them, but a
+    # documented workflow template does not have to be read that way to need
+    # bundling: an npm/npx user needs every shipped .github/workflows/*.yml.template
+    # regardless of whether install.sh currently wires a flag to it (audit B3).
+    # Globbing every .github/workflows/*.yml.template makes the guard fail
+    # closed on any documented, unbundled workflow, present or added later,
+    # instead of relying on the literal-path grep staying in sync by luck.
     REQUIRED=$(
       {
         # SC2016 off on purpose: we match the LITERAL text "$SCAFFOLD_DIR" / "${"

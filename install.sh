@@ -14,6 +14,10 @@
 #   install.sh --commit-msg # also install the Conventional-Commits commit-msg hook
 #   install.sh --gitleaks-hook # also install opt-in local gitleaks pre-commit pass
 #   install.sh --gitleaks-ci # also install the gitleaks CI workflow (unskippable gate)
+#   install.sh --dependency-review # also install the dependency-review CI gate
+#                            # (opt-in: needs GitHub Advanced Security on a
+#                            # private repo, or it errors, so it is never
+#                            # default-on)
 #   install.sh --all-langs  # install every language's forbidden-pattern file
 #   install.sh --coverage-gate # install the patch-coverage gate INSTEAD of the
 #                            # plain tests.yml (tests still run, plus a stricter
@@ -38,7 +42,7 @@
 # is BACKED UP to .scaffold-bak first, so an edit you made to one is
 # recoverable and the "backed up:" line tells you it happened. User-owned
 # configs are left alone. A drifted .forbidden-patterns/*.txt, or a drifted
-# CI workflow (lint.yml, tests.yml, coverage.yml, gitleaks.yml), only prints
+# CI workflow (lint.yml, tests.yml, coverage.yml, gitleaks.yml, dependency-review.yml), only prints
 # a notice and keeps your file (use --force to replace it: your
 # customizations are backed up to .scaffold-bak first).
 # .githooks/local.d/ is never written to at all: it's where project-local checks
@@ -55,6 +59,7 @@ CURSOR=0
 COMMIT_MSG=0
 GITLEAKS_HOOK=0
 GITLEAKS_CI=0
+DEPENDENCY_REVIEW=0
 ALL_LANGS=0
 COVERAGE_GATE=0
 NO_TEST_WORKFLOW=0
@@ -73,11 +78,12 @@ for arg in "$@"; do
     --commit-msg) COMMIT_MSG=1 ;;
     --gitleaks-hook) GITLEAKS_HOOK=1 ;;
     --gitleaks-ci) GITLEAKS_CI=1 ;;
+    --dependency-review) DEPENDENCY_REVIEW=1 ;;
     --all-langs)  ALL_LANGS=1 ;;
     --coverage-gate) COVERAGE_GATE=1 ;;
     --no-test-workflow) NO_TEST_WORKFLOW=1 ;;
     --no-install) NO_INSTALL=1 ;;
-    --help|-h)    sed -n '2,45p' "$0"; exit 0 ;;
+    --help|-h)    sed -n '2,49p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -136,7 +142,8 @@ fi
 # refreshed on re-run), cp_safe (USER-OWNED, never auto-replaced), cp_pattern
 # (.forbidden-patterns/*.txt, notify-on-drift), cp_scaffold_preserve
 # (scaffold-owned CI workflows: lint.yml, tests.yml, coverage.yml,
-# gitleaks.yml, notify-on-drift like cp_pattern, since #110), and the shared
+# gitleaks.yml, dependency-review.yml, notify-on-drift like cp_pattern, since
+# #110), and the shared
 # _cp_replace / _backup mechanism (where the A7 symlink defenses live) plus
 # mkx, are defined in install-lib.sh. They're SOURCED (not exec'd) so they
 # run in this shell with its globals (FORCE) and `set -euo pipefail`.
@@ -405,6 +412,20 @@ fi
 if [ "$GITLEAKS_CI" -eq 1 ]; then
   cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/gitleaks.yml.template" ".github/workflows/gitleaks.yml"
   echo "note: gitleaks.yml is the unskippable CI secret scan (runs even without --no-verify locally)."
+fi
+
+# Opt-in dependency-review CI gate (--dependency-review, #113). Same shape as
+# --gitleaks-ci above: a dedicated flag actually INSTALLS the workflow via
+# cp_scaffold_preserve, so a re-run keeps a hand-edited or pre-existing
+# dependency-review.yml and prints a drift note instead of silently
+# overwriting it; --force replaces it, backed up first. Kept opt-in rather
+# than default-on because dependency-review-action needs GitHub's Dependency
+# Graph: on by default for public repos, but it ERRORS on a private repo
+# without GitHub Advanced Security, so a default-on install would break CI
+# for private-repo consumers without GHAS.
+if [ "$DEPENDENCY_REVIEW" -eq 1 ]; then
+  cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/dependency-review.yml.template" ".github/workflows/dependency-review.yml"
+  echo "note: dependency-review.yml needs GitHub's Dependency Graph (on by default for public repos; needs GitHub Advanced Security for private repos, or it errors)."
 fi
 
 # Test-execution CI workflow (#97): DEFAULT-ON, exactly one of two shapes,

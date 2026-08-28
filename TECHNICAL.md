@@ -283,13 +283,16 @@ minimal; turn them on per project.
   is absent — always pair it with the CI workflow above, which is the
   machine-independent boundary.
 
-- **dependency-review CI gate (`.github/workflows/dependency-review.yml.template`).**
-  Copy it in to block a PR that introduces a dependency with a known
-  vulnerability or a malicious/yanked package (the chalk-debug / Shai-Hulud
-  class) — the PR-time complement to Dependabot's freshness bumps. Not
-  auto-installed; pinned to a commit SHA. **Needs GitHub's Dependency Graph:**
-  on by default for public repos, requires GitHub Advanced Security for private
-  repos (caveat documented in the template header).
+- **dependency-review CI gate (`install.sh --dependency-review` →
+  `.github/workflows/dependency-review.yml`).** Blocks a PR that introduces a
+  dependency with a known vulnerability or a malicious/yanked package (the
+  chalk-debug / Shai-Hulud class): the PR-time complement to Dependabot's
+  freshness bumps. Opt-in, not default-on, and deliberately so: the action
+  needs GitHub's Dependency Graph, on by default for public repos but
+  requiring GitHub Advanced Security for private repos, where it errors
+  without that entitlement (caveat documented in the template header, same
+  "needs a GitHub entitlement" shape as gitleaks for organizations). Pinned to
+  a commit SHA; bump via Dependabot.
 
 - **Patch-coverage gate (`install.sh --coverage-gate` →
   `.github/workflows/coverage.yml`, installed _instead of_ the default-on
