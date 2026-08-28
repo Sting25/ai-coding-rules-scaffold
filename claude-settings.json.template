@@ -27,6 +27,18 @@
     "//ask": "Prefer 'ask' over 'deny' for anything you sometimes need (e.g. 'Bash(git push:*)') — deny is absolute, ask just prompts you."
   },
 
+  "//sandbox": "OS-level Bash sandbox, built into Claude Code (macOS Seatbelt with nothing to install; Linux and WSL2 need two packages; no native Windows). It confines every Bash command and its child processes to a filesystem and network boundary the kernel enforces, which is the layer a deny-list of patterns can't reach: a novel command the regexes never anticipated is still boxed in. It is a companion to the deny-list above, not a replacement, because it wraps Bash only: Read, Edit, Write, MCP servers and hooks keep running on the host. Shipped OFF: set \"enabled\": true when you're ready, keep the filesystem layer on, and expect some breakage to configure around rather than to switch the sandbox off for. docker is incompatible (excludedCommands), Go CLIs like gh/gcloud/terraform can fail TLS verification under Seatbelt (excludedCommands), and git merge/checkout can fail with 'unable to unlink old'. Leave autoAllowBashIfSandboxed (default true) alone only if you actually trust the boundary you configured; it is what stops the per-command prompt. Full reference: https://code.claude.com/docs/en/sandboxing",
+  "sandbox": {
+    "enabled": false,
+    "excludedCommands": ["docker *"],
+    "credentials": {
+      "files": [
+        { "path": "~/.ssh", "mode": "deny" },
+        { "path": "~/.aws", "mode": "deny" }
+      ]
+    }
+  },
+
   "//mcp": "Never set enableAllProjectMcpServers to true — it auto-approves every MCP server a repo declares in .mcp.json, so a cloned/forked repo can exfiltrate source or env with no approval prompt (CVE-2026-21852). Keep it false and allowlist named servers in enabledMcpjsonServers instead; an un-allowlisted server then triggers an explicit approval prompt.",
   "enableAllProjectMcpServers": false,
   "enabledMcpjsonServers": [],
