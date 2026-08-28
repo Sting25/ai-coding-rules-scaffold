@@ -75,7 +75,7 @@ See [`operational-rules.md`](./operational-rules.md) for process, collaboration,
 
 ## Before you call it ready to ship
 
-If the project has a hosted database or backend-as-a-service (Supabase, Firebase, a managed Postgres) reachable by anyone other than the person building it, confirm two things before calling it done: every table holding user data has row-level security (or the platform's equivalent per-row auth rule) turned on with real policies, not merely switched on with none, and automatic backups are turned on for the data store. Neither shows up in a diff, so ask the user to check their provider's dashboard rather than assuming. See `RECOMMENDATIONS.md` for the full checklist.
+If the project has a hosted database or backend-as-a-service (Supabase, Firebase, a managed Postgres) reachable by anyone other than the person building it, confirm two things before calling it done: every table holding user data has row-level security (or the platform's equivalent per-row auth rule) turned on with real policies, not merely switched on with none, and automatic backups are turned on for the data store. Neither shows up in a diff, so ask the user to check their provider's dashboard rather than assuming. See [RECOMMENDATIONS.md](https://github.com/Sting25/ai-coding-rules-scaffold/blob/main/RECOMMENDATIONS.md) in the scaffold repo for the full checklist (this file is not installed into consumer projects).
 
 ## Untrusted content
 
