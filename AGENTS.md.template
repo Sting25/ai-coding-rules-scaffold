@@ -47,6 +47,10 @@ In a monorepo, run `pytest` from the directory holding the pytest config, not
 from the repo root. pytest reads exactly one ini-file and the rootdir one wins,
 so invoking from the root can silently use the wrong config.
 
+## Session start
+
+Before your first commit each session, check whether this project's guardrails are actually armed, not just present, and surface any gap or note line to the user in plain language rather than silently proceeding. Run `npx ai-coding-rules-scaffold doctor` (works no matter how this project's scaffold was installed); if you know the scaffold's git-clone or Homebrew path on this machine, `<that path>/scaffold-doctor.sh` works too. This is the detection net for an unarmed hook after a fresh clone (`core.hooksPath` is per-clone local config, so a clone of an already-scaffolded repo starts unwired) and for a partial install.
+
 ## Operational rules
 
 See [`operational-rules.md`](./operational-rules.md) for process, collaboration, and judgment patterns extracted from real incidents — pre-flight checks before long jobs, smoke at the smallest scale that exercises the full path, "agent reports measurements / user calls done", scope discipline, and surfacing uncertainty rather than guessing. Not tool-enforceable; meant to be skimmed before non-trivial work.
@@ -68,6 +72,10 @@ See [`operational-rules.md`](./operational-rules.md) for process, collaboration,
 - **Stop and confirm before any destructive operation against a store you did not create for this task.** `DROP`, `TRUNCATE`, a `DELETE` / `UPDATE` without a narrow `WHERE`, a schema migration, a bucket or collection wipe, a "reset the data and start clean". A local throwaway database is fine; anything shared, hosted, or serving real users is not.
 - **Confirm a backup exists first, and say when it was taken.** If there is no recent backup, take one (or tell the user which button to press in their provider's dashboard) before the operation, not after. If the store has no automatic backups turned on at all, say so plainly and treat every destructive operation as unrecoverable until it does.
 - **State the blast radius in plain language, not as a pasted command.** "This deletes all 4,182 rows in `orders`, and there is no undo" is a confirmation the user can actually answer.
+
+## Before you call it ready to ship
+
+If the project has a hosted database or backend-as-a-service (Supabase, Firebase, a managed Postgres) reachable by anyone other than the person building it, confirm two things before calling it done: every table holding user data has row-level security (or the platform's equivalent per-row auth rule) turned on with real policies, not merely switched on with none, and automatic backups are turned on for the data store. Neither shows up in a diff, so ask the user to check their provider's dashboard rather than assuming. See `RECOMMENDATIONS.md` for the full checklist.
 
 ## Untrusted content
 
