@@ -65,11 +65,12 @@ jobs:
           STAGED_LIST=$(mktemp)
           git -c core.quotepath=off ls-files -z >"$STAGED_LIST"
           FAILED=0
-          .githooks/lib/check-size      --ci <"$STAGED_LIST" || FAILED=1
-          .githooks/lib/check-patterns  --ci <"$STAGED_LIST" || FAILED=1
-          .githooks/lib/check-filenames --ci <"$STAGED_LIST" || FAILED=1
-          .githooks/lib/check-secrets   --ci <"$STAGED_LIST" || FAILED=1
-          .githooks/lib/check-hygiene   --ci <"$STAGED_LIST" || FAILED=1
+          .githooks/lib/check-size        --ci <"$STAGED_LIST" || FAILED=1
+          .githooks/lib/check-large-files --ci <"$STAGED_LIST" || FAILED=1
+          .githooks/lib/check-patterns    --ci <"$STAGED_LIST" || FAILED=1
+          .githooks/lib/check-filenames   --ci <"$STAGED_LIST" || FAILED=1
+          .githooks/lib/check-secrets     --ci <"$STAGED_LIST" || FAILED=1
+          .githooks/lib/check-hygiene     --ci <"$STAGED_LIST" || FAILED=1
           rm -f "$STAGED_LIST"
           exit $FAILED
 
