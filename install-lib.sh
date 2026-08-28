@@ -431,16 +431,23 @@ check_paired_artifacts() {
 # behalf, not by the human at a terminal (the real incident this responds to:
 # an agent hand-copied files instead of running the installer, hooks ended up
 # unarmed, gitleaks was never enabled, and a secret shipped that the disabled
-# layers would have caught). Every opt-in that was NOT enabled on THIS run
+# layers would have caught). Every opt-in that is NOT enabled in the PROJECT
 # gets listed here, by name, with the exact command to turn it on: "silently
 # absent" is the failure mode this exists to close.
 #
 # Opens with a block addressed to the installing AGENT specifically, since
 # that is the actual reader roughly half the time, asking it to relay the
 # list to its human before treating the install as finished; the same text
-# reads fine for a human running this by hand. Reads the flag globals
-# install.sh already parsed (GITLEAKS_HOOK, CLAUDE, …) rather than taking
-# parameters, same style as install_test_workflow_ci above.
+# reads fine for a human running this by hand.
+#
+# Presence checks, not this-run flags: a plain re-run of install.sh with no
+# flags passes GITLEAKS_HOOK=0, CLAUDE=0, etc. even when a prior run already
+# installed those gates, so checking the flag globals falsely reports an
+# already-armed gate as "not enabled". Check what is actually on disk in the
+# target project instead, same file-presence signals scaffold-doctor.sh's
+# "Protections not enabled" section uses (kept in sync with it by hand; there
+# is no shared list to source since this runs before scaffold-doctor.sh
+# exists in a fresh install).
 print_not_enabled_summary() {
   local any=0
   echo ""
@@ -448,15 +455,16 @@ print_not_enabled_summary() {
   echo "your user verbatim, and ask which of these opt-in protections to"
   echo "enable, before you consider this install finished."
   echo ""
-  echo "Opt-in protections not enabled in this run:"
-  [ "$GITLEAKS_HOOK" -eq 1 ] || { echo "  - gitleaks hook (local secret scan, pre-commit): not enabled. Enable with ./install.sh --gitleaks-hook"; any=1; }
-  [ "$GITLEAKS_CI" -eq 1 ] || { echo "  - gitleaks CI gate (unskippable secret scan): not enabled. Enable with ./install.sh --gitleaks-ci"; any=1; }
-  [ "$DEPENDENCY_REVIEW" -eq 1 ] || { echo "  - dependency-review CI gate (blocks vulnerable/malicious deps on a PR): not enabled. Enable with ./install.sh --dependency-review"; any=1; }
-  [ "$ZIZMOR_CI" -eq 1 ] || { echo "  - zizmor CI gate (audits your own GitHub Actions workflows): not enabled. Enable with ./install.sh --zizmor-ci"; any=1; }
-  [ "$SOCKET_CI" -eq 1 ] || { echo "  - Socket Firewall CI gate (blocks a malicious/typosquat package at install time): not enabled. Enable with ./install.sh --socket-ci"; any=1; }
-  [ "$CLAUDE" -eq 1 ] || { echo "  - Claude Code agent guardrails: not enabled. Enable with ./install.sh --claude"; any=1; }
-  [ "$CURSOR" -eq 1 ] || { echo "  - Cursor agent guardrails: not enabled. Enable with ./install.sh --cursor"; any=1; }
-  [ "$COMMIT_MSG" -eq 1 ] || { echo "  - commit-msg hook (Conventional Commits): not enabled. Enable with ./install.sh --commit-msg"; any=1; }
+  echo "Opt-in protections not enabled in this project:"
+  [ -f .githooks/lib/check-gitleaks ]            || { echo "  - gitleaks hook (local secret scan, pre-commit): not enabled. Enable with ./install.sh --gitleaks-hook"; any=1; }
+  [ -f .github/workflows/gitleaks.yml ]          || { echo "  - gitleaks CI gate (unskippable secret scan): not enabled. Enable with ./install.sh --gitleaks-ci"; any=1; }
+  echo "  - GitHub push protection (free, blocks a push containing a known secret pattern; on by default for public repos): not this installer's to enable. Turn it on in Repo Settings > Code security > Push protection."
+  [ -f .github/workflows/dependency-review.yml ] || { echo "  - dependency-review CI gate (blocks vulnerable/malicious deps on a PR): not enabled. Enable with ./install.sh --dependency-review"; any=1; }
+  [ -f .github/workflows/zizmor.yml ]            || { echo "  - zizmor CI gate (audits your own GitHub Actions workflows): not enabled. Enable with ./install.sh --zizmor-ci"; any=1; }
+  [ -f .github/workflows/socket-security.yml ]   || { echo "  - Socket Firewall CI gate (blocks a malicious/typosquat package at install time): not enabled. Enable with ./install.sh --socket-ci"; any=1; }
+  [ -f .claude/settings.json ]                   || { echo "  - Claude Code agent guardrails: not enabled. Enable with ./install.sh --claude"; any=1; }
+  [ -f .cursor/hooks.json ]                      || { echo "  - Cursor agent guardrails: not enabled. Enable with ./install.sh --cursor"; any=1; }
+  [ -f .githooks/commit-msg ]                    || { echo "  - commit-msg hook (Conventional Commits): not enabled. Enable with ./install.sh --commit-msg"; any=1; }
   if [ "$any" -eq 0 ]; then
     echo "  (none: every opt-in protection above is already enabled in this project)"
   fi
