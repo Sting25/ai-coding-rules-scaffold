@@ -62,16 +62,15 @@ See [`operational-rules.md`](./operational-rules.md) for process, collaboration,
 - **Never `git commit --no-verify`.** The pre-commit hook is the enforcement layer; bypassing it defeats the whole scaffold. If the hook is wrong, fix the hook.
 - **Never push unless asked.** Committing is local and reversible; pushing is not. Wait for explicit "push it" / "open a PR" before `git push`.
 - **Never `reset --hard`, `checkout .`, or `clean -fd`** on a dirty tree without confirming — those destroy uncommitted work silently.
-- **Make a restore point before risky multi-step work.** Before a sweeping refactor, a bulk rename, or a dependency upgrade: commit or stash what already passes, tag that point (`git tag pre-<name>`), and tell the user the tag name. Tag a green point rather than committing whatever happens to be on disk: a mid-work checkpoint commit is exactly what the pre-commit hook rejects, and `--no-verify` is never the way out of that. An editor's own rewind or checkpoint feature is not a substitute: those track edits made through the tool's file editing only, so anything a shell command moved or deleted is outside them.
-- **When something breaks, show the history before changing it.** Report the recent commits, the tags, and what has changed since the restore point; then propose the way back and wait for a yes. Never quietly "clean up" a broken tree.
+- **Make a restore point before risky multi-step work.** Tag a green point (`git tag pre-<name>`), never a dirty checkpoint commit: the pre-commit hook rejects those and `--no-verify` is not the way out. Editor rewind/checkpoint features don't cover shell-command changes.
+- **Show history before touching a broken tree.** Report recent commits and tags, propose the way back, and wait for a yes.
 - **One commit per logical change.** Don't bundle "fix bug + rename vars + add feature" into one commit; split them.
 - **Use `git worktree` for parallel agent sessions.** Two agents working in the same checkout will overwrite each other. `git worktree add ../<repo>-<feature> -b <feature>` gives each session an isolated working tree on its own branch.
 
 ## Destructive actions and live data
 
-- **Stop and confirm before any destructive operation against a store you did not create for this task.** `DROP`, `TRUNCATE`, a `DELETE` / `UPDATE` without a narrow `WHERE`, a schema migration, a bucket or collection wipe, a "reset the data and start clean". A local throwaway database is fine; anything shared, hosted, or serving real users is not.
-- **Confirm a backup exists first, and say when it was taken.** If there is no recent backup, take one (or tell the user which button to press in their provider's dashboard) before the operation, not after. If the store has no automatic backups turned on at all, say so plainly and treat every destructive operation as unrecoverable until it does.
-- **State the blast radius in plain language, not as a pasted command.** "This deletes all 4,182 rows in `orders`, and there is no undo" is a confirmation the user can actually answer.
+- **Stop, confirm, and verify a backup (note when it was taken) before `DROP`, `TRUNCATE`, an unbounded `DELETE`/`UPDATE`, or a migration** against anything that isn't a local throwaway store. No backups at all? Say so plainly and treat the action as unrecoverable.
+- **State the blast radius in plain language** (tables and row counts, e.g. "deletes all 4,182 rows in `orders`, no undo"), not a pasted command.
 
 ## Before you call it ready to ship
 
