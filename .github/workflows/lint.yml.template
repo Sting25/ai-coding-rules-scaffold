@@ -354,9 +354,9 @@ jobs:
           #  • ALL_LIST  — whole tree: secrets + credential-filenames. Catching an
           #    already-committed secret/key is the point; these are the
           #    non-overridable security boundary.
-          #  • CHANGED_LIST — PR/push diff: size + forbidden-patterns + hygiene. So
-          #    installing onto an existing repo never retroactively fails legacy
-          #    code; only new/changed code is gated.
+          #  • CHANGED_LIST — PR/push diff: size + large-files + forbidden-patterns
+          #    + hygiene. So installing onto an existing repo never retroactively
+          #    fails legacy code; only new/changed code is gated.
           # -z (NUL-delimited) so a filename with a newline/tab/quote can't split
           # the list. The check scripts read each file's committed blob
           # (git show ":0:<path>") — exactly what the pre-commit hook sees.
@@ -371,9 +371,10 @@ jobs:
           .githooks/lib/check-secrets   --ci <"$ALL_LIST"     || FAILED=1
           .githooks/lib/check-filenames --ci <"$ALL_LIST"     || FAILED=1
           # Changed-files-only quality gates:
-          .githooks/lib/check-size      --ci <"$CHANGED_LIST" || FAILED=1
-          .githooks/lib/check-patterns  --ci <"$CHANGED_LIST" || FAILED=1
-          .githooks/lib/check-hygiene   --ci <"$CHANGED_LIST" || FAILED=1
+          .githooks/lib/check-size        --ci <"$CHANGED_LIST" || FAILED=1
+          .githooks/lib/check-large-files --ci <"$CHANGED_LIST" || FAILED=1
+          .githooks/lib/check-patterns    --ci <"$CHANGED_LIST" || FAILED=1
+          .githooks/lib/check-hygiene      --ci <"$CHANGED_LIST" || FAILED=1
           # Project-local checks — the supported extension point (issue #72).
           # Every executable in .githooks/local.d/ runs with the same contract as
           # the shipped checks: --ci, the NUL-delimited list on stdin, non-zero
