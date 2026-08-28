@@ -164,6 +164,13 @@ gitleaks git .   # or trufflehog's history mode, e.g. `trufflehog git file://.`
 
 If it finds something, **rotate or revoke that credential first**: that is the actual fix, and it's something you can do alone right now. Treat rewriting history (`git-filter-repo` or BFG Repo-Cleaner; never `git filter-branch`, deprecated by Git itself) as optional cleanup afterward, not a substitute for rotation: it force-pushes and rewrites every existing clone, which is exactly the kind of change `AGENTS.md`'s git-discipline rules ask an agent to route through a human rather than do on its own. A first scan on an old repo can also turn up false positives, so treat a hit as "go rotate that credential," not "the repo is broken."
 
+### More secret-scanning layers: push protection and gitleaks
+
+`check-secrets` (the always-on hook and CI check) is a narrow, offline regex gate over the specific token shapes in `.forbidden-patterns/secrets.txt`, not a full secret-scanning boundary: it's the fast net that catches the shapes already known. Two more layers exist, worth knowing about even though only one is opt-in in this scaffold:
+
+- **GitHub push protection** is the zero-effort layer: free and already on by default for a public repo (it blocks a push containing a well-known secret pattern before it lands), no install, no flag, nothing to configure beyond confirming it's on in your repo's Settings > Code security and analysis. Private and internal repos need the paid GitHub Secret Protection add-on to get it; `--gitleaks-ci` below is the free equivalent there.
+- **gitleaks** is the broad entropy-plus-~150-rule backstop `check-secrets` defers to. `./install.sh --gitleaks-hook` adds a local pre-commit pass; `./install.sh --gitleaks-ci` adds the unskippable CI gate, which is the actual authoritative boundary (the local pass fails open when the binary isn't installed; CI never does). See [Opt-in layers](./TECHNICAL.md#opt-in-layers) in TECHNICAL.md for the full detail on both.
+
 ### Pairing with Husky / lefthook
 
 If your project already uses Husky or lefthook, `install.sh` detects the existing `core.hooksPath` and won't overwrite it. Two ways forward:
