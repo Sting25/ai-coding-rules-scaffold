@@ -1,0 +1,54 @@
+name: dependency-review
+
+# OPT-IN dependency supply-chain gate. Install via `install.sh
+# --dependency-review`, which copies this in as
+# `.github/workflows/dependency-review.yml`. Off by default: it adds a
+# third-party action dependency and relies on GitHub's Dependency Graph
+# (see the availability caveat below), so opt in deliberately, same posture
+# as gitleaks.yml.template (`install.sh --gitleaks-ci`), both opt-in flags.
+#
+# What it does:
+#   On a pull request, diffs the dependency manifests/lockfiles the PR changes
+#   and FAILS the check if it introduces a dependency with a known vulnerability
+#   (GitHub Advisory DB) or — increasingly the bigger risk — a malicious /
+#   yanked package (the chalk-debug, Shai-Hulud class of attack). This is the
+#   PR-time complement to dependabot.yml, which keeps already-trusted pins fresh;
+#   this one blocks a bad dep from entering in the first place.
+#
+# AVAILABILITY CAVEAT (read before relying on it):
+#   dependency-review-action needs GitHub's Dependency Graph enabled.
+#     - PUBLIC repos: on by default — works out of the box.
+#     - PRIVATE repos: requires GitHub Advanced Security (GHAS) to be enabled,
+#       otherwise the action errors. If you're a private repo without GHAS,
+#       this workflow can't run — lean on Dependabot + the lockfile review
+#       instead. (Same "needs a GitHub entitlement" caveat gitleaks carries for
+#       organizations.)
+#
+# Actions are pinned to a full commit SHA (supply-chain hardening); the trailing
+# comment records the human-readable tag. Bump via Dependabot (see
+# dependabot.yml.template).
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  # Uncomment to let the action post a summary comment on the PR (needs the
+  # extra scope + `comment-summary-in-pr: on-failure` below):
+  # pull-requests: write
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false  # don't leave GITHUB_TOKEN in .git/config
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
+        with:
+          # Fail the PR on a vulnerable dep at or above this severity. Tighten to
+          # 'low' for a stricter gate, or loosen to 'high' to cut noise.
+          fail-on-severity: moderate
+          # Malicious/yanked packages are blocked regardless of severity by the
+          # advisory feed; the threshold above only governs vulnerability noise.
+          # comment-summary-in-pr: on-failure   # needs pull-requests: write above
