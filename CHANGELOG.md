@@ -179,6 +179,16 @@ versioning follows [SemVer](https://semver.org/).
   eslint config imports it, but the `npm i -D` hint in `lint.yml.template`
   (and its copy in `install-verify.sh`) omitted it, leaving consumers one
   package short after following the error message.
+- **`check-hygiene`'s BOM strip and hidden-unicode scan no longer hang on a
+  large file (c23f30f).** Under bash 3.2 (macOS's system bash) in a
+  multibyte-aware locale, the pattern-match BOM strip was catastrophically
+  slow: measured ~77 seconds on one 820 KB text file, which could stall the
+  pre-commit hook and CI on any repo committing a large text file near the
+  `check-large-files` cap. Fixed by forcing `LC_ALL=C` for the script's own
+  bash-internal length/substring/pattern-match semantics and switching the
+  BOM strip from a pattern match to an index-based check-and-slice, which
+  never invokes bash's glob matcher; measured 0.002s-0.07s on the same input
+  after the fix.
 
 ## [v0.12.0] — 2026-08-21
 
