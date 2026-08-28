@@ -107,11 +107,9 @@ _Added 2026-06-11._
 
 ## Pin the CI `ruff` version
 
-_Added 2026-06-11._
+_Added 2026-06-11. **Shipped 2026-08-28:** `lint.yml.template` now pins `pip install ruff==0.15.22`, matching `test.yml`/`coverage.yml`'s supply-chain posture. Nothing left to adopt: every install picks this up already._
 
-**Adopt if:** you depend on hook/CI lint parity being byte-reproducible across runs, or you treat CI PyPI installs as a supply-chain surface.
-
-**What it is.** `lint.yml`'s `pip install ruff` pulls whatever PyPI serves that day, so lint behavior can shift between runs. Pin it: `pip install ruff==X.Y.Z  # bump manually on upgrades`. **Honest caveat:** Dependabot's `pip` ecosystem scans manifests (`requirements`/`pyproject`), **not** a version literal embedded in workflow YAML — so a `ruff==X` pin in `lint.yml` is maintained by hand, or by pinning `ruff` in the project's own `pyproject`/`requirements` and installing from there. (This is the corrected scope of the `SECURITY_AUDIT.md` "ruff/eslint are unshared, unpinned" Low finding.)
+**What it was.** `lint.yml`'s `pip install ruff` used to pull whatever PyPI served that day, so lint behavior could shift between runs. Now pinned: `pip install ruff==0.15.22  # bump manually on upgrades`. **Honest caveat, still true:** Dependabot's `pip` ecosystem scans manifests (`requirements`/`pyproject`), **not** a version literal embedded in workflow YAML, so this pin is maintained by hand on future bumps, not auto-updated. (This is the corrected scope of the `SECURITY_AUDIT.md` "ruff/eslint are unshared, unpinned" Low finding.)
 
 ---
 
