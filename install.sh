@@ -497,4 +497,4 @@ case "$MODE" in
   frontend) echo "  - Verify the hook: add 'console.log(\"x\")' to a .ts file, 'git add' it, try to commit — hook should reject" ;;
   *) echo "  - Verify the hook: add 'print(\"x\")' to a .py file, 'git add' it, try to commit — hook should reject" ;;
 esac
-print_not_enabled_summary
+print_history_scan_note; print_not_enabled_summary

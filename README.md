@@ -152,6 +152,18 @@ pip install ruff pytest pytest-cov                                      # Python
 npm i -D eslint @eslint/js typescript-eslint typescript prettier vitest # TS/JS
 ```
 
+### Already have commit history? Scan it once for secrets
+
+`check-secrets` (always on) and `gitleaks.yml` (opt in, see below) only ever look at commits made **after** you install this scaffold. If this repo already has history from before today, an old leaked credential sitting in an earlier commit is invisible to every check above: a clean install does not mean "my repo is safe now" for anything that was already committed.
+
+Run a one-time full-history scan:
+
+```sh
+gitleaks git .   # or trufflehog's history mode, e.g. `trufflehog git file://.`
+```
+
+If it finds something, **rotate or revoke that credential first**: that is the actual fix, and it's something you can do alone right now. Treat rewriting history (`git-filter-repo` or BFG Repo-Cleaner; never `git filter-branch`, deprecated by Git itself) as optional cleanup afterward, not a substitute for rotation: it force-pushes and rewrites every existing clone, which is exactly the kind of change `AGENTS.md`'s git-discipline rules ask an agent to route through a human rather than do on its own. A first scan on an old repo can also turn up false positives, so treat a hit as "go rotate that credential," not "the repo is broken."
+
 ### Pairing with Husky / lefthook
 
 If your project already uses Husky or lefthook, `install.sh` detects the existing `core.hooksPath` and won't overwrite it. Two ways forward:

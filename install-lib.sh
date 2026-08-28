@@ -463,3 +463,24 @@ print_not_enabled_summary() {
   echo ""
   echo "Check what is armed at any time: ./scaffold-doctor.sh, or 'npx ai-coding-rules-scaffold doctor' if you did not clone this repo."
 }
+
+# print_history_scan_note (P-05): check-secrets and gitleaks.yml only ever
+# look at commits made AFTER this install, so a repo with pre-existing
+# history may already carry a secret from before the scaffold existed, and
+# nothing in the shipped inventory can see it. Printed only when HEAD
+# already resolves (a brand-new `git init` has nothing to scan yet); the
+# rotate-first framing and the force-push warning match README.md's "Already
+# have commit history?" section, so the two never contradict each other.
+print_history_scan_note() {
+  if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
+    echo ""
+    echo "This repo already has commit history: run a one-time full-history secret"
+    echo "scan before trusting this install for anything committed before today:"
+    echo "  gitleaks git .   (or trufflehog's history mode)"
+    echo "A hit means rotate or revoke that credential first: that is the actual"
+    echo "fix. History rewriting (git-filter-repo or BFG, never git filter-branch)"
+    echo "is optional cleanup afterward, not a substitute, and it force-pushes and"
+    echo "rewrites every clone, so route it through your human rather than doing"
+    echo "it yourself. See README.md's 'Already have commit history?' section."
+  fi
+}
