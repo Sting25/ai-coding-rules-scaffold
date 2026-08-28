@@ -47,7 +47,12 @@ jobs:
         with:
           python-version: "3.12"
       - if: steps.detect.outputs.present == 'true'
-        run: pip install ruff
+        # Pinned to match test.yml's supply-chain posture: an unpinned
+        # `pip install ruff` executes whatever version PyPI serves that day.
+        # Bump manually on upgrades (Dependabot's pip ecosystem scans
+        # manifests like requirements/pyproject, not a version literal
+        # embedded in workflow YAML, so this pin does not get bumped for you).
+        run: pip install ruff==0.15.22
       - name: ruff check (changed files only)
         if: steps.detect.outputs.present == 'true'
         run: |
