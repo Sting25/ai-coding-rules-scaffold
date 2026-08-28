@@ -479,10 +479,9 @@ echo "CI test state: $TEST_CI_STATE"
 
 # Post-install toolchain check — the scaffold ships CONFIGS and ENFORCEMENT, but
 # the actual tools (ruff/eslint/tsc/prettier/test runner) are project deps. That
-# whole step lives in install-verify.sh: it was extracted from this file once
-# this file hit 497 of the scaffold's own 500-line module cap (issue #84). Same
-# SOURCED-not-exec'd contract as install-lib.sh above, so it runs in this shell
-# with MODE / VERIFY / NO_INSTALL and `set -euo pipefail` already in effect.
+# whole step lives in install-verify.sh, extracted from this file at the
+# scaffold's own 500-line module cap (issue #84); SOURCED-not-exec'd like
+# install-lib.sh above, so it runs here with MODE/VERIFY/NO_INSTALL in scope.
 # shellcheck source=install-verify.sh
 . "$SCAFFOLD_DIR/install-verify.sh"
 run_toolchain_verify
@@ -498,3 +497,4 @@ case "$MODE" in
   frontend) echo "  - Verify the hook: add 'console.log(\"x\")' to a .ts file, 'git add' it, try to commit — hook should reject" ;;
   *) echo "  - Verify the hook: add 'print(\"x\")' to a .py file, 'git add' it, try to commit — hook should reject" ;;
 esac
+print_not_enabled_summary
