@@ -36,6 +36,13 @@ whole-tree command reports problems in code you did not write, extend the
 config rather than narrowing the command**; a command everyone has learned to
 run with a hand-picked path is a gate that no longer gates.
 
+**If you turn a check down, say so out loud.** Adding a `scaffold-allow` marker,
+disabling or downgrading a check in `.scaffold.toml`, widening an ignore list, or
+skipping a test makes a red run green without fixing anything. Per
+`operational-rules.md` that is a last resort; when you do it, name the check, the
+file, and the reason in your summary to the user, in plain language. Never leave
+it to be noticed in the diff.
+
 In a monorepo, run `pytest` from the directory holding the pytest config, not
 from the repo root. pytest reads exactly one ini-file and the rootdir one wins,
 so invoking from the root can silently use the wrong config.

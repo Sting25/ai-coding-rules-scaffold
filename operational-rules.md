@@ -156,6 +156,11 @@ then narrowly and with a recorded reason. A check weakened to turn
 green silently lowers the bar for every later commit and every
 consumer that inherits it — catching the thing was the point. If the
 check itself is wrong, fix the check and add a test; don't bypass it.
+When you do take one, name it in the summary you give the person you
+are working for: which check, which file, which marker or config
+entry, and why. A one-line suppression is invisible to anyone not
+reading the diff, and the person deciding whether it was justified
+is usually not reading the diff.
 _Anchor:_ a guardrail flagged a file; exempting it was one line and
 fixing it a few — but an exemption, unlike a fix, never expires, so
 suppressions accrete until the scanner no longer scans.
