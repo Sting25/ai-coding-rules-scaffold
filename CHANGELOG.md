@@ -30,6 +30,16 @@ versioning follows [SemVer](https://semver.org/).
   (version-pinned) and lints both a sample file and the config file itself,
   so a template that breaks its own rules fails CI here instead of in a
   consumer's repo.
+- **`install.sh --dependency-review` wires up the dependency-review CI gate
+  (#113).** `.github/workflows/dependency-review.yml.template` shipped and
+  was documented in TECHNICAL.md, but no installer call site referenced it,
+  so it was never installed into any consumer project. A dedicated opt-in
+  flag now installs it via `cp_scaffold_preserve` (same drift-preserving
+  policy as `--gitleaks-ci`'s `gitleaks.yml`), kept opt-in rather than
+  default-on because the action errors on a private repo without GitHub
+  Advanced Security. This repo now installs its own rendered copy at
+  `.github/workflows/dependency-review.yml`, since the repo is public and
+  GitHub's Dependency Graph is on by default here.
 
 ### Changed
 
