@@ -52,3 +52,32 @@ jobs:
           # Malicious/yanked packages are blocked regardless of severity by the
           # advisory feed; the threshold above only governs vulnerability noise.
           # comment-summary-in-pr: on-failure   # needs pull-requests: write above
+          #
+          # License compliance (input names verified against the action's own
+          # README, actions/dependency-review-action, not from memory). A
+          # non-programmer has no way to notice an agent just pulled in a
+          # dependency whose license could force their own product's source
+          # open, so this fails the PR automatically instead of depending on
+          # someone reading a license field in a lockfile.
+          #
+          # deny-licenses blocks a newly introduced dep whose SPDX license
+          # matches the list below, regardless of severity. A deny-list is
+          # used here on purpose instead of an allow-list: an allow-list
+          # fails on every license it doesn't already know about (ISC,
+          # BSD-2-Clause, MPL-2.0, Python-2.0, ...), which breaks builds
+          # constantly for this audience with no way for them to diagnose
+          # it. Extend the list with other copyleft SPDX ids you want to
+          # block (e.g. GPL-3.0-only, SSPL-1.0). allow-licenses is the
+          # alternative input (mutually exclusive with deny-licenses; the
+          # action errors if both are set) for teams that want a strict
+          # allow-list instead.
+          #
+          # Caveats, so this isn't oversold: (1) deny-licenses is marked
+          # deprecated upstream ("possible removal in the next major
+          # release", actions/dependency-review-action#938) with no
+          # replacement shipped yet; re-check this when upgrading the pinned
+          # action version above. (2) a dependency whose license can't be
+          # detected is reported but does NOT fail the build. (3) license
+          # checking needs GitHub's Dependency Graph / ClearlyDefined data
+          # and is unsupported on GitHub Enterprise Server.
+          deny-licenses: AGPL-1.0-only, AGPL-1.0-or-later, AGPL-3.0-only, AGPL-3.0-or-later

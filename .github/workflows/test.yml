@@ -75,13 +75,22 @@ jobs:
         # accepts .yml/.yaml, so the *.yml.template files are rendered into a temp
         # dir first. Maintainer CI only — NOT installed into consumer repos.
         run: |
-          pip install zizmor==1.25.2
+          pip install zizmor==1.29.0
           render="$RUNNER_TEMP/wf"
           mkdir -p "$render"
           for f in .github/workflows/*.yml.template; do
             cp "$f" "$render/$(basename "$f" .template)"
           done
-          zizmor --offline --persona regular .github/workflows/*.yml "$render"/*.yml
+          # --no-config: zizmor auto-discovers a config file named zizmor.yml
+          # (docs.zizmor.sh/configuration/). Since zizmor.yml.template renders
+          # into "$render" as zizmor.yml, and "$render" has no .git boundary
+          # to stop the search, zizmor finds that rendered WORKFLOW and tries
+          # to load it as its own CONFIG, which fails with a schema error
+          # ("unknown field `name`, expected `rules`") before any audit runs.
+          # Verified locally with zizmor 1.29.0: the render step above fails
+          # this exact way without --no-config, and passes clean with it. The
+          # repo ships no zizmor.yml config of its own, so nothing is lost.
+          zizmor --offline --persona regular --no-config .github/workflows/*.yml "$render"/*.yml
       - name: Check action pins agree across real workflows and templates
         # Dependabot bumps SHA pins only in real *.yml workflows — it never parses
         # *.yml.template, so the templates silently rot one checkout-bump behind
