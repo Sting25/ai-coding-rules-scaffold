@@ -55,10 +55,10 @@ versioning follows [SemVer](https://semver.org/).
   `--gitleaks-ci` and `--dependency-review`: `zizmor.yml` runs a static
   audit of the project's own GitHub Actions workflows (unpinned `uses:`
   refs, template-injection, credential-persisting checkouts, over-scoped
-  `GITHUB_TOKEN`), and `socket-security.yml` shims package-manager installs
-  through Socket Firewall so a malicious or typosquat/slopsquat package is
-  blocked at install time, before its code ever runs, instead of only
-  reported on afterward. Both install via `cp_scaffold_preserve`, the same
+  `GITHUB_TOKEN`), and `socket-security.yml` routes its `sfw`-prefixed
+  package installs through Socket Firewall so a malicious or
+  typosquat/slopsquat package is blocked at install time, before its code
+  ever runs, instead of only reported on afterward. Both install via `cp_scaffold_preserve`, the same
   drift-preserving policy as the scaffold's other opt-in CI workflows.
 - **`dependency-review` gains a conservative AGPL deny-list license gate.**
   The action's own license-compliance inputs, left unused by the shipped
