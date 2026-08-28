@@ -354,7 +354,7 @@ jobs:
           #  • ALL_LIST  — whole tree: secrets + credential-filenames. Catching an
           #    already-committed secret/key is the point; these are the
           #    non-overridable security boundary.
-          #  • CHANGED_LIST — PR/push diff: size + large-files + forbidden-patterns
+          #  • CHANGED_LIST: PR/push diff, size + large-files + forbidden-patterns
           #    + hygiene. So installing onto an existing repo never retroactively
           #    fails legacy code; only new/changed code is gated.
           # -z (NUL-delimited) so a filename with a newline/tab/quote can't split

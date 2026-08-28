@@ -330,7 +330,7 @@ install_test_workflow_ci() {
   fi
 }
 
-# install_opt_in_zizmor_ci / install_opt_in_socket_ci — same shape as
+# install_opt_in_zizmor_ci / install_opt_in_socket_ci: same shape as
 # --gitleaks-ci / --dependency-review in install.sh: a dedicated flag installs
 # the workflow via cp_scaffold_preserve (drift-preserving, same policy as
 # gitleaks.yml / dependency-review.yml since #110 / #113) and prints one
