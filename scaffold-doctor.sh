@@ -301,6 +301,29 @@ else
   note "install-lib.sh not found next to scaffold-doctor.sh ($SCAFFOLD_DIR): paired-artifact checks skipped; re-fetch the full scaffold bundle, not just this one file"
 fi
 
+# --- 9. protections not enabled ----------------------------------------------
+# P-19b: this scaffold's users typically do not read code and often ask their
+# agent "run scaffold-doctor and tell me what is off" rather than reading the
+# report themselves. Section 5 above already notes two of these (gitleaks
+# hook, agent guardrails) mid-report; this promotes ALL of them, every
+# opt-in this project could have but does not, into one clearly titled
+# section near the end, so that question has one direct answer instead of a
+# note to spot among many. Pure presence checks: a hand-copied file counts
+# as "enabled" here, same as everywhere else in this script. Notes only,
+# same contract as every note() above: this never affects exit status.
+section "Protections not enabled"
+PNE_ANY=0
+_pne() { note "$1"; PNE_ANY=1; }
+[ -f .githooks/lib/check-gitleaks ]            || _pne "gitleaks hook (local secret scan, pre-commit): not installed. Enable with install.sh --gitleaks-hook"
+[ -f .github/workflows/gitleaks.yml ]          || _pne "gitleaks CI gate (unskippable secret scan): not installed. Enable with install.sh --gitleaks-ci"
+[ -f .github/workflows/dependency-review.yml ] || _pne "dependency-review CI gate (blocks a PR that adds a vulnerable/malicious dependency): not installed. Enable with install.sh --dependency-review"
+[ -f .github/workflows/zizmor.yml ]            || _pne "zizmor CI gate (audits your own GitHub Actions workflows): not installed. Enable with install.sh --zizmor-ci"
+[ -f .github/workflows/socket-security.yml ]   || _pne "Socket Firewall CI gate (blocks a malicious/typosquat package at install time): not installed. Enable with install.sh --socket-ci"
+[ -f .claude/settings.json ]                   || _pne "Claude Code agent guardrails: not installed. Enable with install.sh --claude"
+[ -f .cursor/hooks.json ]                      || _pne "Cursor agent guardrails: not installed. Enable with install.sh --cursor"
+[ -f .githooks/commit-msg ]                    || _pne "commit-msg hook (Conventional Commits): not installed. Enable with install.sh --commit-msg"
+[ "$PNE_ANY" -eq 1 ] || ok "every opt-in protection is enabled in this project"
+
 # --- summary ----------------------------------------------------------------
 echo ""
 if [ "$GAPS" -eq 0 ]; then
