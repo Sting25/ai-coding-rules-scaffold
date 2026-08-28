@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# .githooks/lib/check-large-files: byte-size guard for accidentally committed
+# large binaries (P-15), distinct from check-size's 500-LINE cap on source
+# files. check-size counts lines and explicitly skips binary/media/data
+# extensions (.png, .pdf, .csv, .sql, and friends) before it ever measures, so
+# a large video, model checkpoint, database dump, or zipped export passes it
+# untouched. This check has no extension skip list and measures every staged
+# file's BYTE size, so it is the one that actually stops an accidental
+# large-binary commit from permanently bloating git history.
+#
+# Reads NUL-separated file paths on stdin (produced by `git ... -z`), the same
+# contract as every other lib/check-* script. Measures the STAGED BLOB
+# (`git cat-file -s ":0:<path>"`), not the working-tree file, for the same
+# bypass-resistance reason check-size and check-secrets scan staged content:
+# the size must reflect exactly what will be committed, and can't be dodged by
+# shrinking or deleting the working-tree file after `git add`.
+#
+# Per-project overrides:
+#   .scaffold.toml [large-files]  "default = <bytes>" raises or lowers the
+#     byte cap project-wide. Read directly here (not through the shared
+#     scaffold-config size-cap subcommand, which is hardwired to the `[size]`
+#     table used for check-size's LINE cap) using the same strict TOML subset
+#     scaffold-config documents: bare/quoted keys, integers, # comments, blank
+#     lines. Anything that doesn't parse is ignored, so a malformed entry
+#     fails safe and MAX_BYTES stands.
+#   .scaffold.toml [rules.large-files]  disabled/severity, the same whole-check
+#     convention every other check honors (see check-size), read through the
+#     shared scaffold-config rule-state subcommand since that part of the
+#     contract is generic per rule id already.
+# Absent or unparseable config -> the MAX_BYTES default, fully enforced
+# (fail safe).
+#
+# Output: human-readable on tty; ::error file=...:: when --ci is passed.
+# Exit:   0 if all OK, 1 if any violation.
+
+set -euo pipefail
+
+# 500 KB (500 * 1024 bytes), the default the wider pre-commit ecosystem's
+# check-added-large-files hook ships with.
+MAX_BYTES=${MAX_BYTES:-512000}
+case "$MAX_BYTES" in
+  ''|*[!0-9]*)
+    echo "error: MAX_BYTES must be a positive integer, got: $MAX_BYTES" >&2
+    exit 2
+    ;;
+esac
+[ "$MAX_BYTES" -gt 0 ] || { echo "error: MAX_BYTES must be > 0" >&2; exit 2; }
+
+CI_MODE=0
+[ "${1:-}" = "--ci" ] && CI_MODE=1
+
+# Escape a value for a GitHub workflow command (see check-secrets/check-size).
+# `prop` mode (file=) escapes %, CR, LF, : and , so a crafted filename can't
+# forge or truncate the annotation.
+ghesc() {
+  local s=$2
+  s=${s//'%'/%25}; s=${s//$'\r'/%0D}; s=${s//$'\n'/%0A}
+  if [ "$1" = prop ]; then s=${s//:/%3A}; s=${s//,/%2C}; fi
+  printf '%s' "$s"
+}
+
+# Per-project rule state lives in .scaffold.toml, read via the sibling
+# scaffold-config helper. `cfg` fails open to empty output if the helper is
+# missing (older install), callers then fall back to the built-in defaults.
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+CONFIG_BIN="$SELF_DIR/scaffold-config"
+cfg() { [ -x "$CONFIG_BIN" ] || return 0; "$CONFIG_BIN" "$@" 2>/dev/null || true; }
+
+# Whole-check state: `disabled` skips this check entirely, `warn` reports
+# without failing. Default `error`.
+LARGE_FILES_STATE=$(cfg rule-state large-files); [ -n "$LARGE_FILES_STATE" ] || LARGE_FILES_STATE=error
+[ "$LARGE_FILES_STATE" = disabled ] && exit 0
+
+# Read the project-wide byte cap override straight out of .scaffold.toml's
+# `[large-files]` table (see the header comment for why this isn't delegated
+# to scaffold-config). Only the bare `default` key is recognized; anything
+# else in the table, or an unparseable value, is ignored and MAX_BYTES stands.
+CONFIG=".scaffold.toml"
+if [ -f "$CONFIG" ]; then
+  cap_default=$(awk '
+    function trim(s){ sub(/^[ \t]+/,"",s); sub(/[ \t]+$/,"",s); return s }
+    function unq(s){ if (s ~ /^".*"$/) s=substr(s,2,length(s)-2); return s }
+    {
+      line=$0; sub(/\r$/,"",line); t=trim(line)
+      if (t=="" || t ~ /^#/) next
+      if (t ~ /^\[/) { sec=t; sub(/^\[/,"",sec); sub(/\]$/,"",sec); insec=(sec=="large-files"); next }
+      if (!insec) next
+      eq=index(t,"="); if (eq==0) next
+      key=unq(trim(substr(t,1,eq-1))); val=unq(trim(substr(t,eq+1)))
+      if (key=="default") print val
+    }
+  ' "$CONFIG" | tail -n1)
+  case "$cap_default" in ''|*[!0-9]*) : ;; *) MAX_BYTES=$cap_default ;; esac
+fi
+
+# Render a byte count as something a non-coder can read at a glance.
+human_size() {
+  local b=$1
+  if [ "$b" -ge 1048576 ]; then
+    awk -v b="$b" 'BEGIN { printf "%.1f MB", b / 1048576 }'
+  elif [ "$b" -ge 1024 ]; then
+    awk -v b="$b" 'BEGIN { printf "%.1f KB", b / 1024 }'
+  else
+    printf '%s bytes' "$b"
+  fi
+}
+
+# Emit a finding at the resolved severity. `warn` prints but does not fail the
+# build (a deliberate, audited downgrade); `error` fails as usual.
+FAILED=0
+emit() {
+  local file=$1 message=$2
+  if [ "$LARGE_FILES_STATE" = warn ]; then
+    if [ "$CI_MODE" -eq 1 ]; then echo "::warning file=$(ghesc prop "$file")::$(ghesc data "$message")"
+    else echo "! $file: $message (warn, .scaffold.toml override)"; fi
+  else
+    if [ "$CI_MODE" -eq 1 ]; then echo "::error file=$(ghesc prop "$file")::$(ghesc data "$message")"
+    else echo "✗ $file: $message"; fi
+    FAILED=1
+  fi
+}
+
+while IFS= read -r -d '' file; do
+  [ -z "$file" ] && continue
+  # git cat-file -s reports the blob's byte size directly, without reading its
+  # full content through the shell, which matters for a file this check is
+  # specifically meant to catch. A missing blob (e.g. a submodule gitlink)
+  # yields no output, treated as 0 bytes and skipped.
+  bytes=$(git cat-file -s ":0:$file" 2>/dev/null || true)
+  case "$bytes" in ''|*[!0-9]*) continue ;; esac
+  if [ "$bytes" -gt "$MAX_BYTES" ]; then
+    emit "$file" "is $(human_size "$bytes"), over the $(human_size "$MAX_BYTES") limit. Large binary files like this permanently bloat this repository's history once committed, and removing them later needs history-rewrite tools (git-lfs, git-filter-repo, or BFG), not a normal commit. Track this kind of file with git-lfs instead, or keep it out of the repository entirely."
+  fi
+done
+
+exit $FAILED

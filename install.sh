@@ -230,7 +230,7 @@ mkx .githooks/pre-commit
 # ci-changed-files scopes the CI quality gates to the PR/push diff (used by
 # lint.yml so a fresh install doesn't retroactively fail pre-existing code).
 # All scaffold-owned code → cp_scaffold so a re-run delivers security fixes.
-for check in check-size check-patterns check-filenames check-secrets check-hygiene scaffold-config scaffold-audit ci-changed-files; do
+for check in check-size check-large-files check-patterns check-filenames check-secrets check-hygiene scaffold-config scaffold-audit ci-changed-files; do
   cp_scaffold "$SCAFFOLD_DIR/githooks/lib/${check}.template" ".githooks/lib/${check}"
   mkx ".githooks/lib/${check}"
 done
