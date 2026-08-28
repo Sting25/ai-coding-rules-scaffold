@@ -20,12 +20,15 @@ name: socket-security
 #
 # What it does:
 #   Uses SocketDev/action in "firewall-free" mode, which downloads Socket
-#   Firewall (free tier) and shims npm/pnpm/yarn, pip/pip3/uv, and cargo so
-#   those commands are transparently routed through it, no `sfw` prefix
-#   needed. Socket Firewall blocks a known-malicious or typosquat package AT
-#   INSTALL TIME, before its code ever runs, instead of only reporting on it
-#   after the fact. A blocked install fails this job with a named package
-#   and a reason, which a non-coder can hand to their agent verbatim.
+#   Firewall (free tier) and makes the `sfw` binary available on PATH in
+#   subsequent steps. It protects only the commands explicitly prefixed with
+#   `sfw` (`sfw npm ci`, `sfw pip install ...`, `sfw cargo fetch`); there is
+#   no shims input and no automatic interception of unprefixed commands.
+#   Socket Firewall blocks a known-malicious or typosquat package AT INSTALL
+#   TIME, before its code ever runs, instead of only reporting on it after
+#   the fact, but only for the `sfw`-prefixed commands below. A blocked
+#   install fails this job with a named package and a reason, which a
+#   non-coder can hand to their agent verbatim.
 #
 # NO API KEY OR ACCOUNT NEEDED for firewall-free mode used below. If you
 # want Socket's paid Enterprise firewall edition instead (more ecosystems:
@@ -61,12 +64,12 @@ jobs:
         with:
           mode: firewall-free
 
-      # From here on, npm/pnpm/yarn install, pip/pip3/uv install, and cargo
-      # fetch are transparently routed through Socket Firewall (shims: true
-      # is the action's default). Each step below only runs when the
-      # matching manifest is present, the same detect-in-a-step pattern
-      # lint.yml.template uses, so a repo missing that stack sees a clean
-      # no-op instead of a failure.
+      # Each install command below is prefixed with `sfw` so it is actually
+      # routed through Socket Firewall; an unprefixed command would run
+      # unprotected. Each step only runs when the matching manifest is
+      # present, the same detect-in-a-step pattern lint.yml.template uses,
+      # so a repo missing that stack sees a clean no-op instead of a
+      # failure.
       #
       # --ignore-scripts on the JS install: Socket Firewall blocks a
       # malicious/typosquat PACKAGE from being resolved at all, which is a
@@ -79,16 +82,16 @@ jobs:
         if: hashFiles('package.json') != ''
         run: |
           if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
-            npm ci --ignore-scripts
+            sfw npm ci --ignore-scripts
           else
-            npm install --ignore-scripts
+            sfw npm install --ignore-scripts
           fi
       - name: Install Python dependencies through Socket Firewall
         if: hashFiles('requirements.txt', 'requirements-dev.txt', 'requirements/dev.txt', 'pyproject.toml') != ''
         run: |
           for req in requirements.txt requirements-dev.txt requirements/dev.txt; do
             if [ -f "$req" ]; then
-              pip install -r "$req"
+              sfw pip install -r "$req"
             fi
           done
           # Only attempt an editable install when the project actually
@@ -96,8 +99,8 @@ jobs:
           # coverage.yml.template uses, so a pyproject.toml that only holds
           # tool config doesn't hard-fail this step.
           if [ -f pyproject.toml ] && grep -q '^\[project\]' pyproject.toml; then
-            pip install -e .
+            sfw pip install -e .
           fi
       - name: Fetch Rust dependencies through Socket Firewall
         if: hashFiles('Cargo.toml') != ''
-        run: cargo fetch
+        run: sfw cargo fetch
