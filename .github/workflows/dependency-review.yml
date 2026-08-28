@@ -10,17 +10,17 @@ name: dependency-review
 # What it does:
 #   On a pull request, diffs the dependency manifests/lockfiles the PR changes
 #   and FAILS the check if it introduces a dependency with a known vulnerability
-#   (GitHub Advisory DB) or — increasingly the bigger risk — a malicious /
+#   (GitHub Advisory DB) or, increasingly the bigger risk, a malicious /
 #   yanked package (the chalk-debug, Shai-Hulud class of attack). This is the
 #   PR-time complement to dependabot.yml, which keeps already-trusted pins fresh;
 #   this one blocks a bad dep from entering in the first place.
 #
 # AVAILABILITY CAVEAT (read before relying on it):
 #   dependency-review-action needs GitHub's Dependency Graph enabled.
-#     - PUBLIC repos: on by default — works out of the box.
+#     - PUBLIC repos: on by default, works out of the box.
 #     - PRIVATE repos: requires GitHub Advanced Security (GHAS) to be enabled,
 #       otherwise the action errors. If you're a private repo without GHAS,
-#       this workflow can't run — lean on Dependabot + the lockfile review
+#       this workflow can't run: lean on Dependabot + the lockfile review
 #       instead. (Same "needs a GitHub entitlement" caveat gitleaks carries for
 #       organizations.)
 #
