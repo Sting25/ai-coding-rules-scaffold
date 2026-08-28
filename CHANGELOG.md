@@ -40,6 +40,54 @@ versioning follows [SemVer](https://semver.org/).
   Advanced Security. This repo now installs its own rendered copy at
   `.github/workflows/dependency-review.yml`, since the repo is public and
   GitHub's Dependency Graph is on by default here.
+- **Byte-size guard for accidentally committed large binaries
+  (`check-large-files`, P-15).** A new `lib/check-large-files` measures each
+  staged file's blob size and rejects anything over a 500 KB cap (raisable
+  per project via `.scaffold.toml [large-files]`), wired into the
+  pre-commit hook, `lint.yml`'s CI mirror, and this repo's own
+  `self-lint.yml`. Distinct from `check-size`'s 500-line cap, which skips
+  binary/media extensions before it ever measures and so let a large video,
+  model checkpoint, database dump, or zipped export through untouched: this
+  check has no extension skip list and measures every staged file's byte
+  size instead.
+- **Opt-in zizmor and Socket Firewall CI gates (`install.sh --zizmor-ci`,
+  `--socket-ci`).** Two new templates, same opt-in posture as
+  `--gitleaks-ci` and `--dependency-review`: `zizmor.yml` runs a static
+  audit of the project's own GitHub Actions workflows (unpinned `uses:`
+  refs, template-injection, credential-persisting checkouts, over-scoped
+  `GITHUB_TOKEN`), and `socket-security.yml` shims package-manager installs
+  through Socket Firewall so a malicious or typosquat/slopsquat package is
+  blocked at install time, before its code ever runs, instead of only
+  reported on afterward. Both install via `cp_scaffold_preserve`, the same
+  drift-preserving policy as the scaffold's other opt-in CI workflows.
+- **`dependency-review` gains a conservative AGPL deny-list license gate.**
+  The action's own license-compliance inputs, left unused by the shipped
+  template until now, fail the PR on a deny-list of AGPL SPDX ids: the one
+  license family that can force a consumer's own product open, with fewer
+  false positives for this audience than a broader allow-list would
+  produce.
+- **Agent-addressed "not enabled" summary in `install.sh` and
+  `scaffold-doctor.sh`.** Responds to a real incident: an agent hand-copied
+  files instead of running the installer, hooks ended up unarmed, and a
+  secret shipped that the disabled layers would have caught.
+  `install.sh`'s closing `Next:` block now lists every opt-in protection
+  not enabled on this run, each with its exact enable command, opening
+  with a note addressed to the installing agent asking it to relay the
+  list before treating the install as finished. `scaffold-doctor.sh` gets
+  a matching "Protections not enabled" section so the same question has
+  one direct answer at any later point, not only at install time.
+- **New agent-facing rules: session-start doctor check, restore points,
+  untrusted content, and slopsquatting.** `AGENTS.md` now asks an agent to
+  run `scaffold-doctor.sh` (or `npx ai-coding-rules-scaffold doctor`) at
+  the start of a session to catch an unarmed hook after a clone; requires
+  a tagged restore point before risky multi-step work, with history shown
+  before any recovery attempt; and adds an "Untrusted content" section
+  treating fetched pages, repo files, and tool output as data, never as
+  instructions. `coding-rules.md` adds rule 14, verifying a new dependency
+  is the real package, not a hallucinated or pre-registered look-alike,
+  before it reaches a manifest. README's "Already have commit history?"
+  section recommends a one-time full-history secret scan (`gitleaks git
+.`) for a repo that predates the scaffold install.
 
 ### Changed
 
