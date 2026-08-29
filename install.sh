@@ -381,10 +381,10 @@ fi
 if [ "$CLAUDE" -eq 1 ]; then
   cp_safe "$SCAFFOLD_DIR/claude-settings.json.template" ".claude/settings.json"
 fi
-# Cursor: hooks.json wires the same precheck to beforeShellExecution. Cursor has
-# no before-write hook, so only the shell-command scan is portable here.
+# Cursor: hooks.json wires beforeShellExecution + beforeReadFile (credential-path deny); no before-write hook, so secret-on-write stays unportable here.
 if [ "$CURSOR" -eq 1 ]; then
   cp_safe "$SCAFFOLD_DIR/cursor-hooks.json.template" ".cursor/hooks.json"
+  cp_pattern "$SCAFFOLD_DIR/githooks/lib/credential-read-patterns.txt.template" ".githooks/lib/credential-read-patterns.txt"
 fi
 
 # Conventional-Commits commit-msg hook (opt-in: --commit-msg). Active the moment

@@ -8,6 +8,14 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+- **Cursor `beforeReadFile` credential-path guard.** `install.sh --cursor` now
+  wires `.githooks/lib/agent-precheck` to Cursor's `beforeReadFile` hook too
+  (previously only `beforeShellExecution` was wired), denying reads of
+  credential files (`.env`, `*.pem`, `~/.ssh/**`, `~/.aws/**`, …) via
+  `.githooks/lib/credential-read-patterns.txt` — the Cursor sibling of
+  Claude Code's native `permissions.deny` credential-file list, closing a
+  previously-documented gap.
+
 - **`scaffold-doctor.sh` detects half-installed paired artifacts (#96).** A
   new "paired artifacts" section, and a matching end-of-run check in
   `install.sh` itself, flag when only one half of a two-part guardrail is on

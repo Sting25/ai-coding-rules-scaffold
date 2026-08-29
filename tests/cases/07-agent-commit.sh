@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# cases/07-agent-commit.sh — agent-precheck PreToolUse hook (46–48f) and the
+# cases/07-agent-commit.sh — agent-precheck PreToolUse hook (46–48k) and the
 # commit-msg Conventional-Commits hook (49–51). Sourced into the driver's shell.
 
 # 46-48. agent-precheck — the opt-in Claude Code PreToolUse hook. Invoked
@@ -129,6 +129,40 @@ if command -v jq >/dev/null 2>&1; then
     echo "  ✗ agent-precheck — over-cap line exited $rc, expected exactly 2 with the too-long block message (fail-open?)"
     sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
   fi
+  # (48i) CURSOR shape: beforeReadFile — a top-level .file_path with no
+  #       .command/.tool_name is the credential-read guard's payload shape.
+  #       Needs .githooks/lib/credential-read-patterns.txt, only installed
+  #       under --cursor — drop it into this shared temp repo for this file.
+  cp "$SCAFFOLD_DIR/githooks/lib/credential-read-patterns.txt.template" ".githooks/lib/credential-read-patterns.txt"
+  pc='{"file_path":"/repo/.env","content":"SECRET=1","attachments":[]}'
+  if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1 \
+     && jq -e '.permission == "deny"' <"$HOOK_OUT" >/dev/null 2>&1; then
+    echo "  ✓ agent-precheck denies a Cursor beforeReadFile on .env"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — expected {permission:deny} for a beforeReadFile .env read"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  # (48j) CURSOR shape: beforeReadFile on a benign path is allowed via JSON,
+  #       not the exit-2 convention (exit code must stay 0 either way).
+  pc='{"file_path":"/repo/src/index.ts","content":"export const x = 1;","attachments":[]}'
+  if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1 \
+     && jq -e '.permission == "allow"' <"$HOOK_OUT" >/dev/null 2>&1; then
+    echo "  ✓ agent-precheck allows a Cursor beforeReadFile on a benign path"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — expected {permission:allow} for a benign beforeReadFile read"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  # (48k) beforeReadFile matches a RELATIVE path too (no leading slash), and
+  #       the SSH-keys-directory glob (.ssh/*), not just an exact basename.
+  pc='{"file_path":".ssh/id_rsa","content":"","attachments":[]}'
+  if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1 \
+     && jq -e '.permission == "deny"' <"$HOOK_OUT" >/dev/null 2>&1; then
+    echo "  ✓ agent-precheck denies a relative .ssh/* beforeReadFile path"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — expected deny for relative .ssh/id_rsa"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  rm -f ".githooks/lib/credential-read-patterns.txt"
 else
   echo "  - skipped agent-precheck tests (jq not installed)"
 fi

@@ -1,18 +1,29 @@
 #!/usr/bin/env bash
 # .githooks/lib/agent-precheck — agent PreToolUse hook (scaffold "layer three":
-# block bad content the moment an agent writes it, before commit time).
+# block bad content the moment an agent writes it, before commit time — plus a
+# credential-path read guard for runtimes that can block a read).
 #
-# Wired for two agent runtimes that both deliver the event as JSON on stdin and
-# both treat EXIT 2 as "block this action":
+# Wired for three agent-runtime hook shapes, all delivered as JSON on stdin:
 #   - Claude Code  (.claude/settings.json PreToolUse, matcher Write|Edit|Bash) —
 #     command lives under .tool_input.command, tool name under .tool_name.
-#   - Cursor       (.cursor/hooks.json beforeShellExecution)                   —
+#     Exits 2 to block; Claude feeds stderr back to the model. Claude denies
+#     credential-file reads natively via its own permissions.deny — this
+#     script is never invoked for a Claude Read, so it carries no read-path
+#     branch for that runtime.
+#   - Cursor beforeShellExecution (.cursor/hooks.json)                        —
 #     command lives at the TOP LEVEL .command, with NO .tool_name field.
-# The extraction below is written to cover both shapes; see the two notes inline.
+#     Exits 2 to block, same as Claude.
+#   - Cursor beforeReadFile (.cursor/hooks.json)                              —
+#     path lives at the TOP LEVEL .file_path, with NO .command/.tool_name
+#     field. beforeReadFile has no documented exit-code contract — only a
+#     JSON response controls the verdict — so this shape answers with
+#     {"permission":"allow"} or {"permission":"deny","user_message":...} on
+#     stdout and always exits 0, instead of the exit-2 convention above.
+# The extraction below is written to cover all three shapes; see the notes
+# inline at each branch.
 #
-# Scans the content a Write/Edit is about to introduce — and the text of a Bash
-# command — against the SAME patterns the commit-time scanner uses. One source
-# of truth across agent -> commit -> CI:
+# Write/Edit/Bash content is scanned against the SAME patterns the commit-time
+# scanner uses. One source of truth across agent -> commit -> CI:
 #   - .forbidden-patterns/secrets.txt  (all tool calls; case-insensitive by
 #     default, case-sensitive for rules carrying the `(?-i)` marker, exactly
 #     as check-secrets does) — a credential the agent tries to hardcode is
@@ -21,15 +32,20 @@
 #     match the commit-time semantics) — curl|bash, rm -rf /, chmod 777 etc. are
 #     refused before the agent runs them. RECOMMENDATIONS.md calls this the
 #     single highest-ROI agent hook.
+# A Cursor beforeReadFile call is instead matched against
+#   - .githooks/lib/credential-read-patterns.txt — the Cursor sibling of
+#     Claude's native permissions.deny credential-file list (Cursor has no
+#     equivalent native config), matched as shell globs against the read path.
+#     NOT under .forbidden-patterns/ — see that file's own header for why.
 #
-# The hook BLOCKS by exiting 2; both runtimes feed the stderr text back to the
-# model so it can correct course.
+# Requires `jq`. If jq is missing, or a pattern file is absent, it fails OPEN
+# (allow) — an agent helper must never brick the session; the pre-commit hook
+# and CI (and, for Claude reads, permissions.deny) are the fail-CLOSED
+# backstops.
 #
-# Requires `jq`. If jq is missing, or no secrets.txt is present, it exits 0
-# (fail-OPEN) — an agent helper must never brick the session; the pre-commit
-# hook and CI are the authoritative fail-CLOSED backstops.
-#
-# Exit: 0 = allow, 2 = block (stderr shown to the model).
+# Exit: 0 = allow (Write/Edit/Bash shapes print nothing on allow), 2 = block
+# (Write/Edit/Bash shapes only; stderr shown to the model). beforeReadFile
+# never uses the exit code — see the branch below.
 
 set -euo pipefail
 
@@ -41,6 +57,51 @@ payload=$(cat)
 # event reports, then to ".".
 ROOT=${CLAUDE_PROJECT_DIR:-}
 [ -n "$ROOT" ] || ROOT=$(jq -r '.cwd // "."' <<<"$payload" 2>/dev/null || echo .)
+
+# match_credential_path PATH — matches PATH against
+# .githooks/lib/credential-read-patterns.txt (one <glob><TAB><description>
+# pair per line, same format convention as secrets.txt/shell.txt). A glob
+# matches PATH exactly or as a path suffix ("*/<glob>"), so ".ssh/*" catches
+# both a relative ".ssh/config" and "/home/x/.ssh/config". On a match, prints
+# the matching line's description and returns 0; otherwise returns 1 (no
+# stdout, fail-open if the pattern file is missing).
+match_credential_path() {
+  local path=$1 pfile="$ROOT/.githooks/lib/credential-read-patterns.txt"
+  [ -f "$pfile" ] || return 1
+  local line pattern desc
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line%$'\r'}
+    [ -z "$line" ] && continue
+    case "$line" in \#*) continue ;; esac
+    case "$line" in *$'\t'*) ;; *) continue ;; esac
+    pattern=${line%%$'\t'*}
+    desc=${line#*$'\t'}
+    [ -z "$pattern" ] && continue
+    # shellcheck disable=SC2053  # intentional glob match of $path against $pattern
+    if [[ "$path" == $pattern || "$path" == */$pattern ]]; then
+      printf '%s' "$desc"
+      return 0
+    fi
+  done <"$pfile"
+  return 1
+}
+
+# Cursor beforeReadFile: a top-level .file_path with no .command/.tool_name.
+# Handle it fully here and exit — its JSON-response contract is unrelated to
+# the exit-2 convention the Write/Edit/Bash branches below use, and its
+# .content field is the file's full text, which has no business being run
+# through the secrets scan below (that scan is for content an agent is about
+# to WRITE, not content it's reading).
+read_file_path=$(jq -r 'if (.file_path != null) and (.command == null) and (.tool_name == null) then .file_path else empty end' <<<"$payload" 2>/dev/null || true)
+if [ -n "$read_file_path" ]; then
+  if desc=$(match_credential_path "$read_file_path"); then
+    jq -n --arg msg "Blocked by ai-coding-rules-scaffold: this path matches a credential-file pattern ($desc). Edit .githooks/lib/credential-read-patterns.txt if this is deliberate and safe." \
+      '{permission: "deny", user_message: $msg}'
+  else
+    printf '%s\n' '{"permission":"allow"}'
+  fi
+  exit 0
+fi
 
 tool=$(jq -r '.tool_name // empty' <<<"$payload" 2>/dev/null || true)
 
