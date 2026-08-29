@@ -16,7 +16,7 @@ _npmc_fixture() {
   printf '%s' "$t"
 }
 
-# (T) a default install (no flag) writes no .npmrc — stays opt-in.
+# (T) a default install (no flag) writes no .npmrc: stays opt-in.
 D=$(_npmc_fixture)
 if [ ! -e "$D/.npmrc" ]; then
   echo "  ✓ a default install creates no .npmrc"; PASS=$((PASS + 1))

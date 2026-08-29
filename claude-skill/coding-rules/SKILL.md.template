@@ -1,6 +1,6 @@
 ---
 name: coding-rules
-description: Load this project's installed coding rules on demand. Use before writing, editing, or reviewing code in this repo, before staging a commit, or whenever asked about this project's guardrails, conventions, forbidden patterns, or engineering/process rules. Complements AGENTS.md, which imports the same two files for always-on context; this Skill exists for a session or tool that does not load AGENTS.md into every turn.
+description: Load this project's installed coding rules on demand. Use before writing, editing, or reviewing code in this repo, before staging a commit, or whenever asked about this project's guardrails, conventions, forbidden patterns, or engineering/process rules. Complements AGENTS.md, which links to the same two files but does not inline their full text; this Skill pulls the full text into context on demand.
 ---
 
 # Coding rules (on demand)

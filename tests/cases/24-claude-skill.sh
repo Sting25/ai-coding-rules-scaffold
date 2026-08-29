@@ -16,7 +16,7 @@ _cskill_fixture() {
   printf '%s' "$t"
 }
 
-# (T) a default install (no flag) writes no Skill file — stays opt-in.
+# (T) a default install (no flag) writes no Skill file: stays opt-in.
 D=$(_cskill_fixture)
 if [ ! -e "$D/.claude/skills/coding-rules/SKILL.md" ]; then
   echo "  ✓ a default install creates no Claude Skill"; PASS=$((PASS + 1))
