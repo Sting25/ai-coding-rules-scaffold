@@ -153,6 +153,7 @@ remove_if_unmodified ".githooks/lib/agent-precheck"  "$SCAFFOLD_DIR/githooks/lib
 remove_if_unmodified ".claude/settings.json"         "$SCAFFOLD_DIR/claude-settings.json.template"
 # Opt-in Cursor guardrails (only present if installed with --cursor).
 remove_if_unmodified ".cursor/hooks.json"            "$SCAFFOLD_DIR/cursor-hooks.json.template"
+remove_if_unmodified ".githooks/lib/credential-read-patterns.txt" "$SCAFFOLD_DIR/githooks/lib/credential-read-patterns.txt.template"
 # Opt-in commit-msg hook (only present if installed with --commit-msg).
 remove_if_unmodified ".githooks/commit-msg"          "$SCAFFOLD_DIR/githooks/commit-msg.template"
 # Opt-in local gitleaks pass (only present if installed with --gitleaks-hook).
