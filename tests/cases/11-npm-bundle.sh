@@ -39,10 +39,14 @@ else
     REQUIRED=$(
       {
         # SC2016 off on purpose: we match the LITERAL text "$SCAFFOLD_DIR" / "${"
-        # as it appears in install.sh's source, so single quotes (no expansion)
-        # are exactly right.
+        # as it appears in install.sh's / install-lib.sh's source, so single
+        # quotes (no expansion) are exactly right. install-lib.sh is scanned
+        # too (not just install.sh): the install_opt_in_* functions extracted
+        # there to stay under install.sh's 500-line cap (zizmor/socket/
+        # npm-cooldown/claude-skill) reference their own $SCAFFOLD_DIR/...
+        # template paths, which a install.sh-only grep would never see.
         # shellcheck disable=SC2016
-        grep -oE '\$SCAFFOLD_DIR/[^"'"'"' ]+' "$SCAFFOLD_DIR/install.sh" \
+        grep -ohE '\$SCAFFOLD_DIR/[^"'"'"' ]+' "$SCAFFOLD_DIR/install.sh" "$SCAFFOLD_DIR/install-lib.sh" \
           | sed 's#\$SCAFFOLD_DIR/##' | grep -v '\${'
         ( cd "$SCAFFOLD_DIR" \
             && ls forbidden-patterns/*.txt.template githooks/*.template githooks/lib/*.template \

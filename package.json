@@ -39,7 +39,9 @@
     ".github/workflows/gitleaks.yml.template",
     ".github/workflows/dependency-review.yml.template",
     ".github/workflows/zizmor.yml.template",
-    ".github/workflows/socket-security.yml.template"
+    ".github/workflows/socket-security.yml.template",
+    ".npmrc.template",
+    "claude-skill/coding-rules/SKILL.md.template"
   ],
   "engines": {
     "node": ">=14"

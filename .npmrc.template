@@ -1,0 +1,26 @@
+# Copy to your project as `.npmrc` (install.sh --npm-cooldown, issue #117).
+#
+# min-release-age delays how soon a freshly published package version becomes
+# installable, counted in DAYS from its publish time: npm resolves to an
+# older version instead until that many days have passed. Requires npm
+# >= 11.10.0 (shipped 2026-02-11, npm/cli PR #8965). On an older npm this key
+# is simply an unrecognized config: npm prints a WARN and ignores it, the
+# install still proceeds, the same fail-open shape as install.sh
+# --gitleaks-hook when the gitleaks binary is missing. It only hard-errors on
+# an unrecognized key if the project has also set strict-npmrc=true, which
+# this template does not.
+#
+# 7 days matches this scaffold's own .github/dependabot.yml cooldown
+# (default-days: 7) so the two layers agree on one number instead of two to
+# reconcile. Dependabot's cooldown only holds back ITS OWN update PRs; it does
+# nothing for an `npm install <pkg>` a developer or an agent runs by hand,
+# which is exactly the window recent npm supply-chain incidents (a maintainer
+# account compromised, a malicious version published, pulled hours later)
+# exploited. This setting closes that install-time gap.
+#
+# `before` is a related but separate config: an exact calendar date instead of
+# a rolling day count. If a project sets `before` in this same file, `before`
+# wins over min-release-age (per the npm docs, the two may coexist but an
+# explicit absolute date overrides a relative window within one source). This
+# template does not set `before`.
+min-release-age=7

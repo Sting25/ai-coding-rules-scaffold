@@ -330,6 +330,45 @@ minimal; turn them on per project.
   account needed for firewall-free mode. Opt-in, not default-on: it adds a
   third-party action dependency. Pinned to a commit SHA; bump via Dependabot.
 
+- **npm install-layer cooldown (`install.sh --npm-cooldown` → `.npmrc`,
+  issue #117).** Sets `min-release-age=7`: npm resolves to an older version
+  instead of a package version published fewer than 7 days ago. Requires npm
+  `>= 11.10.0` (shipped 2026-02-11, npm/cli PR #8965); an older npm treats the
+  key as unrecognized, warns, and ignores it, so the install still proceeds
+  (fail-open, same shape as `--gitleaks-hook` with no `gitleaks` binary on
+  PATH). `.github/dependabot.yml`'s own `cooldown: default-days: 7` only
+  holds back Dependabot's own update PRs; it does nothing for an `npm install
+<pkg>` a developer or an agent runs by hand, which is exactly the window a
+  compromised-and-yanked release (chalk/debug, Shai-Hulud class) is
+  installable in. This closes that install-time gap with the same 7-day
+  number, rather than a second one to reconcile. `.npmrc` is USER-OWNED
+  (`cp_safe`, not `cp_scaffold_preserve`): a project may already have one, or
+  may hand-edit the shipped copy, so a re-run never overwrites it without
+  `--force`. See the template header for the `before` config interaction
+  (an exact date wins over the relative window when both are set).
+
+- **Claude Code Skill (`install.sh --claude-skill` →
+  `.claude/skills/coding-rules/SKILL.md`, issue #118 part 2).** Wraps
+  `coding-rules.md` and `operational-rules.md` in a Claude Code
+  [Skill](https://code.claude.com/docs/en/skills): frontmatter that tells
+  Claude Code when to trigger it (before writing/editing code, before a
+  commit, or when asked about this project's conventions) and a body that
+  tells the agent to read both files in full. This is a **third**, distinct
+  loading path, not a replacement for either existing one: `--claude`
+  installs _runtime hooks_ (`.claude/settings.json` plus the `PreToolUse`
+  precheck) that block a bad tool call as it happens; the plain AGENTS.md
+  path (always installed) is _always-loaded summary_: CLAUDE.md's
+  `@AGENTS.md` import pulls a condensed version of these rules, with links
+  to the full files, into every turn's context by design, to keep that
+  always-loaded context small. `--claude-skill` is what actually pulls the
+  **full text** of `coding-rules.md` / `operational-rules.md` into context,
+  **on demand**, at the moments they matter, rather than relying on the
+  summary alone or paying their full size on every turn. Opt-in because it is
+  Claude Code specific; combine freely with `--claude` and with the default
+  AGENTS.md install. `.claude/skills/coding-rules/SKILL.md` is USER-OWNED
+  (`cp_safe`): a project may hand-edit it, so a re-run never overwrites it
+  without `--force`.
+
 - **Patch-coverage gate (`install.sh --coverage-gate` →
   `.github/workflows/coverage.yml`, installed _instead of_ the default-on
   `tests.yml` above).** The one mechanism here that _forces tests
