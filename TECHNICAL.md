@@ -254,9 +254,12 @@ minimal; turn them on per project.
   wired to Cursor's `beforeShellExecution` hook via `.cursor/hooks.json`, so a
   `curl | bash` / `rm -rf /` / `chmod 777` the agent is about to run is scanned
   against `.forbidden-patterns/shell.txt` and blocked (exit 2 = Cursor deny).
-  Cursor has no before-write hook, so unlike `--claude` the secret-on-write scan
-  and credential read deny-list aren't portable — the shell-command scan is the
-  high-ROI piece that is. `--claude` and `--cursor` can be combined; they share
+  Cursor has no hook that can block a write (`afterFileEdit` fires only after
+  the edit has landed), so unlike `--claude` the secret-on-write scan isn't
+  portable; the shell-command scan is the high-ROI piece that is. Cursor's
+  `beforeReadFile` can deny a read, so the credential read deny-list is portable
+  in principle, but `--cursor` does not wire it today. `--claude` and `--cursor`
+  can be combined; they share
   the one precheck script, which (like `--claude`) needs `jq` and fails open
   without it.
 

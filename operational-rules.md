@@ -15,9 +15,10 @@ drop it in your project root and add `@operational-rules.md` to your
 `install.sh`, no hooks, no CI workflow needed.
 
 For Cursor, Cline, Aider, or other AI tools, add an equivalent
-reference to whatever config file the tool uses (`.cursorrules`,
-`.clinerules`, `CONVENTIONS.md`, etc.). The goal is that the agent
-sees this document at the start of every session.
+reference to whatever config file the tool uses (an `alwaysApply: true`
+project rule under `.cursor/rules/`, `.clinerules`, `CONVENTIONS.md`,
+etc.). The goal is that the agent sees this document at the start of
+every session.
 
 If you're using this without an AI agent, the document still works
 as a reference for human engineers. Read it before writing code,
@@ -314,6 +315,19 @@ rates, latency) come from the agent. Verdicts ("fixed", "done",
 victory based on surface pattern matching rather than verified
 behavior; reserving the verdict for the human prevents premature
 "fixed" claims.
+
+### Close every handoff with a plain-language summary
+
+The artifact that makes the rule above usable. Before handing back a
+commit, a PR, or the session itself, state in plain language what
+changed and why, anything destructive or hard to reverse, every check
+you turned down by name, and what the user should verify before calling
+it done. That summary is the decision surface for anyone who does not
+read diffs; it feeds the verdict, it never delivers it.
+_Anchor:_ every enforced output of an AI-assisted change (the diff, the
+failing check, the CI log) assumes a reader who reads code; where the
+accountable human did not, a downgraded guardrail shipped with nothing
+but the diff recording it.
 
 ### Plans default to PROPOSED; mark every assumption
 
