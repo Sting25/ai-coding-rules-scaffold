@@ -315,6 +315,19 @@ victory based on surface pattern matching rather than verified
 behavior; reserving the verdict for the human prevents premature
 "fixed" claims.
 
+### Close every handoff with a plain-language summary
+
+The artifact that makes the rule above usable. Before handing back a
+commit, a PR, or the session itself, state in plain language what
+changed and why, anything destructive or hard to reverse, every check
+you turned down by name, and what the user should verify before calling
+it done. That summary is the decision surface for anyone who does not
+read diffs; it feeds the verdict, it never delivers it.
+_Anchor:_ every enforced output of an AI-assisted change (the diff, the
+failing check, the CI log) assumes a reader who reads code; where the
+accountable human did not, a downgraded guardrail shipped with nothing
+but the diff recording it.
+
 ### Plans default to PROPOSED; mark every assumption
 
 Each value the agent picked itself gets PROPOSED plus a one-line
