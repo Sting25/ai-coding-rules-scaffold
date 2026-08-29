@@ -251,17 +251,19 @@ minimal; turn them on per project.
   without it). See [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md).
 
 - **Cursor agent guardrails (`install.sh --cursor`).** The same `agent-precheck`
-  wired to Cursor's `beforeShellExecution` hook via `.cursor/hooks.json`, so a
-  `curl | bash` / `rm -rf /` / `chmod 777` the agent is about to run is scanned
-  against `.forbidden-patterns/shell.txt` and blocked (exit 2 = Cursor deny).
-  Cursor has no hook that can block a write (`afterFileEdit` fires only after
-  the edit has landed), so unlike `--claude` the secret-on-write scan isn't
-  portable; the shell-command scan is the high-ROI piece that is. Cursor's
-  `beforeReadFile` can deny a read, so the credential read deny-list is portable
-  in principle, but `--cursor` does not wire it today. `--claude` and `--cursor`
-  can be combined; they share
-  the one precheck script, which (like `--claude`) needs `jq` and fails open
-  without it.
+  wired to two Cursor hooks via `.cursor/hooks.json`: `beforeShellExecution`,
+  so a `curl | bash` / `rm -rf /` / `chmod 777` the agent is about to run is
+  scanned against `.forbidden-patterns/shell.txt` and blocked (exit 2 = Cursor
+  deny); and `beforeReadFile`, so a read of a credential file (`.env`,
+  `*.pem`, `~/.ssh/**`, `~/.aws/**`, …) is scanned against
+  `.githooks/lib/credential-read-patterns.txt` and denied via a
+  `{"permission":"deny"}` JSON response (`beforeReadFile` has no exit-code
+  contract, unlike `beforeShellExecution`) — the Cursor sibling of Claude's
+  native `permissions.deny` credential-file list. Cursor has no hook that can
+  block a write (`afterFileEdit` fires only after the edit has landed), so
+  unlike `--claude` the secret-on-write scan isn't portable here. `--claude`
+  and `--cursor` can be combined; they share the one precheck script, which
+  (like `--claude`) needs `jq` and fails open without it.
 
 - **Conventional-Commits `commit-msg` hook (`install.sh --commit-msg`).**
   Rejects commit subjects that don't match `type(scope): description` (merge /
