@@ -221,6 +221,35 @@ _Anchor:_ an agent ran a destructive operation against a
 production database it believed was a test instance and emptied
 it in seconds; there was no staging tier and no recent backup.
 
+### A conditional must not be a shell function's last command under errexit
+
+Under `set -euo pipefail`, a trailing `[[ ... ]] && cmd` makes the
+function return 1 on the false path, and a failed command substitution
+in a bare assignment aborts the whole script. End helpers with an
+explicit if/fi so the negative path returns 0.
+_Anchor:_ a sid-guard tightening made a session-start hook abort on
+routine stray files; context loading silently stopped, and only
+independent verification caught it because the suite passed.
+
+### Assert the positive outcome, not the absence of the symptom
+
+A test that only checks an error string is absent also passes when the
+code crashes to empty output. Pair every negative assertion with one
+that the wanted artifact was produced (marker emitted, exit 0, file
+present).
+_Anchor:_ a hook-killing crash sailed through a 1400-assertion suite
+because the new regression test asserted only that a warning string
+was absent; the crash made it absent too.
+
+### In cross-platform fallback chains, the noisy-failure variant goes last
+
+Order `A || B` so the variant that misbehaves on the wrong platform
+never runs first. Some commands "fail" by succeeding partially with
+garbage on stdout (GNU `stat -f` prints filesystem stats), which
+poisons the captured value even though the fallback also runs.
+_Anchor:_ a BSD-first stat chain made a required Linux CI job a coin
+flip; it passed for weeks by luck, then failed an unrelated PR.
+
 ---
 
 ## Process
@@ -302,6 +331,38 @@ distinguish load-bearing decisions from incidental ones.
 _Anchor:_ a refactor session removed a workaround whose reason had
 never been written down; the original bug returned weeks later
 and required rediscovery from scratch.
+
+### Version bumps travel only in release commits
+
+A feature PR that bumps the version strands the mainline on an
+unreleased number the moment it merges, and consumers that track the
+branch install untagged builds. Bump, changelog heading, tag, and
+release move together in a dedicated release change.
+_Anchor:_ a feature merge bumped to 0.18.0 while the latest tag was
+v0.17.0; marketplace installs tracked main and picked up an unreleased
+version, and an earlier install matched no released version at all.
+
+### A check that can pass by luck is failing
+
+When a test turns out to be nondeterministic, stop and make it
+deterministic before merging anything through it; rerunning until
+green is papering over. Treat the first unexplained flake as a defect
+with a root cause, not weather.
+_Anchor:_ a flaky assertion passed one PR's required CI job and failed
+the next identical run minutes later; the two-line fix existed only
+because the failure was investigated instead of rerun.
+
+### Track work in at most two places
+
+The issue tracker is the single home for open work items (tasks, bugs,
+follow-ups); memory and docs hold pointers to it, never a second live
+list of what's outstanding. This is distinct from the canonical-
+decisions-file rule above (that one governs locked decisions, not open
+work): prune finished items when they close, and resurface every open
+item at session start, however old.
+_Anchor:_ a project kept work state in three places; finished issues
+were never pruned, open issues were never resurfaced, and a session
+scratchpad list silently became a third divergent copy.
 
 ---
 
@@ -401,6 +462,26 @@ _Anchor:_ two implementation agents in one session each launched their
 final test suite in the background and stopped to "wait" despite
 explicit foreground-only instructions; both delivered complete results
 after a one-line nudge.
+
+### One writer per repo at a time; check before merging
+
+Before merging or releasing, re-fetch and check for other active
+sessions' open PRs and recent mainline movement. A second writer
+merging mid-orchestration invalidates in-flight audits and can leave
+provenance untraceable after the fact.
+_Anchor:_ a PR was merged by a concurrent session no one could later
+identify, minutes after another session's audit snapshot; the version
+drifted and the audit had to be redone against a moved main.
+
+### End every session with a rules retrospective
+
+Before handoff, walk the session's incidents against this file's
+add-criteria and propose additions through this repo's issue flow; a
+lesson that lives only in a transcript or a repo-local issue is lost
+to every other project.
+_Anchor:_ an orchestration session filed its lessons as a repo-local
+issue only; the owner had to ask explicitly before the generalizable
+rules were proposed to the global file every session actually loads.
 
 ---
 
