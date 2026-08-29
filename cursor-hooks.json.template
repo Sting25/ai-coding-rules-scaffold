@@ -1,5 +1,5 @@
 {
-  "//": "ai-coding-rules-scaffold — OPT-IN agent-runtime guardrails for Cursor (the Cursor sibling of claude-settings.json). Installed by `install.sh --cursor` to .cursor/hooks.json, or merge the `hooks` key into an existing one. The beforeShellExecution hook runs the SAME .githooks/lib/agent-precheck script Claude Code uses, scanning the command the agent is about to run against .forbidden-patterns/shell.txt (curl|bash, rm -rf /, chmod 777, …). agent-precheck exits 2 to block, which Cursor treats as a deny.",
+  "//": "ai-coding-rules-scaffold — OPT-IN agent-runtime guardrails for Cursor (the Cursor sibling of claude-settings.json). Installed by `install.sh --cursor` to .cursor/hooks.json, or merge the `hooks` key into an existing one. beforeShellExecution runs the SAME .githooks/lib/agent-precheck script Claude Code uses, scanning the command the agent is about to run against .forbidden-patterns/shell.txt (curl|bash, rm -rf /, chmod 777, …); agent-precheck exits 2 to block, which Cursor treats as a deny. beforeReadFile runs the same script against .githooks/lib/credential-read-patterns.txt (the Cursor sibling of Claude's native permissions.deny credential list) and responds with {\"permission\":\"deny\",...} JSON on stdout instead — beforeReadFile has no documented exit-code contract, only the JSON response.",
 
   "version": 1,
   "hooks": {
@@ -9,8 +9,15 @@
         "command": ".githooks/lib/agent-precheck",
         "failClosed": false
       }
+    ],
+    "beforeReadFile": [
+      {
+        "//": "Same script, different contract: beforeReadFile has no exit-2 convention, so agent-precheck detects this payload shape (a top-level .file_path with no .command/.tool_name) and answers with {\"permission\":\"allow\"} or {\"permission\":\"deny\",\"user_message\":...} on stdout instead of an exit code. failClosed stays false for the same fail-OPEN reason as above.",
+        "command": ".githooks/lib/agent-precheck",
+        "failClosed": false
+      }
     ]
   },
 
-  "//note": "Cursor has no hook that can block a WRITE (afterFileEdit fires only after the edit has landed), so unlike the Claude setup the secret-on-write scan is not portable here; beforeShellExecution is the high-ROI piece that is. Cursor's beforeReadFile CAN deny a read, so the Claude credential-file deny-list is portable in principle; this template does not wire it. The pre-commit secret scanner still catches a hardcoded credential at commit time on either runtime. Schema verified against https://cursor.com/docs/agent/hooks (2026-08-28)."
+  "//note": "Cursor has no hook that can block a WRITE (afterFileEdit fires only after the edit has landed), so unlike the Claude setup the secret-on-write scan is not portable here; beforeShellExecution and beforeReadFile are the two pieces that are. Schema verified against https://cursor.com/docs/agent/hooks (2026-08-29)."
 }
