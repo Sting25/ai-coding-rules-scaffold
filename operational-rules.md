@@ -389,6 +389,19 @@ confidently, the right move is to ask, not to guess and proceed.
 Confident-sounding wrong answers are more expensive than honest
 "I'm not sure, here's what I'd need to know" responses.
 
+### Nudge a stalled delegate; a promise to wait is not a report
+
+A delegated agent that ends its turn saying it will wait for a
+background run has stalled: the notification it is waiting for is not
+coming. Prompt-level "run everything in the foreground" instructions
+reduce but do not prevent this. Send the agent one direct message to
+run the remaining work in the foreground and deliver its full report;
+the nudge reliably recovers both the agent and the work.
+_Anchor:_ two implementation agents in one session each launched their
+final test suite in the background and stopped to "wait" despite
+explicit foreground-only instructions; both delivered complete results
+after a one-line nudge.
+
 ---
 
 ## Adding rules to this document
