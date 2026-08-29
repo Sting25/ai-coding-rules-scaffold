@@ -97,6 +97,15 @@ versioning follows [SemVer](https://semver.org/).
   agent or developer runs; this closes that gap with the same number.
   `.npmrc` is user-owned (`cp_safe`), so a re-run never overwrites a
   project's own copy without `--force`.
+- **Optional Claude Code Skill packaging (`install.sh --claude-skill`,
+  #118 part 2).** Installs `.claude/skills/coding-rules/SKILL.md`, a Skill
+  that tells Claude Code to read the project's installed `coding-rules.md`
+  and `operational-rules.md` in full on demand (before writing/editing
+  code, before a commit, or when asked about this project's conventions).
+  A third, distinct loading path alongside the always-installed AGENTS.md
+  summary (imported into every turn, but only links to the full files by
+  name) and `--claude`'s runtime hooks (block a bad tool call as it
+  happens); combine freely with either. User-owned (`cp_safe`).
 
 ### Changed
 

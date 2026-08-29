@@ -173,6 +173,9 @@ remove_if_unmodified ".github/workflows/socket-security.yml" "$SCAFFOLD_DIR/.git
 # Opt-in npm install-layer cooldown (only present if installed with
 # --npm-cooldown, #117).
 remove_if_unmodified ".npmrc" "$SCAFFOLD_DIR/.npmrc.template"
+# Opt-in Claude Code Skill (only present if installed with --claude-skill,
+# #118 pt 2).
+remove_if_unmodified ".claude/skills/coding-rules/SKILL.md" "$SCAFFOLD_DIR/claude-skill/coding-rules/SKILL.md.template"
 
 # Likely-customized files — only with --all
 if [ "$REMOVE_ALL" -eq 1 ]; then
@@ -184,7 +187,8 @@ fi
 
 # Clean up empty dirs the installer created
 # local.d before .githooks, so an emptied local.d lets .githooks go too.
-for dir in .githooks/lib .githooks/local.d .githooks .github/workflows .github .claude .cursor; do
+for dir in .githooks/lib .githooks/local.d .githooks .github/workflows .github \
+           .claude/skills/coding-rules .claude/skills .claude .cursor; do
   [ -d "$dir" ] || continue
   if rmdir "$dir" 2>/dev/null; then
     echo "removed empty: $dir"

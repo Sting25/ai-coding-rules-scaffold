@@ -22,6 +22,8 @@
 #   install.sh --socket-ci   # also install the Socket Firewall supply-chain gate
 #   install.sh --npm-cooldown # also install .npmrc's min-release-age (delays
 #                            # newly published npm versions, needs npm >=11.10)
+#   install.sh --claude-skill # also install an on-demand Claude Code Skill
+#                            # that loads coding-rules.md/operational-rules.md
 #   install.sh --all-langs  # install every language's forbidden-pattern file
 #   install.sh --coverage-gate # install the patch-coverage gate INSTEAD of the
 #                            # plain tests.yml (tests still run, plus a stricter
@@ -67,6 +69,7 @@ DEPENDENCY_REVIEW=0
 ZIZMOR_CI=0
 SOCKET_CI=0
 NPM_COOLDOWN=0
+CLAUDE_SKILL=0
 ALL_LANGS=0
 COVERAGE_GATE=0
 NO_TEST_WORKFLOW=0
@@ -89,11 +92,12 @@ for arg in "$@"; do
     --zizmor-ci)  ZIZMOR_CI=1 ;;
     --socket-ci)  SOCKET_CI=1 ;;
     --npm-cooldown) NPM_COOLDOWN=1 ;;
+    --claude-skill) CLAUDE_SKILL=1 ;;
     --all-langs)  ALL_LANGS=1 ;;
     --coverage-gate) COVERAGE_GATE=1 ;;
     --no-test-workflow) NO_TEST_WORKFLOW=1 ;;
     --no-install) NO_INSTALL=1 ;;
-    --help|-h)    sed -n '2,53p' "$0"; exit 0 ;;
+    --help|-h)    sed -n '2,55p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -429,12 +433,14 @@ if [ "$DEPENDENCY_REVIEW" -eq 1 ]; then
   echo "note: dependency-review.yml needs GitHub's Dependency Graph (on by default for public repos; needs GitHub Advanced Security for private repos, or it errors)."
 fi
 
-# Opt-in zizmor / Socket Firewall CI gates (--zizmor-ci, --socket-ci) and the
-# npm install-layer cooldown (--npm-cooldown, #117); function bodies live in
-# install-lib.sh to keep this file under its own 500-line cap (issue #84).
+# Opt-in zizmor / Socket Firewall CI gates (--zizmor-ci, --socket-ci), npm
+# install-layer cooldown (--npm-cooldown, #117), and Claude Skill packaging
+# (--claude-skill, #118); function bodies live in install-lib.sh to keep this
+# file under its own 500-line cap (issue #84).
 install_opt_in_zizmor_ci
 install_opt_in_socket_ci
 install_opt_in_npm_cooldown
+install_opt_in_claude_skill
 
 # Test-execution CI workflow (#97): DEFAULT-ON, exactly one of two shapes,
 # plus a recorded opt-out (--no-test-workflow). See install-lib.sh's

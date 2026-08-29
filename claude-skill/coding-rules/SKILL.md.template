@@ -1,0 +1,27 @@
+---
+name: coding-rules
+description: Load this project's installed coding rules on demand. Use before writing, editing, or reviewing code in this repo, before staging a commit, or whenever asked about this project's guardrails, conventions, forbidden patterns, or engineering/process rules. Complements AGENTS.md, which imports the same two files for always-on context; this Skill exists for a session or tool that does not load AGENTS.md into every turn.
+---
+
+# Coding rules (on demand)
+
+This project has ai-coding-rules-scaffold installed (install.sh --claude-skill,
+issue #118). Two files at the project root carry the actual rules:
+
+- `coding-rules.md`, code-level rules: forbidden patterns, style, security.
+- `operational-rules.md`, process and collaboration rules: pre-flight checks
+  before long jobs, commit discipline, scope discipline, surfacing
+  uncertainty instead of guessing.
+
+When this Skill triggers, read both files in full before writing or editing
+code, before a commit, or before answering a question about this project's
+conventions, and treat every rule in them as binding for the current task.
+
+AGENTS.md (imported into every turn via CLAUDE.md's `@AGENTS.md`) already
+summarizes some of this and links to both files by name; it does not inline
+their full text on every turn, by design, to keep the always-loaded context
+small. This Skill is what actually pulls the full text in, on demand, at the
+moments it matters, instead of relying on the summary alone.
+
+If either file is missing from the project root, say so plainly rather than
+guessing at rules that were never installed; do not fabricate a rule.

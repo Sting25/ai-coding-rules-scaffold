@@ -323,6 +323,7 @@ _pne() { note "$1"; PNE_ANY=1; }
 [ -f .cursor/hooks.json ]                      || _pne "Cursor agent guardrails: not installed. Enable with install.sh --cursor"
 [ -f .githooks/commit-msg ]                    || _pne "commit-msg hook (Conventional Commits): not installed. Enable with install.sh --commit-msg"
 [ -f .npmrc ]                                   || _pne "npm install-layer cooldown (.npmrc min-release-age, delays freshly published versions): not installed. Enable with install.sh --npm-cooldown"
+[ -f .claude/skills/coding-rules/SKILL.md ]     || _pne "Claude Code Skill (on-demand rules loading): not installed. Enable with install.sh --claude-skill"
 [ "$PNE_ANY" -eq 1 ] || ok "every opt-in protection is enabled in this project"
 
 # --- summary ----------------------------------------------------------------

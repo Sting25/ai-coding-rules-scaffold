@@ -319,16 +319,16 @@ install_test_workflow_ci() {
   fi
 }
 
-# install_opt_in_* functions below (zizmor CI, Socket CI, npm cooldown #117):
-# each is a dedicated flag installing one opt-in artifact plus an explanatory
-# note, extracted here rather than left inline in install.sh for the same
-# reason install_test_workflow_ci and install-verify.sh exist: install.sh is
-# pinned at its own 500-line module cap (issue #84), and these were the lines
-# that pushed it over. zizmor/socket use cp_scaffold_preserve (CI workflows,
-# drift-preserving, #110/#113 policy); npm-cooldown uses cp_safe instead:
-# .npmrc is USER-OWNED (a project may already have one, or may hand-edit the
-# shipped copy), not scaffold-owned CI, the same policy as ruff.toml /
-# .scaffold.toml.
+# install_opt_in_* functions below (zizmor CI, Socket CI, npm cooldown #117,
+# Claude Skill #118): each is a dedicated flag installing one opt-in artifact
+# plus an explanatory note, extracted here rather than left inline in
+# install.sh for the same reason install_test_workflow_ci and
+# install-verify.sh exist: install.sh is pinned at its own 500-line module
+# cap (issue #84), and these were the lines that pushed it over. zizmor/socket
+# use cp_scaffold_preserve (CI workflows, drift-preserving, #110/#113 policy);
+# npm-cooldown and claude-skill use cp_safe instead: .npmrc and SKILL.md are
+# USER-OWNED (a project may hand-edit either), not scaffold-owned CI, the same
+# policy as ruff.toml / .scaffold.toml.
 install_opt_in_zizmor_ci() {
   if [ "$ZIZMOR_CI" -eq 1 ]; then
     cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/zizmor.yml.template" ".github/workflows/zizmor.yml"
@@ -347,6 +347,13 @@ install_opt_in_npm_cooldown() {
   if [ "$NPM_COOLDOWN" -eq 1 ]; then
     cp_safe "$SCAFFOLD_DIR/.npmrc.template" ".npmrc"
     echo "note: .npmrc sets min-release-age=7 (npm >=11.10.0 only; an older npm just warns and ignores the key, install still proceeds). See the template header for the 7-day choice and the 'before' interaction."
+  fi
+}
+
+install_opt_in_claude_skill() {
+  if [ "$CLAUDE_SKILL" -eq 1 ]; then
+    cp_safe "$SCAFFOLD_DIR/claude-skill/coding-rules/SKILL.md.template" ".claude/skills/coding-rules/SKILL.md"
+    echo "note: SKILL.md gives Claude Code on-demand loading of coding-rules.md / operational-rules.md, a complement to the always-loaded AGENTS.md summary (--claude installs runtime hooks instead, a different mechanism)."
   fi
 }
 
@@ -460,6 +467,7 @@ print_not_enabled_summary() {
   [ -f .github/workflows/zizmor.yml ]            || { echo "  - zizmor CI gate (audits your own GitHub Actions workflows): not enabled. Enable with ./install.sh --zizmor-ci"; any=1; }
   [ -f .github/workflows/socket-security.yml ]   || { echo "  - Socket Firewall CI gate (blocks a malicious/typosquat package at install time): not enabled. Enable with ./install.sh --socket-ci"; any=1; }
   [ -f .npmrc ]                                  || { echo "  - npm install-layer cooldown (.npmrc min-release-age, delays freshly published versions): not enabled. Enable with ./install.sh --npm-cooldown"; any=1; }
+  [ -f .claude/skills/coding-rules/SKILL.md ]    || { echo "  - Claude Code Skill (on-demand rules loading): not enabled. Enable with ./install.sh --claude-skill"; any=1; }
   [ -f .claude/settings.json ]                   || { echo "  - Claude Code agent guardrails: not enabled. Enable with ./install.sh --claude"; any=1; }
   [ -f .cursor/hooks.json ]                      || { echo "  - Cursor agent guardrails: not enabled. Enable with ./install.sh --cursor"; any=1; }
   [ -f .githooks/commit-msg ]                    || { echo "  - commit-msg hook (Conventional Commits): not enabled. Enable with ./install.sh --commit-msg"; any=1; }
