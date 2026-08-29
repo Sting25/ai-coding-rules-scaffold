@@ -20,6 +20,10 @@
 #                            # default-on)
 #   install.sh --zizmor-ci   # also install the zizmor GitHub Actions audit gate
 #   install.sh --socket-ci   # also install the Socket Firewall supply-chain gate
+#   install.sh --npm-cooldown # also install .npmrc's min-release-age (delays
+#                            # newly published npm versions, needs npm >=11.10)
+#   install.sh --claude-skill # also install an on-demand Claude Code Skill
+#                            # that loads coding-rules.md/operational-rules.md
 #   install.sh --all-langs  # install every language's forbidden-pattern file
 #   install.sh --coverage-gate # install the patch-coverage gate INSTEAD of the
 #                            # plain tests.yml (tests still run, plus a stricter
@@ -33,23 +37,22 @@
 # Test execution in CI is DEFAULT-ON (#97): a plain install writes
 # `.github/workflows/tests.yml` so pytest/vitest run on every PR/push, no
 # coverage threshold. `--coverage-gate` swaps that for `.github/workflows/coverage.yml`
-# (same tests, plus a diff-cover patch-coverage gate) rather than installing both,
-# never both, so a repo's tests never run twice in the same CI run. Only
-# `--no-test-workflow` leaves a repo with no test execution in CI, and it says so
-# loudly in the summary below, per the "record every skip" rule.
+# (same tests, plus a diff-cover patch-coverage gate), never both installed at
+# once, so a repo's tests never run twice in the same CI run. Only
+# `--no-test-workflow` leaves a repo with no test execution in CI, and it says
+# so loudly in the summary below, per the "record every skip" rule.
 #
 # On re-run (upgrade): scaffold-owned code (the hook, .githooks/lib/*, the
 # commit-msg hook) is REFRESHED when it differs from the shipped version, so
-# security fixes reach you just by re-running, and every file it overwrites
-# is BACKED UP to .scaffold-bak first, so an edit you made to one is
-# recoverable and the "backed up:" line tells you it happened. User-owned
-# configs are left alone. A drifted .forbidden-patterns/*.txt, or a drifted
-# CI workflow (lint.yml, tests.yml, coverage.yml, gitleaks.yml,
-# dependency-review.yml, zizmor.yml, socket-security.yml), only prints
-# a notice and keeps your file (use --force to replace it: your
-# customizations are backed up to .scaffold-bak first).
-# .githooks/local.d/ is never written to at all: it's where project-local checks
-# live precisely so an upgrade cannot unwire them.
+# security fixes reach you just by re-running, and every file it overwrites is
+# BACKED UP to .scaffold-bak first, so an edit you made to one is recoverable
+# and the "backed up:" line tells you it happened. User-owned configs are left
+# alone. A drifted .forbidden-patterns/*.txt or CI workflow (lint.yml,
+# tests.yml, coverage.yml, gitleaks.yml, dependency-review.yml, zizmor.yml,
+# socket-security.yml) only prints a notice and keeps your file (--force
+# replaces it, backed up first). .githooks/local.d/ is never written to at
+# all: it's where project-local checks live precisely so an upgrade cannot
+# unwire them.
 
 set -euo pipefail
 
@@ -65,6 +68,8 @@ GITLEAKS_CI=0
 DEPENDENCY_REVIEW=0
 ZIZMOR_CI=0
 SOCKET_CI=0
+NPM_COOLDOWN=0
+CLAUDE_SKILL=0
 ALL_LANGS=0
 COVERAGE_GATE=0
 NO_TEST_WORKFLOW=0
@@ -86,11 +91,13 @@ for arg in "$@"; do
     --dependency-review) DEPENDENCY_REVIEW=1 ;;
     --zizmor-ci)  ZIZMOR_CI=1 ;;
     --socket-ci)  SOCKET_CI=1 ;;
+    --npm-cooldown) NPM_COOLDOWN=1 ;;
+    --claude-skill) CLAUDE_SKILL=1 ;;
     --all-langs)  ALL_LANGS=1 ;;
     --coverage-gate) COVERAGE_GATE=1 ;;
     --no-test-workflow) NO_TEST_WORKFLOW=1 ;;
     --no-install) NO_INSTALL=1 ;;
-    --help|-h)    sed -n '2,52p' "$0"; exit 0 ;;
+    --help|-h)    sed -n '2,55p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -145,17 +152,12 @@ if [ "$MODE" = "auto" ]; then
 fi
 
 # --- file ownership & the install/upgrade model -----------------------------
-# The install/upgrade policy helpers: cp_scaffold (scaffold-owned CODE,
-# refreshed on re-run), cp_safe (USER-OWNED, never auto-replaced), cp_pattern
-# (.forbidden-patterns/*.txt, notify-on-drift), cp_scaffold_preserve
-# (scaffold-owned CI workflows: lint.yml, tests.yml, coverage.yml,
-# gitleaks.yml, dependency-review.yml, zizmor.yml, socket-security.yml,
-# notify-on-drift like cp_pattern, since #110), and the shared
-# _cp_replace / _backup mechanism (where the A7 symlink defenses live) plus
-# mkx, are defined in install-lib.sh. They're SOURCED (not exec'd) so they
-# run in this shell with its globals (FORCE) and `set -euo pipefail`.
-# Extracted to keep this script under the scaffold's own 500-line
-# module-size cap; see install-lib.sh for the full policy rationale.
+# The install/upgrade policy helpers (cp_scaffold, cp_safe, cp_pattern,
+# cp_scaffold_preserve, the shared _cp_replace / _backup mechanism where the
+# A7 symlink defenses live, and mkx) are defined in install-lib.sh; see its
+# own header comment for the full per-helper policy. SOURCED (not exec'd) so
+# they run in this shell with its globals (FORCE) and `set -euo pipefail`.
+# Extracted to keep this script under the scaffold's own 500-line cap.
 # shellcheck source=install-lib.sh
 . "$SCAFFOLD_DIR/install-lib.sh"
 
@@ -164,11 +166,9 @@ fi
 # the pointer template. If present, append a marked block importing AGENTS.md
 # once, and only if no @AGENTS.md import already exists.
 install_claude_md() {
-  # A symlink at CLAUDE.md is suspicious: `[ -e ]` is false for a DANGLING link
-  # (so the create branch's cp would write the pointer THROUGH it, outside the
-  # repo) and FOLLOWS a live one (so the `>>` append would append through it).
-  # Test `-L` first and never write through it — the same A7 defense the cp_*
-  # helpers carry, which this bespoke handler had been missing (B1).
+  # A symlink at CLAUDE.md is suspicious (`[ -e ]` is false for a dangling one
+  # and follows a live one): test `-L` first and never write through it, the
+  # same A7 defense the cp_* helpers carry, missing from this handler (B1).
   if [ -L "CLAUDE.md" ]; then
     echo "skip (exists, symlink): CLAUDE.md — left untouched; a scaffold path that is a symlink is suspicious. Replace it with a real file to wire the AGENTS.md import."
     return
@@ -193,10 +193,9 @@ install_claude_md() {
 }
 
 # warn_pair_gap / warn_pair_note: install.sh's reporters for install-lib.sh's
-# check_paired_artifacts (#96). install.sh never fails the run over one of
-# these findings (they are advisory, not install errors), so both just print;
-# the gap/note distinction stays in the wording, matching how scaffold-doctor.sh
-# reports the exact same states with a real exit-status difference.
+# check_paired_artifacts (#96); advisory only, so both just print (install.sh
+# never fails the run over one), matching scaffold-doctor.sh's wording for
+# the same states, which DO carry a real exit-status difference there.
 warn_pair_gap() {
   echo "warning: $1"
   echo "         fix: $2"
@@ -209,9 +208,8 @@ warn_pair_note() {
 # so an existing one is never clobbered (even with --force). Skip if present;
 # create from template only when absent.
 install_agents_md() {
-  # `[ -e ]` is false for a dangling symlink, so the create branch's cp would
-  # write the template THROUGH it to an outside path. Test `-L` first and skip
-  # (same A7 defense as the cp_* helpers, missing from this handler — B1).
+  # `[ -e ]` is false for a dangling symlink; test `-L` first and skip (same
+  # A7 defense as the cp_* helpers, missing from this handler, B1).
   if [ -L "AGENTS.md" ]; then
     echo "skip (exists, symlink): AGENTS.md — left untouched; a scaffold path that is a symlink is suspicious. Replace it with a real file to install the template."
     return
@@ -435,12 +433,14 @@ if [ "$DEPENDENCY_REVIEW" -eq 1 ]; then
   echo "note: dependency-review.yml needs GitHub's Dependency Graph (on by default for public repos; needs GitHub Advanced Security for private repos, or it errors)."
 fi
 
-# Opt-in zizmor / Socket Firewall CI gates (--zizmor-ci, --socket-ci). Same
-# shape as --gitleaks-ci / --dependency-review above (cp_scaffold_preserve,
-# opt-in, --force replaces); the function bodies live in install-lib.sh to
-# keep this file under its own 500-line cap (issue #84).
+# Opt-in zizmor / Socket Firewall CI gates (--zizmor-ci, --socket-ci), npm
+# install-layer cooldown (--npm-cooldown, #117), and Claude Skill packaging
+# (--claude-skill, #118); function bodies live in install-lib.sh to keep this
+# file under its own 500-line cap (issue #84).
 install_opt_in_zizmor_ci
 install_opt_in_socket_ci
+install_opt_in_npm_cooldown
+install_opt_in_claude_skill
 
 # Test-execution CI workflow (#97): DEFAULT-ON, exactly one of two shapes,
 # plus a recorded opt-out (--no-test-workflow). See install-lib.sh's

@@ -113,6 +113,8 @@ Tests run in CI by default: a plain install also drops `.github/workflows/tests.
 ./install.sh --dependency-review # also install the dependency-review CI gate (opt-in: needs GitHub Advanced Security on a private repo, or it errors)
 ./install.sh --zizmor-ci    # also install the zizmor GitHub Actions audit gate (opt-in: adds a third-party pip package)
 ./install.sh --socket-ci    # also install the Socket Firewall supply-chain gate (opt-in: adds a third-party action dependency)
+./install.sh --npm-cooldown # also install .npmrc's min-release-age package cooldown (opt-in: needs npm >= 11.10.0, older npm just warns and ignores it)
+./install.sh --claude-skill # also install an on-demand Claude Code Skill wrapping coding-rules.md/operational-rules.md
 ./install.sh --all-langs    # install every language's forbidden-pattern file
 ./install.sh --coverage-gate # swap the default tests.yml for coverage.yml (tests + patch-coverage gate)
 ./install.sh --no-test-workflow # opt out of the default CI test-execution workflow (loud recorded skip)
@@ -215,7 +217,8 @@ You can use `operational-rules.md` (and/or `coding-rules.md`) standalone, withou
   @coding-rules.md
   ```
   The `@` directive auto-loads on session start.
-- **Cursor / Aider / Cline / etc.** — add the filename(s) to whatever config the tool reads every session (`.cursorrules`, `.aider.conf.yml`, `.clinerules`).
+- **Cursor:** create `.cursor/rules/rules.mdc` (or use the command palette's "New Cursor Rule") with the frontmatter `alwaysApply: true` and one line under it: `Follow the rules in operational-rules.md and coding-rules.md.` The root-level `.cursorrules` file older guides point to is [legacy and will be deprecated](https://cursor.com/help/customization/rules).
+- **Aider / Cline / etc.**: add the filename(s) to whatever config the tool reads every session (`.aider.conf.yml`, `.clinerules`).
 
 No `install.sh`, no hooks, no CI — the docs are useful in isolation. The full scaffold layers on the enforcement (commit hooks + CI mirror) that turns the rules into machine-checkable failures.
 

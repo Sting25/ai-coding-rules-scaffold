@@ -12,5 +12,5 @@
     ]
   },
 
-  "//note": "Cursor has no before-WRITE hook that can block, so unlike the Claude setup the secret-on-write scan and the credential-file read deny-list are not portable here; beforeShellExecution is the high-ROI piece that is. The pre-commit secret scanner still catches a hardcoded credential at commit time on either runtime."
+  "//note": "Cursor has no hook that can block a WRITE (afterFileEdit fires only after the edit has landed), so unlike the Claude setup the secret-on-write scan is not portable here; beforeShellExecution is the high-ROI piece that is. Cursor's beforeReadFile CAN deny a read, so the Claude credential-file deny-list is portable in principle; this template does not wire it. The pre-commit secret scanner still catches a hardcoded credential at commit time on either runtime. Schema verified against https://cursor.com/docs/agent/hooks (2026-08-28)."
 }
