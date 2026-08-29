@@ -170,6 +170,9 @@ remove_if_unmodified ".github/workflows/zizmor.yml" "$SCAFFOLD_DIR/.github/workf
 # Opt-in Socket Firewall supply-chain CI gate (only present if installed
 # with --socket-ci).
 remove_if_unmodified ".github/workflows/socket-security.yml" "$SCAFFOLD_DIR/.github/workflows/socket-security.yml.template"
+# Opt-in npm install-layer cooldown (only present if installed with
+# --npm-cooldown, #117).
+remove_if_unmodified ".npmrc" "$SCAFFOLD_DIR/.npmrc.template"
 
 # Likely-customized files — only with --all
 if [ "$REMOVE_ALL" -eq 1 ]; then

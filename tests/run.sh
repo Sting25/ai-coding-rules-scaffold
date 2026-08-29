@@ -57,7 +57,8 @@ for case_file in \
   "$HERE/cases/19-test-workflow.sh" \
   "$HERE/cases/20-paired-artifacts.sh" \
   "$HERE/cases/21-ci-workflow-drift.sh" \
-  "$HERE/cases/22-large-file-guard.sh"; do
+  "$HERE/cases/22-large-file-guard.sh" \
+  "$HERE/cases/23-npm-cooldown.sh"; do
   # shellcheck source=/dev/null
   . "$case_file"
 done

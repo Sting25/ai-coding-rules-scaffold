@@ -37,19 +37,14 @@
 #                additions survive in .scaffold-bak for manual merge-back.
 #   cp_scaffold_preserve  scaffold-owned CI workflows that a project is expected
 #                to hand-edit or that commonly arrive pre-authored: today,
-#                .github/workflows/lint.yml, tests.yml, coverage.yml and
-#                gitleaks.yml. Same drift-preserving behavior as cp_pattern:
-#                a re-run only NOTIFIES on drift and keeps the user's edits;
-#                --force backs up + replaces. Added for lint.yml in #105: a
-#                plain cp_scaffold refresh there silently discarded a
-#                consumer's CI customization (measured on a real downstream
-#                repo: 23 deletions, 0 insertions) with no signal beyond a log
-#                line and no way back except the .scaffold-bak. #110 extended
-#                the same policy to tests.yml, coverage.yml and gitleaks.yml:
-#                the same silent-discard risk applies to any hand-edited or
-#                pre-existing workflow file, not just lint.yml, and there was
-#                no principled reason to keep those three on the overwrite
-#                policy once the mechanism existed.
+#                lint.yml, tests.yml, coverage.yml and gitleaks.yml. Same
+#                drift-preserving behavior as cp_pattern: a re-run only
+#                NOTIFIES on drift and keeps the user's edits; --force backs
+#                up + replaces. Added for lint.yml in #105 (a plain
+#                cp_scaffold refresh there measurably discarded a consumer's
+#                CI customization with no way back except the .scaffold-bak)
+#                and extended to the other three in #110; see its own
+#                function comment below for the full history.
 #
 # The four policies share one write MECHANISM (_cp_replace) and one backup
 # routine (_backup), so the A7 symlink defenses live in exactly one place.
@@ -138,26 +133,20 @@ cp_safe() {
 # at a scaffold-owned path is always replaced with the real scanner (better than
 # leaving a dead link there) and never written through.
 #
-# ALWAYS backs up before overwriting — not just under --force (issue #72). The
-# old policy skipped the routine-refresh backup on the premise that "the prior
-# bytes are scaffold code, recoverable from git history and the scaffold repo."
-# That premise is TRUE for an untouched destination and FALSE for an edited one,
-# and nothing tested which it was. .githooks/pre-commit is the file a project
-# MUST edit to wire in a local check (.github/workflows/lint.yml used to be the
-# other one, until #105 moved it to cp_scaffold_preserve below: a project
-# customizing its CI turned out to be at least as common as one customizing the
-# hook, and losing it needed more than a backup, it needed not being
-# overwritten at all), so the false case was the likely one, and its symptom
-# was silent: the local check script stayed on disk, its call site was reset,
-# nothing errored, and the guardrail became decoration. Backing up unconditionally
-# makes the loss recoverable AND prints a "backed up:" line, which is the
-# signal that was missing. Cost is a .scaffold-bak beside each file that
-# actually changed in the upgrade; `.githooks/local.d/` now exists so local
-# checks need not live in a scaffold-owned file at all.
+# ALWAYS backs up before overwriting, not just under --force (issue #72). The
+# old policy skipped the refresh backup on the premise that the prior bytes
+# were recoverable scaffold code: true for an untouched destination, false for
+# an edited one, and nothing tested which case applied. That mattered most for
+# .githooks/pre-commit, the file a project MUST edit to wire in a local check:
+# a reset call site failed silently, the guardrail became decoration, and
+# nothing said so. Unconditional backup makes the loss recoverable and prints
+# a "backed up:" line, the signal that was missing. Cost is one .scaffold-bak
+# per changed file; `.githooks/local.d/` now exists so local checks need not
+# live in a scaffold-owned file at all.
 #
-# If _backup fails (>99 slots), we skip this ONE file rather than overwrite it
-# unbacked — same policy as cp_safe/cp_pattern (B12). That defers a scanner
-# refresh, so _backup prints why and tells the user to clean up and re-run.
+# If _backup fails (>99 slots), skip this ONE file rather than overwrite it
+# unbacked, same policy as cp_safe/cp_pattern (B12); _backup prints why and
+# tells the user to clean up and re-run.
 cp_scaffold() {
   local src=$1 dst=$2
   if [ -e "$dst" ] || [ -L "$dst" ]; then
@@ -330,15 +319,16 @@ install_test_workflow_ci() {
   fi
 }
 
-# install_opt_in_zizmor_ci / install_opt_in_socket_ci: same shape as
-# --gitleaks-ci / --dependency-review in install.sh: a dedicated flag installs
-# the workflow via cp_scaffold_preserve (drift-preserving, same policy as
-# gitleaks.yml / dependency-review.yml since #110 / #113) and prints one
-# explanatory note. Extracted here rather than left inline (unlike
-# --gitleaks-ci / --dependency-review) for the same reason
-# install_test_workflow_ci and install-verify.sh exist: install.sh is pinned
-# at its own 500-line module cap (issue #84), and these two opt-ins were the
-# lines that pushed it over.
+# install_opt_in_* functions below (zizmor CI, Socket CI, npm cooldown #117):
+# each is a dedicated flag installing one opt-in artifact plus an explanatory
+# note, extracted here rather than left inline in install.sh for the same
+# reason install_test_workflow_ci and install-verify.sh exist: install.sh is
+# pinned at its own 500-line module cap (issue #84), and these were the lines
+# that pushed it over. zizmor/socket use cp_scaffold_preserve (CI workflows,
+# drift-preserving, #110/#113 policy); npm-cooldown uses cp_safe instead:
+# .npmrc is USER-OWNED (a project may already have one, or may hand-edit the
+# shipped copy), not scaffold-owned CI, the same policy as ruff.toml /
+# .scaffold.toml.
 install_opt_in_zizmor_ci() {
   if [ "$ZIZMOR_CI" -eq 1 ]; then
     cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/zizmor.yml.template" ".github/workflows/zizmor.yml"
@@ -350,6 +340,13 @@ install_opt_in_socket_ci() {
   if [ "$SOCKET_CI" -eq 1 ]; then
     cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/socket-security.yml.template" ".github/workflows/socket-security.yml"
     echo "note: socket-security.yml blocks a known-malicious or typosquat/hallucinated package AT INSTALL TIME, before its code runs. No API key needed for the default firewall-free mode."
+  fi
+}
+
+install_opt_in_npm_cooldown() {
+  if [ "$NPM_COOLDOWN" -eq 1 ]; then
+    cp_safe "$SCAFFOLD_DIR/.npmrc.template" ".npmrc"
+    echo "note: .npmrc sets min-release-age=7 (npm >=11.10.0 only; an older npm just warns and ignores the key, install still proceeds). See the template header for the 7-day choice and the 'before' interaction."
   fi
 }
 
@@ -462,6 +459,7 @@ print_not_enabled_summary() {
   [ -f .github/workflows/dependency-review.yml ] || { echo "  - dependency-review CI gate (blocks vulnerable/malicious deps on a PR): not enabled. Enable with ./install.sh --dependency-review"; any=1; }
   [ -f .github/workflows/zizmor.yml ]            || { echo "  - zizmor CI gate (audits your own GitHub Actions workflows): not enabled. Enable with ./install.sh --zizmor-ci"; any=1; }
   [ -f .github/workflows/socket-security.yml ]   || { echo "  - Socket Firewall CI gate (blocks a malicious/typosquat package at install time): not enabled. Enable with ./install.sh --socket-ci"; any=1; }
+  [ -f .npmrc ]                                  || { echo "  - npm install-layer cooldown (.npmrc min-release-age, delays freshly published versions): not enabled. Enable with ./install.sh --npm-cooldown"; any=1; }
   [ -f .claude/settings.json ]                   || { echo "  - Claude Code agent guardrails: not enabled. Enable with ./install.sh --claude"; any=1; }
   [ -f .cursor/hooks.json ]                      || { echo "  - Cursor agent guardrails: not enabled. Enable with ./install.sh --cursor"; any=1; }
   [ -f .githooks/commit-msg ]                    || { echo "  - commit-msg hook (Conventional Commits): not enabled. Enable with ./install.sh --commit-msg"; any=1; }

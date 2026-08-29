@@ -88,6 +88,15 @@ versioning follows [SemVer](https://semver.org/).
   before it reaches a manifest. README's "Already have commit history?"
   section recommends a one-time full-history secret scan (`gitleaks git
 .`) for a repo that predates the scaffold install.
+- **Opt-in npm install-layer cooldown (`install.sh --npm-cooldown`,
+  #117).** A new `.npmrc.template` sets `min-release-age=7`, delaying how
+  soon a freshly published npm package version becomes installable, needs
+  npm `>= 11.10.0` (older npm just warns and ignores the unrecognized key,
+  fail-open). Matches `.github/dependabot.yml`'s existing 7-day cooldown,
+  which only covers Dependabot's own PRs, not a manual `npm install` an
+  agent or developer runs; this closes that gap with the same number.
+  `.npmrc` is user-owned (`cp_safe`), so a re-run never overwrites a
+  project's own copy without `--force`.
 
 ### Changed
 
