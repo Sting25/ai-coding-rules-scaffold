@@ -215,7 +215,8 @@ You can use `operational-rules.md` (and/or `coding-rules.md`) standalone, withou
   @coding-rules.md
   ```
   The `@` directive auto-loads on session start.
-- **Cursor / Aider / Cline / etc.** — add the filename(s) to whatever config the tool reads every session (`.cursorrules`, `.aider.conf.yml`, `.clinerules`).
+- **Cursor:** create `.cursor/rules/rules.mdc` (or use the command palette's "New Cursor Rule") with the frontmatter `alwaysApply: true` and one line under it: `Follow the rules in operational-rules.md and coding-rules.md.` The root-level `.cursorrules` file older guides point to is [legacy and will be deprecated](https://cursor.com/help/customization/rules).
+- **Aider / Cline / etc.** — add the filename(s) to whatever config the tool reads every session (`.aider.conf.yml`, `.clinerules`).
 
 No `install.sh`, no hooks, no CI — the docs are useful in isolation. The full scaffold layers on the enforcement (commit hooks + CI mirror) that turns the rules into machine-checkable failures.
 

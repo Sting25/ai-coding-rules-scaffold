@@ -15,9 +15,10 @@ drop it in your project root and add `@operational-rules.md` to your
 `install.sh`, no hooks, no CI workflow needed.
 
 For Cursor, Cline, Aider, or other AI tools, add an equivalent
-reference to whatever config file the tool uses (`.cursorrules`,
-`.clinerules`, `CONVENTIONS.md`, etc.). The goal is that the agent
-sees this document at the start of every session.
+reference to whatever config file the tool uses (an `alwaysApply: true`
+project rule under `.cursor/rules/`, `.clinerules`, `CONVENTIONS.md`,
+etc.). The goal is that the agent sees this document at the start of
+every session.
 
 If you're using this without an AI agent, the document still works
 as a reference for human engineers. Read it before writing code,
