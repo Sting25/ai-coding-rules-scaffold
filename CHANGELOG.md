@@ -4,6 +4,49 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [v0.15.0] - 2026-09-01
+
+The test-guard release: a new opt-in `--test-guard` flag installs the
+test-integrity gate adopted from the harness review (#140 item 2), in
+two layers shipped as PRs #146 and #147. Back-filled changelog: both
+features merged the same day as this release.
+
+### Added
+
+- **`install.sh --test-guard`: the red-green test-integrity gate (#140
+  item 2, PR #146).** CI runs `.githooks/lib/check-red-green` on every
+  PR: each NEW test is executed against the base commit in a scratch
+  worktree and must FAIL there. A test that has never been observed to
+  fail has never been shown to test anything; a suite generated against
+  an implementation passes by construction. Deliberate green-on-base
+  tests (characterization before a refactor, coverage backfill) must
+  say so with `@pytest.mark.characterization(reason=...)`; the installer
+  prints the pytest.ini marker snippet rather than editing the
+  user-owned file. Installs four artifacts: the check, the
+  `test-guard.yml` PR workflow (drift-preserving), the mutation check
+  below, and a marker-guarded rules section appended once to user-owned
+  `coding-rules.md`.
+- **Advisory diff-scoped mutation layer (#145, PR #147).**
+  `.githooks/lib/check-mutation-diff` closes the blind spot
+  check-red-green documents in its own source: a test can be red on
+  base and still assert nothing about the new code's behaviour. It
+  mutates only the Python files the PR changed (mutmut==3.7.0, pinned
+  in CI, file-glob scoping) and reports, per file, every mutant the
+  suite fails to kill. Advisory-first: surviving mutants warn and exit
+  0; exit 1 is the `--max-mutants` cap ("split the PR"); exit 2 is
+  could-not-evaluate and IS a failure, never a skip. Verdicts parse
+  `mutants/*.py.meta` because mutmut 3.x exits 0 even when mutants
+  survive (measured, with the design facts recorded in the check's
+  docstring). Five non-blocking verification nits are recorded on #145.
+
+### Changed
+
+- **`install_opt_in_*` flag bodies moved to a new sourced module
+  `install-optin.sh`.** `install-lib.sh` sat exactly at the repo's own
+  500-line cap; the fix for a file at the cap is extraction, not a size
+  exemption. The new module is on `shellcheck.yml`'s explicit list, so
+  it is linted, not just present.
+
 ## [v0.14.0] - 2026-09-01
 
 The safety-harness adoption release: the two low-risk items from the
