@@ -8,6 +8,7 @@
   "files": [
     "install.sh",
     "install-lib.sh",
+    "install-interactive.sh",
     "install-verify.sh",
     "uninstall.sh",
     "scaffold-doctor.sh",
