@@ -54,12 +54,17 @@ Before your first commit each session, check whether this project's guardrails a
 
 At the end of a working session, and before you hand back a commit or open a PR, summarize the work in plain language. For a user who does not read code this is the only artifact they can actually judge; the diff, the check output, and the CI log all assume a reader who does. It is their decision surface, not a stand-in for review: you report, they decide, and nothing you write here makes your own output trustworthy.
 
-Four things, in words a non-programmer can act on:
+**Every claim must point at something the user can open or run.** Not "added validation" but "added validation; `pytest tests/test_payload.py` fails without the fix and passes with it". Across 23,247 agent-authored PRs, 45.4% of description/diff inconsistencies were "phantom changes": work described but never implemented ([arXiv:2601.04886](https://arxiv.org/abs/2601.04886)). Naming an artifact is what makes that detectable by someone who cannot read the diff.
+
+Five things, in words a non-programmer can act on:
 
 - **What changed and why**, described by behavior and consequence, not by filename, function, or command.
+- **What you ran, and what it actually reported.** Counts, not verdicts: "142 passed, 0 failed, 3 skipped", never "the suite passes". If you did not run it in this session, say that instead of implying you did.
 - **Anything destructive or hard to reverse** you did or are proposing: deleted rows, a dropped table, rewritten history, a force-push, an overwritten file, a migration against live data. Say whether it can be undone, and from what.
 - **Every guardrail you turned down, by name.** This is where "If you turn a check down, say so out loud" above lands: name the check, the file, and the reason, one line each. Never leave it to be noticed in the diff.
 - **What the user should check or decide before calling it done**: what you could not verify, the judgment call you made on their behalf, the provider dashboard or setting no diff can show. Per `operational-rules.md` you report the measurements; the verdict is theirs.
+
+Never report a guard, hook, or check you created without confirming it exists on disk (`ls -l` the file first). In [claude-code#34327](https://github.com/anthropics/claude-code/issues/34327) an agent reported having written a git hook to block `git reset --hard`; the hook was never written, and the next day the same command permanently destroyed 12 unpushed commits.
 
 Give it unprompted, and give it even when the answer is "nothing destructive, nothing turned down". A summary the user has to ask for is one they will not know to ask for.
 
