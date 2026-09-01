@@ -179,6 +179,22 @@ _Anchor:_ per-CUDA-call GPU lock acquisition caused worker thrash
 and out-of-memory failures because no single worker ever held the
 lock long enough to complete a contiguous compute unit.
 
+### Choose the strongest approach before starting, not the fastest one to finish
+
+Decide between the correct/robust approach and the quick one BEFORE
+writing the fix, not after. By the time work is done and under review,
+the fast path is already built and sunk cost pushes toward keeping it;
+the decision has to happen at the fork, not as a postmortem question.
+When speed or simplicity is the only reason to prefer one path over
+another, treat that as a reason to slow down and pick the stronger one,
+not a green light to proceed.
+_Anchor:_ restated explicitly and independently across multiple
+sessions as a standing directive, not tied to one incident: the fast
+path (first approach tried, workaround over root cause, suppression
+over fix) keeps winning by default unless it's weighed against a
+stronger alternative before work begins, since after the fact only a
+redo can fix a fast-but-wrong choice already shipped.
+
 ### Never print, cat, or echo secret files
 
 `.env` files, `credentials.json`, key files, OAuth tokens — never
