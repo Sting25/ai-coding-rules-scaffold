@@ -335,6 +335,20 @@ minimal; turn them on per project.
   advisory check a merging agent can route around), which the install note
   says out loud. From the harness review, issue #140 item 2.
 
+  The same gate also runs `check-mutation-diff`, a second layer closing a
+  gap red-green cannot: a test can be red on base and still assert nothing
+  about the new code's behaviour. It mutates only the lines the PR changed
+  and reports every mutant on them the suite fails to kill, per file, using
+  mutmut==3.7.0, pinned in CI (`pip install mutmut==3.7.0`, nothing needed
+  locally). Per issue #145's advisory-first design, surviving mutants print
+  a warning but never fail the job, so the layer can be turned on everywhere
+  without becoming a second red-green; only exit code 2 (mutmut missing or
+  the wrong pinned version, a broken baseline, a bad worktree/config, or a
+  timeout) fails the job, since that means the check could not evaluate
+  anything at all, not that it evaluated cleanly. Scoping is file-glob only:
+  mutmut 3.x has no function-level scoping, so a large file with one changed
+  line still has its whole file mutated.
+
 - **Socket Firewall CI gate (`install.sh --socket-ci` →
   `.github/workflows/socket-security.yml`).** Verifies a package is
   legitimate _before_ it is installed, not after: an LLM coding agent

@@ -176,6 +176,8 @@ remove_if_unmodified ".github/workflows/socket-security.yml" "$SCAFFOLD_DIR/.git
 # coding-rules.md is user-owned, same policy as every other user-owned edit.
 remove_if_unmodified ".github/workflows/test-guard.yml" "$SCAFFOLD_DIR/.github/workflows/test-guard.yml.template"
 remove_if_unmodified ".githooks/lib/check-red-green" "$SCAFFOLD_DIR/githooks/lib/check-red-green.template"
+# Advisory diff-scoped mutation layer for test-guard (#145).
+remove_if_unmodified ".githooks/lib/check-mutation-diff" "$SCAFFOLD_DIR/githooks/lib/check-mutation-diff.template"
 # Opt-in npm install-layer cooldown (only present if installed with
 # --npm-cooldown, #117).
 remove_if_unmodified ".npmrc" "$SCAFFOLD_DIR/.npmrc.template"
