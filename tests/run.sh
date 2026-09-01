@@ -60,7 +60,8 @@ for case_file in \
   "$HERE/cases/22-large-file-guard.sh" \
   "$HERE/cases/23-npm-cooldown.sh" \
   "$HERE/cases/24-claude-skill.sh" \
-  "$HERE/cases/25-interactive-install.sh"; do
+  "$HERE/cases/25-interactive-install.sh" \
+  "$HERE/cases/26-repo-adaptation-warn.sh"; do
   # shellcheck source=/dev/null
   . "$case_file"
 done
