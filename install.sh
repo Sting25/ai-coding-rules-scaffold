@@ -7,6 +7,7 @@
 #   install.sh --frontend   # TS/JS only
 #   install.sh --both       # install both stacks
 #   install.sh --shell      # shell-only project (hooks + shell/secrets patterns, no Python/TS configs)
+#   install.sh --interactive # wizard: prompts for stack + each flag below (-i)
 #   install.sh --force      # replace scaffold files (backs each up first; never CLAUDE.md/AGENTS.md)
 #   install.sh --no-verify  # skip the post-install linter smoke test
 #   install.sh --claude     # also install opt-in Claude Code agent guardrails
@@ -14,50 +15,39 @@
 #   install.sh --commit-msg # also install the Conventional-Commits commit-msg hook
 #   install.sh --gitleaks-hook # also install opt-in local gitleaks pre-commit pass
 #   install.sh --gitleaks-ci # also install the gitleaks CI workflow (unskippable gate)
-#   install.sh --dependency-review # also install the dependency-review CI gate
-#                            # (opt-in: needs GitHub Advanced Security on a
-#                            # private repo, or it errors, so it is never
-#                            # default-on)
+#   install.sh --dependency-review # also install the dependency-review CI gate (opt-in: needs GitHub Advanced Security on a private repo, or it errors, so never default-on)
 #   install.sh --zizmor-ci   # also install the zizmor GitHub Actions audit gate
 #   install.sh --socket-ci   # also install the Socket Firewall supply-chain gate
-#   install.sh --npm-cooldown # also install .npmrc's min-release-age (delays
-#                            # newly published npm versions, needs npm >=11.10)
-#   install.sh --claude-skill # also install an on-demand Claude Code Skill
-#                            # that loads coding-rules.md/operational-rules.md
+#   install.sh --npm-cooldown # also install .npmrc's min-release-age (delays newly published npm versions, needs npm >=11.10)
+#   install.sh --claude-skill # also install an on-demand Claude Code Skill that loads coding-rules.md/operational-rules.md
 #   install.sh --all-langs  # install every language's forbidden-pattern file
-#   install.sh --coverage-gate # install the patch-coverage gate INSTEAD of the
-#                            # plain tests.yml (tests still run, plus a stricter
-#                            # check on top, see below)
-#   install.sh --no-test-workflow # opt out of installing a test-execution CI
-#                            # workflow at all (records a loud skip; for repos
-#                            # that genuinely cannot run tests in CI)
+#   install.sh --coverage-gate # install the patch-coverage gate INSTEAD of the plain tests.yml (tests still run, plus a stricter check on top, see below)
+#   install.sh --no-test-workflow # opt out of installing a test-execution CI workflow at all (records a loud skip; for repos that genuinely cannot run tests in CI)
 #   install.sh --no-install # detect missing tools but never auto-run a package manager
 #   install.sh --help       # show this help
 #
-# Test execution in CI is DEFAULT-ON (#97): a plain install writes
-# `.github/workflows/tests.yml` so pytest/vitest run on every PR/push, no
-# coverage threshold. `--coverage-gate` swaps that for `.github/workflows/coverage.yml`
-# (same tests, plus a diff-cover patch-coverage gate), never both installed at
-# once, so a repo's tests never run twice in the same CI run. Only
-# `--no-test-workflow` leaves a repo with no test execution in CI, and it says
-# so loudly in the summary below, per the "record every skip" rule.
+# Test execution in CI is DEFAULT-ON (#97): a plain install writes `.github/workflows/tests.yml`
+# so pytest/vitest run on every PR/push, no coverage threshold. `--coverage-gate` swaps that for
+# `.github/workflows/coverage.yml` (same tests, plus a diff-cover patch-coverage gate), never both
+# installed at once. Only `--no-test-workflow` leaves a repo with no test execution in CI, and it
+# says so loudly in the summary below, per the "record every skip" rule.
 #
 # On re-run (upgrade): scaffold-owned code (the hook, .githooks/lib/*, the
 # commit-msg hook) is REFRESHED when it differs from the shipped version, so
 # security fixes reach you just by re-running, and every file it overwrites is
 # BACKED UP to .scaffold-bak first, so an edit you made to one is recoverable
 # and the "backed up:" line tells you it happened. User-owned configs are left
-# alone. A drifted .forbidden-patterns/*.txt or CI workflow (lint.yml,
-# tests.yml, coverage.yml, gitleaks.yml, dependency-review.yml, zizmor.yml,
-# socket-security.yml) only prints a notice and keeps your file (--force
-# replaces it, backed up first). .githooks/local.d/ is never written to at
-# all: it's where project-local checks live precisely so an upgrade cannot
-# unwire them.
+# alone. A drifted .forbidden-patterns/*.txt or CI workflow (lint.yml, tests.yml,
+# coverage.yml, gitleaks.yml, dependency-review.yml, zizmor.yml, socket-security.yml)
+# only prints a notice and keeps your file (--force replaces it, backed up first).
+# .githooks/local.d/ is never written to at all: it's where project-local checks
+# live precisely so an upgrade cannot unwire them.
 
 set -euo pipefail
 
 SCAFFOLD_DIR="$(cd "$(dirname "$0")" && pwd)"
 MODE="auto"
+INTERACTIVE=0
 FORCE=0
 VERIFY=1
 CLAUDE=0
@@ -81,6 +71,7 @@ for arg in "$@"; do
     --frontend)   MODE="frontend" ;;
     --both)       MODE="both" ;;
     --shell)      MODE="shell" ;;
+    --interactive|-i) INTERACTIVE=1 ;;
     --force)      FORCE=1 ;;
     --no-verify)  VERIFY=0 ;;
     --claude)     CLAUDE=1 ;;
@@ -97,7 +88,7 @@ for arg in "$@"; do
     --coverage-gate) COVERAGE_GATE=1 ;;
     --no-test-workflow) NO_TEST_WORKFLOW=1 ;;
     --no-install) NO_INSTALL=1 ;;
-    --help|-h)    sed -n '2,55p' "$0"; exit 0 ;;
+    --help|-h)    sed -n '2,44p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -161,6 +152,9 @@ fi
 # shellcheck source=install-lib.sh
 . "$SCAFFOLD_DIR/install-lib.sh"
 
+# shellcheck source=install-interactive.sh
+. "$SCAFFOLD_DIR/install-interactive.sh"  # -i/--interactive wizard
+
 # install_claude_md — CLAUDE.md is USER-OWNED project memory, not a scaffold
 # file. Never replace it (not even with --force). If absent, create it from
 # the pointer template. If present, append a marked block importing AGENTS.md
@@ -221,6 +215,11 @@ install_agents_md() {
   cp "$SCAFFOLD_DIR/AGENTS.md.template" "AGENTS.md"
   echo "installed:    AGENTS.md"
 }
+
+# -i/--interactive: prompt now, before any file is written.
+if [ "$INTERACTIVE" -eq 1 ]; then
+  run_interactive
+fi
 
 # Always
 cp_safe "$SCAFFOLD_DIR/coding-rules.md" "coding-rules.md"
