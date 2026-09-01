@@ -3,9 +3,8 @@
 #
 # SOURCED (not executed) by install.sh, so these functions run in that script's
 # shell under its `set -euo pipefail` and read its globals (FORCE). Extracted here
-# so install.sh stays under the scaffold's own 500-line module-size cap — the
-# guardrail the scaffold enforces on every project it installs into, itself
-# included. Behavior is identical to when these lived inline in install.sh.
+# so install.sh stays under the scaffold's own 500-line cap, the guardrail it
+# enforces on every project it installs into, itself included.
 
 # Default the caller-provided global so this file also lints/behaves standalone.
 # install.sh always sets FORCE before sourcing, so this is a no-op there; if the
@@ -16,16 +15,14 @@
 # Re-running install.sh is the supported UPGRADE path, so each destination is
 # copied through the policy its OWNERSHIP demands:
 #
-#   cp_scaffold  scaffold-owned CODE: scanners, libs, hooks. These carry
-#                security fixes, so a plain re-run REFRESHES them whenever they
-#                differ from the shipped version (no --force needed); that's
-#                how an upgrader who just re-runs install.sh actually receives
-#                the fixes. Every overwrite is backed up first (#72), a project
-#                may have edited one, and that edit must never vanish silently.
-#                No CI workflow file uses this policy any more (as of #110,
-#                every shipped workflow goes through cp_scaffold_preserve
-#                below instead: a project commonly hand-edits or pre-authors
-#                these, and a plain refresh risks silently discarding that).
+#   cp_scaffold  scaffold-owned CODE: scanners, libs, hooks. These carry security
+#                fixes, so a plain re-run REFRESHES them whenever they differ from
+#                the shipped version (no --force needed); every overwrite is
+#                backed up first (#72), since a project may have edited one. No CI
+#                workflow file uses this policy any more (as of #110, every
+#                shipped workflow goes through cp_scaffold_preserve below instead:
+#                a project commonly hand-edits or pre-authors these, and a plain
+#                refresh risks silently discarding that).
 #   cp_safe      USER-OWNED files — ruff.toml, eslint config, .scaffold.toml,
 #                dependabot.yml, the rules docs, etc. A project customizes these,
 #                so they're never auto-replaced: skip unless --force (which backs
@@ -35,15 +32,14 @@
 #                would clobber those rows, so a re-run only NOTIFIES on drift and
 #                keeps the user's file; --force backs up + replaces so the user's
 #                additions survive in .scaffold-bak for manual merge-back.
-#   cp_scaffold_preserve  scaffold-owned CI workflows that a project is expected
-#                to hand-edit or that commonly arrive pre-authored: today,
-#                lint.yml, tests.yml, coverage.yml and gitleaks.yml. Same
-#                drift-preserving behavior as cp_pattern: a re-run only
-#                NOTIFIES on drift and keeps the user's edits; --force backs
-#                up + replaces. Added for lint.yml in #105 (a plain
-#                cp_scaffold refresh there measurably discarded a consumer's
-#                CI customization with no way back except the .scaffold-bak)
-#                and extended to the other three in #110; see its own
+#   cp_scaffold_preserve  scaffold-owned CI workflows a project is expected to
+#                hand-edit or that commonly arrive pre-authored: lint.yml,
+#                tests.yml, coverage.yml, gitleaks.yml. Same drift-preserving
+#                behavior as cp_pattern: NOTIFIES on drift, keeps the user's
+#                edits; --force backs up + replaces. Added for lint.yml in #105
+#                (a plain cp_scaffold refresh there discarded a consumer's CI
+#                customization with no way back) and extended to the other
+#                three in #110; see its own
 #                function comment below for the full history.
 #
 # The four policies share one write MECHANISM (_cp_replace) and one backup
@@ -52,12 +48,11 @@
 # _mkdir_safe DIR — create DIR as real directories, never following a symlink at
 # ANY path component. `rm -f "$dst"` in _cp_replace drops a symlink at the LEAF
 # file, but a plain `mkdir -p` follows a symlinked PARENT (e.g. a planted
-# `.githooks -> ~/.ssh` or `.github -> $HOME`), which would send every scanner /
-# hook / CI workflow — and any overwrite — THROUGH the link, outside the repo,
-# while the in-tree path stays a symlink (a silent write-through + fail-open).
-# Walk the path top-down, dropping any symlink component before descending, so we
-# always land real dirs in the tree. Mirrors scripts/dev-setup.sh's _mkdir_safe
-# (B4) but handles arbitrary depth for the shared _cp_replace mechanism.
+# `.githooks -> ~/.ssh` or `.github -> $HOME`), sending every scanner/hook/CI
+# workflow, and any overwrite, THROUGH the link and outside the repo, while the
+# in-tree path stays a symlink (a silent write-through + fail-open). Walk the
+# path top-down, dropping any symlink component before descending, so we always
+# land real dirs in the tree. Mirrors scripts/dev-setup.sh's _mkdir_safe (B4).
 _mkdir_safe() {
   local dir=$1 path='' comp
   while [ -n "$dir" ]; do
@@ -87,7 +82,11 @@ _cp_replace() {
 # before it is replaced, so no local edit is ever silently destroyed. `-P` backs
 # up a symlink AS the link, never the dereferenced target content. Returns non-zero
 # when all >99 slots are taken; callers treat that as "skip this one file, keep
-# going" (`|| return 0`) — never abort, and never overwrite without a backup.
+# going" (`|| return 0`) — never abort, and never overwrite without a backup. Every
+# cp_* overwrite funnels through here, so this is also the one place that can warn
+# on a dropped `# Repo adaptation:` line regardless of which policy triggered it
+# (#127): cp_scaffold's unconditional refresh, or --force on cp_safe/cp_pattern/
+# cp_scaffold_preserve.
 _backup() {
   local dst=$1
   local bak="${dst}.scaffold-bak" n=0
@@ -102,6 +101,22 @@ _backup() {
   done
   cp -P "$dst" "$bak"
   echo "backed up:    $dst -> $bak"
+  _warn_repo_adaptations "$dst" "$bak"
+}
+
+# _warn_repo_adaptations DST BAK — DST is about to be overwritten; BAK is the
+# backup _backup just made of its old content. Warn, don't try to re-splice: a
+# marked block naming why it diverges from the template is real intent, but
+# text-level reinsertion into the freshly-rendered file is fragile (anchors
+# drift across versions), so the backup plus a loud pointer is the safer fix.
+_warn_repo_adaptations() {
+  local dst=$1 bak=$2 n
+  n=$(grep -c '# Repo adaptation:' "$bak" 2>/dev/null || true)
+  if [ -n "$n" ] && [ "$n" -gt 0 ]; then
+    echo "warning: $dst carried $n 'Repo adaptation' line(s), now overwritten:"
+    grep -n '# Repo adaptation:' "$bak" | sed 's/^/         /'
+    echo "         re-apply by hand from $bak, or whatever it existed for may regress."
+  fi
 }
 
 # cp_safe SRC DST — USER-OWNED file. Install if absent; otherwise leave it alone
@@ -133,20 +148,16 @@ cp_safe() {
 # at a scaffold-owned path is always replaced with the real scanner (better than
 # leaving a dead link there) and never written through.
 #
-# ALWAYS backs up before overwriting, not just under --force (issue #72). The
-# old policy skipped the refresh backup on the premise that the prior bytes
-# were recoverable scaffold code: true for an untouched destination, false for
-# an edited one, and nothing tested which case applied. That mattered most for
-# .githooks/pre-commit, the file a project MUST edit to wire in a local check:
-# a reset call site failed silently, the guardrail became decoration, and
-# nothing said so. Unconditional backup makes the loss recoverable and prints
-# a "backed up:" line, the signal that was missing. Cost is one .scaffold-bak
-# per changed file; `.githooks/local.d/` now exists so local checks need not
-# live in a scaffold-owned file at all.
-#
-# If _backup fails (>99 slots), skip this ONE file rather than overwrite it
-# unbacked, same policy as cp_safe/cp_pattern (B12); _backup prints why and
-# tells the user to clean up and re-run.
+# ALWAYS backs up before overwriting, not just under --force (issue #72): the old
+# policy skipped the refresh backup on the premise that the prior bytes were
+# recoverable scaffold code, true for an untouched destination but false for an
+# edited one, and nothing tested which case applied. That mattered most for
+# .githooks/pre-commit, the file a project MUST edit to wire in a local check: a
+# reset call site failed silently and the guardrail became decoration with no
+# signal. Unconditional backup makes the loss recoverable and prints a "backed
+# up:" line; `.githooks/local.d/` now exists so local checks need not live in a
+# scaffold-owned file at all. If _backup fails (>99 slots), skip this ONE file
+# rather than overwrite it unbacked, same policy as cp_safe/cp_pattern (B12).
 cp_scaffold() {
   local src=$1 dst=$2
   if [ -e "$dst" ] || [ -L "$dst" ]; then
@@ -187,14 +198,13 @@ cp_pattern() {
   echo "installed:    $dst"
 }
 
-# cp_scaffold_preserve SRC DST: a scaffold-owned CI workflow (today:
-# lint.yml, tests.yml, coverage.yml, gitleaks.yml, see the policy comment
-# above). Install if absent; on drift NOTIFY and keep the user's file rather
-# than overwriting it, same shape as cp_pattern, because a plain cp_scaffold
-# refresh here silently discards a consumer's hand-edit or pre-existing
-# version of the file (#105 for lint.yml, extended to the other three CI
-# workflows in #110) instead of merely risking it. --force still backs up +
-# replaces, matching cp_scaffold/cp_pattern's --force semantics.
+# cp_scaffold_preserve SRC DST: a scaffold-owned CI workflow (today: lint.yml,
+# tests.yml, coverage.yml, gitleaks.yml, see the policy comment above). Install
+# if absent; on drift NOTIFY and keep the user's file rather than overwriting
+# it, same shape as cp_pattern, because a plain cp_scaffold refresh here
+# silently discards a consumer's hand-edit or pre-existing version of the file
+# (#105 for lint.yml, extended to the other three in #110). --force still
+# backs up + replaces, matching cp_scaffold/cp_pattern's --force semantics.
 cp_scaffold_preserve() {
   local src=$1 dst=$2
   if [ -e "$dst" ] || [ -L "$dst" ]; then
@@ -226,32 +236,22 @@ mkx() { if [ -f "$1" ]; then chmod +x "$1"; fi; }
 # install-verify.sh's run_toolchain_verify) once install.sh neared its own
 # 500-line cap; reads the caller's globals (NO_TEST_WORKFLOW, COVERAGE_GATE,
 # SCAFFOLD_DIR) and sets TEST_CI_STATE for the caller's end-of-run summary.
-#
-# A default install used to produce lint-only CI (green checks with zero
-# tests ever executing), which is the bug this closes. Three end states,
-# decided in this order:
-#
-#   1. --no-test-workflow -> install NEITHER workflow. The one way a repo ends
-#      up with no test execution in CI, and it must say so loudly, per
-#      operational-rules.md's "record every skip" (unless a workflow from a
-#      prior run is already on disk, CI keeps running it either way).
-#   2. --coverage-gate (or coverage.yml already on disk from a prior run) ->
-#      install coverage.yml, which already runs the tests AND gates patch
-#      coverage. It gates EXECUTION of changed lines, not assertion quality;
-#      see RECOMMENDATIONS.md.
-#   3. default -> install tests.yml: pytest/vitest run on every PR/push, no
-#      coverage threshold.
-#
-# Never both: coverage.yml already runs the tests, so installing tests.yml
-# alongside it would run the suite twice for the same push/PR. If an upgrade
-# adds --coverage-gate on top of a prior default install, the now-redundant
-# tests.yml (if untouched since install) is retired rather than left to
-# double-run.
-#
-# Both files are written through cp_scaffold_preserve, not cp_scaffold
-# (#110): a re-run that finds either file changed from the shipped version
-# keeps the drifted file and prints a "note (drift):" line instead of
-# refreshing it, same policy as lint.yml since #105.
+# A default install used to produce lint-only CI (green checks, zero tests
+# ever executing), the bug this closes. Three end states, decided in order:
+# (1) --no-test-workflow installs NEITHER workflow, the one way a repo ends
+# up with no test execution in CI, and it must say so loudly per
+# operational-rules.md's "record every skip" (unless a workflow from a prior
+# run is already on disk, which keeps running either way); (2) --coverage-gate
+# (or coverage.yml already on disk) installs coverage.yml, which already runs
+# the tests AND gates patch coverage of changed lines, not assertion quality,
+# see RECOMMENDATIONS.md; (3) default installs tests.yml: pytest/vitest run on
+# every PR/push, no coverage threshold. Never both: coverage.yml already runs
+# the tests, so tests.yml alongside it would double-run the suite; an upgrade
+# that adds --coverage-gate on top of a prior default retires an untouched
+# tests.yml rather than leaving it to double-run. Both files go through
+# cp_scaffold_preserve, not cp_scaffold (#110): a re-run finding either file
+# changed from the shipped version keeps it and prints "note (drift):"
+# instead of refreshing, same policy as lint.yml since #105.
 install_test_workflow_ci() {
   if [ "$NO_TEST_WORKFLOW" -eq 1 ]; then
     if [ "$COVERAGE_GATE" -eq 1 ]; then

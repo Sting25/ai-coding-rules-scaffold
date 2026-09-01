@@ -6,6 +6,30 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`_backup` warns when an overwritten file carried a `# Repo adaptation:`
+  marker (#127).** Root cause: before #110, `coverage.yml`/`tests.yml`/
+  `gitleaks.yml` installed via `cp_scaffold` (unconditional refresh on
+  drift), so a plain re-run silently discarded a hand-authored line
+  explaining why a project's copy intentionally diverges from the shipped
+  template, no `--force` needed to trigger it. #110 already fixed the
+  no-force case for those three files by switching them to
+  `cp_scaffold_preserve` (kept in place, drift note printed instead). The
+  gap this closes is what's left: a _wanted_ overwrite, either
+  `cp_scaffold`'s unconditional refresh (`.githooks/pre-commit` and other
+  scaffold-owned code) or `--force` on a drift-preserving file, still
+  silently dropped a marked block with nothing but a generic "backed up:"
+  line. Every `cp_*` overwrite funnels through the shared `_backup` helper,
+  so the fix lives once there: count and name any `# Repo adaptation:`
+  line in the file about to be replaced and print it, pointing at the
+  `.scaffold-bak` that already holds the full content. Chose a loud
+  pointer over attempting to re-splice the marked block into the freshly
+  rendered template, text-level reinsertion is fragile across template
+  versions and this codebase already prefers "keep + notify" over
+  auto-merge for exactly this class of problem (`cp_pattern`,
+  `cp_scaffold_preserve`).
+
 ## [v0.13.0] - 2026-09-01
 
 A catch-up release: `main` had drifted 114 commits ahead of the last npm
