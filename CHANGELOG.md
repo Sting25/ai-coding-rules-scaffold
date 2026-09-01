@@ -29,6 +29,19 @@ versioning follows [SemVer](https://semver.org/).
   versions and this codebase already prefers "keep + notify" over
   auto-merge for exactly this class of problem (`cp_pattern`,
   `cp_scaffold_preserve`).
+- **`CLAUDE.md` now imports `coding-rules.md`, not just `AGENTS.md`.** Checked
+  rather than assumed: `AGENTS.md` references `coding-rules.md` as a markdown
+  link, links are not `@` imports, so the rules file was never actually in
+  context at session start; what was in context was a sentence saying it
+  exists, and after a compaction only `CLAUDE.md`'s imports come back. The
+  pointer template and the appended merge block both gain `@coding-rules.md`
+  (the import lives in `CLAUDE.md` because `@` syntax is Claude Code-specific
+  and `AGENTS.md` stays cross-tool). A `CLAUDE.md` already wired for
+  `@AGENTS.md` is user-owned and is never edited in place; the installer now
+  prints an advisory `note:` naming the one-line fix instead.
+  `install_claude_md` moved to a new sourced `install-claude.sh` in the
+  process: `install.sh` and `install-lib.sh` both sit at the scaffold's own
+  500-line cap, the same reason `install-interactive.sh` is a separate file.
 
 ## [v0.13.0] - 2026-09-01
 

@@ -9,6 +9,7 @@
     "install.sh",
     "install-lib.sh",
     "install-interactive.sh",
+    "install-claude.sh",
     "install-verify.sh",
     "uninstall.sh",
     "scaffold-doctor.sh",

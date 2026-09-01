@@ -90,15 +90,45 @@ mk_userproj() {
   echo "$d"
 }
 
-# (T) install merges CLAUDE.md: keeps user content AND appends the import.
+# (T) install merges CLAUDE.md: keeps user content AND appends both imports
+# (@AGENTS.md, and @coding-rules.md — AGENTS.md only links the rules file, so
+# without the import the rules are not in context at session start).
 UMG=$(mk_userproj)
 ( cd "$UMG" && "$SCAFFOLD_DIR/install.sh" --both --no-verify ) >"$HOOK_OUT" 2>&1
-if grep -q 'HAND-WRITTEN-MEMORY' "$UMG/CLAUDE.md" && grep -q '@AGENTS.md' "$UMG/CLAUDE.md"; then
-  echo "  ✓ install merges CLAUDE.md (keeps content + adds import)"; PASS=$((PASS + 1))
+if grep -q 'HAND-WRITTEN-MEMORY' "$UMG/CLAUDE.md" && grep -q '@AGENTS.md' "$UMG/CLAUDE.md" \
+   && grep -q '@coding-rules.md' "$UMG/CLAUDE.md"; then
+  echo "  ✓ install merges CLAUDE.md (keeps content + adds both imports)"; PASS=$((PASS + 1))
 else
-  echo "  ✗ install should merge CLAUDE.md, not replace it"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  echo "  ✗ install should merge CLAUDE.md with both imports, not replace it"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$UMG"
+
+# (T) fresh install (no CLAUDE.md) creates the pointer with both imports.
+UNEW=$(mktemp -d)
+( cd "$UNEW" && git init --quiet && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
+  && "$SCAFFOLD_DIR/install.sh" --both --no-verify ) >"$HOOK_OUT" 2>&1
+if grep -q '@AGENTS.md' "$UNEW/CLAUDE.md" && grep -q '@coding-rules.md' "$UNEW/CLAUDE.md"; then
+  echo "  ✓ fresh CLAUDE.md pointer imports AGENTS.md and coding-rules.md"; PASS=$((PASS + 1))
+else
+  echo "  ✗ fresh CLAUDE.md pointer is missing an import"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UNEW"
+
+# (T) a CLAUDE.md already wired for @AGENTS.md but missing @coding-rules.md is
+# left untouched (user-owned file, never edited in place) and the gap is
+# surfaced as an advisory note instead.
+UWIRED=$(mktemp -d)
+( cd "$UWIRED" && git init --quiet && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
+  && printf '# Mine\n\nHAND-WRITTEN-MEMORY\n\n@AGENTS.md\n' >CLAUDE.md \
+  && "$SCAFFOLD_DIR/install.sh" --both --no-verify ) >"$HOOK_OUT" 2>&1
+if grep -q 'does not import coding-rules.md' "$HOOK_OUT" \
+   && grep -q 'HAND-WRITTEN-MEMORY' "$UWIRED/CLAUDE.md" \
+   && ! grep -q '@coding-rules.md' "$UWIRED/CLAUDE.md"; then
+  echo "  ✓ wired CLAUDE.md left untouched, missing rules import surfaced as note"; PASS=$((PASS + 1))
+else
+  echo "  ✗ wired CLAUDE.md should get an advisory note, not an in-place edit"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UWIRED"
 
 # (T) install --force must NOT clobber CLAUDE.md or a customized AGENTS.md.
 UFC=$(mk_userproj)

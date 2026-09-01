@@ -154,37 +154,8 @@ fi
 
 # shellcheck source=install-interactive.sh
 . "$SCAFFOLD_DIR/install-interactive.sh"  # -i/--interactive wizard
-
-# install_claude_md — CLAUDE.md is USER-OWNED project memory, not a scaffold
-# file. Never replace it (not even with --force). If absent, create it from
-# the pointer template. If present, append a marked block importing AGENTS.md
-# once, and only if no @AGENTS.md import already exists.
-install_claude_md() {
-  # A symlink at CLAUDE.md is suspicious (`[ -e ]` is false for a dangling one
-  # and follows a live one): test `-L` first and never write through it, the
-  # same A7 defense the cp_* helpers carry, missing from this handler (B1).
-  if [ -L "CLAUDE.md" ]; then
-    echo "skip (exists, symlink): CLAUDE.md — left untouched; a scaffold path that is a symlink is suspicious. Replace it with a real file to wire the AGENTS.md import."
-    return
-  fi
-  if [ ! -e "CLAUDE.md" ]; then
-    cp "$SCAFFOLD_DIR/CLAUDE.md.pointer" "CLAUDE.md"
-    echo "installed:    CLAUDE.md (new — pointer to AGENTS.md)"
-    return
-  fi
-  if grep -q '@AGENTS.md' "CLAUDE.md" 2>/dev/null \
-     || grep -q 'ai-coding-rules-scaffold:begin' "CLAUDE.md" 2>/dev/null; then
-    echo "ok (wired):   CLAUDE.md already imports AGENTS.md — left untouched"
-    return
-  fi
-  {
-    printf '\n<!-- ai-coding-rules-scaffold:begin -->\n'
-    printf 'See [AGENTS.md](./AGENTS.md) — agent + project rules (cross-tool convention).\n\n'
-    printf '@AGENTS.md\n'
-    printf '<!-- ai-coding-rules-scaffold:end -->\n'
-  } >>"CLAUDE.md"
-  echo "merged:       appended @AGENTS.md import to existing CLAUDE.md (your content kept)"
-}
+# shellcheck source=install-claude.sh
+. "$SCAFFOLD_DIR/install-claude.sh"  # install_claude_md (CLAUDE.md merge)
 
 # warn_pair_gap / warn_pair_note: install.sh's reporters for install-lib.sh's
 # check_paired_artifacts (#96); advisory only, so both just print (install.sh
