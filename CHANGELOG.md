@@ -4,7 +4,13 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [v0.14.0] - 2026-09-01
+
+The safety-harness adoption release: the two low-risk items from the
+harness review land (the `CLAUDE.md` rules import and the
+artifact-anchored change summary), plus the Repo-adaptation overwrite
+warning and a new operational rule. The remaining harness proposals are
+tracked in #140.
 
 ### Added
 
