@@ -18,6 +18,7 @@
 #   install.sh --dependency-review # also install the dependency-review CI gate (opt-in: needs GitHub Advanced Security on a private repo, or it errors, so never default-on)
 #   install.sh --zizmor-ci   # also install the zizmor GitHub Actions audit gate
 #   install.sh --socket-ci   # also install the Socket Firewall supply-chain gate
+#   install.sh --test-guard  # also install the red-green test-integrity gate (a new test must fail on the PR base before it may pass)
 #   install.sh --npm-cooldown # also install .npmrc's min-release-age (delays newly published npm versions, needs npm >=11.10)
 #   install.sh --claude-skill # also install an on-demand Claude Code Skill that loads coding-rules.md/operational-rules.md
 #   install.sh --all-langs  # install every language's forbidden-pattern file
@@ -38,7 +39,8 @@
 # BACKED UP to .scaffold-bak first, so an edit you made to one is recoverable
 # and the "backed up:" line tells you it happened. User-owned configs are left
 # alone. A drifted .forbidden-patterns/*.txt or CI workflow (lint.yml, tests.yml,
-# coverage.yml, gitleaks.yml, dependency-review.yml, zizmor.yml, socket-security.yml)
+# coverage.yml, gitleaks.yml, dependency-review.yml, zizmor.yml, socket-security.yml,
+# test-guard.yml)
 # only prints a notice and keeps your file (--force replaces it, backed up first).
 # .githooks/local.d/ is never written to at all: it's where project-local checks
 # live precisely so an upgrade cannot unwire them.
@@ -58,6 +60,7 @@ GITLEAKS_CI=0
 DEPENDENCY_REVIEW=0
 ZIZMOR_CI=0
 SOCKET_CI=0
+TEST_GUARD=0
 NPM_COOLDOWN=0
 CLAUDE_SKILL=0
 ALL_LANGS=0
@@ -82,13 +85,14 @@ for arg in "$@"; do
     --dependency-review) DEPENDENCY_REVIEW=1 ;;
     --zizmor-ci)  ZIZMOR_CI=1 ;;
     --socket-ci)  SOCKET_CI=1 ;;
+    --test-guard) TEST_GUARD=1 ;;
     --npm-cooldown) NPM_COOLDOWN=1 ;;
     --claude-skill) CLAUDE_SKILL=1 ;;
     --all-langs)  ALL_LANGS=1 ;;
     --coverage-gate) COVERAGE_GATE=1 ;;
     --no-test-workflow) NO_TEST_WORKFLOW=1 ;;
     --no-install) NO_INSTALL=1 ;;
-    --help|-h)    sed -n '2,44p' "$0"; exit 0 ;;
+    --help|-h)    sed -n '2,46p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -151,6 +155,9 @@ fi
 # Extracted to keep this script under the scaffold's own 500-line cap.
 # shellcheck source=install-lib.sh
 . "$SCAFFOLD_DIR/install-lib.sh"
+
+# shellcheck source=install-optin.sh
+. "$SCAFFOLD_DIR/install-optin.sh"  # install_opt_in_* flag bodies
 
 # shellcheck source=install-interactive.sh
 . "$SCAFFOLD_DIR/install-interactive.sh"  # -i/--interactive wizard
@@ -404,11 +411,13 @@ if [ "$DEPENDENCY_REVIEW" -eq 1 ]; then
 fi
 
 # Opt-in zizmor / Socket Firewall CI gates (--zizmor-ci, --socket-ci), npm
-# install-layer cooldown (--npm-cooldown, #117), and Claude Skill packaging
-# (--claude-skill, #118); function bodies live in install-lib.sh to keep this
-# file under its own 500-line cap (issue #84).
+# install-layer cooldown (--npm-cooldown, #117), Claude Skill packaging
+# (--claude-skill, #118), and the red-green test-integrity gate
+# (--test-guard, #140); function bodies live in install-optin.sh to keep this
+# file and install-lib.sh under their 500-line caps (issue #84).
 install_opt_in_zizmor_ci
 install_opt_in_socket_ci
+install_opt_in_test_guard
 install_opt_in_npm_cooldown
 install_opt_in_claude_skill
 

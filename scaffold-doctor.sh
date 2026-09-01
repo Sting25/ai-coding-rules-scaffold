@@ -319,6 +319,7 @@ _pne() { note "$1"; PNE_ANY=1; }
 [ -f .github/workflows/dependency-review.yml ] || _pne "dependency-review CI gate (blocks a PR that adds a vulnerable/malicious dependency): not installed. Enable with install.sh --dependency-review"
 [ -f .github/workflows/zizmor.yml ]            || _pne "zizmor CI gate (audits your own GitHub Actions workflows): not installed. Enable with install.sh --zizmor-ci"
 [ -f .github/workflows/socket-security.yml ]   || _pne "Socket Firewall CI gate (blocks a malicious/typosquat package at install time): not installed. Enable with install.sh --socket-ci"
+[ -f .github/workflows/test-guard.yml ]        || _pne "test-guard CI gate (red-green: a new test must fail against the PR base before it may pass): not installed. Enable with install.sh --test-guard"
 [ -f .claude/settings.json ]                   || _pne "Claude Code agent guardrails: not installed. Enable with install.sh --claude"
 [ -f .cursor/hooks.json ]                      || _pne "Cursor agent guardrails: not installed. Enable with install.sh --cursor"
 [ -f .githooks/commit-msg ]                    || _pne "commit-msg hook (Conventional Commits): not installed. Enable with install.sh --commit-msg"

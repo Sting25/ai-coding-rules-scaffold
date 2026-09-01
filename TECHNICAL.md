@@ -317,6 +317,24 @@ minimal; turn them on per project.
   it adds a third-party pip package. Pinned to a commit SHA; bump via
   Dependabot.
 
+- **Red-green test-integrity gate (`install.sh --test-guard` →
+  `.githooks/lib/check-red-green` + `.github/workflows/test-guard.yml`).**
+  Every NEW test in a PR is run against the base commit in a scratch
+  worktree and must FAIL there: a test that passes without the change it
+  accompanies was never observed failing, so it is not evidence the change
+  works (it tests behaviour that already existed, asserts nothing, or was
+  written to match the implementation). Deliberate green-on-base tests
+  (characterization before a refactor, coverage backfill) must carry
+  `@pytest.mark.characterization(reason=...)`; the marker snippet for
+  pytest.ini is printed at install time (pytest.ini is user-owned, so the
+  installer never edits it). Also appends a marker-guarded rules section to
+  coding-rules.md so agents in the consumer repo see the gate's contract in
+  loaded context. Opt-in, not default-on: it assumes a pytest suite and
+  roughly doubles CI cost for the new tests in a PR; the vitest half does
+  not exist yet. Worth little until made a REQUIRED status check (an
+  advisory check a merging agent can route around), which the install note
+  says out loud. From the harness review, issue #140 item 2.
+
 - **Socket Firewall CI gate (`install.sh --socket-ci` →
   `.github/workflows/socket-security.yml`).** Verifies a package is
   legitimate _before_ it is installed, not after: an LLM coding agent
