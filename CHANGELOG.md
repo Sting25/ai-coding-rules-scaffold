@@ -6,8 +6,30 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.13.0] - 2026-09-01
+
+A catch-up release: `main` had drifted 114 commits ahead of the last npm
+publish (#126), so `--zizmor-ci`, `--socket-ci`, `--npm-cooldown`, and
+`--claude-skill` existed on the repo but were unreachable via `npx`. This
+release ships them, plus the Cursor `beforeReadFile` credential guard, the
+paired-artifact half-install detector, the byte-size large-file guard, the
+dependency-review AGPL gate, and two new operational-rules.md entries.
+
 ### Added
 
+- **`operational-rules.md`: eight new entries adopted from issue #120.** A
+  conditional must not be a shell function's last command under errexit; assert
+  the positive outcome, not the absence of the symptom; in cross-platform
+  fallback chains, the noisy-failure variant goes last; version bumps travel
+  only in release commits; a check that can pass by luck is failing; track
+  work in at most two places; one writer per repo at a time, check before
+  merging; end every session with a rules retrospective.
+- **`operational-rules.md`: "Choose the strongest approach before starting,
+  not the fastest one to finish" (#124).** Decide between the correct/robust
+  approach and the quick one before writing the fix, not after: by the time
+  work is done and under review, the fast path is already built and sunk cost
+  pushes toward keeping it, so the decision has to happen at the fork, not as
+  a postmortem question.
 - **Cursor `beforeReadFile` credential-path guard.** `install.sh --cursor` now
   wires `.githooks/lib/agent-precheck` to Cursor's `beforeReadFile` hook too
   (previously only `beforeShellExecution` was wired), denying reads of
