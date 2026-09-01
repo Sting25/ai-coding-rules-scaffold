@@ -18,6 +18,22 @@ versioning follows [SemVer](https://semver.org/).
   rather than scanning nothing. Unset means unchanged behavior; the shipped
   hook and CI leave both unset. Regression test: case 28.
 
+### Fixed
+
+- **Pre-commit no longer runs a JS tool that is not installed in the
+  project.** The hook gated ESLint, Prettier and tsc on
+  `npx --no-install <tool> --version`, which also answers from npm's
+  global `_npx` cache. A cached ESLint then ran against the shipped
+  config with none of the config's imports installed, crashed, and
+  failed the commit. The gate is now Node's own resolver
+  (`require.resolve` from the project, hoisted monorepos included),
+  which never reads that cache; a cached-only tool is treated as not
+  installed and skipped with the usual notice. The installer's
+  post-install verify used the same npx gate to decide whether to offer
+  an install and now uses the same resolver. Regression test: case
+  42b2. This is also why the test suite showed 5 machine-dependent
+  failures on any host with a stale `~/.npm/_npx` ESLint entry.
+
 ## [v0.15.0] - 2026-09-01
 
 The test-guard release: a new opt-in `--test-guard` flag installs the
