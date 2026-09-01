@@ -78,6 +78,8 @@ run_interactive() {
   ZIZMOR_CI=$_ASK_ANS
   _ask "Install the Socket Firewall supply-chain gate (--socket-ci)?" N
   SOCKET_CI=$_ASK_ANS
+  _ask "Install the red-green test-integrity gate (--test-guard; a new test must fail on the PR base before it may pass)?" N
+  TEST_GUARD=$_ASK_ANS
   _ask "Install npm's min-release-age cooldown (--npm-cooldown; needs npm >=11.10)?" N
   NPM_COOLDOWN=$_ASK_ANS
   _ask "Install the on-demand Claude Code Skill (--claude-skill)?" N

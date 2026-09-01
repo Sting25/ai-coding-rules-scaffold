@@ -1,0 +1,329 @@
+#!/usr/bin/env python3
+"""
+.githooks/lib/check-red-green — every new test must be shown failing before it
+is allowed to pass.
+
+THE PROBLEM THIS SOLVES. "Claude wrote 400 tests and they all pass" carries
+almost no information, because a suite generated against an implementation
+passes by construction. This is measured, not folklore: LLM test-generation
+tools DISCARD any generated test that fails against the current code, so a test
+that correctly detects a bug is thrown away for being "wrong". Share of
+generated tests that VALIDATE the bug rather than catch it: CoverAgent 59.6%,
+CoverUp 68.1% (arXiv 2412.14137). CoverAgent discarded 470 bug-revealing tests;
+CoverUp discarded 400. Independently, LLMs "generate test oracles that capture
+the actual program implementation rather than the expected one" — assertion
+correctness dropped a further 8-9 points when the code under test was buggy
+(arXiv 2410.21136), i.e. the model follows the implementation, not the intent.
+
+A test that has never been observed to fail has never been shown to test
+anything.
+
+THE MECHANISM, and why it is not "commit the test first".
+Commit ordering is unenforceable and easy to fake — a test committed first can
+still be written against an implementation the agent already has in context.
+This checks the property that actually matters, which needs no discipline at all:
+
+    take the NEW tests, run them against the OLD code, and require every one
+    to fail.
+
+If a new test passes against the base branch, one of three things is true:
+  - it tests behaviour that already worked, so it is not evidence for this PR
+  - it asserts nothing (the assertion-free test a coverage gate rewards)
+  - it was written to match the implementation rather than the requirement
+All three are worth stopping, and none of them require reading a diff to judge.
+
+A test that fails on base because its import does not exist yet counts as RED.
+That is honest: the code it tests genuinely did not exist.
+
+THE LEGITIMATE EXCEPTION, made explicit rather than assumed.
+Some new tests SHOULD pass against base: characterization tests pinning
+behaviour before a refactor, and coverage backfill for code that was already
+correct but untested. Both are good practice and both are green-on-base by
+definition. They are allowed, but only when SAID OUT LOUD:
+
+    @pytest.mark.characterization(reason="pinning invoice rounding before refactor")
+
+The marker must carry a reason. An exception you have to name is a decision; an
+exception the tool infers is a hole. Register it in pytest.ini alongside the
+scaffold's --strict-markers:
+
+    markers =
+        characterization: passes against the base branch by design; give a reason
+
+USAGE
+  check-red-green --base <ref> [--ci] [--strict-unevaluable] [--max-new N]
+
+Exit: 0 all new tests were red on base (or explicitly exempt)
+      1 one or more new tests passed on base
+      2 could not evaluate (no base, collection broken, git failure)
+
+Exit 2 is a FAILURE, not a skip. A check that cannot run must never report the
+same green as a check that ran and passed — that equivalence is how a guardrail
+quietly stops guarding.
+
+NOT overridable via .scaffold.toml, same boundary as check-secrets and the test
+ratchets.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import pathlib
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+TEST_DIR_RE = re.compile(r"(^|/)(tests?|testing)(/|$)")
+
+
+def run(cmd: list[str], cwd: str | None = None, timeout: int = 900):
+    return subprocess.run(
+        cmd, cwd=cwd, capture_output=True, text=True, check=False, timeout=timeout
+    )
+
+
+def emit(sev: str, msg: str, ci: bool) -> None:
+    if ci:
+        print(f"::{sev}::{msg}")
+    else:
+        print(f"  {sev}: {msg}", file=sys.stderr)
+
+
+def collect(cwd: str) -> set[str] | None:
+    """Collected node IDs, or None if collection failed."""
+    r = run(
+        [sys.executable, "-m", "pytest", "-q", "--collect-only", "-p", "no:randomly"],
+        cwd=cwd,
+    )
+    if r.returncode not in (0, 5):
+        return None
+    return {ln.strip() for ln in r.stdout.splitlines() if "::" in ln}
+
+
+NOISE_RE = re.compile(r"(^|/)(__pycache__|\.pytest_cache|node_modules)(/|$)|\.pyc$")
+
+
+def is_real_source(p: str) -> bool:
+    """Filter build artefacts that a careless `git add -A` can commit.
+
+    A tracked .pyc in the diff makes the overlay checkout fail outright, which
+    turns a working check into exit 2 for a reason that has nothing to do with
+    the tests.
+    """
+    return not NOISE_RE.search(p)
+
+
+def is_test_path(p: str) -> bool:
+    name = pathlib.PurePosixPath(p).name
+    return bool(TEST_DIR_RE.search(p)) or name.startswith("test_") or name.endswith("_test.py")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--base", required=True, help="base ref to compare against")
+    ap.add_argument("--ci", action="store_true")
+    ap.add_argument(
+        "--strict-unevaluable",
+        action="store_true",
+        help="fail when a new test cannot be executed against base at all",
+    )
+    ap.add_argument(
+        "--max-new",
+        type=int,
+        default=200,
+        help="refuse to re-run more than this many new tests (guards CI time)",
+    )
+    args = ap.parse_args()
+
+    if not pathlib.Path("tests").exists() and not pathlib.Path("test").exists():
+        return 0
+
+    base = run(["git", "rev-parse", "--verify", f"{args.base}^{{commit}}"])
+    if base.returncode != 0:
+        emit("error", f"cannot resolve base ref {args.base!r}. In CI make sure the "
+                      "checkout has fetch-depth: 0.", args.ci)
+        return 2
+    base_sha = base.stdout.strip()
+
+    head = run(["git", "rev-parse", "--verify", "HEAD"])
+    if head.returncode != 0:
+        emit("error", "cannot resolve HEAD.", args.ci)
+        return 2
+    head_sha = head.stdout.strip()
+    # head_sha, never the literal "HEAD". Inside a linked worktree "HEAD" is the
+    # WORKTREE's head — the base commit — so `git checkout HEAD -- tests/`
+    # there silently restores the BASE tests instead of overlaying the new ones.
+    # The new tests then do not exist in the scratch tree, pytest exits 4
+    # ("file or directory not found"), the non-zero return reads as "failed on
+    # base", and the check reports green. That is a false pass on exactly the
+    # case it exists to catch, and it is why the exit-4 guard below is explicit.
+
+    here = collect(".")
+    if here is None:
+        emit("error", "pytest collection failed on HEAD, so new tests cannot be "
+                      "identified. Fix collection first.", args.ci)
+        return 2
+
+    tmp = tempfile.mkdtemp(prefix="redgreen-")
+    wt = os.path.join(tmp, "wt")
+    try:
+        r = run(["git", "worktree", "add", "--detach", wt, base_sha])
+        if r.returncode != 0:
+            emit("error", f"git worktree add failed: {r.stderr.strip()}", args.ci)
+            return 2
+
+        # STEP 1 — collect the PRISTINE base, before any overlay. This is what
+        # defines "new": a node ID present at HEAD and absent here. Collecting
+        # after the overlay would return the new tests too (they collect fine,
+        # they just fail), making the difference empty and the check vacuous.
+        base_pristine = collect(wt)
+        if base_pristine is None:
+            emit("error", "pytest collection failed on the base commit itself. "
+                          "The base is broken, so nothing can be measured "
+                          "against it.", args.ci)
+            return 2
+
+        new_ids = sorted(here - base_pristine)
+        if not new_ids:
+            print("no new test node IDs in this diff — nothing to verify.")
+            return 0
+
+        if len(new_ids) > args.max_new:
+            emit("warning",
+                 f"{len(new_ids)} new tests exceeds --max-new={args.max_new}; "
+                 "re-running that many against base would dominate CI time. "
+                 "Split the PR — a change adding this many tests at once is not "
+                 "reviewable by any means available to you.", args.ci)
+            return 1
+
+        # STEP 2 — overlay HEAD's test files onto the base source tree.
+        changed = run(
+            ["git", "diff", "--name-only", "--diff-filter=d", f"{base_sha}...HEAD"]
+        ).stdout.split()
+        test_paths = [p for p in changed if is_test_path(p) and is_real_source(p)]
+        if not test_paths:
+            print("no test files changed in this diff — nothing to verify.")
+            return 0
+
+        r = run(["git", "checkout", head_sha, "--", *test_paths], cwd=wt)
+        if r.returncode != 0:
+            emit("error", f"could not overlay test files onto base: "
+                          f"{r.stderr.strip()}", args.ci)
+            return 2
+
+        # Config that governs collection must also come from HEAD, or a new test
+        # in a new directory is simply not collected and silently reports green.
+        for cfg in ("pytest.ini", "pyproject.toml", "tox.ini", "setup.cfg"):
+            if pathlib.Path(cfg).exists():
+                run(["git", "checkout", head_sha, "--", cfg], cwd=wt)
+
+        # STEP 3 — classify each new test individually against base source.
+        #
+        # Per node ID, not one aggregate run, because the aggregate collapses a
+        # mixed result. pytest exit codes here mean:
+        #   0  passed on base            -> OFFENDER (or exempt, checked below)
+        #   1  failed on base            -> RED, which is what we want
+        #   4  could not run it at all   -> UNEVALUABLE, see below
+        #
+        # THE HONEST LIMIT OF THIS CHECK. When a new test module imports a symbol
+        # that does not exist on base (`from calc import div`), the import fails
+        # and pytest returns 4 for EVERY test in that file — including any that
+        # would have passed. There is no way to tell them apart from outside,
+        # because on base they cannot be executed at all.
+        #
+        # That is a genuine gap and it is stated rather than papered over: a test
+        # for pre-existing behaviour, placed in a file that also imports new
+        # code, is invisible to this check. It is reported by file and count so
+        # it appears in the CI log instead of silently passing, and
+        # --strict-unevaluable turns it into a failure for projects that would
+        # rather pay the false-positive cost. The assertion ratchet in
+        # check-test-ratchet and the characterization marker are the partial
+        # answers; mutation testing on the diff is the real one.
+        offenders: list[str] = []
+        red: list[str] = []
+        unevaluable: dict[str, int] = {}
+
+        for nid in new_ids:
+            ri = run(
+                [sys.executable, "-m", "pytest", "-q", "-p", "no:randomly",
+                 "--no-header", "-rN", nid],
+                cwd=wt,
+            )
+            if ri.returncode == 0:
+                offenders.append(nid)
+            elif ri.returncode == 1:
+                red.append(nid)
+            else:
+                f = nid.split("::", 1)[0]
+                unevaluable[f] = unevaluable.get(f, 0) + 1
+
+        # ── Exempt the ones that say out loud that they pass on base ──────────
+        exempt = []
+        still_offending = []
+        for nid in offenders:
+            rk = run(
+                [sys.executable, "-m", "pytest", "-q", "--collect-only",
+                 "-m", "characterization", "--no-header", nid],
+            )
+            (exempt if (rk.returncode == 0 and "::" in rk.stdout) else
+             still_offending).append(nid)
+
+        for nid in exempt:
+            print(f"  exempt (characterization): {nid}")
+        if red:
+            print(f"  red on base, as required: {len(red)} test(s)")
+
+        failed = False
+
+        if unevaluable:
+            total = sum(unevaluable.values())
+            msg = (f"{total} new test(s) could not be executed against base "
+                   "because their module does not import there — normally "
+                   "because they reference code this PR adds. Counted as red. "
+                   "This check cannot see inside such a file, so a test for "
+                   "pre-existing behaviour placed in one is not verified: "
+                   + ", ".join(f"{f} ({n})" for f, n in sorted(unevaluable.items())))
+            if args.strict_unevaluable:
+                emit("error", msg + " — failing because --strict-unevaluable is "
+                                    "set. Split tests for existing behaviour into "
+                                    "a file that imports only existing code.",
+                     args.ci)
+                failed = True
+            else:
+                emit("notice", msg, args.ci)
+
+        if still_offending:
+            emit("error",
+                 f"{len(still_offending)} new test(s) PASS against "
+                 f"{args.base[:12]}. A test that passes without the change it "
+                 "accompanies is not evidence that the change works — it tests "
+                 "behaviour that already existed, or it asserts nothing. Make "
+                 "each one fail on base first, or mark it "
+                 "@pytest.mark.characterization(reason=...) if it is "
+                 "deliberately pinning existing behaviour.", args.ci)
+            for nid in still_offending:
+                emit("error", f"green-on-base: {nid}", args.ci)
+            failed = True
+
+        if not failed:
+            print(f"red-green OK: {len(new_ids)} new test(s) accounted for "
+                  f"({len(red)} red, {len(exempt)} characterization, "
+                  f"{sum(unevaluable.values())} unevaluable).")
+        return 1 if failed else 0
+
+    finally:
+        run(["git", "worktree", "remove", "--force", wt])
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except subprocess.TimeoutExpired:
+        print("::error::red-green check timed out. A suite too slow to run twice "
+              "is a suite too slow to trust as a gate; split it or scope this "
+              "check to a subset.")
+        raise SystemExit(2)

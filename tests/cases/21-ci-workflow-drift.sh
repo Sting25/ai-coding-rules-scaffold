@@ -138,6 +138,7 @@ _wd_case "gitleaks.yml" ".github/workflows/gitleaks.yml" "$SCAFFOLD_DIR/.github/
 _wd_case "dependency-review.yml" ".github/workflows/dependency-review.yml" "$SCAFFOLD_DIR/.github/workflows/dependency-review.yml.template" "--dependency-review"
 _wd_case "zizmor.yml" ".github/workflows/zizmor.yml" "$SCAFFOLD_DIR/.github/workflows/zizmor.yml.template" "--zizmor-ci"
 _wd_case "socket-security.yml" ".github/workflows/socket-security.yml" "$SCAFFOLD_DIR/.github/workflows/socket-security.yml.template" "--socket-ci"
+_wd_case "test-guard.yml" ".github/workflows/test-guard.yml" "$SCAFFOLD_DIR/.github/workflows/test-guard.yml.template" "--test-guard"
 
 # (T) a DEFAULT install (no flag at all) never creates dependency-review.yml:
 # the action errors on a private repo without GitHub Advanced Security, so

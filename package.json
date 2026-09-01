@@ -8,6 +8,7 @@
   "files": [
     "install.sh",
     "install-lib.sh",
+    "install-optin.sh",
     "install-interactive.sh",
     "install-claude.sh",
     "install-verify.sh",
@@ -17,6 +18,7 @@
     "githooks/",
     "forbidden-patterns/",
     "coding-rules.md",
+    "coding-rules-test-guard.md",
     "operational-rules.md",
     "RECOMMENDATIONS.md",
     "CHANGELOG.md",
@@ -42,6 +44,7 @@
     ".github/workflows/dependency-review.yml.template",
     ".github/workflows/zizmor.yml.template",
     ".github/workflows/socket-security.yml.template",
+    ".github/workflows/test-guard.yml.template",
     ".npmrc.template",
     "claude-skill/coding-rules/SKILL.md.template"
   ],

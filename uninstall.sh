@@ -171,6 +171,11 @@ remove_if_unmodified ".github/workflows/zizmor.yml" "$SCAFFOLD_DIR/.github/workf
 # Opt-in Socket Firewall supply-chain CI gate (only present if installed
 # with --socket-ci).
 remove_if_unmodified ".github/workflows/socket-security.yml" "$SCAFFOLD_DIR/.github/workflows/socket-security.yml.template"
+# Opt-in red-green test-integrity gate (only present if installed with
+# --test-guard, #140). The section it appended to coding-rules.md stays:
+# coding-rules.md is user-owned, same policy as every other user-owned edit.
+remove_if_unmodified ".github/workflows/test-guard.yml" "$SCAFFOLD_DIR/.github/workflows/test-guard.yml.template"
+remove_if_unmodified ".githooks/lib/check-red-green" "$SCAFFOLD_DIR/githooks/lib/check-red-green.template"
 # Opt-in npm install-layer cooldown (only present if installed with
 # --npm-cooldown, #117).
 remove_if_unmodified ".npmrc" "$SCAFFOLD_DIR/.npmrc.template"

@@ -1,0 +1,102 @@
+name: test-guard
+
+# Copy to your project as `.github/workflows/test-guard.yml`.
+# Installed by the scaffold's opt-in `--test-guard` flag.
+#
+# The anti-gaming layer. Every other gate in this scaffold assumes the test
+# suite is an honest witness; this workflow checks the witness. Today it runs
+# one check:
+#
+#   check-red-green   a NEW test that passes against the base branch was
+#                     never observed failing, and is therefore not evidence
+#                     that anything was fixed
+#
+# A suite generated against an implementation passes by construction. The
+# check runs each new test node ID against a scratch worktree of the base
+# commit and requires it to fail there. New tests that legitimately pass on
+# base (characterization tests pinning behaviour before a refactor, coverage
+# backfill for already-correct code) must say so out loud:
+#
+#     @pytest.mark.characterization(reason="pinning invoice rounding before refactor")
+#
+# Register the marker in pytest.ini (the installer prints the snippet):
+#
+#     markers =
+#         characterization: passes against the base branch by design; give a reason
+#
+# WHY IT IS A SEPARATE WORKFLOW from tests.yml / coverage.yml. Those answer
+# "does the code work". This answers "is the thing that answers that question
+# still intact". They fail for different reasons and want different fixes,
+# and collapsing them makes both failure messages worse.
+#
+# REQUIRED CHECK. This workflow is worth roughly nothing until it is a
+# REQUIRED status check on the default branch. An advisory check on a repo
+# where the agent can also merge is a check the agent can route around.
+#
+# Actions are pinned to a commit SHA (trailing comment = version); the SHAs
+# match lint.yml / tests.yml / coverage.yml so Dependabot bumps them together.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # check-red-green resolves and checks out the PR base commit, so it
+          # needs history. Same reason as coverage.yml.
+          fetch-depth: 0
+          persist-credentials: false  # don't leave GITHUB_TOKEN in .git/config
+
+      - id: detect
+        run: |
+          if [ -f pyproject.toml ] || [ -f pytest.ini ] || [ -f setup.py ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no Python project detected, skipping test-guard"
+          fi
+
+      - if: steps.detect.outputs.present == 'true'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+
+      # Same install logic as tests.yml: a check that cannot import the
+      # package under test cannot tell "red on base" from "broken everywhere".
+      - name: Install project
+        if: steps.detect.outputs.present == 'true'
+        run: |
+          pip install pytest==9.1.1
+          if [ -f pyproject.toml ] && grep -q '^\[project\]' pyproject.toml; then
+            if grep -q '^\[project.optional-dependencies\]' pyproject.toml && grep -qE '^dev[[:space:]]*=' pyproject.toml; then
+              pip install -e ".[dev]"
+            else
+              pip install -e .
+            fi
+          elif [ -f setup.py ]; then
+            pip install -e .
+          fi
+          for req in requirements.txt requirements-dev.txt requirements/dev.txt; do
+            if [ -f "$req" ]; then
+              pip install -r "$req"
+            fi
+          done
+
+      # PR-only by the trigger above: "new relative to the base" has no
+      # meaning on a push to main, where the comparison already happened in
+      # the PR that produced it.
+      #
+      # This step re-runs the new tests once more against a scratch worktree
+      # of the base commit, so it roughly doubles the cost of the new tests
+      # (not of the suite). If that becomes the slowest thing in CI, that is
+      # a signal about test speed, not a reason to drop the check.
+      - name: Red-green (new tests must fail against base)
+        if: steps.detect.outputs.present == 'true'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 .githooks/lib/check-red-green --base "$BASE_SHA" --ci
