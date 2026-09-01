@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`check-patterns` honors `CHECK_PATTERNS_INCLUDE` / `CHECK_PATTERNS_EXCLUDE`
+  (#149).** Space-separated pattern-file basenames select or skip
+  `.forbidden-patterns/*.txt` files for one run, so a downstream wrapper
+  can scan a security-only subset whole-tree and the rest changed-files-
+  only without editing the scaffold-owned script. Previously the only way
+  to get this was a local edit that every `install.sh` re-run silently
+  reverted (#98, #149). An `INCLUDE` that matches nothing warns on stderr
+  rather than scanning nothing. Unset means unchanged behavior; the shipped
+  hook and CI leave both unset. Regression test: case 28.
+
 ## [v0.15.0] - 2026-09-01
 
 The test-guard release: a new opt-in `--test-guard` flag installs the

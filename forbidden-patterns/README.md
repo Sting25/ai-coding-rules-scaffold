@@ -31,6 +31,22 @@ built-in fallback mapping, so an older copy without the header still works.
 (`go.mod`, `Cargo.toml`, `composer.json`, `pom.xml`/`build.gradle`, `Gemfile`,
 …), or all of them with `--all-langs`.
 
+### Scoping a run to a subset of pattern files
+
+`check-patterns` scans every discovered file by default. A caller that runs
+more than one tier (say, security rules against the whole tree and everything
+else against changed files only) can select pattern files by basename:
+
+```sh
+CHECK_PATTERNS_INCLUDE="security.txt" .githooks/lib/check-patterns <whole-tree.nul
+CHECK_PATTERNS_EXCLUDE="security.txt" .githooks/lib/check-patterns <changed.nul
+```
+
+Both variables take space-separated basenames and match whole names, so
+`frontend.txt` never selects `frontend-security.txt`. An `INCLUDE` that
+matches no file prints a warning to stderr instead of silently scanning
+nothing. The shipped pre-commit hook and CI workflow leave both unset.
+
 ## Format
 
 ```
