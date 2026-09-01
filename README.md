@@ -193,7 +193,7 @@ Either way, the `lib/check-*` scripts in `.githooks/lib/` are also runnable dire
 The scaffold follows the cross-tool **`AGENTS.md` standard** ([agents.md](https://agents.md)) — a single file at the project root that multiple agents already read (Cursor, Aider, Codex, and others). For tools that read a different filename, `install.sh` or a one-line pointer handles it:
 
 - **Cursor** — reads `AGENTS.md` natively. Nothing else needed.
-- **Claude Code** — reads `CLAUDE.md`. `install.sh` drops a one-line `CLAUDE.md` containing `@AGENTS.md`, which pulls `AGENTS.md` into context.
+- **Claude Code** — reads `CLAUDE.md`. `install.sh` drops a `CLAUDE.md` whose `@AGENTS.md` and `@coding-rules.md` imports pull both files into context at session start (`operational-rules.md` stays a link, read on demand: it's too large to pin into every turn).
 - **Aider** — add to `.aider.conf.yml`:
   ```yaml
   read:

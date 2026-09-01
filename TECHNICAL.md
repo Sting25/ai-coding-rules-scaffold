@@ -42,7 +42,7 @@ Language pattern files auto-install when their manifest is detected (`go.mod`, `
 | Scaffold file                                                           | Installed as                                                    | Purpose                                                                                                                                                                           |
 | ----------------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `AGENTS.md.template`                                                    | `AGENTS.md`                                                     | Primary agent doc: git discipline + project section                                                                                                                               |
-| `CLAUDE.md.pointer`                                                     | `CLAUDE.md`                                                     | One-liner pointing Claude Code at `AGENTS.md`                                                                                                                                     |
+| `CLAUDE.md.pointer`                                                     | `CLAUDE.md`                                                     | Pointer importing `AGENTS.md` + `coding-rules.md` into Claude Code's context                                                                                                      |
 | `coding-rules.md`                                                       | `coding-rules.md`                                               | Short list of code-level rules that aren't tool-enforceable                                                                                                                       |
 | `operational-rules.md`                                                  | `operational-rules.md`                                          | Process and collaboration rules — failure modes that no linter can catch                                                                                                          |
 | `ruff.toml.template`                                                    | `ruff.toml`                                                     | Python lint config                                                                                                                                                                |
@@ -359,13 +359,14 @@ minimal; turn them on per project.
   loading path, not a replacement for either existing one: `--claude`
   installs _runtime hooks_ (`.claude/settings.json` plus the `PreToolUse`
   precheck) that block a bad tool call as it happens; the plain AGENTS.md
-  path (always installed) is _always-loaded summary_: CLAUDE.md's
-  `@AGENTS.md` import pulls a condensed version of these rules, with links
-  to the full files, into every turn's context by design, to keep that
-  always-loaded context small. `--claude-skill` is what actually pulls the
-  **full text** of `coding-rules.md` / `operational-rules.md` into context,
-  **on demand**, at the moments they matter, rather than relying on the
-  summary alone or paying their full size on every turn. Opt-in because it is
+  path (always installed) is _always-loaded context_: CLAUDE.md imports
+  `AGENTS.md` (the condensed summary) and the full `coding-rules.md`
+  (short by rule, cheap to pin into every turn), while the much larger
+  `operational-rules.md` stays a link on purpose, since paying its full
+  size on every turn is the wrong trade. `--claude-skill` is what pulls
+  the **full text** of `operational-rules.md` (alongside
+  `coding-rules.md`) into context **on demand**, at the moments it
+  matters, rather than relying on the summary alone. Opt-in because it is
   Claude Code specific; combine freely with `--claude` and with the default
   AGENTS.md install. `.claude/skills/coding-rules/SKILL.md` is USER-OWNED
   (`cp_safe`): a project may hand-edit it, so a re-run never overwrites it
