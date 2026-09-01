@@ -489,6 +489,22 @@ _Anchor:_ a PR was merged by a concurrent session no one could later
 identify, minutes after another session's audit snapshot; the version
 drifted and the audit had to be redone against a moved main.
 
+### Destructive filesystem work needs the one-writer check too
+
+Deleting, moving, or repointing a path another session may be using
+(a checkout, a worktree, a symlink target) is a merge-grade write,
+and the merge-level check (open PRs, mainline movement) sees none of
+it. Check the signals you can actually read: issues or commits
+freshly filed from that path, recent file mtimes, open handles or
+processes. Any positive signal means stop and ask; true idleness is
+unprovable, so with no signals the bar is an explicit go-ahead naming
+the path, and prefer a rename over an immediate hard delete so a
+late writer fails loudly instead of by luck.
+_Anchor:_ a session deleted a duplicate repo checkout minutes after a
+concurrent session had filed an issue from inside that directory; the
+PR-and-mainline check had been run and caught nothing, and only luck
+decided whether the other session's next write hit a deleted path.
+
 ### End every session with a rules retrospective
 
 Before handoff, walk the session's incidents against this file's

@@ -8,6 +8,17 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+- **New operational-rules.md entry: "Destructive filesystem work needs the
+  one-writer check too" (#131).** Extends "One writer per repo at a time"
+  down to filesystem-level writes (deleting a checkout, moving a
+  directory, repointing a symlink target): during the anchoring incident
+  the existing rule's check (open PRs, mainline movement) was run and
+  caught nothing, because the concurrent writer's only footprints were a
+  freshly filed issue and filesystem state. Adopted through the issue-flow
+  gate with two independent reviews; both said ADOPT-WITH-REVISIONS, and
+  both revisions landed (a checkable bar replacing an unprovable
+  "provably idle" standard, and the check-ran-and-missed fact recorded in
+  the anchor).
 - **`_backup` warns when an overwritten file carried a `# Repo adaptation:`
   marker (#127).** Root cause: before #110, `coverage.yml`/`tests.yml`/
   `gitleaks.yml` installed via `cp_scaffold` (unconditional refresh on
