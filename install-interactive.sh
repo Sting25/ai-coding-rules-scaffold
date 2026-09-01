@@ -7,7 +7,7 @@
 # after MODE has been auto-detected and after install-lib.sh is loaded, but
 # before any file is actually written.
 #
-# Reads come from a dedicated fd (3), not stdin — the installer is commonly
+# Reads come from a dedicated fd (3), not stdin: the installer is commonly
 # invoked as `curl ... | bash` or via `npx`, where stdin is already the
 # script body, not a keyboard. SCAFFOLD_TTY (default /dev/tty) names the
 # source; tests override it to a plain file of canned answers, one per line,
@@ -15,13 +15,19 @@
 #
 # --force / --no-verify / --no-install are deliberately NOT asked here: they
 # govern re-run/edge-case behavior (overwrite drifted files, skip the smoke
-# test, never auto-run a package manager), not "which feature do I want" —
-# the actual thing this wizard replaces. Pass them as flags alongside
+# test, never auto-run a package manager), not "which feature do I want"
+# (the actual thing this wizard replaces). Pass them as flags alongside
 # --interactive if needed.
+#
+# Every CLAUDE/CURSOR/... assignment below is read only after install.sh
+# sources this file, so shellcheck (which lints this file on its own) can't
+# see the use and flags each one SC2034; same cross-file pattern already
+# documented and suppressed once in install-lib.sh's TEST_CI_STATE.
+# shellcheck disable=SC2034
 
 SCAFFOLD_TTY="${SCAFFOLD_TTY:-/dev/tty}"
 
-# _ask QUESTION DEFAULT(Y|N) — prompts on stderr (so `install.sh -i >log`
+# _ask QUESTION DEFAULT(Y|N): prompts on stderr (so `install.sh -i >log`
 # still shows the questions), reads one line from fd 3, and leaves 0/1 in
 # $_ASK_ANS. An empty answer (bare Enter, or EOF) takes DEFAULT.
 _ask() {
@@ -44,12 +50,12 @@ run_interactive() {
   fi
   exec 3<"$SCAFFOLD_TTY"
 
-  echo "ai-coding-rules-scaffold — interactive install (Enter accepts [default])" >&2
+  echo "ai-coding-rules-scaffold: interactive install (Enter accepts [default])" >&2
   echo >&2
 
   _ask "Detected stack: $MODE. Use it?" Y
   if [ "$_ASK_ANS" -eq 0 ]; then
-    printf 'Pick a stack — python / frontend / both / shell: ' >&2
+    printf 'Pick a stack (python / frontend / both / shell): ' >&2
     local pick=""
     IFS= read -r pick <&3 || true
     case "$pick" in
