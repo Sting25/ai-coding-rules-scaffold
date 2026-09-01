@@ -16,7 +16,7 @@ versioning follows [SemVer](https://semver.org/).
   template, no `--force` needed to trigger it. #110 already fixed the
   no-force case for those three files by switching them to
   `cp_scaffold_preserve` (kept in place, drift note printed instead). The
-  gap this closes is what's left: a *wanted* overwrite, either
+  gap this closes is what's left: a _wanted_ overwrite, either
   `cp_scaffold`'s unconditional refresh (`.githooks/pre-commit` and other
   scaffold-owned code) or `--force` on a drift-preserving file, still
   silently dropped a marked block with nothing but a generic "backed up:"
