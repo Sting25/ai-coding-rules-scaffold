@@ -12,6 +12,16 @@
 # Pattern format: <regex><TAB><description>
 # (TAB is the field separator so regex can use literal `|` alternation.)
 #
+# Scope by pattern FILE (opt-in, for callers that run more than one tier):
+#   CHECK_PATTERNS_INCLUDE  space-separated basenames; ONLY these are scanned
+#   CHECK_PATTERNS_EXCLUDE  space-separated basenames; these are skipped
+# e.g. a wrapper can run `CHECK_PATTERNS_INCLUDE=security.txt` against the
+# whole tree and `CHECK_PATTERNS_EXCLUDE=security.txt` against changed files.
+# Unset means every discovered file, which is what pre-commit and CI use.
+# An INCLUDE that matches no file warns on stderr rather than scanning nothing
+# silently (#149). Both names are matched whole, so `a.txt` never selects
+# `a-extra.txt`.
+#
 # Like check-secrets, this scans the STAGED/INDEXED BLOB via
 # `git show ":0:<path>"` rather than the working-tree file, so symlinks, NUL
 # bytes, and post-stage edits cannot hide content from the scan. Every grep
@@ -231,11 +241,21 @@ exts_for() {
 }
 
 FAILED=0
+INCLUDED=0
 # Auto-discover every pattern file. secrets.txt is check-secrets' domain (it
-# scans all files, not by extension), so skip it here.
+# scans all files, not by extension), so skip it here. Then apply the optional
+# INCLUDE/EXCLUDE basename filter documented in the header.
 for cfg in .forbidden-patterns/*.txt; do
   [ -e "$cfg" ] || continue   # no glob match → literal string; skip
-  case "$(basename "$cfg")" in secrets.txt) continue ;; esac
+  base=$(basename "$cfg")
+  case "$base" in secrets.txt) continue ;; esac
+  if [ -n "${CHECK_PATTERNS_INCLUDE:-}" ]; then
+    case " $CHECK_PATTERNS_INCLUDE " in *" $base "*) ;; *) continue ;; esac
+  fi
+  if [ -n "${CHECK_PATTERNS_EXCLUDE:-}" ]; then
+    case " $CHECK_PATTERNS_EXCLUDE " in *" $base "*) continue ;; esac
+  fi
+  INCLUDED=$((INCLUDED + 1))
   cfg_exts=$(exts_for "$cfg")
   if [ -z "$cfg_exts" ]; then
     echo "warning: $cfg: no '# scaffold-extensions:' header and no built-in mapping — skipped" >&2
@@ -244,5 +264,9 @@ for cfg in .forbidden-patterns/*.txt; do
   # shellcheck disable=SC2086  # word-splitting $cfg_exts into separate args is intentional
   scan "$cfg" $cfg_exts
 done
+
+if [ -n "${CHECK_PATTERNS_INCLUDE:-}" ] && [ "$INCLUDED" -eq 0 ]; then
+  echo "warning: CHECK_PATTERNS_INCLUDE='$CHECK_PATTERNS_INCLUDE' matched no .forbidden-patterns/*.txt, nothing was scanned" >&2
+fi
 
 exit $FAILED

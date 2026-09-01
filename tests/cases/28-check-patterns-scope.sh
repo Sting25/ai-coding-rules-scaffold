@@ -1,0 +1,77 @@
+# shellcheck shell=bash
+# cases/28-check-patterns-scope.sh, CHECK_PATTERNS_INCLUDE / CHECK_PATTERNS_EXCLUDE
+# (#149). Sourced into the driver's shell. Exercises check-patterns directly with
+# a NUL list on stdin (the same way case 10 does), since the pre-commit hook
+# never sets either variable. Every case asserts the POSITIVE outcome (the file
+# that should be flagged IS flagged and the exit is non-zero), never only the
+# absence of the other file.
+echo ""
+echo "check-patterns INCLUDE/EXCLUDE scoping (#149):"
+
+# Fixtures: one backend.txt violation, one frontend.txt violation. Staged so
+# check-patterns' `git show :0:` scan can see them.
+printf 'print("debug")\n' >scope_debug.py
+printf 'console.log("debug");\n' >scope_debug.ts
+git add scope_debug.py scope_debug.ts
+
+# run_cp <name> <expected-flagged> <expected-clean> [<expected stderr substring>]
+# Environment for the run comes from the CP_ENV array (env(1) arguments), so
+# values with spaces survive and nothing leaks into the driver's shell.
+CP_ENV=()
+run_cp() {
+  local name=$1 want=$2 clean=$3 warn=${4:-} rc=0
+  printf '%s\0' scope_debug.py scope_debug.ts \
+    | env "${CP_ENV[@]}" .githooks/lib/check-patterns >"$HOOK_OUT" 2>&1 || rc=$?
+  if [ -n "$want" ] && ! grep -qF "$want" "$HOOK_OUT"; then
+    echo "  ✗ $name: $want was not flagged"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  elif [ -n "$want" ] && [ "$rc" -eq 0 ]; then
+    echo "  ✗ $name: $want flagged but exit was 0"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  elif [ -z "$want" ] && [ "$rc" -ne 0 ]; then
+    echo "  ✗ $name: expected exit 0, got $rc"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  elif [ -n "$clean" ] && grep -qF "$clean" "$HOOK_OUT"; then
+    echo "  ✗ $name: $clean was flagged, expected out of scope"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  elif [ -n "$warn" ] && ! grep -qF "$warn" "$HOOK_OUT"; then
+    echo "  ✗ $name: expected warning missing: $warn"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  else
+    echo "  ✓ $name"; PASS=$((PASS + 1))
+  fi
+}
+
+# 28a. Baseline: both unset, both files flagged (unchanged default behavior).
+CP_ENV=(-u CHECK_PATTERNS_INCLUDE -u CHECK_PATTERNS_EXCLUDE)
+run_cp "unset: backend rule fires" scope_debug.py ""
+run_cp "unset: frontend rule fires" scope_debug.ts ""
+
+# 28b. INCLUDE=backend.txt: the .py violation fires, the .ts one is out of scope.
+CP_ENV=(CHECK_PATTERNS_INCLUDE=backend.txt)
+run_cp "INCLUDE=backend.txt scans only backend rules" scope_debug.py scope_debug.ts
+
+# 28c. EXCLUDE=backend.txt: the .ts violation fires, the .py one is skipped.
+CP_ENV=(CHECK_PATTERNS_EXCLUDE=backend.txt)
+run_cp "EXCLUDE=backend.txt skips backend rules" scope_debug.ts scope_debug.py
+
+# 28d. Space-separated lists: INCLUDE naming both files scans both.
+CP_ENV=(CHECK_PATTERNS_INCLUDE="backend.txt frontend.txt")
+run_cp "INCLUDE with two names scans both" scope_debug.py ""
+grep -qF scope_debug.ts "$HOOK_OUT" || { echo "  ✗ INCLUDE with two names missed frontend"; FAIL=$((FAIL + 1)); }
+
+# 28e. Whole-name match: `backend` (no .txt) selects nothing and warns loudly
+#      instead of scanning nothing silently. Exit 0 (no violations were scanned).
+CP_ENV=(CHECK_PATTERNS_INCLUDE=backend)
+run_cp "INCLUDE matching no file warns, exit 0" "" scope_debug.py "matched no .forbidden-patterns"
+
+# 28f. Reinstall preserves the contract (#149's actual failure mode): after a
+#      plain install.sh re-run refreshes the scaffold-owned check-patterns, the
+#      INCLUDE filter still works. Also asserts the variable name is present in
+#      the installed file, so a future template edit that drops it fails here.
+"$SCAFFOLD_DIR/install.sh" --both --all-langs --no-verify >/dev/null 2>&1
+git add scope_debug.py scope_debug.ts
+if [ "$(grep -c CHECK_PATTERNS_INCLUDE .githooks/lib/check-patterns)" -ge 1 ]; then
+  echo "  ✓ reinstall keeps CHECK_PATTERNS_INCLUDE in check-patterns"; PASS=$((PASS + 1))
+else
+  echo "  ✗ reinstall dropped CHECK_PATTERNS_INCLUDE from check-patterns"; FAIL=$((FAIL + 1))
+fi
+CP_ENV=(CHECK_PATTERNS_INCLUDE=backend.txt)
+run_cp "INCLUDE still honored after reinstall" scope_debug.py scope_debug.ts
+
+reset_repo
