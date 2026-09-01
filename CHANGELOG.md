@@ -30,8 +30,9 @@ versioning follows [SemVer](https://semver.org/).
   which never reads that cache; a cached-only tool is treated as not
   installed and skipped with the usual notice. The installer's
   post-install verify used the same npx gate to decide whether to offer
-  an install and now uses the same resolver. Regression test: case
-  42b2. This is also why the test suite showed 5 machine-dependent
+  an install and now uses the same resolver, and so does the shipped
+  `lint.yml` workflow (self-hosted or cached runners carry an npx cache
+  too). Regression test: case 42b2. This is also why the test suite showed 5 machine-dependent
   failures on any host with a stale `~/.npm/_npx` ESLint entry.
 
 ## [v0.15.0] - 2026-09-01
