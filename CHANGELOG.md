@@ -42,6 +42,17 @@ versioning follows [SemVer](https://semver.org/).
   `install_claude_md` moved to a new sourced `install-claude.sh` in the
   process: `install.sh` and `install-lib.sh` both sit at the scaffold's own
   500-line cap, the same reason `install-interactive.sh` is a separate file.
+- **Plain-language change summary section upgraded (`AGENTS.md.template`).**
+  Three additions, each anchored to measured failure: every claim must point
+  at something the user can open or run (across 23,247 agent-authored PRs,
+  45.4% of description/diff inconsistencies were "phantom changes", work
+  described but never implemented, arXiv:2601.04886); results are reported as
+  counts, never verdicts, and "not run this session" is said outright; and no
+  guard or hook may be reported without confirming it exists on disk
+  (claude-code#34327: an agent reported a protective git hook it never wrote,
+  and the unblocked command destroyed 12 unpushed commits the next day).
+  Reaches new installs only: `AGENTS.md` is never overwritten, even with
+  `--force`.
 
 ## [v0.13.0] - 2026-09-01
 
