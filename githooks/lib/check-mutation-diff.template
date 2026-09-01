@@ -1,0 +1,476 @@
+#!/usr/bin/env python3
+"""
+.githooks/lib/check-mutation-diff: diff-scoped mutation testing, the phase-2
+layer for the test-guard family (see check-red-green.template first).
+
+THE GAP THIS CLOSES. check-red-green proves a new test depends on the new
+code existing (it fails on base). It cannot prove the test constrains the
+new code's BEHAVIOUR. A test that calls the new function and asserts
+nothing, or asserts something trivially true, is red on base (the import
+does not exist yet) and therefore passes red-green cleanly, while catching
+nothing. Red-green's own source names the real answer: "mutation testing on
+the diff is the real one." This script is that answer: mutate the lines a
+PR changed, run the tests, and require the mutants to die. A test that kills
+at least one mutant of the diff has proven it constrains the new behaviour;
+one that does not has proven the opposite, regardless of whether it passes.
+
+INTERPLAY WITH check-red-green, stated explicitly rather than left implicit.
+red-green documents its own honest limit: a new test in a file whose imports
+do not resolve on base cannot be executed there at all, so every test in
+that file is reported as "unevaluable", not "offending": the check simply
+cannot see inside it. This is precisely where a vacuous test is most likely
+to hide, because the file already had a reason to be opaque to red-green.
+A surviving or uncovered mutant in a file check-red-green reported
+unevaluable is therefore the single highest-signal finding this check can
+produce, and is called out as such in the per-file warning below.
+
+MECHANISM, verified against mutmut 3.7.0 (pinned; see MUTMUT_PIN below) on
+2026-09-01, ground truth in the U0 fact sheet, not from memory of older
+mutmut majors, whose CLI and config surface differ substantially:
+
+  - mutmut 3.x has almost no CLI flags. There is no --paths-to-mutate, no
+    --tests-dir, no dry-run/count-only mode. All scoping is config-file
+    based: `only_mutate` (glob, file-level only, no function-level
+    scoping exists in this major) plus `source_paths`. So this script
+    writes a [tool.mutmut] table into a disposable worktree, it does not
+    pass CLI flags to mutmut.
+  - `mutmut --help`/`--version` import Config at IMPORT TIME and crash with
+    a bare traceback if no source directory is guessable from cwd. Because
+    of this, mutmut's presence and pinned version are verified via
+    importlib.metadata in a subprocess, never via `mutmut --version`,
+    which is cwd-dependent and unreliable as a preflight probe.
+  - mutmut ALWAYS copies sources into mutants/ under wherever it is
+    invoked; it never mutates in place and does not require git. This
+    script still builds an isolated `git worktree` copy of HEAD so the
+    synthesized config never touches the real checkout and so a crashed
+    or slow run cannot leave stray mutants/ artifacts in the repo.
+  - mutmut's own process exit code is NOT the verdict. A run with
+    surviving mutants exits 0, identically to a run where everything was
+    killed. The only reliable exit-code signal is a NONZERO code paired
+    with one of two specific strings: "failed to collect stats" (the
+    baseline suite itself failed, before mutation testing starts) or
+    "BadTestExecutionCommandsException" (the configured test-selection
+    args are not runnable by pytest at all). Everything else must be read
+    from the artifacts mutmut writes under mutants/, never from $?.
+  - A bad/nonexistent source_paths entry produces NO distinct error: 0
+    files get mutated, the baseline suite runs and passes, and mutmut
+    then exits 1 with "Stopping early, because we could not find any test
+    case for any mutant", the exact same code and a near-identical
+    message as "your tests genuinely do not cover the changed lines".
+    Since this is ambiguous from mutmut's own output, this script
+    verifies every source path it writes into the config actually exists
+    in the worktree BEFORE invoking mutmut, so that signal is never relied
+    on to distinguish the two cases.
+  - Per-mutant status lives in mutants/<path>/<file>.py.meta as
+    exit_code_by_key, mapped through mutmut's own status table (copied
+    verbatim below, from mutmut/__main__.py::status_by_exit_code). This is
+    the ONLY artifact with per-file granularity; the aggregate
+    mutants/mutmut-cicd-stats.json produced by `mutmut export-cicd-stats`
+    is a whole-run rollup with no file breakdown, so it cannot alone drive
+    the "per file" warning this check is required to produce. This script
+    therefore glob-parses the .meta files as its primary source, which is
+    also mutmut's own recommended path for "which files have survivors"
+    (see the U0 fact sheet, section 3), and falls back to parsing
+    `mutmut results --all=true` stdout only if no .meta files exist at
+    all, saying so explicitly when it does.
+  - Measured but easy to miss: a run that aborts early via "Stopping
+    early..." still writes .meta files, but every mutant in them has
+    exit_code None, i.e. status "not checked", the SAME empty-bucket
+    signature as a genuinely broken baseline. Text-matching
+    "failed to collect stats" is what actually tells the two apart; the
+    JSON alone cannot. "not checked" mutants that survive this
+    disambiguation are folded into the advisory count below, on the
+    reasoning that a mutant nothing ever ran is exactly as unconstrained
+    as one that ran and survived.
+
+WHAT COUNTS AS "COULD NOT EVALUATE" (exit 2) VS ADVISORY (exit 0).
+Per #145's design: advisory first, strict later. Exit 2 is reserved for
+infrastructure failure: mutmut missing or the wrong pinned version, a
+broken baseline suite, a bad worktree/config/path, or a timeout. It is
+NEVER used for "the tests did not kill enough mutants": that is exactly
+what the advisory warnings below exist to report, at exit 0, so this check
+can be turned on everywhere without becoming a second red-green. A source
+path that resolves to zero mutants (a comment-only or already-fully-tested
+diff) is not a failure either; it prints the positive line.
+
+KNOWN LIMITATIONS, stated rather than silently absorbed:
+  - No dry-run mutant count exists in this mutmut major, so --max-mutants
+    is enforced AFTER the full run completes, not as a fast preflight. The
+    run itself is not cheaper just because the cap will reject it.
+  - Config injection merges into pyproject.toml only; a project configured
+    solely via setup.cfg's [mutmut] section is not merged and gets a fresh
+    pyproject.toml written into the worktree instead, which may or may not
+    take precedence over setup.cfg depending on mutmut's own load order
+    (unverified for 3.7.0).
+  - mutmut's trampoline hard-asserts against qualnames starting with
+    "src.": a src-layout project whose tests import as `from src.pkg import
+    x` rather than `from pkg import x` will crash mutmut at collection,
+    unrelated to anything this script does.
+
+USAGE
+  check-mutation-diff --base <ref> [--ci] [--max-mutants N]
+
+Exit: 0 evaluated cleanly (killed-clean, or advisory warnings emitted)
+      1 more mutants than --max-mutants; split the PR
+      2 could not evaluate: mutmut missing/wrong version, broken baseline,
+        config/path failure, or timeout
+
+Exit 2 is a FAILURE, not a skip, same boundary as check-red-green and
+check-secrets. CI-only / PR-only by design (#145 point 1): mutation runs
+are minutes, not the seconds a pre-commit hook budgets for.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import pathlib
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+# Pinned per the U0 fact sheet: mutmut 3.7.0 is the newest stable release as
+# of 2026-09-01, requires Python >=3.10, and its config/CLI surface changed
+# materially from the 1.x/2.x line this repo must not silently drift onto.
+MUTMUT_PIN = "3.7.0"
+RUN_TIMEOUT = 1800  # seconds; mutation runs are minutes, generously capped
+
+# Kept in sync with check-red-green.template's regexes by hand; both scripts
+# need the same "what counts as a test file / what counts as build noise"
+# answer and neither is worth a shared-module dependency for two lines.
+TEST_DIR_RE = re.compile(r"(^|/)(tests?|testing)(/|$)")
+NOISE_RE = re.compile(r"(^|/)(__pycache__|\.pytest_cache|node_modules)(/|$)|\.pyc$")
+
+# Copied verbatim from mutmut/__main__.py::status_by_exit_code (U0 fact
+# sheet, section 2). Ground truth from source, not from mutmut's docs.
+STATUS_BY_EXIT_CODE = {
+    1: "killed", 3: "killed",
+    0: "survived",
+    5: "no tests", 33: "no tests",
+    2: "check was interrupted by user",
+    34: "skipped",
+    35: "suspicious",
+    36: "timeout", 24: "timeout", 152: "timeout", 255: "timeout", -24: "timeout",
+    -11: "segfault", -9: "segfault",
+    37: "caught by type check",
+}
+
+
+def run(cmd: list[str], cwd: str | None = None, timeout: int = RUN_TIMEOUT):
+    return subprocess.run(
+        cmd, cwd=cwd, capture_output=True, text=True, check=False, timeout=timeout
+    )
+
+
+def emit(sev: str, msg: str, ci: bool) -> None:
+    if ci:
+        print(f"::{sev}::{msg}")
+    else:
+        print(f"  {sev}: {msg}", file=sys.stderr)
+
+
+def is_real_source(p: str) -> bool:
+    return not NOISE_RE.search(p)
+
+
+def is_test_path(p: str) -> bool:
+    name = pathlib.PurePosixPath(p).name
+    return bool(TEST_DIR_RE.search(p)) or name.startswith("test_") or name.endswith("_test.py")
+
+
+def is_python_source(p: str) -> bool:
+    return p.endswith(".py") and is_real_source(p) and not is_test_path(p)
+
+
+def status_for(exit_code) -> str:
+    if exit_code is None:
+        return "not checked"
+    return STATUS_BY_EXIT_CODE.get(exit_code, "suspicious")
+
+
+def verify_mutmut(ci: bool) -> int:
+    """Verify mutmut is importable and pinned, without invoking its CLI.
+
+    `mutmut --version` crashes with a bare traceback unless a source
+    directory happens to be guessable from cwd (see docstring). Reading
+    the installed version via importlib.metadata sidesteps that entirely.
+    """
+    r = run([sys.executable, "-c",
+             "import importlib.metadata as m; print(m.version('mutmut'))"])
+    if r.returncode != 0:
+        emit("error",
+             f"mutmut is not importable with {sys.executable}. Install "
+             f"mutmut=={MUTMUT_PIN} in this environment first.", ci)
+        return 2
+    found = r.stdout.strip()
+    if found != MUTMUT_PIN:
+        emit("error",
+             f"mutmut version mismatch: found {found or '(empty)'}, pinned "
+             f"{MUTMUT_PIN}. Reinstall the pinned version; mutmut's config "
+             "and CLI surface changed materially across majors.", ci)
+        return 2
+    return 0
+
+
+def toml_list(items: list[str]) -> str:
+    # A JSON string array is valid TOML inline-array syntax for plain
+    # strings, so json.dumps is a safe, dependency-free TOML-list writer
+    # here without hand-rolling escaping.
+    return json.dumps(items)
+
+
+TABLE_RE = re.compile(r"^\[tool\.mutmut\]\n(?:(?!^\[).*\n?)*", re.MULTILINE)
+TEST_SELECTION_RE = re.compile(
+    r"^\s*pytest_add_cli_args_test_selection\s*=\s*(\[[^\]]*\])", re.MULTILINE
+)
+
+
+def inject_config(wt: str, src_files: list[str]) -> tuple[list[str], list[str]]:
+    """Scope mutmut to exactly the changed files via a [tool.mutmut] table.
+
+    Overrides source_paths/only_mutate unconditionally (that is the whole
+    point of a diff-scoped run). Carries over an existing
+    pytest_add_cli_args_test_selection value if the project already has
+    one, since dropping it could silently change which tests mutmut runs.
+    Any other pre-existing [tool.mutmut] keys are not preserved; this is a
+    stated, deliberate simplification, not an oversight (see docstring
+    "known limitations").
+    """
+    dirs = sorted({str(pathlib.PurePosixPath(p).parent) for p in src_files})
+    only_mutate = sorted(src_files)
+    pp = pathlib.Path(wt, "pyproject.toml")
+    text = pp.read_text() if pp.exists() else ""
+    carry_match = TEST_SELECTION_RE.search(text)
+    carry = (
+        f"pytest_add_cli_args_test_selection = {carry_match.group(1)}\n"
+        if carry_match else ""
+    )
+    text = TABLE_RE.sub("", text)
+    block = (
+        "\n[tool.mutmut]\n"
+        f"source_paths = {toml_list(dirs)}\n"
+        f"only_mutate = {toml_list(only_mutate)}\n"
+        f"{carry}"
+    )
+    pp.write_text(text.rstrip("\n") + "\n" + block if text.strip() else block.lstrip("\n"))
+    return dirs, only_mutate
+
+
+def parse_meta_files(wt: str, scope: set[str]) -> dict[str, dict[str, int]]:
+    """Per-file mutant status counts, parsed from mutants/**/*.py.meta.
+
+    This is mutmut's own recommended path for "which files have
+    survivors" (U0 fact sheet, section 3): it needs no further mutmut
+    invocation and is the only artifact with per-file granularity, unlike
+    the aggregate mutants/mutmut-cicd-stats.json.
+    """
+    mutants_dir = pathlib.Path(wt, "mutants")
+    per_file: dict[str, dict[str, int]] = {}
+    for mf in sorted(mutants_dir.rglob("*.py.meta")):
+        rel = str(mf.relative_to(mutants_dir))[: -len(".meta")]
+        if rel not in scope:
+            continue
+        try:
+            data = json.loads(mf.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        stats = per_file.setdefault(
+            rel, {"killed": 0, "survived": 0, "no_tests": 0, "not_checked": 0, "other": 0, "total": 0}
+        )
+        for code in data.get("exit_code_by_key", {}).values():
+            st = status_for(code)
+            stats["total"] += 1
+            if st == "killed":
+                stats["killed"] += 1
+            elif st == "survived":
+                stats["survived"] += 1
+            elif st == "no tests":
+                stats["no_tests"] += 1
+            elif st == "not checked":
+                stats["not_checked"] += 1
+            else:
+                stats["other"] += 1
+    return per_file
+
+
+def parse_results_fallback(wt: str, scope: set[str], ci: bool) -> dict[str, dict[str, int]]:
+    """Fallback used only when no .meta files exist at all, said out loud.
+
+    `mutmut results --all=true` gives status by dotted module name, not by
+    file path. Attribution to a specific changed file is only unambiguous
+    when exactly one file is in scope; otherwise the pooled result is
+    reported under a synthetic key and the ambiguity is surfaced.
+    """
+    r = run([sys.executable, "-m", "mutmut", "results", "--all=true"], cwd=wt)
+    counts = {"killed": 0, "survived": 0, "no_tests": 0, "not_checked": 0, "other": 0, "total": 0}
+    for line in r.stdout.splitlines():
+        line = line.strip()
+        if ":" not in line:
+            continue
+        status = line.rsplit(":", 1)[1].strip()
+        counts["total"] += 1
+        if status == "killed":
+            counts["killed"] += 1
+        elif status == "survived":
+            counts["survived"] += 1
+        elif status == "no tests":
+            counts["no_tests"] += 1
+        elif status == "not checked":
+            counts["not_checked"] += 1
+        else:
+            counts["other"] += 1
+    if counts["total"] == 0:
+        return {}
+    if len(scope) == 1:
+        return {next(iter(scope)): counts}
+    emit("notice",
+         f"{len(scope)} changed files were mutated but mutants/*.py.meta was "
+         "absent, so per-file attribution fell back to `mutmut results`, "
+         "which is pooled across all scoped files. Reporting the pool "
+         "under a combined key.", ci)
+    return {"(pooled: " + ", ".join(sorted(scope)) + ")": counts}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--base", required=True, help="base ref to compare against")
+    ap.add_argument("--ci", action="store_true")
+    ap.add_argument(
+        "--max-mutants", type=int, default=400, dest="max_mutants",
+        help="refuse to report on more than this many mutants (guards CI time)",
+    )
+    args = ap.parse_args()
+
+    v = verify_mutmut(args.ci)
+    if v:
+        return v
+
+    base = run(["git", "rev-parse", "--verify", f"{args.base}^{{commit}}"])
+    if base.returncode != 0:
+        emit("error", f"cannot resolve base ref {args.base!r}. In CI make sure the "
+                      "checkout has fetch-depth: 0.", args.ci)
+        return 2
+    base_sha = base.stdout.strip()
+
+    head = run(["git", "rev-parse", "--verify", "HEAD"])
+    if head.returncode != 0:
+        emit("error", "cannot resolve HEAD.", args.ci)
+        return 2
+    head_sha = head.stdout.strip()
+
+    changed = run(
+        ["git", "diff", "--name-only", "--diff-filter=d", f"{base_sha}...HEAD"]
+    ).stdout.split()
+    src_files = sorted(p for p in changed if is_python_source(p))
+    if not src_files:
+        print("nothing to mutate, no changed non-test Python source files in this diff.")
+        return 0
+
+    tmp = tempfile.mkdtemp(prefix="mutdiff-")
+    wt = os.path.join(tmp, "wt")
+    try:
+        r = run(["git", "worktree", "add", "--detach", wt, head_sha])
+        if r.returncode != 0:
+            emit("error", f"git worktree add failed: {r.stderr.strip()}", args.ci)
+            return 2
+
+        dirs, only_mutate = inject_config(wt, src_files)
+
+        missing = [d for d in dirs if not pathlib.Path(wt, d).exists()]
+        missing += [f for f in only_mutate if not pathlib.Path(wt, f).exists()]
+        if missing:
+            emit("error",
+                 "configured mutmut source path(s) do not exist in the "
+                 f"worktree, checked independently before running mutmut "
+                 f"because mutmut's own error for this is indistinguishable "
+                 f"from zero coverage: {', '.join(missing)}", args.ci)
+            return 2
+
+        r = run([sys.executable, "-m", "mutmut", "run"], cwd=wt)
+        out = (r.stdout or "") + (r.stderr or "")
+
+        if "failed to collect stats" in out:
+            emit("error",
+                 "the baseline test suite fails before any mutation testing "
+                 "starts (mutmut: \"failed to collect stats\"). Fix the "
+                 "failing tests first; a mutation gate cannot run against a "
+                 "red baseline.", args.ci)
+            return 2
+        if "BadTestExecutionCommandsException" in out:
+            emit("error",
+                 "pytest could not run at all with the configured "
+                 "test-selection arguments (mutmut: "
+                 "BadTestExecutionCommandsException). Check "
+                 "pytest_add_cli_args_test_selection.", args.ci)
+            return 2
+
+        scope = set(only_mutate)
+        per_file = parse_meta_files(wt, scope)
+        stats_source = "mutants/*.py.meta"
+        if not per_file:
+            per_file = parse_results_fallback(wt, scope, args.ci)
+            stats_source = "mutmut results --all=true (meta files were absent)"
+        if not per_file:
+            emit("error",
+                 "mutmut run produced no readable results at all (neither "
+                 "mutants/*.py.meta nor `mutmut results` output any status). "
+                 "Treating as unable to evaluate.", args.ci)
+            return 2
+
+        total = sum(s["total"] for s in per_file.values())
+        killed = sum(s["killed"] for s in per_file.values())
+        bad_total = total - killed
+
+        if total > args.max_mutants:
+            emit("error",
+                 f"{total} mutants across {len(src_files)} changed file(s) "
+                 f"exceeds --max-mutants={args.max_mutants}; evaluating that "
+                 "many would dominate CI time. Split the PR - a change this "
+                 "large is not reviewable by any means available to you, "
+                 "mutation testing included.", args.ci)
+            return 1
+
+        if total == 0:
+            print("mutation OK: 0 mutants generated for the changed lines "
+                  f"(source: {stats_source}); nothing to evaluate.")
+            return 0
+
+        if bad_total == 0:
+            print(f"mutation OK: {total} mutants, all killed across "
+                  f"{len(src_files)} changed file(s) (source: {stats_source}).")
+            return 0
+
+        for rel, s in sorted(per_file.items()):
+            bad = s["survived"] + s["no_tests"] + s["not_checked"] + s["other"]
+            if bad:
+                emit("warning",
+                     f"{rel}: {s['survived']} survived, {s['no_tests']} no "
+                     f"tests, {s['not_checked']} not checked, {s['other']} "
+                     f"other mutant(s) out of {s['total']} on this diff. A "
+                     "surviving or uncovered mutant means some changed line "
+                     "has no test that actually constrains it.", args.ci)
+        emit("notice",
+             f"mutation summary: {killed} killed, {bad_total} not killed "
+             f"({total} total) across {len(src_files)} changed file(s), "
+             f"source: {stats_source}. Advisory only for this release "
+             "(#145 point 4): none of this fails the build yet. A survivor "
+             "in a file check-red-green reported unevaluable is the "
+             "highest-signal finding above.", args.ci)
+        return 0
+
+    finally:
+        run(["git", "worktree", "remove", "--force", wt])
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except subprocess.TimeoutExpired:
+        print("::error::mutation-diff check timed out. A mutation run too "
+              "slow to complete in CI is too slow to trust as a gate; scope "
+              "it to fewer files or raise the timeout deliberately.")
+        raise SystemExit(2)

@@ -4,18 +4,37 @@ name: test-guard
 # Installed by the scaffold's opt-in `--test-guard` flag.
 #
 # The anti-gaming layer. Every other gate in this scaffold assumes the test
-# suite is an honest witness; this workflow checks the witness. Today it runs
-# one check:
+# suite is an honest witness; this workflow checks the witness. It runs two
+# checks:
 #
-#   check-red-green   a NEW test that passes against the base branch was
-#                     never observed failing, and is therefore not evidence
-#                     that anything was fixed
+#   check-red-green      a NEW test that passes against the base branch was
+#                         never observed failing, and is therefore not
+#                         evidence that anything was fixed
+#
+#   check-mutation-diff  a NEW test can pass red-green while still asserting
+#                         nothing about the new code's behaviour. This check
+#                         mutates the lines the PR changed and reports, per
+#                         file, every mutant the suite fails to kill.
+#                         It is advisory-first (issue #145): surviving
+#                         mutants print a warning but never fail the job.
+#                         Exit code 2 (mutmut missing or the wrong pinned
+#                         version, a broken baseline suite, a bad worktree
+#                         or config, or a timeout) IS a failure and does
+#                         fail the job, since that means the check could not
+#                         evaluate anything, not that it evaluated cleanly.
+#
+# INTERPLAY between the two checks. A file check-red-green reports
+# "unevaluable" (its imports don't resolve against base, so no test in it
+# can be run there at all) is exactly where a vacuous test is most likely to
+# hide, since the file was already opaque to red-green. A surviving mutant
+# check-mutation-diff finds in that same file is this workflow's single
+# highest-signal finding.
 #
 # A suite generated against an implementation passes by construction. The
-# check runs each new test node ID against a scratch worktree of the base
-# commit and requires it to fail there. New tests that legitimately pass on
-# base (characterization tests pinning behaviour before a refactor, coverage
-# backfill for already-correct code) must say so out loud:
+# red-green check runs each new test node ID against a scratch worktree of
+# the base commit and requires it to fail there. New tests that legitimately
+# pass on base (characterization tests pinning behaviour before a refactor,
+# coverage backfill for already-correct code) must say so out loud:
 #
 #     @pytest.mark.characterization(reason="pinning invoice rounding before refactor")
 #
@@ -100,3 +119,15 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: python3 .githooks/lib/check-red-green --base "$BASE_SHA" --ci
+
+      # Diff-scoped mutation testing, advisory-first (issue #145): surviving
+      # mutants warn but never fail this step, exit 2 (cannot evaluate) does.
+      # No continue-on-error here on purpose; the script's own exit codes
+      # already carry the pass/warn/fail semantics this workflow wants.
+      - name: Mutation testing (diff-scoped, advisory)
+        if: steps.detect.outputs.present == 'true'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          pip install mutmut==3.7.0
+          python3 .githooks/lib/check-mutation-diff --base "$BASE_SHA" --ci

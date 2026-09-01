@@ -46,10 +46,17 @@ install_opt_in_claude_skill() {
   fi
 }
 
-# --test-guard (#140 item 2, red-green only): every NEW test must be shown
-# failing against the PR base before it may pass. Three artifacts:
-#   .githooks/lib/check-red-green   the check (scaffold-owned, refreshed)
-#   .github/workflows/test-guard.yml  the PR gate (drift-preserving)
+# --test-guard (#140 item 2, red-green, plus the advisory mutation layer
+# from #145): every NEW test must be shown failing against the PR base
+# before it may pass, and the lines a PR changed must kill at least one
+# mutant. Four artifacts:
+#   .githooks/lib/check-red-green       the red-green check (scaffold-owned,
+#                                        refreshed)
+#   .githooks/lib/check-mutation-diff   the mutation check (scaffold-owned,
+#                                        refreshed; needs no local tooling,
+#                                        CI installs mutmut==3.7.0 itself)
+#   .github/workflows/test-guard.yml    the PR gate running both
+#                                        (drift-preserving)
 #   a rules section appended once to coding-rules.md (user-owned, so
 #   append-if-marker-absent, same pattern as install-claude.sh's CLAUDE.md
 #   merge; a plain re-run never appends twice, and uninstall leaves it, like
@@ -61,6 +68,8 @@ install_opt_in_test_guard() {
   if [ "$TEST_GUARD" -eq 1 ]; then
     cp_scaffold "$SCAFFOLD_DIR/githooks/lib/check-red-green.template" ".githooks/lib/check-red-green"
     mkx ".githooks/lib/check-red-green"
+    cp_scaffold "$SCAFFOLD_DIR/githooks/lib/check-mutation-diff.template" ".githooks/lib/check-mutation-diff"
+    mkx ".githooks/lib/check-mutation-diff"
     cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/test-guard.yml.template" ".github/workflows/test-guard.yml"
     if [ -f "coding-rules.md" ] && ! grep -q 'ai-coding-rules-scaffold:test-guard:begin' "coding-rules.md" 2>/dev/null; then
       cat "$SCAFFOLD_DIR/coding-rules-test-guard.md" >>"coding-rules.md"
@@ -69,6 +78,7 @@ install_opt_in_test_guard() {
     echo "note: test-guard.yml runs check-red-green on every PR: each NEW test is run against the base commit and must FAIL there. Register the exemption marker in pytest.ini under [pytest]:"
     echo "          markers ="
     echo "              characterization: passes against the base branch by design; give a reason"
+    echo "      It also runs check-mutation-diff, an advisory mutation-testing layer scoped to the PR's changed lines: surviving mutants print a warning but never fail the job (advisory-first, issue #145). CI installs mutmut==3.7.0 itself, nothing to add locally."
     echo "      and make test-guard a REQUIRED status check on the default branch: an advisory check on a repo where the agent can also merge is a check the agent can route around."
   fi
 }
