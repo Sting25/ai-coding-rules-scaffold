@@ -39,8 +39,10 @@
 # deliberate - a missed call costs one finding, a false positive costs the gate.
 # Backticks (PHP's shell-exec shorthand) are NOT covered: a regex cannot tell
 # `$cmd` from a backtick in a comment or a Markdown docblock.
+# assert() is deliberately absent from the request-data rule: `assert(isset(
+# $_GET['id']))` is a plain boolean check and matched it. It stays opt-in below.
 (^[[:space:]]*|^[^*/#]*(=>|[^A-Za-z0-9_.>:$*/#'"[:space:]]|(return|echo|print|throw|yield|<\?php)[[:space:]])[[:space:]]*)eval[[:space:]]*\(	eval() executes arbitrary code - there is no safe way to build one from input
-(^|[^A-Za-z0-9_>:$])(system|passthru|shell_exec|exec|popen|proc_open|pcntl_exec|eval|assert|unserialize|extract|create_function)[[:space:]]*\([^)]*\$_(GET|POST|REQUEST|COOKIE|FILES)[^A-Za-z0-9_]	RCE sink fed straight from request data - never pass $_GET/$_POST/$_REQUEST/$_COOKIE/$_FILES to this function
+(^|[^A-Za-z0-9_>:$])(system|passthru|shell_exec|exec|popen|proc_open|pcntl_exec|eval|unserialize|extract|create_function)[[:space:]]*\([^)]*\$_(GET|POST|REQUEST|COOKIE|FILES)($|[^A-Za-z0-9_])	RCE sink fed straight from request data - never pass $_GET/$_POST/$_REQUEST/$_COOKIE/$_FILES to this function
 ^[^*/#]*CURLOPT_SSL_VERIFY(PEER|HOST)[[:space:]]*(,|=>)[[:space:]]*(false|0)([^0-9]|$)	Disabling cURL TLS verification (MITM risk) - fix the cert/CA bundle instead
 
 # Optional (opt-in) — uncomment a line to enable it:

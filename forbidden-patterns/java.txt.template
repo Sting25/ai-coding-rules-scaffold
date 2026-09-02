@@ -3,8 +3,8 @@
 # Format: <regex><TAB><description>   (one per line; # comments ignored)
 # Separator is TAB - patterns can contain literal `|` for ERE alternation.
 # Patterns are POSIX ERE, matched case-sensitively with `grep -anE`.
-# Bans console debug output (keeps logger.info/warn/error intact) plus a block
-# of JVM RCE/TLS sinks below.
+# Bans console debug output (keeps logger.info/warn/error intact) plus three
+# narrow command-execution / TLS sinks below.
 # printStackTrace ban is no-arg only; printStackTrace(writer) is allowed (logging idiom).
 # Copy to your project as `.forbidden-patterns/java.txt`.
 
@@ -12,29 +12,58 @@
 (^|[^A-Za-z_])System\.err\.print(ln|f)?[[:space:]]*\(	Use logger.error(), not System.err.print/println/printf
 \.printStackTrace[[:space:]]*\([[:space:]]*\)	Log the exception via the logger, not e.printStackTrace(); pass a PrintWriter to capture it instead
 
-# --- Security: JVM RCE / reflection / TLS sinks ---
+# --- Security: command execution / TLS validation ---
 # Java ships no linter template, no hook lint and a placeholder CI job, so this
-# file is the only gate in front of these lines. readObject is matched in its
-# NO-ARG call form only, so a class's own `private void readObject(ObjectInputStream in)`
-# hook is not flagged.
-# checkServerTrusted is matched ONLY with an EMPTY BODY on the same line - the
-# `{}` / `{ }` of the copy-pasted trust-all TrustManager. A real implementation
-# (a pinning or delegating one, whose body is on the following lines) does not
-# fire, and neither does a call to `delegate.checkServerTrusted(...)`. The limit
-# is the line-at-a-time scan: an empty body split across two lines is not seen.
-# setAccessible(true) is NOT an active rule - see the opt-in block at the bottom.
-(^|[^A-Za-z_])new[[:space:]]+([A-Za-z_][A-Za-z0-9_]*\.)*ObjectInputStream[[:space:]]*\(	Java deserialization of untrusted bytes is RCE (CVE-2015-4852 class) - use JSON/protobuf with a schema
-\.readObject[[:space:]]*\([[:space:]]*\)	ObjectInputStream.readObject() on untrusted input is RCE - deserialize a schema-checked format instead
-(^|[^A-Za-z_])Runtime\.getRuntime[[:space:]]*\([[:space:]]*\)[[:space:]]*\.exec	Runtime.exec() is a command-injection sink - use ProcessBuilder with a fixed argv
-(^|[^A-Za-z_])checkServerTrusted[[:space:]]*\([^)]*\)[^{]*\{[[:space:]]*\}	An EMPTY checkServerTrusted() accepts every certificate - that is TLS validation switched off (MITM risk); validate the chain or keep the platform TrustManager
-ALLOW_ALL_HOSTNAME_VERIFIER	ALLOW_ALL_HOSTNAME_VERIFIER disables TLS hostname checking (MITM risk) - keep the default verifier
+# file is the only gate in front of these lines. Each rule is deliberately much
+# narrower than the vulnerability class it names: a miss costs one finding, a
+# false positive fails a build in someone else's repo on code they did not
+# write. All three are silent across ~19k real Java files (BouncyCastle, Netty,
+# HttpClient, Spring, Hibernate, Tomcat, Jetty, Kafka, ZooKeeper, Guava,
+# commons-*, Jackson, Mockito, JUnit - library AND test sources).
+#
+# Runtime.exec: only the STRING-COMMAND form - a literal, a `+` concatenation,
+# or String.format(). The fixed-argv forms `exec(new String[]{...})` and
+# `exec(list.toArray(...))` are already the recommended shape and never fire
+# (all 6 real-world hits in the corpus were exactly those). Deliberately
+# missed: `exec(cmd)` with a bare variable, a receiver held in a `Runtime`
+# local, and a call split across lines.
+#
+# checkServerTrusted: only a DECLARATION whose body is EMPTY on the same line -
+# `{}` / `{ }`, optionally after a `throws` clause. That is the copy-pasted
+# trust-all TrustManager and nothing else. Delegating, wrapping and pinning
+# implementations, interface declarations, a body that merely contains `{}`,
+# and calls to `delegate.checkServerTrusted(...)` - including inside a one-line
+# `try { ... } catch (CertificateException e) {}` - do not fire. A trust-all
+# whose empty body is split across two lines is missed: the scan is line-at-a-
+# time, and real ones usually are (`{ //nop }` on its own line).
+#
+# ALLOW_ALL_HOSTNAME_VERIFIER: only where the constant is USED - immediately
+# followed by `)`, `,` or `;`. Prose naming it ("never use
+# ALLOW_ALL_HOSTNAME_VERIFIER here") and HttpClient's own declaration of it do
+# not fire.
+#
+# Removed after testing, do not re-add as written: `\.readObject[[:space:]]*\(\)`.
+# `readObject()` is also the ASN.1, PEM and ObjectInput reader API and the body
+# of every custom `private void readObject` hook - 367 hits over the corpus,
+# essentially all benign. Line-level regex cannot tell those from a
+# java.io.ObjectInputStream fed untrusted bytes.
+(^|[^A-Za-z_])Runtime\.getRuntime[[:space:]]*\([[:space:]]*\)[[:space:]]*\.exec[[:space:]]*\([[:space:]]*("|String\.format|[^)]*\+)	Runtime.exec() on a built command string is a command-injection sink (it also splits the string on whitespace) - use ProcessBuilder with a fixed argv
+(^|[^A-Za-z_])checkServerTrusted[[:space:]]*\([^)]*\)[[:space:]]*(throws[[:space:]][A-Za-z0-9_,.[:space:]]*)?\{[[:space:]]*\}	An EMPTY checkServerTrusted() accepts every certificate - that is TLS validation switched off (MITM risk); validate the chain or keep the platform TrustManager
+(^|[^A-Za-z0-9_])ALLOW_ALL_HOSTNAME_VERIFIER[[:space:]]*[),;]	ALLOW_ALL_HOSTNAME_VERIFIER disables TLS hostname checking (MITM risk) - keep the default verifier
 
 # Optional (opt-in) — uncomment a line to enable it:
 # (^|[^A-Za-z_])(TODO|FIXME|XXX)($|[^A-Za-z0-9_])	TODO/FIXME/XXX not allowed - open a ticket instead
 # (^|[^A-Za-z_])System\.out\.printf[[:space:]]*\(	Use a logger, not System.out.printf (FP-prone in CLI tools)
+# Java deserialization ships OFF. `new ObjectInputStream(...)` on untrusted
+# bytes is RCE, but the regex cannot see where the bytes came from, and in real
+# code most constructions are serialization round-trip TESTS and deep-copy /
+# session-cache helpers reading bytes the same process just wrote (24 of the 35
+# corpus hits). Enable it in a module that should never use Java serialization
+# at all, and expect to mark its round-trip tests with scaffold-allow.
+# (^|[^A-Za-z_])new[[:space:]]+([A-Za-z_][A-Za-z0-9_]*\.)*ObjectInputStream[[:space:]]*\(	Java deserialization of untrusted bytes is RCE (CVE-2015-4852 class) - use JSON/protobuf with a schema
 # setAccessible(true) ships OFF: it is a design smell, not a sink, and it is
 # ordinary in Jackson/Spring/Hibernate glue, JUnit ReflectionTestUtils-style test
-# helpers and any DI container - an always-on rule blocks correct commits in
-# every one of those. Enable it in an application module that should contain no
-# reflection of its own.
+# helpers and any DI container (113 corpus hits across 65 files) - an always-on
+# rule blocks correct commits in every one of those. Enable it in an
+# application module that should contain no reflection of its own.
 # \.setAccessible[[:space:]]*\([[:space:]]*true[[:space:]]*\)	setAccessible(true) defeats access control and final-field safety - drop the reflection (off by default: routine in framework glue and tests)
