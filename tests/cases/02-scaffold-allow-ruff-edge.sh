@@ -117,7 +117,7 @@ reset_repo
 #      print a one-line notice to stderr and still exit 0 (pyproject.toml,
 #      present since the bootstrap fixture, is enough to satisfy the check's
 #      config gate). ruff is stripped from PATH, there is no .venv/venv, and the
-#      python3 stub has no ruff module — so the notice is the only correct
+#      python3 stub has no ruff module, so the notice is the only correct
 #      outcome, not an accident of what the host happens to have installed.
 NORUFF=$(mktemp -d)
 cat >"$NORUFF/python3" <<'STUB'
@@ -236,14 +236,14 @@ fi
 echo 'pri''nt("debug")' >cdpath.py
 git add cdpath.py
 if CDPATH=".:$HOME" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
-  echo "  ✗ CDPATH set — hook accepted, expected reject"
+  echo "  ✗ CDPATH set: hook accepted, expected reject"
   sed 's/^/      /' "$HOOK_OUT"
   FAIL=$((FAIL + 1))
 elif grep -qF "structlog" "$HOOK_OUT"; then
   echo "  ✓ CDPATH does not stop the hook's scanners from launching"
   PASS=$((PASS + 1))
 else
-  echo "  ✗ CDPATH set — rejected, but not by the pattern scan"
+  echo "  ✗ CDPATH set: rejected, but not by the pattern scan"
   sed 's/^/      /' "$HOOK_OUT"
   FAIL=$((FAIL + 1))
 fi
@@ -262,14 +262,14 @@ printf '[size]\n"cdp/**" = 100\n' >.scaffold.toml
 seq 1 200 >cdp/big.py
 git add .scaffold.toml cdp/big.py
 if printf '%s\0' cdp/big.py | CDPATH=".:$HOME" .githooks/lib/check-size >"$HOOK_OUT" 2>&1; then
-  echo "  ✗ CDPATH set — check-size ignored the .scaffold.toml cap, expected reject"
+  echo "  ✗ CDPATH set: check-size ignored the .scaffold.toml cap, expected reject"
   sed 's/^/      /' "$HOOK_OUT"
   FAIL=$((FAIL + 1))
 elif grep -qF "extract a module" "$HOOK_OUT"; then
   echo "  ✓ CDPATH does not break a standalone lib check's config lookup"
   PASS=$((PASS + 1))
 else
-  echo "  ✗ CDPATH set — check-size failed for the wrong reason"
+  echo "  ✗ CDPATH set: check-size failed for the wrong reason"
   sed 's/^/      /' "$HOOK_OUT"
   FAIL=$((FAIL + 1))
 fi
@@ -307,7 +307,7 @@ git add mergesecret.txt
 printf 'unstaged edit\n' >>conflict.txt
 GITDIR=$(git rev-parse --git-dir)
 if .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
-  echo "  ✗ merge stash skip — hook accepted a staged secret mid-merge"
+  echo "  ✗ merge stash skip: hook accepted a staged secret mid-merge"
   sed 's/^/      /' "$HOOK_OUT"
   FAIL=$((FAIL + 1))
 elif grep -qF "AWS access key" "$HOOK_OUT" && [ -e "$GITDIR/MERGE_HEAD" ] \
@@ -315,7 +315,7 @@ elif grep -qF "AWS access key" "$HOOK_OUT" && [ -e "$GITDIR/MERGE_HEAD" ] \
   echo "  ✓ mid-merge the hook scans without stashing, merge state intact"
   PASS=$((PASS + 1))
 else
-  echo "  ✗ merge stash skip — expected a secret reject with MERGE_HEAD and the"
+  echo "  ✗ merge stash skip: expected a secret reject with MERGE_HEAD and the"
   echo "    unstaged edit still in place and no stash entry"
   sed 's/^/      /' "$HOOK_OUT"
   FAIL=$((FAIL + 1))
@@ -357,14 +357,14 @@ git add stashfail.py
 printf 'dirty\n' >>stashdirty.txt
 if REAL_GIT="$REALGIT" REAL_MKTEMP="$REALMKTEMP" STASH_TMP_DIR="$STASHTMP" \
    PATH="$GITSTUB:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
-  echo "  ✗ stash failure — hook proceeded, expected a refusal"
+  echo "  ✗ stash failure: hook proceeded, expected a refusal"
   sed 's/^/      /' "$HOOK_OUT"
   FAIL=$((FAIL + 1))
 elif grep -qF "could not stash" "$HOOK_OUT" && [ -z "$(find "$STASHTMP" -mindepth 1)" ]; then
   echo "  ✓ a failed stash refuses the commit and leaves no temp file behind"
   PASS=$((PASS + 1))
 else
-  echo "  ✗ stash failure — expected the 'could not stash' refusal and no temp file left"
+  echo "  ✗ stash failure: expected the 'could not stash' refusal and no temp file left"
   sed 's/^/      /' "$HOOK_OUT"
   find "$STASHTMP" -mindepth 1 | sed 's/^/      leftover: /'
   FAIL=$((FAIL + 1))

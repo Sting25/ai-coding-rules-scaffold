@@ -195,7 +195,7 @@ reset_repo
 # 42e. .cjs and .mjs are part of the JS file set. lint.yml lints
 #      *.ts|*.tsx|*.js|*.jsx|*.cjs|*.mjs|*.vue; the hook's case list dropped
 #      .cjs and .mjs, so a commit made up only of those files ran no linter and
-#      printed no skip notice either — it just went through, and the divergence
+#      printed no skip notice either: it just went through, and the divergence
 #      surfaced in CI. The stub echoes its arguments so this asserts the files
 #      actually reached eslint, not merely that the commit was refused.
 CJSB=$(mktemp -d)

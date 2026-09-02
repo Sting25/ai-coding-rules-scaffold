@@ -185,7 +185,7 @@ jobs:
             return 1
           }
           if ! prettier_config_present; then
-            echo "no prettier config — skipping format check"
+            echo "no prettier config, skipping format check"
             exit 0
           fi
           if node -e "require.resolve('prettier/package.json')" >/dev/null 2>&1; then
@@ -197,7 +197,7 @@ jobs:
             # workflow so a fresh install never format-fails pre-existing files.
             npx --no-install prettier --check --ignore-unknown -- "${changed[@]}"
           else
-            echo "prettier config present but prettier is not installed — skipping format check"
+            echo "prettier config present but prettier is not installed, skipping format check"
           fi
       - name: Type-check (tsc --noEmit)
         if: steps.detect.outputs.present == 'true'
