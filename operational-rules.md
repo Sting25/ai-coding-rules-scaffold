@@ -121,6 +121,18 @@ _Anchor:_ a guardrail flagged a file; exempting it was one line and
 fixing it a few — but an exemption, unlike a fix, never expires, so
 suppressions accrete until the scanner no longer scans.
 
+### Choose the strongest approach at the fork, not after the work is built
+
+Decide between the robust approach and the quick one BEFORE writing the
+fix. Once the fast path is built, sunk cost decides for you and the
+question becomes a postmortem. When speed or simplicity is the only
+reason to prefer a path, treat that as a reason to slow down, not a
+green light.
+_Anchor:_ denylist rules written quickly and checked only for syntax
+were then measured against real third-party code: three fired on
+legitimate code every time they fired, and had to be deleted after a
+full rework round. Measuring first was the same work, once.
+
 ### Hold shared-resource locks for contiguous work, not per operation
 
 When multiple processes contend for a single shared resource (GPU,
