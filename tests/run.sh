@@ -62,7 +62,8 @@ for case_file in \
   "$HERE/cases/24-claude-skill.sh" \
   "$HERE/cases/25-interactive-install.sh" \
   "$HERE/cases/26-repo-adaptation-warn.sh" \
-  "$HERE/cases/27-test-guard.sh"; do
+  "$HERE/cases/27-test-guard.sh" \
+  "$HERE/cases/28-check-patterns-scope.sh"; do
   # shellcheck source=/dev/null
   . "$case_file"
 done

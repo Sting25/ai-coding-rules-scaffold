@@ -35,6 +35,18 @@ py_install_cmd() {
 
 # offer <label> <presence-test-command> <install-base> <packages>
 # Prints ✓ when present; otherwise offers to install (auto-run only if safe).
+# Same gate the pre-commit hook uses: a JS tool counts as installed only when
+# Node can resolve it from this project's node_modules. `npx --no-install`
+# also answers from npm's global _npx cache, which would report "installed"
+# for a tool the project never added and then skip the offer.
+js_pkg_installed() {
+  if command -v node >/dev/null 2>&1 \
+     && node -e "require.resolve('$1/package.json')" >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
 offer() {
   local label=$1 testcmd=$2 base=$3 pkgs=$4 reply
   if eval "$testcmd" >/dev/null 2>&1; then
@@ -84,10 +96,10 @@ run_toolchain_verify() {
     case "$MODE" in
       frontend|both)
         JSI=$(js_install_cmd)
-        offer "eslint" "npx --no-install eslint --version" "$JSI" "eslint @eslint/js @eslint/compat typescript-eslint eslint-plugin-import-x eslint-plugin-unused-imports"
-        offer "typescript (tsc)" "npx --no-install tsc --version" "$JSI" "typescript"
-        offer "prettier" "npx --no-install prettier --version" "$JSI" "prettier"
-        offer "vitest" "npx --no-install vitest --version" "$JSI" "vitest @vitest/coverage-v8"
+        offer "eslint" "js_pkg_installed eslint" "$JSI" "eslint @eslint/js @eslint/compat typescript-eslint eslint-plugin-import-x eslint-plugin-unused-imports"
+        offer "typescript (tsc)" "js_pkg_installed typescript" "$JSI" "typescript"
+        offer "prettier" "js_pkg_installed prettier" "$JSI" "prettier"
+        offer "vitest" "js_pkg_installed vitest" "$JSI" "vitest @vitest/coverage-v8"
         # The 'frontend' CI job loads eslint.config.js (and its plugins) from the
         # lockfile. If you skip the eslint prompt above, that job fails with an
         # actionable error until you install the deps AND commit the lockfile.

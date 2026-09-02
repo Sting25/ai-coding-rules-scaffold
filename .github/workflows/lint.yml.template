@@ -133,8 +133,12 @@ jobs:
           # be in package.json + the lockfile, or `npm ci` won't install them and
           # eslint crashes cryptically. Turn that into an actionable error instead.
           PEERS='eslint @eslint/js @eslint/compat typescript-eslint eslint-plugin-import-x eslint-plugin-unused-imports'
+          # "Installed" means resolvable from the project's node_modules. The
+          # gate is Node's resolver, not `npx --no-install --version`, which
+          # also answers from npm's global _npx cache on self-hosted or cached
+          # runners (same gate as the pre-commit hook).
           if [ -f eslint.config.js ]; then
-            if ! npx --no-install eslint --version >/dev/null 2>&1; then
+            if ! node -e "require.resolve('eslint/package.json')" >/dev/null 2>&1; then
               echo "::error file=eslint.config.js::eslint is not installed. Run: npm i -D $PEERS  — then commit package-lock.json (CI installs from the lockfile)."
               exit 1
             fi
@@ -159,7 +163,7 @@ jobs:
         # and the two intentionally don't overlap (no eslint-config-prettier).
         run: |
           if { [ -f .prettierrc ] || [ -f .prettierrc.json ] || [ -f .prettierrc.js ] || [ -f prettier.config.js ]; } \
-             && npx --no-install prettier --version >/dev/null 2>&1; then
+             && node -e "require.resolve('prettier/package.json')" >/dev/null 2>&1; then
             changed=()
             while IFS= read -r -d '' f; do changed+=("$f"); done <changed.nul
             if [ ${#changed[@]} -eq 0 ]; then echo "no changed files — skipping format check"; exit 0; fi
@@ -181,7 +185,7 @@ jobs:
           # so unlike eslint/ruff it can't be diff-scoped. If a freshly-installed
           # project has pre-existing type errors, narrow tsconfig "include" or fix
           # them — this is a real correctness signal, not lint noise.
-          if [ -f tsconfig.json ] && npx --no-install tsc --version >/dev/null 2>&1; then
+          if [ -f tsconfig.json ] && node -e "require.resolve('typescript/package.json')" >/dev/null 2>&1; then
             npx --no-install tsc --noEmit
           else
             echo "tsconfig.json or typescript missing — skipping tsc type-check"
