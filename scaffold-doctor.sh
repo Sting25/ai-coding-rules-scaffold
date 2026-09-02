@@ -349,8 +349,47 @@ elif [ ! -x .githooks/lib/scaffold-config ]; then
       "re-run install.sh to restore .githooks/lib/scaffold-config"
 else
   ok ".scaffold.toml readable and lib/scaffold-config armed"
-  if [ -x .githooks/lib/scaffold-audit ] && [ "$QUIET" -eq 0 ]; then
-    .githooks/lib/scaffold-audit 2>/dev/null | sed 's/^/      /' || true
+  if [ -x .githooks/lib/scaffold-audit ]; then
+    # The audit block was printed verbatim and never counted, so a project that
+    # had switched the 500 KB cap and the whole size rule off still summarised
+    # as "armed: N check(s) running, 0 gaps" — and under --quiet, which is the
+    # mode a CI step or an agent asked "what is off here?" actually reads, the
+    # overrides did not appear at all. Measured: --quiet output was byte-identical
+    # with and without a .scaffold.toml disabling three rules.
+    #
+    # This script's own header defines `!` as "deliberate off-switch", which is
+    # exactly what these are: notes, never gaps (the project asked for them), but
+    # notes that --quiet may not swallow, hence note_always.
+    AUDIT_OUT=$(.githooks/lib/scaffold-audit 2>/dev/null || true)
+    [ "$QUIET" -eq 1 ] || printf '%s\n' "$AUDIT_OUT" | sed 's/^/      /'
+    audit_cap=""
+    while IFS= read -r audit_line; do
+      # Trim the audit's own indentation without a subprocess per line.
+      audit_trim=${audit_line#"${audit_line%%[! ]*}"}
+      case "$audit_line" in
+        *'[size] caps:')        audit_cap="size" ;;
+        *'[large-files] caps:') audit_cap="large-files" ;;
+        *'rule "'*' DISABLED')
+          audit_cap=""
+          audit_rule=${audit_line#*rule \"}
+          audit_rule=${audit_rule%%\"*}
+          note_always "rule \"$audit_rule\" is DISABLED in .scaffold.toml — it is installed and it blocks nothing"
+          ;;
+        *'rule "'*severity=*)
+          audit_cap=""
+          audit_rule=${audit_line#*rule \"}
+          audit_rule=${audit_rule%%\"*}
+          note_always "rule \"$audit_rule\" is downgraded to severity=${audit_line##*severity=} in .scaffold.toml — it reports and no longer blocks"
+          ;;
+        *' = '*)
+          if [ -n "$audit_cap" ]; then
+            note_always "[$audit_cap] cap overridden in .scaffold.toml: $audit_trim"
+          fi
+          ;;
+      esac
+    done <<AUDIT
+$AUDIT_OUT
+AUDIT
   fi
 fi
 

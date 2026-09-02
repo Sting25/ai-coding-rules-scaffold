@@ -133,6 +133,104 @@ doc_case "a pattern file with no scaffold-extensions header is reported" 1 \
 doc_case "a .scaffold.toml with no scaffold-config helper is reported" 1 \
   "silently ignored" rm -f .githooks/lib/scaffold-config
 
+# A rule switched off in .scaffold.toml is a deliberately disarmed guardrail:
+# never a gap (the project asked for it), but the doctor used to pipe the audit
+# block through sed and never count or classify a single line of it, so the run
+# still summarised as "N check(s) running, 0 gaps" with the whole size rule and
+# the 500 KB cap off. Under --quiet, the mode a CI step or an agent asked "what
+# is off here?" actually reads, the overrides did not appear at all: the output
+# was byte-identical with and without the disables.
+doc_disable_rules() {
+  cat >.scaffold.toml <<'DISABLED_TOML'
+[rules."large-files"]
+disabled = true
+reason = "large binary fixtures"
+
+[rules."size"]
+disabled = true
+
+[rules."shell/curl piped to shell"]
+severity = "warn"
+DISABLED_TOML
+}
+doc_raise_caps() {
+  cat >.scaffold.toml <<'CAPS_TOML'
+[size]
+max_lines = 5000
+CAPS_TOML
+}
+# The note count in the summary line, so "the report mentions it somewhere" is
+# not mistaken for "the report counts it".
+doc_note_count() { sed -n 's/.*, \([0-9][0-9]*\) note(s).*/\1/p' "$1" | tail -1; }
+
+DOCT=$(doc_project)
+doc_rc=0
+( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+doc_notes_before=$(doc_note_count "$HOOK_OUT")
+( cd "$DOCT" && doc_disable_rules ) >/dev/null 2>&1
+doc_rc=0
+( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+doc_notes_after=$(doc_note_count "$HOOK_OUT")
+if [ "$doc_rc" -eq 0 ] \
+   && grep -qF 'rule "large-files" is DISABLED' "$HOOK_OUT" \
+   && grep -qF 'rule "size" is DISABLED' "$HOOK_OUT" \
+   && grep -qF 'rule "shell/curl piped to shell" is downgraded to severity=warn' "$HOOK_OUT" \
+   && [ "$doc_notes_after" -eq $((doc_notes_before + 3)) ]; then
+  echo "  ✓ --quiet names every disabled rule and counts it as a note"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ --quiet hid the .scaffold.toml disables (exit $doc_rc, notes $doc_notes_before -> $doc_notes_after)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+# The full report must name them too, as notes rather than as an uncounted
+# passthrough of the audit block.
+doc_rc=0
+( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+if [ "$doc_rc" -eq 0 ] && [ "$(grep -c 'is DISABLED in .scaffold.toml' "$HOOK_OUT")" -eq 2 ]; then
+  echo "  ✓ the full report classifies each disable as a note, not a gap"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ full report mishandled the disables (exit $doc_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCT"
+
+# A raised cap disarms a guardrail exactly as a disable does, so it is reported
+# the same way, with the new value, because "500 KB" is the thing the reader
+# believes is in force.
+DOCT=$(doc_project)
+( cd "$DOCT" && doc_raise_caps ) >/dev/null 2>&1
+doc_rc=0
+( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+if [ "$doc_rc" -eq 0 ] && grep -qF "[size] cap overridden in .scaffold.toml: max_lines = 5000" "$HOOK_OUT"; then
+  echo "  ✓ --quiet names a raised cap and the value now in force"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ a raised cap went unreported under --quiet (exit $doc_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCT"
+
+# ...and the shipped, override-free .scaffold.toml must stay silent: a doctor
+# that reported an off-switch on every clean project would train the reader to
+# skip the line that matters.
+DOCT=$(doc_project)
+doc_rc=0
+( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+if [ "$doc_rc" -eq 0 ] && grep -qF "0 gaps" "$HOOK_OUT" \
+   && ! grep -qF "in .scaffold.toml" "$HOOK_OUT"; then
+  echo "  ✓ an override-free .scaffold.toml reports no off-switches"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ a clean .scaffold.toml produced override noise (exit $doc_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCT"
+
 # (F) In local.d/ the executable bit IS the on/off switch, so a non-executable
 # entry is a deliberate state. It must be REPORTED but must NOT count as a gap —
 # a doctor that cries wolf about intentional configuration stops being read.
