@@ -89,7 +89,7 @@ CASE_FLOORS=(
   "15-local-checks.sh:7"
   "16-coverage-gate.sh:6"
   "17-whole-tree-configs.sh:10"
-  "18-doctor.sh:34"
+  "18-doctor.sh:30"
   "19-test-workflow.sh:17"
   "20-paired-artifacts.sh:19"
   "21-ci-workflow-drift.sh:25"
@@ -108,6 +108,7 @@ CASE_FLOORS=(
   "34-shipped-pattern-files.sh:11"
   "35-workflow-template-validity.sh:14"
   "36-red-green-verdict.sh:3"
+  "37-doctor-content-drift.sh:4"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and

@@ -17,6 +17,7 @@
     "uninstall.sh",
     "uninstall-drop-lang.sh",
     "scaffold-doctor.sh",
+    "scaffold-doctor-gates.sh",
     "bin/",
     "githooks/",
     "forbidden-patterns/",
