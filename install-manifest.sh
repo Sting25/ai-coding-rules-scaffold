@@ -296,6 +296,37 @@ _gitignore_write_failed() {
   printf '%s\n' "$SCAFFOLD_GITIGNORE_RULES" | sed 's/^/         /' >&2
 }
 
+# _gitignore_append TEXT PATH — the ONE place anything is appended to
+# .gitignore, and the reason there is a helper at all: the shell's own
+# diagnostic is the only thing that knows WHY an append failed, and the old
+# `{ ... } 2>/dev/null >>"$gi"` threw it away. Redirection order is
+# load-bearing and it is why this is written as a group: `2>&1` on the group
+# points stderr at the command substitution FIRST, then the inner `>>"$path"`
+# moves only stdout to the file, so a failure to OPEN the file still has
+# somewhere to report itself. (`>>file 2>/dev/null` is the opposite order and
+# the trap MF10 documents: the file redirection is applied first, so the shell
+# prints its complaint before stderr is silenced — or, here, after, and it is
+# lost.) Prints the trimmed reason on stdout and returns 1 on failure; silent
+# and returns 0 on success.
+_GITIGNORE_NL='
+'
+_gitignore_append() {
+  local text=$1 path=$2 err
+  if err=$( { printf '%s' "$text" >>"$path"; } 2>&1 ); then
+    return 0
+  fi
+  # "install-manifest.sh: line 372: .gitignore: Is a directory" -> "Is a
+  # directory", so _gitignore_write_failed's "could not write .gitignore (...)"
+  # reads as one sentence instead of naming the path twice. Anything that does
+  # not carry the path is passed through whole rather than guessed at.
+  err=${err%%"$_GITIGNORE_NL"*}
+  case $err in
+    *"$path: "*) err=${err##*"$path: "} ;;
+  esac
+  printf '%s' "${err:-the append to $path failed}"
+  return 1
+}
+
 # print_gitignore_failure_summary: end-of-run half, so the failure survives in
 # the summary rather than only in scrollback. Returns 1 so install.sh's
 # `print_refused_writes_summary || exit 1` fails the run.
@@ -309,7 +340,7 @@ print_gitignore_failure_summary() {
 }
 
 ensure_backup_gitignore() {
-  local gi=".gitignore" rule missing=''
+  local gi=".gitignore" rule missing='' gi_err='' gi_block=''
   if [ -L "$gi" ]; then
     echo "skip (exists, symlink): .gitignore, left untouched. Add these rules by hand, or an install artifact can be committed:"
     printf '%s\n' "$SCAFFOLD_GITIGNORE_RULES" | sed 's/^/                        /'
@@ -329,11 +360,12 @@ ensure_backup_gitignore() {
 $SCAFFOLD_GITIGNORE_RULES
 RULES
   [ -n "$missing" ] || return 0
-  # Check writability up front. A failed append redirection does not reliably
-  # propagate a non-zero status out of a compound command, so the write is also
-  # verified after the fact below: the rules are load-bearing (they keep the
-  # backup copies out of a routine `git add -A`), and reporting "updated" when
-  # nothing landed is the silent-guardrail-failure shape this module refuses.
+  # Two questions here, in this order.
+  #
+  # The friendly one first, because it can be answered in the user's terms: a
+  # .gitignore that is a regular file with the write bit off, or a missing
+  # .gitignore under a read-only project root. Those get the short reason the
+  # user can act on ("not writable") rather than an errno string.
   if [ -f "$gi" ] && [ ! -w "$gi" ]; then
     _gitignore_write_failed "not writable"
     return 0
@@ -342,10 +374,25 @@ RULES
     _gitignore_write_failed "the project root is not writable"
     return 0
   fi
+  # Then the general one, which no stat test answers: CAN this be appended to?
+  # `-f` and `-w` only describe a regular file, so every other way an append
+  # can fail walked straight past both tests — a DIRECTORY at .gitignore (`-f`
+  # is false, so the not-writable branch never fired), a read-only filesystem,
+  # a full disk, a parent that went away mid-run. The append below was then a
+  # COMPOUND command carrying `2>/dev/null`, so under install.sh's `set -e` the
+  # failed redirection killed the whole run with rc=1 and not one byte on
+  # stdout or stderr: the exact "no silent failures" shape the rules forbid,
+  # and the worst one, since the user got a failed install with nothing to
+  # read. Ask by TRYING, through the same open the real write uses, and keep
+  # the shell's own diagnostic as the reason.
+  if ! gi_err=$(_gitignore_append '' "$gi"); then
+    _gitignore_write_failed "$gi_err"
+    return 0
+  fi
   # Append on its own line even if the existing file has no trailing newline.
   if [ -f "$gi" ] && [ -s "$gi" ] && [ -n "$(tail -c 1 "$gi")" ]; then
-    if ! printf '\n' 2>/dev/null >>"$gi"; then
-      _gitignore_write_failed "not writable"
+    if ! gi_err=$(_gitignore_append "$_GITIGNORE_NL" "$gi"); then
+      _gitignore_write_failed "$gi_err"
       return 0
     fi
   fi
@@ -355,7 +402,7 @@ RULES
   # `git add -A`. A silent failure here would report success while leaving the
   # artifacts unignored, which is the same shape as the manifest write failure
   # this module already refuses to swallow, so check it the same way.
-  {
+  gi_block=$(
     echo ""
     echo "# ai-coding-rules-scaffold:begin"
     echo "# Local install artifacts, never something to commit: the copy install.sh"
@@ -364,7 +411,13 @@ RULES
     echo "# behind. uninstall.sh removes this block."
     printf '%s' "$missing"
     echo "# ai-coding-rules-scaffold:end"
-  } 2>/dev/null >>"$gi"
+  )
+  # $( ) strips the trailing newline the last echo produced; put it back, so
+  # the file this writes is byte-for-byte what the old block redirection wrote.
+  if ! gi_err=$(_gitignore_append "${gi_block}${_GITIGNORE_NL}" "$gi"); then
+    _gitignore_write_failed "$gi_err"
+    return 0
+  fi
   # Verify rather than trust: confirm every rule is actually present now.
   while IFS= read -r rule; do
     [ -n "$rule" ] || continue
