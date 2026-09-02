@@ -1,8 +1,15 @@
 name: shellcheck
 
 # Runs on the scaffold's own shell scripts — NOT installed into consumer
-# projects (unlike lint.yml.template). Only scripts meant to execute as-is
-# are checked; *.template files are templates but still valid bash.
+# projects (unlike lint.yml.template). *.template files are templates but still
+# valid bash, so they are checked too.
+#
+# The target list used to be typed out by hand, and three shipped scripts
+# (githooks/lib/check-gitleaks, scaffold-audit, scaffold-config) had never been
+# on it: adding a script did not add it to the check, so a new scanner shipped
+# unlinted and nothing said so. The list is now DISCOVERED from the tracked
+# tree, which is the only version of this check that stays true after the next
+# file is added.
 
 on:
   pull_request:
@@ -19,4 +26,33 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - run: shellcheck -S info install.sh install-lib.sh install-manifest.sh install-optin.sh install-interactive.sh install-claude.sh install-verify.sh scaffold-doctor.sh uninstall.sh scripts/dev-setup.sh tests/run.sh tests/lib/common.sh tests/lib/eslint-syntax-check.sh tests/cases/*.sh githooks/pre-commit.template githooks/lib/check-size.template githooks/lib/check-large-files.template githooks/lib/check-patterns.template githooks/lib/check-filenames.template githooks/lib/check-secrets.template githooks/lib/check-hygiene.template githooks/lib/ci-changed-files.template githooks/lib/agent-precheck.template githooks/commit-msg.template
+      - name: Discover and check every shell file in the tree
+        run: |
+          # A tracked file is shell when shellcheck itself can tell that it is:
+          # a bash/sh shebang, or an explicit `# shellcheck shell=` directive
+          # (how tests/lib/common.sh and every tests/cases/*.sh declare it,
+          # since they are sourced and carry no shebang). Everything else is
+          # skipped by the same rule, which is why the python3 hooks
+          # (check-mutation-diff, check-red-green) and the data templates
+          # (credential-read-patterns.txt.template) need no exclusion list.
+          files=()
+          while IFS= read -r f; do
+            [ -f "$f" ] || continue
+            first=$(head -n 1 "$f")
+            case "$first" in
+              '#!'*bash*|'#!'*/sh|'#!'*'/sh '*|'#!'*'env sh'*) ;;
+              *'shellcheck shell='*) ;;
+              *) continue ;;
+            esac
+            files+=("$f")
+          done < <(git ls-files)
+
+          # A discovery bug that matched nothing would otherwise pass silently,
+          # which is the same class of hole as the hand-maintained list.
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::shell-file discovery matched nothing, so the check would have passed without checking anything."
+            exit 1
+          fi
+          printf 'shellcheck: %d shell file(s) discovered\n' "${#files[@]}"
+          printf '  %s\n' "${files[@]}"
+          shellcheck -S info -- "${files[@]}"

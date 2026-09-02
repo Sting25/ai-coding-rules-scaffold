@@ -68,6 +68,42 @@ for case_file in \
   . "$case_file"
 done
 
+# --- assertion floor -------------------------------------------------------
+# "0 failed" alone cannot tell a complete run from a truncated one. A case file
+# that stops early (a stray `return`, a guard that turns out false, a case
+# dropped from the list above) takes its assertions with it and still prints
+# "0 failed": prepending `return 0` to cases/07-agent-commit.sh silently loses
+# 22 assertions and reports "Result: 372 passed, 0 failed", exit 0, green CI.
+# MIN_PASS is the floor that turns a shrinking suite into a red run.
+#
+# The value is a MEASURED floor, taken with every optional, `command -v`-gated
+# tool ABSENT from PATH (ruff, actionlint, jq, php, and a project-local
+# typescript), because those legitimately skip assertions on a bare machine. A
+# machine that has them reports MORE, never fewer, so this can never fire by
+# luck on a complete run.
+#
+# BUMPING IT: adding assertions is expected to raise this number. Run the suite
+# with those tools absent, read the new "Result:" count, and set MIN_PASS to it
+# in the same commit that adds the assertions. Never edit it to make a red run
+# green: below the floor the right question is which case stopped running.
+MIN_PASS=383
+
 echo ""
 echo "Result: $PASS passed, $FAIL failed"
-exit "$FAIL"
+
+if [ "$PASS" -lt "$MIN_PASS" ]; then
+  echo "" >&2
+  echo "ERROR: only $PASS assertions ran; the floor is $MIN_PASS." >&2
+  echo "       A case file stopped early or never ran. A short run reports" >&2
+  echo "       '0 failed' without having proved anything, so it fails here." >&2
+  exit 1
+fi
+
+# `exit "$FAIL"` would wrap: an exit status is taken mod 256, so exactly 256
+# failing assertions exits 0 and CI goes green on a fully broken suite (and
+# 394 would report 138). The count is already printed above; the status only
+# has to answer pass/fail, so clamp it to 1.
+if [ "$FAIL" -ne 0 ]; then
+  exit 1
+fi
+exit 0
