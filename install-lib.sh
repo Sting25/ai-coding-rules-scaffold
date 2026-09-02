@@ -144,7 +144,7 @@ _cp_replace() {
 # when all >99 slots are taken; callers treat that as "skip this one file, keep
 # going" (`|| return 0`) — never abort, and never overwrite without a backup. Every
 # cp_* overwrite funnels through here, so this is also the one place that can warn
-# on a dropped `# Repo adaptation:` line regardless of which policy triggered it
+# on a dropped `Repo adaptation:` marker regardless of which policy triggered it
 # (#127): cp_scaffold's unconditional refresh, or --force on cp_safe/cp_pattern/
 # cp_scaffold_preserve.
 _backup() {
@@ -190,12 +190,28 @@ _backup() {
 # marked block naming why it diverges from the template is real intent, but
 # text-level reinsertion into the freshly-rendered file is fragile (anchors
 # drift across versions), so the backup plus a loud pointer is the safer fix.
+#
+# The marker is matched after ANY comment lead-in, not just `#`. It used to be
+# the literal string `# Repo adaptation:`, so the warning could not fire for a
+# single file the scaffold installs that is not #-commented: measured (audit
+# code-install-policy-4), a `// Repo adaptation:` line in eslint.config.js was
+# backed up and overwritten by `install.sh --frontend --force` in total silence
+# while the `#` line in lint.yml warned by name. JSON templates (tsconfig.json,
+# .prettierrc.json, claude-settings.json, cursor-hooks.json) cannot carry a `#`
+# comment at all, so for those the convention is a `//`-prefixed KEY, which is
+# valid JSON and matches here:
+#
+#     "// Repo adaptation: pinned to ES2021 for the vendored runtime": true
+#
+# `*` covers a jsdoc/CSS block-comment continuation line and `--` SQL/Lua. The
+# `(^|[^A-Za-z])` prefix keeps `//` from matching inside a URL or a path.
 _warn_repo_adaptations() {
   local dst=$1 bak=$2 n
-  n=$(grep -c '# Repo adaptation:' "$bak" 2>/dev/null || true)
+  local pat='(^|[^A-Za-z])(#|//|\*|--)[[:space:]]*Repo adaptation:'
+  n=$(grep -cE "$pat" "$bak" 2>/dev/null || true)
   if [ -n "$n" ] && [ "$n" -gt 0 ]; then
     echo "warning: $dst carried $n 'Repo adaptation' line(s), now overwritten:"
-    grep -n '# Repo adaptation:' "$bak" | sed 's/^/         /'
+    grep -nE "$pat" "$bak" | sed 's/^/         /'
     echo "         re-apply by hand from $bak, or whatever it existed for may regress."
   fi
 }
@@ -469,26 +485,5 @@ check_paired_artifacts() {
      && ! _optin_wired .cursor/hooks.json agent-precheck; then
     "$gap_fn" ".githooks/lib/agent-precheck is installed but nothing invokes it: neither .claude/settings.json nor .cursor/hooks.json mentions agent-precheck, so the agent write/read guard never runs" \
       "merge the hooks block from claude-settings.json.template into .claude/settings.json (or cursor-hooks.json.template into .cursor/hooks.json); install.sh --claude / --cursor only creates those files when they are absent"
-  fi
-}
-
-# print_history_scan_note (P-05): check-secrets and gitleaks.yml only ever
-# look at commits made AFTER this install, so a repo with pre-existing
-# history may already carry a secret from before the scaffold existed, and
-# nothing in the shipped inventory can see it. Printed only when HEAD
-# already resolves (a brand-new `git init` has nothing to scan yet); the
-# rotate-first framing and the force-push warning match README.md's "Already
-# have commit history?" section, so the two never contradict each other.
-print_history_scan_note() {
-  if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
-    echo ""
-    echo "This repo already has commit history: run a one-time full-history secret"
-    echo "scan before trusting this install for anything committed before today:"
-    echo "  gitleaks git .   (or trufflehog's history mode)"
-    echo "A hit means rotate or revoke that credential first: that is the actual"
-    echo "fix. History rewriting (git-filter-repo or BFG, never git filter-branch)"
-    echo "is optional cleanup afterward, not a substitute, and it force-pushes and"
-    echo "rewrites every clone, so route it through your human rather than doing"
-    echo "it yourself. See README.md's 'Already have commit history?' section."
   fi
 }
