@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# cases/28-shipped-pattern-files.sh: the SHIPPED forbidden-patterns/*.txt.template
+# cases/34-shipped-pattern-files.sh: the SHIPPED forbidden-patterns/*.txt.template
 # files must load cleanly. Sourced into the driver's shell, so
 # PASS/FAIL/SCAFFOLD_DIR/HOOK_OUT/WORK and the helpers are already in scope.
 #
@@ -40,7 +40,7 @@
 # probe is why this is worth having at all — an invalid ERE is not a syntax
 # error anywhere else, it is a rule that quietly does nothing.
 
-echo "cases/28: every shipped forbidden-patterns template loads with no dropped rules"
+echo "cases/34: every shipped forbidden-patterns template loads with no dropped rules"
 
 # _fp_check <template>: print one diagnostic line per fault found, nothing at
 # all if the file is clean. Runs in a subshell via $(...) so its locals and its

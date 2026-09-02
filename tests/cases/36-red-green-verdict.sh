@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# cases/30-red-green-verdict.sh: the --test-guard gate's actual VERDICT.
+# cases/36-red-green-verdict.sh: the --test-guard gate's actual VERDICT.
 # Sourced into the driver's shell, so PASS/FAIL/SKIP/SCAFFOLD_DIR/HOOK_OUT are
 # already in scope.
 #
@@ -40,7 +40,7 @@
 # final Result line, not a silent pass — adding a pinned `pip install pytest`
 # step to test.yml is what turns it into real CI coverage.
 
-echo "cases/30: check-red-green's blocking verdict (#140)"
+echo "cases/36: check-red-green's blocking verdict (#140)"
 
 if ! python3 -c 'import pytest' >/dev/null 2>&1; then
   echo "  - SKIP: pytest not importable — check-red-green's 3 verdict assertions did NOT run (add a pinned 'pip install pytest' step to .github/workflows/test.yml to cover this in CI)"

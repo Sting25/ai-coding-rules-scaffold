@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# cases/29-workflow-template-validity.sh: EVERY shipped .github/workflows/
+# cases/35-workflow-template-validity.sh: EVERY shipped .github/workflows/
 # *.yml.template — AND every workflow the scaffold runs on itself — must be a
 # valid GitHub Actions workflow. Sourced into the driver's shell, so
 # PASS/FAIL/SKIP/SCAFFOLD_DIR/HOOK_OUT are already in scope.
@@ -49,7 +49,7 @@
 # Actions semantics, not the shell inside `run:` blocks — the shellcheck.yml
 # workflow and the repo's own linters own that.
 
-echo "cases/29: every shipped workflow template — and the scaffold's own workflows — is valid"
+echo "cases/35: every shipped workflow template — and the scaffold's own workflows — is valid"
 
 _wt_templates=("$SCAFFOLD_DIR"/.github/workflows/*.yml.template)
 _wt_own=("$SCAFFOLD_DIR"/.github/workflows/*.yml)
