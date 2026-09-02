@@ -148,3 +148,54 @@ if command -v actionlint >/dev/null 2>&1; then
 else
   echo "  - skipped workflow validation (actionlint not installed)"
 fi
+
+# 18b. CDPATH in the developer's environment must not disarm the hook. `cd`
+#      resolves a relative argument through CDPATH and PRINTS the directory it
+#      landed in, so `$(cd "$(dirname "$0")" && pwd)` captured that line ahead
+#      of pwd's: $LIB became a two-line string, every "$LIB/check-*" launch
+#      failed with "No such file or directory", and nothing was ever scanned.
+#      Hooks are always invoked by relative path, so a CDPATH in a shell
+#      profile hit every commit. Assert the POSITIVE outcome: the pattern scan
+#      still fires and the commit is refused.
+echo 'pri''nt("debug")' >cdpath.py
+git add cdpath.py
+if CDPATH=".:$HOME" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ CDPATH set — hook accepted, expected reject"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+elif grep -qF "structlog" "$HOOK_OUT"; then
+  echo "  ✓ CDPATH does not stop the hook's scanners from launching"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ CDPATH set — rejected, but not by the pattern scan"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+reset_repo
+
+# 18c. Same guard on a lib check run standalone, the way the CI guardrails job
+#      runs it: relative path, NUL list on stdin. check-size resolves its
+#      sibling scaffold-config through its own $(cd ... && pwd), and cfg() fails
+#      OPEN when that path does not resolve, so a CDPATH-poisoned SELF_DIR
+#      silently drops every .scaffold.toml override instead of erroring. Assert
+#      the POSITIVE outcome: the per-path cap of 100 from .scaffold.toml is
+#      honored under CDPATH, so a 200-line file is refused (the built-in
+#      default of 500 would let it through).
+mkdir -p cdp
+printf '[size]\n"cdp/**" = 100\n' >.scaffold.toml
+seq 1 200 >cdp/big.py
+git add .scaffold.toml cdp/big.py
+if printf '%s\0' cdp/big.py | CDPATH=".:$HOME" .githooks/lib/check-size >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ CDPATH set — check-size ignored the .scaffold.toml cap, expected reject"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+elif grep -qF "extract a module" "$HOOK_OUT"; then
+  echo "  ✓ CDPATH does not break a standalone lib check's config lookup"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ CDPATH set — check-size failed for the wrong reason"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf cdp
+reset_repo

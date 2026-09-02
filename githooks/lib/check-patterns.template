@@ -37,6 +37,14 @@
 
 set -euo pipefail
 
+# CDPATH must not reach the `$(cd ... && pwd)` below. When cd resolves its
+# argument through CDPATH it PRINTS the directory it landed in, and that line
+# is captured ahead of pwd's, so the variable ends up holding two lines and
+# every path built from it is wrong. Hooks are invoked by relative path, so a
+# developer with CDPATH='.' in their shell profile hit this on every commit.
+# Unset rather than `CDPATH= cd` so any later cd in this file is safe too.
+unset CDPATH
+
 CI_MODE=0
 [ "${1:-}" = "--ci" ] && CI_MODE=1
 
