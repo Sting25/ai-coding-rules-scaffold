@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# cases/29-uninstall-report.sh, what uninstall.sh REPORTS and what it touches.
+# cases/32-uninstall-report.sh, what uninstall.sh REPORTS and what it touches.
 # Sourced into the driver's shell, so PASS/FAIL/HOOK_OUT/SCAFFOLD_DIR are in
 # scope. A separate file from cases/09 because that one already sits exactly on
 # the scaffold's own 500-line cap.
