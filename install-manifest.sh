@@ -26,10 +26,16 @@
 # On a later run the installed file is hashed again and compared with the
 # RECORDED hash, never with a template:
 #
-#   same    -> nobody has touched it since we wrote it, so it is ours: refresh
-#              it to the shipped version and re-record. No backup is taken,
-#              because the bytes being replaced are provably a released scaffold
-#              file (and .scaffold-bak litter is its own problem: upgrade-path-2).
+#   same    -> nobody has touched it since we wrote it, so it is ours: back the
+#              current bytes up like every other overwrite in this installer,
+#              refresh it to the shipped version, and re-record. The backup is
+#              NOT redundant: this file is plaintext, unsigned and committed, so
+#              a manifest regenerated from the current tree, a botched merge
+#              conflict in it, or a stray sed relabels a hand-edit as "ours",
+#              and without the copy the next upgrade deletes that edit with no
+#              way back (audit verify-2, reproduced: a user edit plus a matching
+#              manifest line, one plain install, edit gone). The copies are kept
+#              out of git by ensure_backup_gitignore below (upgrade-path-2).
 #   differs -> a genuine hand-edit: preserve and notify, exactly as before.
 #   absent  -> a pre-manifest install, or a file the user created: fall back to
 #              today's compare-against-the-template behavior, so nothing

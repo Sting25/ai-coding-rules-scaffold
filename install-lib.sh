@@ -311,7 +311,11 @@ cp_pattern() {
     # to be kept forever under a "your customizations are kept" note nobody had
     # earned (audit hist-03 / upgrade-path-1: 26 of 37 secret patterns, and a
     # SendGrid key committing clean). The manifest settles which one it is.
+    # Backed up like every other overwrite: the manifest is unsigned plaintext
+    # in the tree, so a regenerated or mis-merged one can call a real edit
+    # "ours", and with no copy this path would delete it for good (verify-2).
     if [ ! -L "$dst" ] && manifest_says_ours "$dst"; then
+      _backup "$dst" || return 0
       _cp_replace "$src" "$dst" || return 0
       echo "updated:      $dst (refreshed to the shipped patterns; unchanged since the scaffold last wrote it)"
       manifest_record "$dst"
@@ -352,7 +356,9 @@ cp_scaffold_preserve() {
     # check-large-files and pins action SHAs a major version back, while the run
     # told its owner their customizations were being preserved (audit hist-01 /
     # upgrade-path-3).
+    # Backed up first, for the reason spelled out in cp_pattern above.
     if [ ! -L "$dst" ] && manifest_says_ours "$dst"; then
+      _backup "$dst" || return 0
       _cp_replace "$src" "$dst" || return 0
       echo "updated:      $dst (refreshed to the shipped version; unchanged since the scaffold last wrote it)"
       manifest_record "$dst"

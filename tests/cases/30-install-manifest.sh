@@ -81,6 +81,9 @@ fi
 #     actually reaches the project. Asserts the wanted artifact (the new
 #     detector is IN the installed file, and the installed scanner flags it),
 #     not merely that no drift note appeared.
+# The bytes about to be replaced, captured BEFORE the upgrade so the backup can
+# be compared against exactly what it was supposed to save.
+MF1_PRE=$(_mf_sha "$MF1/.forbidden-patterns/secrets.txt")
 ( cd "$MF1" && "$MFNEXT/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
 if grep -q 'mf_newdetector_' "$MF1/.forbidden-patterns/secrets.txt" \
    && grep -q 'updated:.*secrets.txt' "$HOOK_OUT" \
@@ -101,17 +104,33 @@ else
   echo "  ✗ an untouched CI workflow should be refreshed on upgrade, not kept as 'drift'"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 
-# (T) a manifest-proven refresh takes NO backup: the bytes being replaced are
-#     provably a released scaffold file, and .scaffold-bak litter is its own
-#     problem (audit upgrade-path-2). The manifest must also be re-recorded, or
-#     the next upgrade would see a hash mismatch and call it a hand-edit.
-if [ ! -e "$MF1/.forbidden-patterns/secrets.txt.scaffold-bak" ] \
-   && [ ! -e "$MF1/.github/workflows/lint.yml.scaffold-bak" ] \
-   && [ "$(awk '$3 == ".forbidden-patterns/secrets.txt" { print $1 }' "$MF1/.githooks/.scaffold-manifest")" \
-        = "$(_mf_sha "$MF1/.forbidden-patterns/secrets.txt")" ]; then
-  echo "  ✓ a manifest-proven refresh leaves no backup and re-records the new hash"; PASS=$((PASS + 1))
+# (T) THE DATA-LOSS GUARD, and the reason this case no longer asserts an
+#     absence. A manifest-proven refresh is still an overwrite, and the "proof"
+#     is a plaintext, unsigned, committed file with no integrity check of its
+#     own: an agent regenerating the manifest from the current tree, a botched
+#     merge-conflict resolution in it, or a stray sed relabels a real
+#     customization as "ours", and the refresh then deletes it with nothing to
+#     recover from (audit verify-2, reproduced: a user edit plus a manifest line
+#     matching the edited bytes, one plain install, the edit gone). So the
+#     replaced bytes go to .scaffold-bak like every other overwrite in this
+#     installer. Asserted positively: the backup EXISTS, holds exactly the
+#     pre-upgrade bytes (not the new ones), is announced, and is gitignored so
+#     it cannot become the committed litter that was the argument for skipping
+#     it. The manifest must also re-record the NEW hash, or the next upgrade
+#     would read its own refresh as a hand-edit.
+MF1_BAK="$MF1/.forbidden-patterns/secrets.txt.scaffold-bak"
+MF1_REC=$(awk '$3 == ".forbidden-patterns/secrets.txt" { print $1 }' "$MF1/.githooks/.scaffold-manifest")
+if [ -f "$MF1_BAK" ] \
+   && [ "$(_mf_sha "$MF1_BAK")" = "$MF1_PRE" ] \
+   && ! grep -q 'mf_newdetector_' "$MF1_BAK" \
+   && grep -q 'backed up:.*secrets.txt' "$HOOK_OUT" \
+   && ( cd "$MF1" && git check-ignore -q .forbidden-patterns/secrets.txt.scaffold-bak ) \
+   && [ "$MF1_REC" = "$(_mf_sha "$MF1/.forbidden-patterns/secrets.txt")" ] \
+   && [ "$MF1_REC" != "$MF1_PRE" ]; then
+  echo "  ✓ a manifest-proven refresh backs the replaced bytes up (gitignored) and re-records the new hash"; PASS=$((PASS + 1))
 else
-  echo "  ✗ a manifest-proven refresh should skip the backup and re-record the file"; FAIL=$((FAIL + 1))
+  echo "  ✗ a manifest-proven refresh must back the replaced bytes up and re-record the file"
+  echo "      backup: ${MF1_BAK}"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$MF1"
 
