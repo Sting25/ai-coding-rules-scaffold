@@ -81,6 +81,9 @@ fi
 #     actually reaches the project. Asserts the wanted artifact (the new
 #     detector is IN the installed file, and the installed scanner flags it),
 #     not merely that no drift note appeared.
+# The bytes about to be replaced, captured BEFORE the upgrade so the backup can
+# be compared against exactly what it was supposed to save.
+MF1_PRE=$(_mf_sha "$MF1/.forbidden-patterns/secrets.txt")
 ( cd "$MF1" && "$MFNEXT/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
 if grep -q 'mf_newdetector_' "$MF1/.forbidden-patterns/secrets.txt" \
    && grep -q 'updated:.*secrets.txt' "$HOOK_OUT" \
@@ -101,17 +104,33 @@ else
   echo "  ✗ an untouched CI workflow should be refreshed on upgrade, not kept as 'drift'"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 
-# (T) a manifest-proven refresh takes NO backup: the bytes being replaced are
-#     provably a released scaffold file, and .scaffold-bak litter is its own
-#     problem (audit upgrade-path-2). The manifest must also be re-recorded, or
-#     the next upgrade would see a hash mismatch and call it a hand-edit.
-if [ ! -e "$MF1/.forbidden-patterns/secrets.txt.scaffold-bak" ] \
-   && [ ! -e "$MF1/.github/workflows/lint.yml.scaffold-bak" ] \
-   && [ "$(awk '$3 == ".forbidden-patterns/secrets.txt" { print $1 }' "$MF1/.githooks/.scaffold-manifest")" \
-        = "$(_mf_sha "$MF1/.forbidden-patterns/secrets.txt")" ]; then
-  echo "  ✓ a manifest-proven refresh leaves no backup and re-records the new hash"; PASS=$((PASS + 1))
+# (T) THE DATA-LOSS GUARD, and the reason this case no longer asserts an
+#     absence. A manifest-proven refresh is still an overwrite, and the "proof"
+#     is a plaintext, unsigned, committed file with no integrity check of its
+#     own: an agent regenerating the manifest from the current tree, a botched
+#     merge-conflict resolution in it, or a stray sed relabels a real
+#     customization as "ours", and the refresh then deletes it with nothing to
+#     recover from (audit verify-2, reproduced: a user edit plus a manifest line
+#     matching the edited bytes, one plain install, the edit gone). So the
+#     replaced bytes go to .scaffold-bak like every other overwrite in this
+#     installer. Asserted positively: the backup EXISTS, holds exactly the
+#     pre-upgrade bytes (not the new ones), is announced, and is gitignored so
+#     it cannot become the committed litter that was the argument for skipping
+#     it. The manifest must also re-record the NEW hash, or the next upgrade
+#     would read its own refresh as a hand-edit.
+MF1_BAK="$MF1/.forbidden-patterns/secrets.txt.scaffold-bak"
+MF1_REC=$(awk '$3 == ".forbidden-patterns/secrets.txt" { print $1 }' "$MF1/.githooks/.scaffold-manifest")
+if [ -f "$MF1_BAK" ] \
+   && [ "$(_mf_sha "$MF1_BAK")" = "$MF1_PRE" ] \
+   && ! grep -q 'mf_newdetector_' "$MF1_BAK" \
+   && grep -q 'backed up:.*secrets.txt' "$HOOK_OUT" \
+   && ( cd "$MF1" && git check-ignore -q .forbidden-patterns/secrets.txt.scaffold-bak ) \
+   && [ "$MF1_REC" = "$(_mf_sha "$MF1/.forbidden-patterns/secrets.txt")" ] \
+   && [ "$MF1_REC" != "$MF1_PRE" ]; then
+  echo "  ✓ a manifest-proven refresh backs the replaced bytes up (gitignored) and re-records the new hash"; PASS=$((PASS + 1))
 else
-  echo "  ✗ a manifest-proven refresh should skip the backup and re-record the file"; FAIL=$((FAIL + 1))
+  echo "  ✗ a manifest-proven refresh must back the replaced bytes up and re-record the file"
+  echo "      backup: ${MF1_BAK}"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$MF1"
 
@@ -180,6 +199,114 @@ else
   echo "  ✗ a drifted file must keep its ORIGINAL manifest hash and survive the next upgrade"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$MF5"
+
+# (T) a manifest write that CANNOT happen is loud and fails the run. Every
+#     failure path in manifest_flush used to `return 0`: with .githooks at mode
+#     555 the only trace was the shell's own "Permission denied", no summary
+#     line mentioned it, and install.sh exited 0, so the project silently
+#     reverted to pre-manifest behavior on every later upgrade (audit verify-6).
+#     Trigger: something that is not a regular file at the manifest path, which
+#     no mode bit can make succeed, so this runs the same way for every user.
+MF6=$(_mf_project)
+rm -f "$MF6/.githooks/.scaffold-manifest"
+mkdir -p "$MF6/.githooks/.scaffold-manifest"
+MF6_RC=0
+( cd "$MF6" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1 || MF6_RC=$?
+if [ "$MF6_RC" -ne 0 ] \
+   && grep -q 'error: could not write .githooks/.scaffold-manifest' "$HOOK_OUT" \
+   && grep -q 'INSTALL INCOMPLETE: the install manifest was not written' "$HOOK_OUT" \
+   && grep -q 'next upgrade' "$HOOK_OUT"; then
+  echo "  ✓ a manifest write that cannot happen names the file, says what it costs, and fails the run"; PASS=$((PASS + 1))
+else
+  echo "  ✗ a failed manifest write must be named in the summary and must not exit 0 (rc=$MF6_RC)"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$MF6"
+
+# (T) the same, through the branch the audit actually hit: a read-only
+#     .githooks, where the write itself fails rather than being refused up
+#     front. A mode bit means nothing to root, so the case asserts whichever
+#     outcome is honest for the user running it: the probe decides which.
+MF7=$(_mf_project)
+chmod 555 "$MF7/.githooks"
+MF7_RC=0
+if : >"$MF7/.githooks/.scaffold-probe" 2>/dev/null; then
+  rm -f "$MF7/.githooks/.scaffold-probe"
+  chmod 755 "$MF7/.githooks"
+  ( cd "$MF7" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1 || MF7_RC=$?
+  if [ "$MF7_RC" -eq 0 ] && grep -q 'recorded: .*\.githooks/\.scaffold-manifest' "$HOOK_OUT"; then
+    echo "  ✓ a writable .githooks records the manifest (mode bits are not enforced for this user)"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ a writable .githooks must record the manifest (rc=$MF7_RC)"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+else
+  ( cd "$MF7" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1 || MF7_RC=$?
+  chmod 755 "$MF7/.githooks"
+  if [ "$MF7_RC" -ne 0 ] \
+     && grep -q 'error: could not write .githooks/.scaffold-manifest' "$HOOK_OUT" \
+     && grep -q 'INSTALL INCOMPLETE: the install manifest was not written' "$HOOK_OUT"; then
+    echo "  ✓ a read-only .githooks makes the manifest failure loud instead of exiting 0"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ a read-only .githooks must report the failed manifest write and fail the run (rc=$MF7_RC)"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+fi
+chmod 755 "$MF7/.githooks" 2>/dev/null || true
+rm -rf "$MF7"
+
+# (T) the scratch files an INTERRUPTED manifest write leaves behind
+#     (.scaffold-manifest.new.PID / .tmp.PID) are cleaned up by the next run and
+#     covered by the ignore rules meanwhile, so a routine `git add -A` can never
+#     commit one. Same class as the .scaffold-bak litter of upgrade-path-2, and
+#     it was reintroduced by the manifest itself (audit verify-7). Both halves
+#     are asserted, plus the positive outcome that the run still recorded the
+#     manifest it was cleaning up around.
+MF8=$(_mf_project)
+: >"$MF8/.githooks/.scaffold-manifest.new.999999"
+: >"$MF8/.githooks/.scaffold-manifest.tmp.999999"
+MF8_IGN=0
+if ( cd "$MF8" && git check-ignore -q .githooks/.scaffold-manifest.new.999999 \
+     && git check-ignore -q .githooks/.scaffold-manifest.tmp.999999 ); then
+  MF8_IGN=1
+fi
+( cd "$MF8" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
+if [ "$MF8_IGN" -eq 1 ] \
+   && [ ! -e "$MF8/.githooks/.scaffold-manifest.new.999999" ] \
+   && [ ! -e "$MF8/.githooks/.scaffold-manifest.tmp.999999" ] \
+   && grep -q 'recorded: .*\.githooks/\.scaffold-manifest' "$HOOK_OUT" \
+   && grep -q ' .githooks/pre-commit$' "$MF8/.githooks/.scaffold-manifest"; then
+  echo "  ✓ an interrupted write's scratch files are gitignored and swept by the next run"; PASS=$((PASS + 1))
+else
+  echo "  ✗ manifest scratch files must be ignored (ign=$MF8_IGN) and cleaned up by the next run"
+  find "$MF8/.githooks" -maxdepth 1 | sed 's/^/      /'; FAIL=$((FAIL + 1))
+fi
+rm -rf "$MF8"
+
+# (T) uninstall removes what this branch added, and says so. The manifest was
+#     left behind, never named, and kept .githooks from ever reaching "removed
+#     empty" (audit verify-5), which is the upgrade-path-4 leftover defect
+#     reintroduced by the new file. The .gitignore block install.sh appends was
+#     never named or removed. Both are asserted here, together with the half
+#     that must not break: the project's own ignore rules survive.
+MF9=$(mktemp -d)
+( cd "$MF9" && git init --quiet && echo '{"name":"x"}' >package.json \
+  && printf 'node_modules/\n' >.gitignore \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >/dev/null 2>&1
+( cd "$MF9" && "$SCAFFOLD_DIR/uninstall.sh" --all ) >"$HOOK_OUT" 2>&1
+if [ ! -e "$MF9/.githooks" ] \
+   && grep -q 'removed: *\.githooks/\.scaffold-manifest' "$HOOK_OUT" \
+   && grep -qF 'removed empty: .githooks' "$HOOK_OUT" \
+   && grep -q 'stripped: *scaffold ignore rules from .gitignore' "$HOOK_OUT" \
+   && grep -qx 'node_modules/' "$MF9/.gitignore" \
+   && ! grep -q 'scaffold-bak' "$MF9/.gitignore"; then
+  echo "  ✓ uninstall names and removes the manifest and its ignore block, keeping the project's rules"; PASS=$((PASS + 1))
+else
+  echo "  ✗ uninstall must remove the manifest and the ignore block it added, and keep the rest"
+  sed 's/^/      /' "$HOOK_OUT"
+  sed 's/^/      /' "$MF9/.gitignore" 2>/dev/null || true; FAIL=$((FAIL + 1))
+fi
+rm -rf "$MF9"
 
 rm -rf "$(dirname "$MFNEXT")"
 reset_repo

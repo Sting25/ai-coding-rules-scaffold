@@ -93,7 +93,14 @@ remove_if_unmodified() {
 
 force_remove() {
   local path=$1
-  [ -e "$path" ] || return
+  # `|| return` (no status) returned the FAILED test's 1, and this script runs
+  # under errexit with force_remove called at top level, so a single absent path
+  # aborted the whole uninstall mid-sweep: no empty-dir pass, no hooksPath
+  # unwire, no leftovers report, exit 1 and not one word about why. Reachable
+  # today (--all with AGENTS.md already deleted), and reachable on every
+  # pre-manifest install once the manifest below is removed unconditionally.
+  # A path that is not there is nothing to do, which is success.
+  { [ -e "$path" ] || [ -L "$path" ]; } || return 0
   if [ "$DRY_RUN" -eq 1 ]; then
     echo "would remove: $path"
     mark_removed "$path"
@@ -159,6 +166,72 @@ clean_claude_md() {
     return
   fi
   echo "kept:         CLAUDE.md — no scaffold block found, left untouched"
+}
+
+# clean_gitignore: install.sh appends a marked block of ignore rules for the
+# artifacts it can leave behind (*.scaffold-bak, the manifest scratch files).
+# Nothing here ever removed it or even named it, so an uninstalled project kept
+# scaffold rules in a file nobody thinks to check. .gitignore is the project's
+# file, so this strips ONLY our block, bounded by the end marker exactly as
+# clean_claude_md is (an open-ended delete to EOF would eat the project's own
+# rules below it). If that leaves nothing but blank lines, the file was ours to
+# begin with (install.sh creates .gitignore when a project has none), so it goes
+# too. A block appended before it carried markers cannot be bounded safely, so
+# it is named rather than guessed at.
+#
+# _gitignore_has_unmarked_rules: a scaffold ignore rule sitting OUTSIDE the
+# marked block, which is what an install from before the markers left (and what
+# stripping the block leaves behind). Checked outside the block specifically, so
+# it reports the same thing before a strip, after one, and in a dry run.
+_gitignore_has_unmarked_rules() {
+  awk '
+    $0 == "# ai-coding-rules-scaffold:begin" { inblock = 1; next }
+    $0 == "# ai-coding-rules-scaffold:end"   { inblock = 0; next }
+    !inblock && $0 ~ /^[[:space:]]*\*\.scaffold-bak/ { found = 1 }
+    END { exit(found ? 0 : 1) }
+  ' ".gitignore" 2>/dev/null
+}
+
+clean_gitignore() {
+  local has_begin=0 has_end=0
+  [ -e ".gitignore" ] || return 0
+  if [ -L ".gitignore" ]; then
+    echo "kept:         .gitignore is a symlink, left untouched (remove any '*.scaffold-bak' rules by hand)"
+    return 0
+  fi
+  if grep -q '^# ai-coding-rules-scaffold:begin$' ".gitignore" 2>/dev/null; then has_begin=1; fi
+  if grep -q '^# ai-coding-rules-scaffold:end$'   ".gitignore" 2>/dev/null; then has_end=1; fi
+  if [ "$has_begin" -eq 1 ] && [ "$has_end" -eq 1 ] && [ "$DRY_RUN" -eq 0 ]; then
+    # Same awk shape as clean_claude_md: drop begin..end plus the blank spacer
+    # install.sh put in front of it, via a temp file so a failure cannot
+    # truncate the original.
+    if awk '
+      $0 == "" && !inblock { if (pend) print hold; hold = $0; pend = 1; next }
+      $0 == "# ai-coding-rules-scaffold:begin" { inblock = 1; pend = 0; next }
+      $0 == "# ai-coding-rules-scaffold:end"   { inblock = 0; next }
+      { if (inblock) next; if (pend) { print hold; pend = 0 } print }
+      END { if (pend) print hold }
+    ' ".gitignore" >".gitignore.scaffold-tmp"; then
+      mv ".gitignore.scaffold-tmp" ".gitignore"
+      echo "stripped:     scaffold ignore rules from .gitignore (your rules kept)"
+    else
+      rm -f ".gitignore.scaffold-tmp"
+      echo "error:        failed to rewrite .gitignore, left untouched" >&2
+      return 0
+    fi
+    if [ -z "$(tr -d '[:space:]' <".gitignore")" ]; then
+      rm -f ".gitignore"
+      echo "removed:      .gitignore (scaffold-created, nothing of yours left in it)"
+      return 0
+    fi
+  elif [ "$has_begin" -eq 1 ] && [ "$has_end" -eq 1 ]; then
+    echo "would strip:  scaffold ignore rules from .gitignore (your rules kept)"
+  fi
+  # Whatever is left: an unmarked block is named, never guessed at, so it is not
+  # a leftover nobody can see.
+  if _gitignore_has_unmarked_rules; then
+    echo "kept:         .gitignore holds scaffold ignore rules (*.scaffold-bak) from an install that predates the marked block; unmarked lines are not ours to bound, so delete them by hand"
+  fi
 }
 
 # Generated configs — removed only if unchanged
@@ -233,6 +306,23 @@ if [ "$REMOVE_ALL" -eq 1 ]; then
   force_remove "operational-rules.md"
   force_remove ".forbidden-patterns"
 fi
+
+# The install manifest and the scratch files a manifest write can leave behind
+# (install-manifest.sh). Scaffold bookkeeping, not project content: every line
+# in it is a sha256 of a file this script has just removed, its own header says
+# "do not edit", and there is no user content in it to protect, so it goes in
+# BOTH modes. It was skipped entirely before, which made it the leftover that
+# no run named, no run removed, and that kept .githooks from ever being swept
+# as empty even after a --all (the same defect as upgrade-path-4, reintroduced
+# by the file that fixed it).
+force_remove ".githooks/.scaffold-manifest"
+for stale in .githooks/.scaffold-manifest.new.* .githooks/.scaffold-manifest.tmp.*; do
+  if [ -e "$stale" ] || [ -L "$stale" ]; then
+    force_remove "$stale"
+  fi
+done
+
+clean_gitignore
 
 # Clean up empty dirs the installer created
 # local.d before .githooks, so an emptied local.d lets .githooks go too.
