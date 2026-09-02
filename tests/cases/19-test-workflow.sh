@@ -21,7 +21,7 @@ COV_TPL="$SCAFFOLD_DIR/.github/workflows/coverage.yml.template"
 
 # --- (A) default install writes tests.yml, not coverage.yml ----------------
 A=$(mktemp -d)
-( cd "$A" && git init --quiet && echo 'name = "x"' >pyproject.toml \
+( cd "$A" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo 'name = "x"' >pyproject.toml \
   && "$SCAFFOLD_DIR/install.sh" --python --no-verify ) >"$HOOK_OUT" 2>&1
 if [ -f "$A/.github/workflows/tests.yml" ] \
    && cmp -s "$TESTS_TPL" "$A/.github/workflows/tests.yml" \
@@ -38,7 +38,7 @@ rm -rf "$A"
 
 # --- (B) --no-test-workflow installs neither AND records a loud skip -------
 B=$(mktemp -d)
-( cd "$B" && git init --quiet && echo 'name = "x"' >pyproject.toml \
+( cd "$B" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo 'name = "x"' >pyproject.toml \
   && "$SCAFFOLD_DIR/install.sh" --python --no-verify --no-test-workflow ) >"$HOOK_OUT" 2>&1
 if [ ! -f "$B/.github/workflows/tests.yml" ] && [ ! -f "$B/.github/workflows/coverage.yml" ] \
    && grep -qF "SKIPPED: test-execution CI workflow" "$HOOK_OUT" \
@@ -54,7 +54,7 @@ rm -rf "$B"
 
 # --- (C) --coverage-gate yields coverage.yml WITHOUT the plain tests.yml ---
 C=$(mktemp -d)
-( cd "$C" && git init --quiet && echo 'name = "x"' >pyproject.toml \
+( cd "$C" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo 'name = "x"' >pyproject.toml \
   && "$SCAFFOLD_DIR/install.sh" --python --no-verify --coverage-gate ) >"$HOOK_OUT" 2>&1
 if [ -f "$C/.github/workflows/coverage.yml" ] && [ ! -f "$C/.github/workflows/tests.yml" ] \
    && grep -qF "CI test state: tests + patch-coverage gate via coverage.yml" "$HOOK_OUT"; then
@@ -71,7 +71,7 @@ rm -rf "$C"
 #         redundant tests.yml (backed up, not silently deleted) instead of
 #         leaving both in place to double-run the suite.
 D=$(mktemp -d)
-( cd "$D" && git init --quiet && echo 'name = "x"' >pyproject.toml \
+( cd "$D" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo 'name = "x"' >pyproject.toml \
   && "$SCAFFOLD_DIR/install.sh" --python --no-verify \
   && "$SCAFFOLD_DIR/install.sh" --python --no-verify --coverage-gate ) >"$HOOK_OUT" 2>&1
 if [ -f "$D/.github/workflows/coverage.yml" ] && [ ! -f "$D/.github/workflows/tests.yml" ] \
@@ -89,7 +89,7 @@ rm -rf "$D"
 # --- (E) --no-test-workflow overriding an explicit --coverage-gate is noted,
 #         not silently one-or-the-other.
 E=$(mktemp -d)
-( cd "$E" && git init --quiet && echo 'name = "x"' >pyproject.toml \
+( cd "$E" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo 'name = "x"' >pyproject.toml \
   && "$SCAFFOLD_DIR/install.sh" --python --no-verify --coverage-gate --no-test-workflow ) >"$HOOK_OUT" 2>&1
 if [ ! -f "$E/.github/workflows/coverage.yml" ] && [ ! -f "$E/.github/workflows/tests.yml" ] \
    && grep -qF "warning: --no-test-workflow overrides --coverage-gate" "$HOOK_OUT"; then

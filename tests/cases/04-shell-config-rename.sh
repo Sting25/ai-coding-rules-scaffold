@@ -92,6 +92,49 @@ git rm --cached -q .forbidden-patterns/secrets.txt
 rm -f .forbidden-patterns/secrets.txt
 assert_rejects "untracked AND removed from disk is still refused" "disabling the scanner"
 
+# 27e. SYMLINK SWAP. Replacing secrets.txt with a DANGLING symlink disarmed the
+#      scanner locally and evaded both guards at once: `[ ! -f ]` is true (test
+#      follows the link to a missing target) so check-secrets took its lenient
+#      "not installed yet" exit 0, and the orchestrator's deletion guard sees a
+#      file->symlink swap as diff-filter T, not D. A real AWS key committed with
+#      no finding. check-secrets now refuses any config path that is not a
+#      readable REGULAR file.
+rm -f .forbidden-patterns/secrets.txt
+ln -s /nonexistent-scaffold-target .forbidden-patterns/secrets.txt
+echo "AWS=AKIA""IOSFODNN7EXAMPLE" >symlinked-leak.txt
+git add -A
+assert_rejects "dangling-symlink secrets.txt is refused, not treated as absent" "is a symlink, not a regular file"
+
+# 27f. The same swap pointed at a REAL readable file. `-h` is tested before `-f`
+#      precisely for this: the link resolves, so a `-f`-only guard would happily
+#      read patterns from a path the repo does not track, and whoever controls
+#      the link controls the ruleset.
+rm -f .forbidden-patterns/secrets.txt
+printf 'ZZZNOTAPATTERNZZZ\tdecoy rule\n' >decoy-rules.txt
+ln -s "$PWD/decoy-rules.txt" .forbidden-patterns/secrets.txt
+echo "AWS=AKIA""IOSFODNN7EXAMPLE" >symlinked-leak2.txt
+git add -A
+assert_rejects "secrets.txt symlinked to a real file is refused too" "is a symlink, not a regular file"
+
+# 27g. Same disarm against a check-patterns tier. A dangling backend.txt used to
+#      make the discovery loop's `-e` test false, so the whole backend ruleset
+#      went offline in silence with exit 0. Invoked directly (the end-to-end hook
+#      would also be rejected by check-secrets' own guard, which would mask this).
+rm -f .forbidden-patterns/backend.txt
+ln -s /nonexistent-scaffold-target .forbidden-patterns/backend.txt
+echo 'pri''nt("debug")' >symlinked-bad.py
+git add -A
+if printf '%s\0' symlinked-bad.py | .githooks/lib/check-patterns >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ symlinked backend.txt, check-patterns exited 0 (disarmed), expected fail-closed"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "is a symlink, not a regular file" "$HOOK_OUT"; then
+  echo "  ✓ symlinked backend.txt fails closed in check-patterns"; PASS=$((PASS + 1))
+else
+  echo "  ✗ symlinked backend.txt, non-zero but missing the fail-closed message"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
 # 28. scaffold-allow only exempts when it follows a comment leader; the bare
 #     substring inside a string literal must NOT whitelist a real secret.
 echo 'note = "scaffold-allow AKIA''IOSFODNN7EXAMPLE"' >sneaky2.txt

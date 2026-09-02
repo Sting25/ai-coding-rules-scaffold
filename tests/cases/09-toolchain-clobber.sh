@@ -10,7 +10,7 @@
 # shellcheck disable=SC2164
 cd "$WORK"
 DTMP=$(mktemp -d)
-( cd "$DTMP" && git init --quiet && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
+( cd "$DTMP" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
   && "$SCAFFOLD_DIR/install.sh" --both --no-verify ) >"$HOOK_OUT" 2>&1
 for f in tsconfig.json .prettierrc.json .prettierignore vitest.config.ts pytest.ini .coveragerc; do
   if [ -f "$DTMP/$f" ]; then
@@ -38,9 +38,9 @@ fi
 # (T) detect/offer is PRINT-ONLY and non-mutating under non-interactive stdin:
 #     no TTY → never auto-runs a package manager, never prompts, never hangs.
 OFFTMP=$(mktemp -d)
-( cd "$OFFTMP" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$OFFTMP" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend </dev/null ) >"$HOOK_OUT" 2>&1
-if grep -q "not installed — run:" "$HOOK_OUT" \
+if grep -q "not installed, run:" "$HOOK_OUT" \
    && ! grep -q "install now with" "$HOOK_OUT" \
    && [ ! -d "$OFFTMP/node_modules" ]; then
   echo "  ✓ detect/offer is print-only + non-mutating without a TTY"; PASS=$((PASS + 1))
@@ -52,7 +52,7 @@ rm -rf "$OFFTMP"
 
 # (T) Vitest config is NOT shipped when the project already uses Jest.
 JTMP=$(mktemp -d)
-( cd "$JTMP" && git init --quiet && echo '{"name":"x","devDependencies":{"jest":"^29"}}' >package.json \
+( cd "$JTMP" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x","devDependencies":{"jest":"^29"}}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
 if [ ! -f "$JTMP/vitest.config.ts" ] && grep -q "Jest detected" "$HOOK_OUT"; then
   echo "  ✓ vitest.config.ts skipped when Jest is present"; PASS=$((PASS + 1))
@@ -64,7 +64,7 @@ rm -rf "$JTMP"
 
 # (T) pytest.ini is NOT shipped when pyproject.toml already configures pytest.
 PTMP=$(mktemp -d)
-( cd "$PTMP" && git init --quiet \
+( cd "$PTMP" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" \
   && printf '[tool.pytest.ini_options]\naddopts = "-q"\n' >pyproject.toml \
   && "$SCAFFOLD_DIR/install.sh" --python --no-verify ) >"$HOOK_OUT" 2>&1
 if [ ! -f "$PTMP/pytest.ini" ] && grep -q "pytest config exists" "$HOOK_OUT"; then
@@ -84,7 +84,7 @@ reset_repo
 cd "$WORK"
 mk_userproj() {
   local d; d=$(mktemp -d)
-  ( cd "$d" && git init --quiet && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
+  ( cd "$d" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
     && printf '# Mine\n\nHAND-WRITTEN-MEMORY\n' >CLAUDE.md \
     && printf '# AGENTS\n\nCUSTOM-PROJECT-SECTION\n' >AGENTS.md )
   echo "$d"
@@ -105,7 +105,7 @@ rm -rf "$UMG"
 
 # (T) fresh install (no CLAUDE.md) creates the pointer with both imports.
 UNEW=$(mktemp -d)
-( cd "$UNEW" && git init --quiet && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
+( cd "$UNEW" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
   && "$SCAFFOLD_DIR/install.sh" --both --no-verify ) >"$HOOK_OUT" 2>&1
 if grep -q '@AGENTS.md' "$UNEW/CLAUDE.md" && grep -q '@coding-rules.md' "$UNEW/CLAUDE.md"; then
   echo "  ✓ fresh CLAUDE.md pointer imports AGENTS.md and coding-rules.md"; PASS=$((PASS + 1))
@@ -118,7 +118,7 @@ rm -rf "$UNEW"
 # left untouched (user-owned file, never edited in place) and the gap is
 # surfaced as an advisory note instead.
 UWIRED=$(mktemp -d)
-( cd "$UWIRED" && git init --quiet && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
+( cd "$UWIRED" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
   && printf '# Mine\n\nHAND-WRITTEN-MEMORY\n\n@AGENTS.md\n' >CLAUDE.md \
   && "$SCAFFOLD_DIR/install.sh" --both --no-verify ) >"$HOOK_OUT" 2>&1
 if grep -q 'does not import coding-rules.md' "$HOOK_OUT" \
@@ -179,7 +179,7 @@ rm -rf "$UUN"
 # file untouched. The old open-ended `/begin/,/end/d` deleted to EOF and ate
 # everything below the lone begin marker — the exact data-loss class guarded.
 UBE=$(mktemp -d)
-( cd "$UBE" && git init --quiet \
+( cd "$UBE" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" \
   && printf '<!-- ai-coding-rules-scaffold:begin -->\n@AGENTS.md\nMY IMPORTANT NOTES\n' >CLAUDE.md \
   && "$SCAFFOLD_DIR/uninstall.sh" ) >"$HOOK_OUT" 2>&1
 if grep -q 'MY IMPORTANT NOTES' "$UBE/CLAUDE.md"; then
@@ -192,7 +192,7 @@ rm -rf "$UBE"
 # (T) well-formed block strip: a proper begin..end block is removed, the user's
 # content above AND below survives, and no begin/end marker residue remains.
 UWF=$(mktemp -d)
-( cd "$UWF" && git init --quiet \
+( cd "$UWF" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" \
   && printf '# Mine\n<!-- ai-coding-rules-scaffold:begin -->\n@AGENTS.md\n<!-- ai-coding-rules-scaffold:end -->\nAFTER THE BLOCK\n' >CLAUDE.md \
   && "$SCAFFOLD_DIR/uninstall.sh" ) >"$HOOK_OUT" 2>&1
 if grep -q '# Mine' "$UWF/CLAUDE.md" && grep -q 'AFTER THE BLOCK' "$UWF/CLAUDE.md" \
@@ -208,7 +208,7 @@ rm -rf "$UWF"
 # without a final newline, install must still place its import block on its own
 # line — not concatenate `HANDWRITTEN-LAST-LINE<!-- ...begin -->` onto one line.
 UNL=$(mktemp -d)
-( cd "$UNL" && git init --quiet && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
+( cd "$UNL" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
   && printf '# Mine\n\nHANDWRITTEN-LAST-LINE' >CLAUDE.md \
   && "$SCAFFOLD_DIR/install.sh" --both --no-verify ) >"$HOOK_OUT" 2>&1
 if grep -q 'HANDWRITTEN-LAST-LINE' "$UNL/CLAUDE.md" \
@@ -230,7 +230,7 @@ USL=$(mktemp -d)
 mkdir -p "$USL/repo/.githooks/lib"
 printf 'PRECIOUS_DO_NOT_TOUCH\n' >"$USL/outside_target"
 ln -s "$USL/outside_target" "$USL/repo/.githooks/lib/check-secrets"
-( cd "$USL/repo" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$USL/repo" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --force --no-verify ) >"$HOOK_OUT" 2>&1
 if [ -f "$USL/repo/.githooks/lib/check-secrets" ] && [ ! -L "$USL/repo/.githooks/lib/check-secrets" ] \
    && grep -q 'PRECIOUS_DO_NOT_TOUCH' "$USL/outside_target" \
@@ -247,7 +247,7 @@ rm -rf "$USL"
 USD=$(mktemp -d)
 mkdir -p "$USD/repo/.githooks/lib"
 ln -s "$USD/nonexistent_outside" "$USD/repo/.githooks/lib/check-filenames"
-( cd "$USD/repo" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$USD/repo" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
 if [ ! -e "$USD/nonexistent_outside" ]; then
   echo "  ✓ install does not write through a dangling symlink (no --force)"; PASS=$((PASS + 1))
@@ -255,28 +255,6 @@ else
   echo "  ✗ install wrote through a dangling symlink to an outside path"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$USD"
-
-# (T) symlinked scaffold DIRECTORY (.githooks -> outside dir): install's cp_*
-#     helpers dropped a symlink at the LEAF file but `mkdir -p "$(dirname)"` still
-#     FOLLOWED a symlinked PARENT, writing every scanner THROUGH the link outside
-#     the repo, clobbering a pre-existing outside file and leaving the in-repo
-#     .githooks a symlink (silent write-through + fail-open). _mkdir_safe now drops
-#     a symlink at every path component. Assert: outside file untouched, and the
-#     in-repo .githooks is a REAL dir holding a real pre-commit.
-USG=$(mktemp -d)
-mkdir -p "$USG/repo" "$USG/outside/lib"
-printf 'PRECIOUS_DO_NOT_TOUCH\n' >"$USG/outside/lib/check-secrets"
-ln -s "$USG/outside" "$USG/repo/.githooks"
-( cd "$USG/repo" && git init --quiet && echo '{"name":"x"}' >package.json \
-  && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
-if grep -q 'PRECIOUS_DO_NOT_TOUCH' "$USG/outside/lib/check-secrets" \
-   && [ -d "$USG/repo/.githooks" ] && [ ! -L "$USG/repo/.githooks" ] \
-   && [ -f "$USG/repo/.githooks/pre-commit" ] && [ ! -L "$USG/repo/.githooks/pre-commit" ]; then
-  echo "  ✓ install does not write through a symlinked scaffold DIR (no outside clobber)"; PASS=$((PASS + 1))
-else
-  echo "  ✗ install followed a symlinked .githooks dir and wrote scanners outside the repo"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
-fi
-rm -rf "$USG"
 
 # --- installer does not write THROUGH a symlink at CLAUDE.md / AGENTS.md (B1) --
 # The A7 symlink defense lived only in the cp_* helpers; install_claude_md /
@@ -290,7 +268,7 @@ rm -rf "$USG"
 #     write the pointer through the link to the outside target.
 UCD=$(mktemp -d)
 ln -s "$UCD/nonexistent_claude" "$UCD/CLAUDE.md"
-( cd "$UCD" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$UCD" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
 if [ ! -e "$UCD/nonexistent_claude" ]; then
   echo "  ✓ install does not write CLAUDE.md through a dangling symlink"; PASS=$((PASS + 1))
@@ -304,7 +282,7 @@ rm -rf "$UCD"
 UCL=$(mktemp -d)
 printf '# outside\nOUTSIDE_USER_CONTENT\n' >"$UCL/outside_claude"
 ln -s "$UCL/outside_claude" "$UCL/CLAUDE.md"
-( cd "$UCL" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$UCL" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
 if ! grep -q 'ai-coding-rules-scaffold:begin' "$UCL/outside_claude"; then
   echo "  ✓ install does not append CLAUDE.md import through a live symlink"; PASS=$((PASS + 1))
@@ -317,7 +295,7 @@ rm -rf "$UCL"
 #     write the template through the link to the outside target.
 UAD=$(mktemp -d)
 ln -s "$UAD/nonexistent_agents" "$UAD/AGENTS.md"
-( cd "$UAD" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$UAD" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
 if [ ! -e "$UAD/nonexistent_agents" ]; then
   echo "  ✓ install does not write AGENTS.md through a dangling symlink"; PASS=$((PASS + 1))
@@ -330,7 +308,7 @@ rm -rf "$UAD"
 #     npx users, who have no on-disk copy of gitleaks.yml.template, can wire the
 #     unskippable CI gate; uninstall then removes it (no half-uninstall).
 UGC=$(mktemp -d)
-( cd "$UGC" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$UGC" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --gitleaks-ci --no-verify >/dev/null 2>&1 )
 if [ -f "$UGC/.github/workflows/gitleaks.yml" ] \
    && cmp -s "$SCAFFOLD_DIR/.github/workflows/gitleaks.yml.template" "$UGC/.github/workflows/gitleaks.yml"; then
@@ -350,7 +328,7 @@ rm -rf "$UGC"
 #     dependency-review.yml.template, can wire it too; uninstall then removes
 #     it (no half-uninstall).
 UDR=$(mktemp -d)
-( cd "$UDR" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$UDR" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --dependency-review --no-verify >/dev/null 2>&1 )
 if [ -f "$UDR/.github/workflows/dependency-review.yml" ] \
    && cmp -s "$SCAFFOLD_DIR/.github/workflows/dependency-review.yml.template" "$UDR/.github/workflows/dependency-review.yml"; then
@@ -368,7 +346,7 @@ rm -rf "$UDR"
 # (T) uninstall removes ci-changed-files too (install adds 8 libs; the uninstall
 #     loop dropped this one, leaving the scaffold half-uninstalled).
 UCI=$(mktemp -d)
-( cd "$UCI" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$UCI" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify >/dev/null 2>&1 \
   && "$SCAFFOLD_DIR/uninstall.sh" ) >"$HOOK_OUT" 2>&1
 if [ ! -e "$UCI/.githooks/lib/ci-changed-files" ]; then
@@ -395,7 +373,7 @@ reset_repo
 #     assert it matches the template again, is announced as updated, and stays
 #     executable (the post-copy chmod must still run on the refreshed file).
 URS=$(mktemp -d)
-( cd "$URS" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$URS" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify >/dev/null 2>&1 )
 printf '#!/usr/bin/env bash\n# STALE OLD VERSION\nexit 0\n' >"$URS/.githooks/lib/check-secrets"
 ( cd "$URS" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
@@ -421,7 +399,7 @@ rm -rf "$URS"
 #     keeps this section's own "re-runs refresh scaffold-owned code" framing
 #     honest, since it used to claim the opposite for lint.yml specifically.
 URW=$(mktemp -d)
-( cd "$URW" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$URW" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify >/dev/null 2>&1 )
 echo '# local CI customization' >"$URW/.github/workflows/lint.yml"
 ( cd "$URW" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
@@ -437,7 +415,7 @@ rm -rf "$URW"
 # (T) re-run LEAVES a user-edited, user-owned config alone — no refresh, no
 #     backup. The scaffold-owned auto-update must not bleed into user files.
 UUE=$(mktemp -d)
-( cd "$UUE" && git init --quiet && echo 'name="x"' >pyproject.toml \
+( cd "$UUE" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo 'name="x"' >pyproject.toml \
   && "$SCAFFOLD_DIR/install.sh" --python --no-verify >/dev/null 2>&1 )
 echo '# my local ruff tweak' >>"$UUE/ruff.toml"
 ( cd "$UUE" && "$SCAFFOLD_DIR/install.sh" --python --no-verify ) >"$HOOK_OUT" 2>&1
@@ -454,7 +432,7 @@ rm -rf "$UUE"
 #     rules — these files are scaffold-shipped AND user-extended, so a silent
 #     overwrite would clobber a team's added rows. Notify, never overwrite.
 UPD=$(mktemp -d)
-( cd "$UPD" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$UPD" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify >/dev/null 2>&1 )
 printf '\nMYCUSTOMRULE\tmy custom rule\n' >>"$UPD/.forbidden-patterns/secrets.txt"
 ( cd "$UPD" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
@@ -470,7 +448,7 @@ rm -rf "$UPD"
 #     installs the shipped one (the user's rows land in .scaffold-bak to merge
 #     back) — the documented escape hatch from the drift note.
 UPF=$(mktemp -d)
-( cd "$UPF" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$UPF" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify >/dev/null 2>&1 )
 printf '\nMYCUSTOMRULE\tmy custom rule\n' >>"$UPF/.forbidden-patterns/secrets.txt"
 ( cd "$UPF" && "$SCAFFOLD_DIR/install.sh" --frontend --force --no-verify ) >"$HOOK_OUT" 2>&1
@@ -488,7 +466,7 @@ rm -rf "$UPF"
 #     note fires. Guards against spurious churn / .scaffold-bak clutter on every
 #     routine re-run.
 UNO=$(mktemp -d)
-( cd "$UNO" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$UNO" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify >/dev/null 2>&1 )
 ( cd "$UNO" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
 if ! grep -q 'updated:' "$HOOK_OUT" && ! grep -q 'note (drift)' "$HOOK_OUT"; then

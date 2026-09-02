@@ -225,3 +225,70 @@ else
 fi
 rm -f "$mf"
 reset_repo
+
+# 52. The INSTALLER wiring for --cursor and --commit-msg (audit ctg-07).
+# Everything above exercises the hooks by invoking their TEMPLATES directly, so
+# the install.sh blocks that put them into a project had no coverage at all:
+# measured, emptying install.sh's --cursor block (cursor-hooks.json +
+# credential-read-patterns.txt) to `:` left the suite green at 394/0, and so did
+# emptying the --commit-msg block (cp_scaffold + mkx). Both features could have
+# shipped installing nothing.
+#
+# So: run the real installer with both flags and assert the artifacts LAND, land
+# byte-identical to their templates, land executable where they must be, and
+# actually run once installed.
+CTG=$(mktemp -d)
+( cd "$CTG" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --cursor --commit-msg --no-verify ) >"$HOOK_OUT" 2>&1
+if cmp -s "$SCAFFOLD_DIR/cursor-hooks.json.template" "$CTG/.cursor/hooks.json" \
+   && cmp -s "$SCAFFOLD_DIR/githooks/lib/credential-read-patterns.txt.template" "$CTG/.githooks/lib/credential-read-patterns.txt" \
+   && [ -x "$CTG/.githooks/lib/agent-precheck" ] \
+   && grep -q 'agent-precheck' "$CTG/.cursor/hooks.json"; then
+  echo "  ✓ --cursor installs hooks.json, the credential patterns and an executable precheck"; PASS=$((PASS + 1))
+else
+  echo "  ✗ --cursor should install .cursor/hooks.json + credential-read-patterns.txt + agent-precheck"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+
+if cmp -s "$SCAFFOLD_DIR/githooks/commit-msg.template" "$CTG/.githooks/commit-msg" \
+   && [ -x "$CTG/.githooks/commit-msg" ]; then
+  echo "  ✓ --commit-msg installs an executable commit-msg hook matching its template"; PASS=$((PASS + 1))
+else
+  echo "  ✗ --commit-msg should install an executable .githooks/commit-msg"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+
+# The installed copy must WORK, not merely exist: run it through a real commit
+# in the installed repo, where core.hooksPath now points at .githooks.
+ctg_mf=$(mktemp)
+printf 'fixed a bug\n' >"$ctg_mf"
+ctg_bad=0
+( cd "$CTG" && .githooks/commit-msg "$ctg_mf" ) >"$HOOK_OUT" 2>&1 || ctg_bad=$?
+printf 'feat(api): add pagination\n' >"$ctg_mf"
+ctg_good=0
+( cd "$CTG" && .githooks/commit-msg "$ctg_mf" ) >>"$HOOK_OUT" 2>&1 || ctg_good=$?
+if [ "$ctg_bad" -ne 0 ] && [ "$ctg_good" -eq 0 ] && grep -qF "Conventional Commits" "$HOOK_OUT"; then
+  echo "  ✓ the installed commit-msg hook rejects a non-conforming subject and accepts a valid one"; PASS=$((PASS + 1))
+else
+  echo "  ✗ the installed commit-msg hook should reject bad and accept good subjects (bad=$ctg_bad good=$ctg_good)"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -f "$ctg_mf"
+rm -rf "$CTG"
+
+# 53. Both stay OPT-IN: a plain install creates neither, so the assertions above
+# are testing the flags rather than the default install.
+CTGD=$(mktemp -d)
+( cd "$CTGD" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
+if [ ! -e "$CTGD/.cursor/hooks.json" ] \
+   && [ ! -e "$CTGD/.githooks/commit-msg" ] \
+   && [ ! -e "$CTGD/.githooks/lib/credential-read-patterns.txt" ] \
+   && [ -x "$CTGD/.githooks/pre-commit" ]; then
+  echo "  ✓ a default install creates no cursor or commit-msg artifacts"; PASS=$((PASS + 1))
+else
+  echo "  ✗ --cursor and --commit-msg artifacts should be absent from a default install"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$CTGD"
+reset_repo

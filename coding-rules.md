@@ -58,7 +58,7 @@ See `AGENTS.md` for commit format and Git discipline (no amend, no force-push, n
 
 ## What the tooling enforces
 
-See [README.md](./README.md) > "What the tooling enforces" for the full matrix of build-breaking (`ruff` / `eslint`) and commit-breaking (pre-commit hook + CI) checks. Single source of truth — this doc stays focused on the human-readable rules above.
+See [TECHNICAL.md > "What the tooling enforces"](https://github.com/Sting25/ai-coding-rules-scaffold/blob/main/TECHNICAL.md#what-the-tooling-enforces) for the full matrix of build-breaking (`ruff` / `eslint`) and commit-breaking (pre-commit hook + CI) checks. This file ships into every installed project, where a relative link would resolve against the consumer's own README instead, so the link above is absolute on purpose. Single source of truth: this doc stays focused on the human-readable rules above.
 
 ## Project-specific additions
 

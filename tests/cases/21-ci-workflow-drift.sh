@@ -54,10 +54,10 @@ _wd_fixture() {
   local extra=$1 t
   t=$(mktemp -d)
   if [ -n "$extra" ]; then
-    ( cd "$t" && git init --quiet && echo '{"name":"x"}' >package.json \
+    ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
       && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify "$extra" ) >/dev/null 2>&1
   else
-    ( cd "$t" && git init --quiet && echo '{"name":"x"}' >package.json \
+    ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
       && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >/dev/null 2>&1
   fi
   printf '%s' "$t"

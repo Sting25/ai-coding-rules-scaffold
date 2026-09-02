@@ -191,3 +191,241 @@ else
   FAIL=$((FAIL + 1))
 fi
 reset_repo
+
+# 42e. .cjs and .mjs are part of the JS file set. lint.yml lints
+#      *.ts|*.tsx|*.js|*.jsx|*.cjs|*.mjs|*.vue; the hook's case list dropped
+#      .cjs and .mjs, so a commit made up only of those files ran no linter and
+#      printed no skip notice either: it just went through, and the divergence
+#      surfaced in CI. The stub echoes its arguments so this asserts the files
+#      actually reached eslint, not merely that the commit was refused.
+CJSB=$(mktemp -d)
+cat >"$CJSB/npx" <<'STUB'
+#!/bin/sh
+case "$*" in
+  *eslint*) echo "STUB ESLINT RAN on: $*"; exit 1 ;;
+  *)        exit 0 ;;
+esac
+STUB
+chmod +x "$CJSB/npx"
+mkdir -p node_modules/eslint
+echo '{"name":"eslint","version":"0.0.0-test"}' >node_modules/eslint/package.json
+echo 'module.exports = {}' >only.cjs
+echo 'export const v = 1' >only.mjs
+git add only.cjs only.mjs
+if PATH="$CJSB:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ .cjs/.mjs: hook accepted, eslint never linted them"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "only.cjs" "$HOOK_OUT" && grep -qF "only.mjs" "$HOOK_OUT"; then
+  echo "  ✓ staged .cjs and .mjs are linted like lint.yml lints them"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ .cjs/.mjs: rejected, but not with both files passed to eslint"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf node_modules "$CJSB"
+reset_repo
+
+# --- prettier config discovery + failure propagation ------------------------
+# The prettier block had no rejection test either: `|| FAILED=1` could be
+# deleted with the suite green. And the config predicate listed only four of
+# prettier's config filenames, so a .prettierrc.yaml project was never
+# format-checked in the hook OR in CI. One stub npx (fails for prettier,
+# succeeds otherwise) drives all three cases below.
+PRB=$(mktemp -d)
+cat >"$PRB/npx" <<'STUB'
+#!/bin/sh
+case "$*" in
+  *prettier*) echo "STUB PRETTIER: file needs formatting"; exit 1 ;;
+  *)          exit 0 ;;
+esac
+STUB
+chmod +x "$PRB/npx"
+mkdir -p node_modules/prettier
+echo '{"name":"prettier","version":"0.0.0-test"}' >node_modules/prettier/package.json
+
+# 42f. A YAML prettier config counts. This is the case the four-name list
+#      missed entirely: prettier reads .prettierrc.yaml, both layers skipped it,
+#      and nothing said so. Also proves the block propagates failure.
+printf 'semi: false\n' >.prettierrc.yaml
+echo 'const a = 1' >fmt.js
+git add .prettierrc.yaml fmt.js
+if PATH="$PRB:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ .prettierrc.yaml: hook accepted despite a prettier failure"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "STUB PRETTIER" "$HOOK_OUT"; then
+  echo "  ✓ .prettierrc.yaml is a prettier config and its findings fail the commit"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ .prettierrc.yaml: rejected, but prettier never ran"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
+# 42g. A top-level "prettier" KEY in package.json is a config (prettier reads
+#      it), so the format check must run.
+# reset_repo runs `git clean -fd`, which removes the untracked node_modules, so
+# each case below re-plants it.
+mkdir -p node_modules/prettier
+echo '{"name":"prettier","version":"0.0.0-test"}' >node_modules/prettier/package.json
+echo '{"name":"test","prettier":{"semi":false}}' >package.json
+echo 'const b = 1' >fmtkey.js
+git add package.json fmtkey.js
+if PATH="$PRB:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ package.json prettier key: hook accepted despite a prettier failure"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "STUB PRETTIER" "$HOOK_OUT"; then
+  echo "  ✓ a package.json \"prettier\" key is a prettier config"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ package.json prettier key: rejected, but prettier never ran"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
+# 42h. NEGATIVE: a prettier DEVDEPENDENCY is not a prettier config. The old
+#      `grep -qs '"prettier"' package.json` matched the dependency entry and ran
+#      a format check the project never configured (and that CI never ran), so
+#      the hook failed commits CI would have passed. With the failing stub still
+#      on PATH, an accepted commit is the proof prettier was not invoked; the
+#      eslint notice proves the hook did reach the JS tool section.
+mkdir -p node_modules/prettier
+echo '{"name":"prettier","version":"0.0.0-test"}' >node_modules/prettier/package.json
+echo '{"name":"test","devDependencies":{"prettier":"^3.0.0"}}' >package.json
+echo 'const c = 1' >fmtdep.js
+git add package.json fmtdep.js
+if PATH="$PRB:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1 \
+   && grep -qF "note: eslint not installed" "$HOOK_OUT"; then
+  echo "  ✓ a prettier devDependency alone is not treated as a prettier config"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ prettier devDependency: expected the JS section to run with no format check"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf node_modules "$PRB"
+reset_repo
+
+# 42i. tsc failure propagation. Case 42 above is the real thing but skips
+#      wherever TypeScript is not resolvable in the temp repo, which is every
+#      runner the suite has: test.yml provisions no node/typescript, so
+#      `npx --no-install tsc --noEmit || FAILED=1` was never once executed and
+#      could be deleted with the suite green. Plant a project-local
+#      node_modules/typescript so the hook's Node-resolution gate passes and
+#      stub npx so the type check fails, the same shape as 42b does for eslint.
+TSB=$(mktemp -d)
+cat >"$TSB/npx" <<'STUB'
+#!/bin/sh
+case "$*" in
+  *tsc*) echo "STUB TSC: typeerr.ts(1,7): error TS2322"; exit 1 ;;
+  *)     exit 0 ;;
+esac
+STUB
+chmod +x "$TSB/npx"
+mkdir -p node_modules/typescript
+echo '{"name":"typescript","version":"0.0.0-test"}' >node_modules/typescript/package.json
+echo '{"compilerOptions":{"strict":true,"noEmit":true}}' >tsconfig.json
+echo 'const n: number = 1;' >tscme.ts
+git add tsconfig.json tscme.ts
+if PATH="$TSB:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ tsc block: hook accepted despite a type error"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "STUB TSC" "$HOOK_OUT"; then
+  echo "  ✓ tsc findings fail the pre-commit hook (project-local install)"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ tsc block: rejected, but tsc never ran"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf node_modules "$TSB"
+
+# 42e. CI MIRROR of 42b2. The pre-commit hook and lint.yml must agree on what
+#      "eslint is installed" means. The hook gates on Node resolution from the
+#      project's node_modules (42b2); lint.yml's ESLint step used to gate only
+#      the CONFIG-LOAD check that way and left `npx --no-install eslint --
+#      <files>` unguarded, so any repo with a package.json but no
+#      eslint.config.js (every `install.sh --python` onto a repo that carries
+#      tailwind/esbuild/husky) ran eslint from npm's global _npx cache on a
+#      warm runner, or died with "npx canceled due to missing packages" on a
+#      cold one. Both outcomes fail a required check for a linter the project
+#      never configured.
+#
+#      Run the step's REAL shell body, lifted out of the shipped YAML, the same
+#      way cases/16 does for the coverage gate: asserting on the text would pass
+#      against any rewrite that reintroduced the hole by another route.
+LINT_TPL="$SCAFFOLD_DIR/.github/workflows/lint.yml.template"
+
+_lint_run_block() {
+  awk -v step="      - name: $1" '
+    $0 == step { found = 1 }
+    found && /run: \|/ { inrun = 1; next }
+    inrun {
+      if ($0 ~ /^[[:space:]]*$/) next
+      if ($0 !~ /^          /) exit
+      sub(/^          /, "")
+      print
+    }
+  ' "$LINT_TPL"
+}
+
+ESCI=$(mktemp -d)
+_lint_run_block "ESLint (changed files only)" >"$ESCI/step.sh"
+# A project shaped like the reported one: package.json (so the detect step turns
+# the job on), a changed .js file, NO eslint.config.js and NO node_modules. The
+# npx stub stands in for the warm _npx cache: it "runs" eslint and reports
+# findings, so if the step reaches it at all the body exits non-zero.
+cat >"$ESCI/npx" <<'STUB'
+#!/bin/sh
+case "$*" in
+  *eslint*) echo "eslint: cached copy ran"; exit 1 ;;
+  *)        exit 0 ;;
+esac
+STUB
+chmod +x "$ESCI/npx"
+mkdir -p "$ESCI/proj"
+echo '{"name":"x"}' >"$ESCI/proj/package.json"
+printf 'app.js\0' >"$ESCI/proj/changed.nul"
+
+esci_rc=0
+( cd "$ESCI/proj" && PATH="$ESCI:$PATH" bash -e "$ESCI/step.sh" ) >"$HOOK_OUT" 2>&1 || esci_rc=$?
+if [ "$esci_rc" -eq 0 ] && grep -qF "skipping eslint" "$HOOK_OUT" \
+   && ! grep -qF "cached copy ran" "$HOOK_OUT"; then
+  echo "  ✓ lint.yml skips eslint (exit 0, logged reason) with no project-local eslint"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ lint.yml ESLint step: expected exit 0 + a skip reason, got rc=$esci_rc"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+
+# 42f. POSITIVE control for 42e: the gate must not have turned the step into a
+#      no-op. With eslint resolvable from the project's own node_modules the
+#      step MUST reach `npx --no-install eslint` and propagate its non-zero
+#      exit, so real lint findings still fail the job.
+mkdir -p "$ESCI/proj/node_modules/eslint"
+echo '{"name":"eslint","version":"0.0.0-test"}' >"$ESCI/proj/node_modules/eslint/package.json"
+esci_rc=0
+( cd "$ESCI/proj" && PATH="$ESCI:$PATH" bash -e "$ESCI/step.sh" ) >"$HOOK_OUT" 2>&1 || esci_rc=$?
+if [ "$esci_rc" -ne 0 ] && grep -qF "cached copy ran" "$HOOK_OUT"; then
+  echo "  ✓ lint.yml still runs eslint and fails the job when it is project-local"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ lint.yml ESLint step: expected a lint failure to propagate, got rc=$esci_rc"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+
+# 42g. The eslint.config.js branch keeps its ACTIONABLE hard error: a shipped
+#      config with no eslint installed is a broken setup, not a skip.
+rm -rf "$ESCI/proj/node_modules"
+echo 'export default [];' >"$ESCI/proj/eslint.config.js"
+esci_rc=0
+( cd "$ESCI/proj" && PATH="$ESCI:$PATH" bash -e "$ESCI/step.sh" ) >"$HOOK_OUT" 2>&1 || esci_rc=$?
+if [ "$esci_rc" -ne 0 ] && grep -qF "::error file=eslint.config.js::eslint is not installed" "$HOOK_OUT"; then
+  echo "  ✓ lint.yml still hard-errors when eslint.config.js ships without eslint"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ lint.yml ESLint step: expected the actionable install error, got rc=$esci_rc"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$ESCI"
+reset_repo

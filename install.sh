@@ -44,6 +44,12 @@
 # only prints a notice and keeps your file (--force replaces it, backed up first).
 # .githooks/local.d/ is never written to at all: it's where project-local checks
 # live precisely so an upgrade cannot unwire them.
+#
+# Every file this installer writes is recorded in .githooks/.scaffold-manifest
+# (path, sha256 of exactly what was written, scaffold version). That is what
+# lets a re-run tell an untouched file it wrote itself, which it REFRESHES, from
+# one you edited, which it keeps and reports. Commit the manifest; see
+# install-manifest.sh for the full model.
 
 set -euo pipefail
 
@@ -92,7 +98,7 @@ for arg in "$@"; do
     --coverage-gate) COVERAGE_GATE=1 ;;
     --no-test-workflow) NO_TEST_WORKFLOW=1 ;;
     --no-install) NO_INSTALL=1 ;;
-    --help|-h)    sed -n '2,46p' "$0"; exit 0 ;;
+    --help|-h)    sed -n '2,52p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -153,16 +159,22 @@ fi
 # own header comment for the full per-helper policy. SOURCED (not exec'd) so
 # they run in this shell with its globals (FORCE) and `set -euo pipefail`.
 # Extracted to keep this script under the scaffold's own 500-line cap.
+# The install manifest (provenance: which files WE wrote, and at which version)
+# is sourced FIRST, because install-lib.sh's copy policies call into it.
+# shellcheck source=install-manifest.sh
+. "$SCAFFOLD_DIR/install-manifest.sh"
 # shellcheck source=install-lib.sh
 . "$SCAFFOLD_DIR/install-lib.sh"
 
+# shellcheck source=install-wiring.sh
+. "$SCAFFOLD_DIR/install-wiring.sh" # _optin_wired, check_paired_artifacts
 # shellcheck source=install-optin.sh
 . "$SCAFFOLD_DIR/install-optin.sh"  # install_opt_in_* flag bodies
 
 # shellcheck source=install-interactive.sh
 . "$SCAFFOLD_DIR/install-interactive.sh"  # -i/--interactive wizard
 # shellcheck source=install-claude.sh
-. "$SCAFFOLD_DIR/install-claude.sh"  # install_claude_md (CLAUDE.md merge)
+. "$SCAFFOLD_DIR/install-claude.sh"  # install_claude_md / install_agents_md
 
 # warn_pair_gap / warn_pair_note: install.sh's reporters for install-lib.sh's
 # check_paired_artifacts (#96); advisory only, so both just print (install.sh
@@ -176,28 +188,15 @@ warn_pair_note() {
   echo "note: $1"
 }
 
-# install_agents_md — AGENTS.md carries a Project section the user fills in,
-# so an existing one is never clobbered (even with --force). Skip if present;
-# create from template only when absent.
-install_agents_md() {
-  # `[ -e ]` is false for a dangling symlink; test `-L` first and skip (same
-  # A7 defense as the cp_* helpers, missing from this handler, B1).
-  if [ -L "AGENTS.md" ]; then
-    echo "skip (exists, symlink): AGENTS.md — left untouched; a scaffold path that is a symlink is suspicious. Replace it with a real file to install the template."
-    return
-  fi
-  if [ -e "AGENTS.md" ]; then
-    echo "skip (exists): AGENTS.md — left untouched (your Project section is safe)"
-    return
-  fi
-  cp "$SCAFFOLD_DIR/AGENTS.md.template" "AGENTS.md"
-  echo "installed:    AGENTS.md"
-}
-
 # -i/--interactive: prompt now, before any file is written.
 if [ "$INTERACTIVE" -eq 1 ]; then
   run_interactive
 fi
+
+# Before anything can be backed up: teach .gitignore about the *.scaffold-bak
+# copies this run may leave behind, so a routine `git add -A` never sweeps one
+# into a commit (audit upgrade-path-2).
+ensure_backup_gitignore
 
 # Always
 cp_safe "$SCAFFOLD_DIR/coding-rules.md" "coding-rules.md"
@@ -357,10 +356,12 @@ fi
 # PreToolUse hook (matcher Write|Edit|MultiEdit|Bash).
 if [ "$CLAUDE" -eq 1 ]; then
   cp_safe "$SCAFFOLD_DIR/claude-settings.json.template" ".claude/settings.json"
+  warn_unwired_optin ".claude/settings.json" agent-precheck "$SCAFFOLD_DIR/claude-settings.json.template"
 fi
 # Cursor: hooks.json wires beforeShellExecution + beforeReadFile (credential-path deny); no before-write hook, so secret-on-write stays unportable here.
 if [ "$CURSOR" -eq 1 ]; then
   cp_safe "$SCAFFOLD_DIR/cursor-hooks.json.template" ".cursor/hooks.json"
+  warn_unwired_optin ".cursor/hooks.json" agent-precheck "$SCAFFOLD_DIR/cursor-hooks.json.template"
   cp_pattern "$SCAFFOLD_DIR/githooks/lib/credential-read-patterns.txt.template" ".githooks/lib/credential-read-patterns.txt"
 fi
 
@@ -422,7 +423,7 @@ install_opt_in_npm_cooldown
 install_opt_in_claude_skill
 
 # Test-execution CI workflow (#97): DEFAULT-ON, exactly one of two shapes,
-# plus a recorded opt-out (--no-test-workflow). See install-lib.sh's
+# plus a recorded opt-out (--no-test-workflow). See install-optin.sh's
 # install_test_workflow_ci for the full decision order and rationale; it sets
 # TEST_CI_STATE for the summary near the end of this script.
 install_test_workflow_ci
@@ -442,6 +443,12 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
 else
   echo "warning: not in a git repo — run 'git config core.hooksPath .githooks' after 'git init'"
 fi
+
+# Write the install manifest: one line per file this run wrote, carrying the
+# sha256 of exactly those bytes plus this scaffold's version. Runs after every
+# write and before the summaries, so the next upgrade can tell what it wrote
+# itself from what the project has since edited (install-manifest.sh).
+manifest_flush
 
 # Paired-artifact consistency check (#96): install.sh can leave a config half
 # without its CI-enforcement half if an earlier run used a different flag
@@ -477,3 +484,9 @@ case "$MODE" in
   *) echo "  - Verify the hook: add 'print(\"x\")' to a .py file, 'git add' it, try to commit — hook should reject" ;;
 esac
 print_history_scan_note; print_not_enabled_summary
+
+# A symlinked scaffold DIRECTORY (.githooks, .github, .claude, .cursor) makes
+# every write under it a refusal in _mkdir_safe, so this run really did not
+# install what it was asked to: name the paths once and FAIL, rather than
+# exiting 0 over a half-written install (audit code-install-policy-2).
+print_refused_writes_summary || exit 1

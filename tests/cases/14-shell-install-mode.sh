@@ -19,7 +19,7 @@ SHELL_UNWANT="ruff.toml pytest.ini .coveragerc eslint.config.js tsconfig.json
 # (T) --shell installs hooks + the shell-relevant/language-agnostic patterns and
 #     skips every Python/TS config template.
 STMP=$(mktemp -d)
-( cd "$STMP" && git init --quiet && echo '#!/usr/bin/env bash' >run.sh \
+( cd "$STMP" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '#!/usr/bin/env bash' >run.sh \
   && "$SCAFFOLD_DIR/install.sh" --shell --no-verify ) >"$HOOK_OUT" 2>&1
 SHELL_OK=1; SHELL_WHY=""
 for f in $SHELL_WANT; do
@@ -43,7 +43,7 @@ rm -rf "$STMP"
 #     .sh file the scaffold scans itself. It also defends against a global
 #     hooksPath leaking into the fixture repo, which the flag would not.
 ATMP=$(mktemp -d)
-( cd "$ATMP" && git init --quiet && echo '#!/usr/bin/env bash' >deploy.sh && git add deploy.sh \
+( cd "$ATMP" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '#!/usr/bin/env bash' >deploy.sh && git add deploy.sh \
   && git -c core.hooksPath=/nonexistent -c user.email=t@t.local -c user.name=t \
        commit --quiet -m fixture \
   && "$SCAFFOLD_DIR/install.sh" --no-verify ) >"$HOOK_OUT" 2>&1
@@ -59,7 +59,7 @@ rm -rf "$ATMP"
 #     project before anything is committed, where `git ls-files` returns nothing.
 #     A working-tree probe backs it up, so the flagless install still works.
 UTMP=$(mktemp -d)
-( cd "$UTMP" && git init --quiet && echo '#!/usr/bin/env bash' >deploy.sh \
+( cd "$UTMP" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '#!/usr/bin/env bash' >deploy.sh \
   && "$SCAFFOLD_DIR/install.sh" --no-verify ) >"$HOOK_OUT" 2>&1
 if grep -qF "Done (mode: shell)." "$HOOK_OUT" && [ -f "$UTMP/.forbidden-patterns/shell.txt" ]; then
   echo "  ✓ auto-detect selects shell mode with an UNCOMMITTED *.sh (fresh repo)"; PASS=$((PASS + 1))
@@ -73,7 +73,7 @@ rm -rf "$UTMP"
 #     project — otherwise adding a build script would silently downgrade the
 #     install and drop the eslint/tsconfig the CI frontend job needs.
 PTMP=$(mktemp -d)
-( cd "$PTMP" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$PTMP" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && echo '#!/usr/bin/env bash' >build.sh \
   && "$SCAFFOLD_DIR/install.sh" --no-verify ) >"$HOOK_OUT" 2>&1
 if grep -qF "Done (mode: frontend)." "$HOOK_OUT" && [ -f "$PTMP/eslint.config.js" ]; then
@@ -87,7 +87,7 @@ rm -rf "$PTMP"
 #     stack guess, and the message names --shell among the options.
 NTMP=$(mktemp -d)
 NOSTACK_RC=0
-( cd "$NTMP" && git init --quiet && echo "hello" >README.md \
+( cd "$NTMP" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo "hello" >README.md \
   && "$SCAFFOLD_DIR/install.sh" --no-verify ) >"$HOOK_OUT" 2>&1 || NOSTACK_RC=$?
 if [ "$NOSTACK_RC" -ne 0 ] && grep -qF "Specify the stack explicitly" "$HOOK_OUT" \
    && grep -qF -- "--shell" "$HOOK_OUT"; then

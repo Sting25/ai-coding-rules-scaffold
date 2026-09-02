@@ -11,7 +11,7 @@ echo "cases/24: --claude-skill opt-in flag (#118 pt 2)"
 
 _cskill_fixture() {
   local t; t=$(mktemp -d)
-  ( cd "$t" && git init --quiet && echo '{"name":"x"}' >package.json \
+  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
     && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify "$@" ) >/dev/null 2>&1
   printf '%s' "$t"
 }

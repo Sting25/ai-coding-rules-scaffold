@@ -22,9 +22,25 @@ echo "AKIA""IOSFODNN7EXAMPLE  # scaffold-allow docs example" >example.md
 git add example.md
 assert_passes "scaffold-allow exempts secret on docs line"
 
+# Strip every directory that provides ruff from the real PATH, rather than
+# assuming ruff is absent, so the ruff-unavailable cases below hold on a machine
+# that has ruff installed. Computed once, used by 13a2 and 13b.
+NOTOOL_PATH=
+OLDIFS=$IFS
+IFS=:
+for rd in $PATH; do
+  [ -x "$rd/ruff" ] && continue
+  NOTOOL_PATH="$NOTOOL_PATH:$rd"
+done
+IFS=$OLDIFS
+NOTOOL_PATH=${NOTOOL_PATH#:}
+
 # 13. ruff lint integration — the hook should run ruff on staged .py when
-#     ruff.toml is present and ruff is on PATH. Skipped otherwise.
-if command -v ruff >/dev/null 2>&1; then
+#     ruff.toml is present and ruff is resolvable. The guard mirrors the hook's
+#     own resolution chain (#144), so a ruff that is only importable as a module
+#     (pip install --user, no console script on PATH) still exercises this case
+#     instead of skipping it.
+if command -v ruff >/dev/null 2>&1 || python3 -m ruff --version >/dev/null 2>&1; then
   cat >badimports.py <<'EOF'
 import sys
 import os
@@ -35,24 +51,83 @@ else
   echo "  - skipped ruff test (ruff not installed)"
 fi
 
-# 13b. skip notice: a staged .py file with ruff unavailable must print a
-#      one-line notice to stderr and still exit 0 (pyproject.toml, present
-#      since the bootstrap fixture, is enough to satisfy the check's config
-#      gate). Strip any directory that provides ruff from the real PATH,
-#      rather than assuming it's absent, so this holds even on a machine
-#      that has ruff installed.
-NOTOOL_PATH=
-OLDIFS=$IFS
-IFS=:
-for rd in $PATH; do
-  [ -x "$rd/ruff" ] && continue
-  NOTOOL_PATH="$NOTOOL_PATH:$rd"
-done
-IFS=$OLDIFS
-NOTOOL_PATH=${NOTOOL_PATH#:}
+# 13a1. VENV-ONLY ruff (#144). The overwhelmingly common Python setup is a
+#       pip/uv install into the project's .venv with the venv NOT activated:
+#       ruff is installed, but not on PATH. The old `command -v ruff` gate
+#       printed "not installed" and let real lint errors commit clean. A stub
+#       .venv/bin/ruff stands in for the real binary so the case is
+#       deterministic everywhere, and it exits non-zero so this also proves the
+#       findings still reach FAILED.
+mkdir -p .venv/bin
+cat >.venv/bin/ruff <<'STUB'
+#!/bin/sh
+echo "VENV RUFF: F401 unused import"
+exit 1
+STUB
+chmod +x .venv/bin/ruff
+echo 'ok = True' >venvruff.py
+git add venvruff.py
+if PATH="$NOTOOL_PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ venv-only ruff: hook accepted despite a ruff failure"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+elif grep -qF "VENV RUFF" "$HOOK_OUT"; then
+  echo "  ✓ ruff in .venv/bin is found and its findings fail the commit"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ venv-only ruff: rejected, but .venv/bin/ruff never ran"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf .venv
+reset_repo
+
+# 13a2. MODULE-ONLY ruff. `pip install --user` can leave ruff importable with no
+#       console script on PATH at all; `python3 -m ruff` is then the only route.
+#       Stub python3 (nothing else in the hook's default path shells out to it)
+#       so the case is deterministic and does not depend on the host's Python.
+PYSTUB=$(mktemp -d)
+cat >"$PYSTUB/python3" <<'STUB'
+#!/bin/sh
+case "$*" in
+  "-m ruff --version") echo "ruff 0.0.0-test"; exit 0 ;;
+  "-m ruff check"*)    echo "MODULE RUFF: F401 unused import"; exit 1 ;;
+esac
+exit 1
+STUB
+chmod +x "$PYSTUB/python3"
+echo 'ok = True' >modruff.py
+git add modruff.py
+if PATH="$PYSTUB:$NOTOOL_PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ module-only ruff: hook accepted despite a ruff failure"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+elif grep -qF "MODULE RUFF" "$HOOK_OUT"; then
+  echo "  ✓ 'python3 -m ruff' is used when no ruff binary exists"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ module-only ruff: rejected, but python3 -m ruff never ran"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$PYSTUB"
+reset_repo
+
+# 13b. skip notice: a staged .py file with ruff unavailable by EVERY route must
+#      print a one-line notice to stderr and still exit 0 (pyproject.toml,
+#      present since the bootstrap fixture, is enough to satisfy the check's
+#      config gate). ruff is stripped from PATH, there is no .venv/venv, and the
+#      python3 stub has no ruff module, so the notice is the only correct
+#      outcome, not an accident of what the host happens to have installed.
+NORUFF=$(mktemp -d)
+cat >"$NORUFF/python3" <<'STUB'
+#!/bin/sh
+exit 1
+STUB
+chmod +x "$NORUFF/python3"
 echo 'ok = True' >noruff.py
 git add noruff.py
-if PATH="$NOTOOL_PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1 \
+if PATH="$NORUFF:$NOTOOL_PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1 \
    && grep -qF "note: ruff not installed" "$HOOK_OUT"; then
   echo "  ✓ ruff-unavailable skip prints a notice and still exits 0"
   PASS=$((PASS + 1))
@@ -61,6 +136,7 @@ else
   sed 's/^/      /' "$HOOK_OUT"
   FAIL=$((FAIL + 1))
 fi
+rm -rf "$NORUFF"
 reset_repo
 
 # 14. unicode filename — `core.quotepath=on` (git default) would emit the
@@ -148,3 +224,152 @@ if command -v actionlint >/dev/null 2>&1; then
 else
   echo "  - skipped workflow validation (actionlint not installed)"
 fi
+
+# 18b. CDPATH in the developer's environment must not disarm the hook. `cd`
+#      resolves a relative argument through CDPATH and PRINTS the directory it
+#      landed in, so `$(cd "$(dirname "$0")" && pwd)` captured that line ahead
+#      of pwd's: $LIB became a two-line string, every "$LIB/check-*" launch
+#      failed with "No such file or directory", and nothing was ever scanned.
+#      Hooks are always invoked by relative path, so a CDPATH in a shell
+#      profile hit every commit. Assert the POSITIVE outcome: the pattern scan
+#      still fires and the commit is refused.
+echo 'pri''nt("debug")' >cdpath.py
+git add cdpath.py
+if CDPATH=".:$HOME" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ CDPATH set: hook accepted, expected reject"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+elif grep -qF "structlog" "$HOOK_OUT"; then
+  echo "  ✓ CDPATH does not stop the hook's scanners from launching"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ CDPATH set: rejected, but not by the pattern scan"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+reset_repo
+
+# 18c. Same guard on a lib check run standalone, the way the CI guardrails job
+#      runs it: relative path, NUL list on stdin. check-size resolves its
+#      sibling scaffold-config through its own $(cd ... && pwd), and cfg() fails
+#      OPEN when that path does not resolve, so a CDPATH-poisoned SELF_DIR
+#      silently drops every .scaffold.toml override instead of erroring. Assert
+#      the POSITIVE outcome: the per-path cap of 100 from .scaffold.toml is
+#      honored under CDPATH, so a 200-line file is refused (the built-in
+#      default of 500 would let it through).
+mkdir -p cdp
+printf '[size]\n"cdp/**" = 100\n' >.scaffold.toml
+seq 1 200 >cdp/big.py
+git add .scaffold.toml cdp/big.py
+if printf '%s\0' cdp/big.py | CDPATH=".:$HOME" .githooks/lib/check-size >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ CDPATH set: check-size ignored the .scaffold.toml cap, expected reject"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+elif grep -qF "extract a module" "$HOOK_OUT"; then
+  echo "  ✓ CDPATH does not break a standalone lib check's config lookup"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ CDPATH set: check-size failed for the wrong reason"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf cdp
+reset_repo
+
+# --- stash safety (the hook's most destructive moment) ----------------------
+# The hook stashes unstaged changes so the optional ruff/eslint pass lints what
+# is actually being committed. Two guards protect that, and neither had a test:
+# the merge/rebase skip (stashing mid-merge destroys the merge state) and the
+# fail-CLOSED arm when the stash itself fails. Both could be deleted with the
+# suite green.
+
+# 18d. During a conflicted merge the hook must NOT stash, and must still run its
+#      scanners. Asserts the POSITIVE outcomes: the staged secret is refused,
+#      the merge is still in progress afterwards (a stash would have discarded
+#      MERGE_HEAD), and the unstaged edit is still in the working tree.
+STASH_BR=$(git rev-parse --abbrev-ref HEAD)
+printf 'base\n' >conflict.txt
+git add conflict.txt
+git commit --quiet -m "fixture: conflict base" --no-verify  # scaffold-allow: test fixture
+git checkout -q -b stash-side
+printf 'side\n' >conflict.txt
+git add conflict.txt
+git commit --quiet -m "fixture: side edit" --no-verify  # scaffold-allow: test fixture
+git checkout -q "$STASH_BR"
+printf 'ours\n' >conflict.txt
+git add conflict.txt
+git commit --quiet -m "fixture: our edit" --no-verify  # scaffold-allow: test fixture
+git merge --quiet stash-side >/dev/null 2>&1 || true
+printf 'resolved\n' >conflict.txt
+git add conflict.txt
+echo "AWS=AKIA""IOSFODNN7EXAMPLE" >mergesecret.txt
+git add mergesecret.txt
+printf 'unstaged edit\n' >>conflict.txt
+GITDIR=$(git rev-parse --git-dir)
+if .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ merge stash skip: hook accepted a staged secret mid-merge"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+elif grep -qF "AWS access key" "$HOOK_OUT" && [ -e "$GITDIR/MERGE_HEAD" ] \
+     && [ -z "$(git stash list)" ] && grep -qF "unstaged edit" conflict.txt; then
+  echo "  ✓ mid-merge the hook scans without stashing, merge state intact"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ merge stash skip: expected a secret reject with MERGE_HEAD and the"
+  echo "    unstaged edit still in place and no stash entry"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+git merge --abort >/dev/null 2>&1 || true
+git branch -q -D stash-side
+reset_repo
+
+# 18e. A FAILING stash must fail CLOSED. If the hook cannot make the working
+#      tree match the index it has no idea what it is about to check, so it
+#      refuses rather than scanning the wrong content. Stub git so `git stash
+#      push` fails and everything else is the real thing. mktemp is stubbed too,
+#      so the staged-list temp file lands in a directory this case owns and the
+#      same run proves it is cleaned up on this early-exit path, which happens
+#      before the EXIT trap is installed. (A plain TMPDIR would not do it:
+#      macOS mktemp ignores TMPDIR when called with no template.)
+echo 'base' >stashdirty.txt
+git add stashdirty.txt
+git commit --quiet -m "fixture: stash dirty file" --no-verify  # scaffold-allow: test fixture
+GITSTUB=$(mktemp -d)
+STASHTMP=$(mktemp -d)
+REALGIT=$(command -v git)
+REALMKTEMP=$(command -v mktemp)
+cat >"$GITSTUB/git" <<'STUB'
+#!/bin/sh
+if [ "$1" = stash ] && [ "$2" = push ]; then
+  exit 1
+fi
+exec "$REAL_GIT" "$@"
+STUB
+chmod +x "$GITSTUB/git"
+cat >"$GITSTUB/mktemp" <<'STUB'
+#!/bin/sh
+exec "$REAL_MKTEMP" "$STASH_TMP_DIR/staged.XXXXXX"
+STUB
+chmod +x "$GITSTUB/mktemp"
+echo 'ok = True' >stashfail.py
+git add stashfail.py
+printf 'dirty\n' >>stashdirty.txt
+if REAL_GIT="$REALGIT" REAL_MKTEMP="$REALMKTEMP" STASH_TMP_DIR="$STASHTMP" \
+   PATH="$GITSTUB:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ stash failure: hook proceeded, expected a refusal"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+elif grep -qF "could not stash" "$HOOK_OUT" && [ -z "$(find "$STASHTMP" -mindepth 1)" ]; then
+  echo "  ✓ a failed stash refuses the commit and leaves no temp file behind"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ stash failure: expected the 'could not stash' refusal and no temp file left"
+  sed 's/^/      /' "$HOOK_OUT"
+  find "$STASHTMP" -mindepth 1 | sed 's/^/      leftover: /'
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$GITSTUB" "$STASHTMP"
+reset_repo
+git rm -q conflict.txt stashdirty.txt
+git commit --quiet -m "fixture: drop stash-safety fixtures" --no-verify  # scaffold-allow: test fixture
