@@ -238,7 +238,7 @@ reset_repo
 # byte-identical to their templates, land executable where they must be, and
 # actually run once installed.
 CTG=$(mktemp -d)
-( cd "$CTG" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$CTG" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --cursor --commit-msg --no-verify ) >"$HOOK_OUT" 2>&1
 if cmp -s "$SCAFFOLD_DIR/cursor-hooks.json.template" "$CTG/.cursor/hooks.json" \
    && cmp -s "$SCAFFOLD_DIR/githooks/lib/credential-read-patterns.txt.template" "$CTG/.githooks/lib/credential-read-patterns.txt" \
@@ -279,7 +279,7 @@ rm -rf "$CTG"
 # 53. Both stay OPT-IN: a plain install creates neither, so the assertions above
 # are testing the flags rather than the default install.
 CTGD=$(mktemp -d)
-( cd "$CTGD" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$CTGD" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
 if [ ! -e "$CTGD/.cursor/hooks.json" ] \
    && [ ! -e "$CTGD/.githooks/commit-msg" ] \

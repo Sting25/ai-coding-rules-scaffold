@@ -38,7 +38,7 @@ _off_env() {
     echo "exit $exitcode"
   } >"$OFF_BIN/npm"
   chmod +x "$OFF_BIN/npm"
-  ( cd "$OFF_DIR" && git init --quiet && echo '{"name":"x"}' >package.json )
+  ( cd "$OFF_DIR" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json )
 }
 
 # _off_run: install.sh WITHOUT --no-verify (so run_toolchain_verify runs), with

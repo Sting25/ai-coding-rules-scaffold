@@ -18,7 +18,7 @@ echo "uninstall.sh reporting (dry run, leftovers):"
 un_project() {
   local t
   t=$(mktemp -d)
-  ( cd "$t" && git init --quiet && echo '{"name":"x"}' >package.json \
+  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
     && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >/dev/null 2>&1
   printf '%s' "$t"
 }

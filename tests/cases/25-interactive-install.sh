@@ -10,7 +10,7 @@ echo "cases/25: --interactive/-i wizard"
 
 _iact_fixture() {
   local t; t=$(mktemp -d)
-  ( cd "$t" && git init --quiet && echo '{"name":"x"}' >package.json ) >/dev/null 2>&1
+  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json ) >/dev/null 2>&1
   printf '%s' "$t"
 }
 

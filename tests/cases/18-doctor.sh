@@ -16,7 +16,7 @@ echo "cases/18 — scaffold-doctor (armed vs merely installed)"
 doc_project() {
   local t
   t=$(mktemp -d)
-  ( cd "$t" && git init --quiet \
+  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" \
     && echo '#!/usr/bin/env bash' >run.sh \
     && "$SCAFFOLD_DIR/install.sh" --shell --no-verify ) >/dev/null 2>&1
   printf '%s' "$t"

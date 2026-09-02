@@ -11,7 +11,7 @@ echo "cases/23: --npm-cooldown opt-in flag (#117)"
 
 _npmc_fixture() {
   local t; t=$(mktemp -d)
-  ( cd "$t" && git init --quiet && echo '{"name":"x"}' >package.json \
+  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
     && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify "$@" ) >/dev/null 2>&1
   printf '%s' "$t"
 }

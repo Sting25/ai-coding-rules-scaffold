@@ -30,7 +30,7 @@ echo "cases/30: the install manifest refreshes untouched files on upgrade (audit
 # _mf_project: a fresh frontend repo with the scaffold installed from HEAD.
 _mf_project() {
   local t; t=$(mktemp -d)
-  ( cd "$t" && git init --quiet && echo '{"name":"x"}' >package.json \
+  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
     && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >/dev/null 2>&1
   printf '%s' "$t"
 }
@@ -292,7 +292,7 @@ rm -rf "$MF8"
 #     never named or removed. Both are asserted here, together with the half
 #     that must not break: the project's own ignore rules survive.
 MF9=$(mktemp -d)
-( cd "$MF9" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$MF9" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && printf 'node_modules/\n' >.gitignore \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >/dev/null 2>&1
 ( cd "$MF9" && "$SCAFFOLD_DIR/uninstall.sh" --all ) >"$HOOK_OUT" 2>&1
@@ -321,7 +321,7 @@ rm -rf "$MF9"
 #       before 2>/dev/null exists, and the failure does not reliably surface as
 #       a non-zero status either. Hence the explicit check plus verify-after-write.
 MFRO=$(mktemp -d)
-( cd "$MFRO" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$MFRO" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && printf 'node_modules/\n' >.gitignore && chmod 444 .gitignore ) >/dev/null 2>&1
 # Capture the expected non-zero exit explicitly. Under `set -euo pipefail` a
 # bare subshell that exits non-zero aborts the whole sourced case file before

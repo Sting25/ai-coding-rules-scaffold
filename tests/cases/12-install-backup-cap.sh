@@ -11,7 +11,7 @@ echo "cases/12 — install backup-cap skip (B12)"
 # leaving hooks unwired with no summary. It now SKIPS that one file — leaving the
 # user's version untouched (no backup ⇒ no safe overwrite) — and finishes the rest.
 B12=$(mktemp -d)
-( cd "$B12" && git init --quiet && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
+( cd "$B12" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
   && "$SCAFFOLD_DIR/install.sh" --both --no-verify >/dev/null 2>&1 )
 # Make ruff.toml (a user-owned cp_safe file) differ so --force will try to back it up.
 echo '# LOCAL EDIT B12' >>"$B12/ruff.toml"
@@ -43,7 +43,7 @@ reset_repo
 # so as root the destination becomes a DIRECTORY instead, which `cp -P` also
 # refuses to copy. Either way the copy fails for a real reason.
 SBF=$(mktemp -d)
-( cd "$SBF" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$SBF" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify >/dev/null 2>&1 )
 if [ "$(id -u)" -eq 0 ]; then
   rm -f "$SBF/.githooks/lib/check-size"
@@ -79,7 +79,7 @@ reset_repo
 # ever mentioned them. Now they arrive non-executable and .gitignore carries the
 # two rules that keep them out of a commit.
 BAKH=$(mktemp -d)
-( cd "$BAKH" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$BAKH" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify >/dev/null 2>&1 \
   && git add -A && git commit --quiet -m "base" --no-verify )  # scaffold-allow: test fixture
 # Force a real backup on a scaffold-owned, executable file: edit it so the
@@ -109,7 +109,7 @@ rm -rf "$BAKH"
 # appended once (a re-run does not duplicate them) and existing content is kept.
 BAKG=$(mktemp -d)
 printf 'node_modules/\n' >"$BAKG/.gitignore"
-( cd "$BAKG" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$BAKG" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
 if grep -q '^node_modules/$' "$BAKG/.gitignore" \

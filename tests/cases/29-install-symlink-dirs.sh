@@ -36,7 +36,7 @@ mkdir -p "$USG/repo" "$USG/outside/lib"
 printf 'PRECIOUS_DO_NOT_TOUCH\n' >"$USG/outside/lib/check-secrets"
 ln -s "$USG/outside" "$USG/repo/.githooks"
 USG_RC=0
-( cd "$USG/repo" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$USG/repo" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1 || USG_RC=$?
 if grep -q 'PRECIOUS_DO_NOT_TOUCH' "$USG/outside/lib/check-secrets" \
    && [ ! -e "$USG/outside/pre-commit" ] \
@@ -61,7 +61,7 @@ mkdir -p "$USC/repo" "$USC/shared-claude"
 printf 'team notes\n' >"$USC/shared-claude/NOTES.md"
 ln -s "$USC/shared-claude" "$USC/repo/.claude"
 USC_RC=0
-( cd "$USC/repo" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$USC/repo" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --claude ) >"$HOOK_OUT" 2>&1 || USC_RC=$?
 if [ -L "$USC/repo/.claude" ] \
    && grep -q 'team notes' "$USC/shared-claude/NOTES.md" \
@@ -82,7 +82,7 @@ rm -rf "$USC"
 USO=$(mktemp -d)
 mkdir -p "$USO/repo" "$USO/outside"
 ln -s "$USO/outside" "$USO/repo/.githooks"
-( cd "$USO/repo" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$USO/repo" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1 || true
 if [ "$(grep -c 'error: .githooks is a symlink' "$HOOK_OUT")" -eq 1 ]; then
   echo "  ✓ the symlinked-directory refusal is explained exactly once per directory"; PASS=$((PASS + 1))
@@ -96,7 +96,7 @@ rm -rf "$USO"
 #     executable pre-commit and exits 0.
 USN=$(mktemp -d)
 USN_RC=0
-( cd "$USN" && git init --quiet && echo '{"name":"x"}' >package.json \
+( cd "$USN" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1 || USN_RC=$?
 if [ "$USN_RC" -eq 0 ] \
    && [ -x "$USN/.githooks/pre-commit" ] \

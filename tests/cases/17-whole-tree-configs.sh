@@ -27,7 +27,7 @@ echo "cases/17 — configs that silently go whole-tree (#76)"
 #     Inert and shadowing at once — the worst of the three outcomes.
 MONO=$(mktemp -d)
 mkdir -p "$MONO/backend"
-( cd "$MONO" && git init --quiet && git config core.hooksPath .nohooks \
+( cd "$MONO" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && git config core.hooksPath .nohooks \
   && printf '[project]\nname = "x"\n' >pyproject.toml \
   && printf '[tool.pytest.ini_options]\nasyncio_mode = "auto"\n' >backend/pyproject.toml \
   && "$SCAFFOLD_DIR/install.sh" --python ) >"$HOOK_OUT" 2>&1
@@ -42,7 +42,7 @@ rm -rf "$MONO"
 #     must not be so eager that the feature stops working. Without this, deleting
 #     the install line entirely would pass the assertion above.
 PLAIN=$(mktemp -d)
-( cd "$PLAIN" && git init --quiet && git config core.hooksPath .nohooks \
+( cd "$PLAIN" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && git config core.hooksPath .nohooks \
   && printf '[project]\nname = "x"\n' >pyproject.toml && mkdir tests \
   && "$SCAFFOLD_DIR/install.sh" --python ) >"$HOOK_OUT" 2>&1
 if [ -f "$PLAIN/pytest.ini" ]; then
@@ -58,7 +58,7 @@ rm -rf "$PLAIN"
 #     how a consumer discovers it later via a collection error from a vendored
 #     package, which is the failure the issue actually reported.
 NOTESTS=$(mktemp -d)
-( cd "$NOTESTS" && git init --quiet && git config core.hooksPath .nohooks \
+( cd "$NOTESTS" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && git config core.hooksPath .nohooks \
   && printf '[project]\nname = "x"\n' >pyproject.toml \
   && "$SCAFFOLD_DIR/install.sh" --python ) >"$HOOK_OUT" 2>&1
 if [ -f "$NOTESTS/pytest.ini" ] && grep -qF "matches nothing" "$HOOK_OUT"; then

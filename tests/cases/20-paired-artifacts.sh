@@ -20,7 +20,7 @@ echo "cases/20: paired-artifact half-install detection (#96)"
 pa_python_project() {
   local t
   t=$(mktemp -d)
-  ( cd "$t" && git init --quiet \
+  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" \
     && echo 'name = "test"' >pyproject.toml \
     && "$SCAFFOLD_DIR/install.sh" --python --no-verify ) >/dev/null 2>&1
   printf '%s' "$t"
@@ -29,7 +29,7 @@ pa_python_project() {
 pa_shell_project() {
   local t
   t=$(mktemp -d)
-  ( cd "$t" && git init --quiet \
+  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" \
     && echo '#!/usr/bin/env bash' >run.sh \
     && "$SCAFFOLD_DIR/install.sh" --shell --no-verify ) >/dev/null 2>&1
   printf '%s' "$t"
@@ -38,7 +38,7 @@ pa_shell_project() {
 pa_frontend_coverage_project() {
   local t
   t=$(mktemp -d)
-  ( cd "$t" && git init --quiet \
+  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" \
     && echo '{"name":"t"}' >package.json \
     && "$SCAFFOLD_DIR/install.sh" --frontend --coverage-gate --no-verify ) >/dev/null 2>&1
   printf '%s' "$t"
@@ -212,7 +212,7 @@ reset_repo
 pa_stub_agent_project() {
   local t
   t=$(mktemp -d)
-  ( cd "$t" && git init --quiet \
+  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" \
     && echo '{"name":"t"}' >package.json \
     && mkdir -p .claude .cursor \
     && echo '{"permissions":{"allow":["Bash(ls:*)"]}}' >.claude/settings.json \
@@ -224,7 +224,7 @@ pa_stub_agent_project() {
 pa_wired_agent_project() {
   local t
   t=$(mktemp -d)
-  ( cd "$t" && git init --quiet \
+  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" \
     && echo '{"name":"t"}' >package.json \
     && "$SCAFFOLD_DIR/install.sh" --frontend --claude --no-verify ) >/dev/null 2>&1
   printf '%s' "$t"
@@ -242,7 +242,7 @@ pa_case_absent "a --claude install that actually wires the precheck is not a gap
 # warn at the moment cp_safe skips the file. That summary is written for an AI
 # agent relaying it to its user, so "silently absent" is the whole failure mode.
 PAW=$(mktemp -d)
-( cd "$PAW" && git init --quiet && echo '{"name":"t"}' >package.json \
+( cd "$PAW" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"t"}' >package.json \
   && mkdir -p .claude .cursor \
   && echo '{"permissions":{"allow":["Bash(ls:*)"]}}' >.claude/settings.json \
   && echo '{"hooks":{}}' >.cursor/hooks.json \
@@ -264,7 +264,7 @@ rm -rf "$PAW"
 # (D) the control: a clean install that really does wire all three says nothing
 # about them at all, so the new wording cannot become background noise.
 PAOK=$(mktemp -d)
-( cd "$PAOK" && git init --quiet && echo '{"name":"t"}' >package.json \
+( cd "$PAOK" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"t"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --claude --cursor --npm-cooldown --no-verify ) >"$HOOK_OUT" 2>&1
 if ! grep -q "PRESENT BUT NOT ARMED" "$HOOK_OUT" \
    && ! grep -q "is NOT armed" "$HOOK_OUT" \
