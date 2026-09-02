@@ -150,7 +150,7 @@ git add .forbidden-patterns/frontend.txt fallback.svelte
 cp_run "header-less frontend.txt still scans .svelte (fallback parity)" "XSS" fallback.svelte
 
 # 28l. CONTROL for 28k: with the header stripped, an extension the fallback DOES
-#      declare must still be scanned — otherwise 28k could pass because the
+#      declare must still be scanned, otherwise 28k could pass because the
 #      fallback path is broken outright rather than because svelte was added.
 printf 'console.log("debug");\n' >fallback.ts
 git add fallback.ts

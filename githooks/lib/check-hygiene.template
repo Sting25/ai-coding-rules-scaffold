@@ -22,7 +22,7 @@
 #      control characters hidden in a text file silently change how it reads:
 #      bidi overrides (CVE-2021-42574 "Trojan Source") reorder code; zero-width,
 #      tag-block and variation-selector characters smuggle instructions into
-#      agent-read files (AGENTS.md, coding-rules.md, .forbidden-patterns/*) —
+#      agent-read files (AGENTS.md, coding-rules.md, .forbidden-patterns/*),
 #      the Feb-2025 "Rules File Backdoor". The variation selectors supplement
 #      (U+E0100–U+E01EF) is the byte-per-codepoint channel that carries a whole
 #      sentence invisibly, so it is matched alongside the tag block.
@@ -248,7 +248,7 @@ if [ "$HIDDEN_STATE" != disabled ]; then
     m=$(LC_ALL=C grep -anE -- "$HIDDEN_RE" <<<"$content" \
           | grep -ivE '(^[0-9]+:|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true)
     if [ -n "$m" ]; then
-      emit "$HIDDEN_STATE" "$file" "hidden Unicode control char (bidi / zero-width / tag / variation selector) — strip it; this is the 'Rules File Backdoor' / Trojan Source surface"
+      emit "$HIDDEN_STATE" "$file" "hidden Unicode control char (bidi / zero-width / tag / variation selector), strip it; this is the 'Rules File Backdoor' / Trojan Source surface"
       # Never echo the raw invisible bytes back to a terminal/CI log — sanitize
       # non-printing bytes to '.' so the offending line(s) are reviewable.
       printf '%s\n' "$m" | LC_ALL=C sed 's/[^[:print:][:space:]]/./g' | head -3 | sed 's/^/    /' >&2 || true

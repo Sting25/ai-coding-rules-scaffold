@@ -165,7 +165,7 @@ install_test_workflow_ci() {
   elif [ "$COVERAGE_GATE" -eq 1 ] || { [ -f ".github/workflows/coverage.yml" ] && [ ! -f ".github/workflows/tests.yml" ]; }; then
     cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/coverage.yml.template" ".github/workflows/coverage.yml"
     echo "note: coverage.yml gates patch coverage (default 100% of changed lines)."
-    echo "      It forces changed lines to be RUN by a test, not verified — pair with review."
+    echo "      It forces changed lines to be RUN by a test, not verified, pair with review."
     if [ -f ".github/workflows/tests.yml" ]; then
       if cmp -s "$SCAFFOLD_DIR/.github/workflows/tests.yml.template" ".github/workflows/tests.yml"; then
         # Only remove the stale file once it's actually backed up (mirrors

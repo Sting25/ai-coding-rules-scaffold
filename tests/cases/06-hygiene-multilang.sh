@@ -158,14 +158,14 @@ printf 'deny %sroot\n' "$rlm" >rlm.md
 git add rlm.md
 assert_rejects "right-to-left mark (U+200F) is rejected" "hidden Unicode"
 
-# 45m4. Soft hyphen (U+00AD, bytes C2 AD) — invisible, and splitting a keyword
+# 45m4. Soft hyphen (U+00AD, bytes C2 AD), invisible, and splitting a keyword
 #       with it hides the word from a reviewer and from a naive grep.
 shy=$(printf '\xc2\xad')
 printf 'never run rm %s-rf /\n' "$shy" >shy.md
 git add shy.md
 assert_rejects "soft hyphen (U+00AD) is rejected" "hidden Unicode"
 
-# 45m5. Arabic letter mark (U+061C, bytes D8 9C) — the third invisible bidi
+# 45m5. Arabic letter mark (U+061C, bytes D8 9C), the third invisible bidi
 #       control, in a different UTF-8 lead-byte range from the E2 80 family.
 alm=$(printf '\xd8\x9c')
 printf 'grant %sread\n' "$alm" >alm.md
@@ -173,7 +173,7 @@ git add alm.md
 assert_rejects "arabic letter mark (U+061C) is rejected" "hidden Unicode"
 
 # 45m6. NEGATIVE: emoji variation selector VS16 (U+FE0F, bytes EF B8 8F) is
-#       deliberately NOT matched — it follows emoji legitimately in ordinary
+#       deliberately NOT matched, it follows emoji legitimately in ordinary
 #       prose, and matching it would make the widened range unusable. Pins the
 #       boundary so a future "catch everything invisible" edit fails here.
 printf 'ship it \xe2\x9c\x85\xef\xb8\x8f today\n' >emoji.md

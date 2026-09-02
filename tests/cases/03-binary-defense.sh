@@ -174,14 +174,14 @@ assert_rejects "rule-shaped secret in an unloaded config file is scanned" "AWS a
 # 22k4. NEGATIVE, and the reason the exemption exists at all: the shipped configs
 #       must stay clean. Their regex fields look exactly like the credentials they
 #       match (the AWS rule literally spells AKIA), so scanning them naively would
-#       fail every commit. Asserts the POSITIVE outcome — exit 0 on the real
-#       installed configs — not merely that one message is absent.
+#       fail every commit. Asserts the POSITIVE outcome, exit 0 on the real
+#       installed configs, not merely that one message is absent.
 if printf '%s\0' .forbidden-patterns/secrets.txt .forbidden-patterns/backend.txt \
      .forbidden-patterns/frontend.txt .forbidden-patterns/shell.txt \
      | .githooks/lib/check-secrets >"$HOOK_OUT" 2>&1; then
   echo "  ✓ shipped pattern configs scan clean (regex fields exempt, exit 0)"; PASS=$((PASS + 1))
 else
-  echo "  ✗ shipped pattern configs self-matched — the per-line regex exemption is broken"
+  echo "  ✗ shipped pattern configs self-matched, the per-line regex exemption is broken"
   sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 reset_repo

@@ -118,7 +118,7 @@ rm -rf "$U"
 # The three cases below build a real two-commit repo (base = calc.add only,
 # HEAD = the change under test) and run the INSTALLED check against the base
 # commit, asserting the POSITIVE artifact each path is supposed to produce, not
-# just an exit code — the mutant above exits 0 silently, so an exit-only
+# just an exit code, the mutant above exits 0 silently, so an exit-only
 # assertion would still pass against it.
 #
 # Needs pytest, since the check drives pytest to classify each new test. The
@@ -146,7 +146,7 @@ else
 
   # (T) RED, the path a healthy PR takes: HEAD adds calc.mul() and a test for
   #     it. On base calc.mul does not exist, so the new test fails there and the
-  #     gate passes — with the accounting line that proves it actually ran.
+  #     gate passes, with the accounting line that proves it actually ran.
   RG=$(_rg_fixture)
   (
     cd "$RG" || exit 1

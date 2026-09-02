@@ -24,7 +24,7 @@
 # the hole by another route; running it cannot. It also cannot recurse: only the
 # tail after the case-sourcing loop is executed, so no nested suite runs.
 
-echo "cases/29 — the harness checks itself (tests/run.sh, shellcheck.yml)"
+echo "cases/29, the harness checks itself (tests/run.sh, shellcheck.yml)"
 
 RUNSH="$SCAFFOLD_DIR/tests/run.sh"
 HEP=$(mktemp -d)

@@ -125,12 +125,12 @@ ln -s /nonexistent-scaffold-target .forbidden-patterns/backend.txt
 echo 'pri''nt("debug")' >symlinked-bad.py
 git add -A
 if printf '%s\0' symlinked-bad.py | .githooks/lib/check-patterns >"$HOOK_OUT" 2>&1; then
-  echo "  ✗ symlinked backend.txt — check-patterns exited 0 (disarmed), expected fail-closed"
+  echo "  ✗ symlinked backend.txt, check-patterns exited 0 (disarmed), expected fail-closed"
   sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 elif grep -qF "is a symlink, not a regular file" "$HOOK_OUT"; then
   echo "  ✓ symlinked backend.txt fails closed in check-patterns"; PASS=$((PASS + 1))
 else
-  echo "  ✗ symlinked backend.txt — non-zero but missing the fail-closed message"
+  echo "  ✗ symlinked backend.txt, non-zero but missing the fail-closed message"
   sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 reset_repo

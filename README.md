@@ -15,7 +15,7 @@ Drop-in guardrails that **block bad code from being committed or merged**. One `
 
 - **Debug leftovers** — `print()`, `console.log`, `debugger`, `breakpoint()`, `pdb`/`ipdb`, `dbg!`, `var_dump`, and the per-language equivalents.
 - **Secrets & key files** — AWS / GCP / GitHub / GitLab / OpenAI / Anthropic / Stripe / Slack / Docker tokens, private keys, URL-embedded credentials, and stray `.env` / `*.pem` / SSH-key files.
-- **Runaway file growth** — a hard **500-line cap** that forces a file to be split before it outgrows an agent's context window (the one rule never to raise), plus a **500 KB cap** on any single committed file that blocks large binaries (videos, model checkpoints, database dumps, zipped exports).
+- **Runaway file growth**, a hard **500-line cap** that forces a file to be split before it outgrows an agent's context window (the one rule never to raise), plus a **500 KB cap** on any single committed file that blocks large binaries (videos, model checkpoints, database dumps, zipped exports).
 - **Insecure shortcuts** — `curl | bash`, `rm -rf /`, `chmod 777`, disabled TLS verification (`verify=False`, `curl -k`, `rejectUnauthorized: false`), raw `innerHTML`/XSS sinks, and `git --no-verify` hook bypasses.
 - **Repo-hygiene rot** — leftover merge-conflict markers, case-only filename collisions, and hidden-Unicode (Trojan-Source) tricks.
 - **Lint & type regressions** — `ruff` for Python; type-aware `eslint` + `tsc` + `prettier` for TS/JS; deny-lists for Vue, Svelte, PHP, Go, Rust, Java, Kotlin, Ruby, and shell.

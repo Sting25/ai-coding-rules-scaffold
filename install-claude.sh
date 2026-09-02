@@ -48,18 +48,18 @@ install_claude_md() {
   echo "merged:       appended @AGENTS.md + @coding-rules.md imports to existing CLAUDE.md (your content kept)"
 }
 
-# install_agents_md — AGENTS.md carries a Project section the user fills in,
+# install_agents_md, AGENTS.md carries a Project section the user fills in,
 # so an existing one is never clobbered (even with --force). Skip if present;
 # create from template only when absent.
 install_agents_md() {
   # `[ -e ]` is false for a dangling symlink; test `-L` first and skip (same
   # A7 defense as the cp_* helpers, missing from this handler, B1).
   if [ -L "AGENTS.md" ]; then
-    echo "skip (exists, symlink): AGENTS.md — left untouched; a scaffold path that is a symlink is suspicious. Replace it with a real file to install the template."
+    echo "skip (exists, symlink): AGENTS.md, left untouched; a scaffold path that is a symlink is suspicious. Replace it with a real file to install the template."
     return
   fi
   if [ -e "AGENTS.md" ]; then
-    echo "skip (exists): AGENTS.md — left untouched (your Project section is safe)"
+    echo "skip (exists): AGENTS.md, left untouched (your Project section is safe)"
     return
   fi
   cp "$SCAFFOLD_DIR/AGENTS.md.template" "AGENTS.md"

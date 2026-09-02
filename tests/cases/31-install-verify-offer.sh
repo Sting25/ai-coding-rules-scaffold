@@ -55,9 +55,9 @@ _off_run() {
 _off_env 0
 printf 'n\nn\nn\nn\n' >"$OFF_ANS"
 _off_run
-if grep -q "? eslint not installed — install now with 'npm i -D eslint" "$HOOK_OUT" \
-   && grep -q -- "- skipped — run: npm i -D eslint" "$HOOK_OUT" \
-   && grep -q -- "- skipped — run: npm i -D typescript" "$HOOK_OUT" \
+if grep -q "? eslint not installed, install now with 'npm i -D eslint" "$HOOK_OUT" \
+   && grep -q -- "- skipped, run: npm i -D eslint" "$HOOK_OUT" \
+   && grep -q -- "- skipped, run: npm i -D typescript" "$HOOK_OUT" \
    && [ ! -e "$OFF_LOG" ]; then
   echo "  ✓ offer prompts and a declined answer runs nothing, printing the command instead"; PASS=$((PASS + 1))
 else
@@ -96,8 +96,8 @@ printf 'y\ny\ny\ny\n' >"$OFF_ANS"
 OFF_RC=0
 _off_run || OFF_RC=$?
 if [ "$OFF_RC" -eq 0 ] \
-   && grep -q '✗ eslint install failed — run: npm i -D eslint' "$HOOK_OUT" \
-   && grep -q '✗ vitest install failed — run: npm i -D vitest' "$HOOK_OUT" \
+   && grep -q '✗ eslint install failed, run: npm i -D eslint' "$HOOK_OUT" \
+   && grep -q '✗ vitest install failed, run: npm i -D vitest' "$HOOK_OUT" \
    && ! grep -q '✓ eslint installed' "$HOOK_OUT" \
    && grep -q 'Done (mode: frontend)' "$HOOK_OUT"; then
   echo "  ✓ a failing package-manager run is reported per tool and does not fail the install"; PASS=$((PASS + 1))
@@ -114,7 +114,7 @@ rm -rf "$OFF_DIR"
 _off_env 0
 ( cd "$OFF_DIR" \
   && env -u CI PATH="$OFF_BIN:$PATH" "$SCAFFOLD_DIR/install.sh" --frontend ) >"$HOOK_OUT" 2>&1 </dev/null
-if grep -q '! eslint not installed — run: npm i -D eslint' "$HOOK_OUT" \
+if grep -q '! eslint not installed, run: npm i -D eslint' "$HOOK_OUT" \
    && ! grep -q 'install now with' "$HOOK_OUT" \
    && [ ! -e "$OFF_LOG" ]; then
   echo "  ✓ without the seam and without a TTY the check stays print-only and non-mutating"; PASS=$((PASS + 1))
@@ -132,7 +132,7 @@ printf 'y\ny\ny\ny\n' >"$OFF_ANS"
 ( cd "$OFF_DIR" \
   && env -u CI PATH="$OFF_BIN:$PATH" SCAFFOLD_VERIFY_TTY="$OFF_ANS" \
      "$SCAFFOLD_DIR/install.sh" --frontend --no-install ) >"$HOOK_OUT" 2>&1 </dev/null
-if grep -q '! eslint not installed — run: npm i -D eslint' "$HOOK_OUT" \
+if grep -q '! eslint not installed, run: npm i -D eslint' "$HOOK_OUT" \
    && ! grep -q 'install now with' "$HOOK_OUT" \
    && [ ! -e "$OFF_LOG" ]; then
   echo "  ✓ --no-install still suppresses the prompt even with an answer source set"; PASS=$((PASS + 1))
