@@ -44,6 +44,12 @@ install_opt_in_socket_ci() {
 install_opt_in_npm_cooldown() {
   if [ "$NPM_COOLDOWN" -eq 1 ]; then
     cp_safe "$SCAFFOLD_DIR/.npmrc.template" ".npmrc"
+    # A pre-existing .npmrc is skipped by cp_safe, and the note below would then
+    # state a setting that is not in the file (audit code-install-policy-1).
+    warn_unwired_optin ".npmrc" min-release-age "$SCAFFOLD_DIR/.npmrc.template"
+    if ! _optin_wired .npmrc min-release-age; then
+      return 0
+    fi
     echo "note: .npmrc sets min-release-age=7 (npm >=11.10.0 only; an older npm just warns and ignores the key, install still proceeds). See the template header for the 7-day choice and the 'before' interaction."
   fi
 }
@@ -202,6 +208,40 @@ install_test_workflow_ci() {
 # "Protections not enabled" section uses (kept in sync with it by hand; there
 # is no shared list to source since this runs before scaffold-doctor.sh
 # exists in a fresh install).
+# _pne_wired FILE NEEDLE LABEL ENABLE_CMD FIX — one summary line for an opt-in
+# whose config file can exist WITHOUT the protection wired into it. THREE
+# states, not two: absent (install it), present but not wired (merge it), wired
+# (say nothing). The two-state presence check reported a stub .claude/
+# settings.json, .cursor/hooks.json or .npmrc as an enabled protection and left
+# all three off this list entirely, so the one reader this summary exists for,
+# an agent relaying it to its user, was told everything was on (audit
+# code-install-policy-1). Returns 0 when it printed a line, so the caller can
+# set `any`.
+_pne_wired() {
+  local file=$1 needle=$2 label=$3 cmd=$4 fix=$5
+  if _optin_wired "$file" "$needle"; then
+    return 1
+  fi
+  if [ -e "$file" ]; then
+    echo "  - $label: PRESENT BUT NOT ARMED. $file exists and does not mention '$needle', so nothing runs. Fix: $fix"
+  else
+    echo "  - $label: not enabled. Enable with $cmd"
+  fi
+  return 0
+}
+
+# warn_unwired_optin FILE NEEDLE TEMPLATE — printed right after the cp_safe that
+# may have SKIPPED a pre-existing config. "skip (exists)" is accurate but
+# incomplete: the flag the user just passed did nothing, and the protection they
+# asked for is not armed. Say which, and how to fix it, at the moment it happens.
+warn_unwired_optin() {
+  local file=$1 needle=$2 tpl=$3
+  if [ -e "$file" ] && ! _optin_wired "$file" "$needle"; then
+    echo "warning: $file exists but does not mention '$needle', so this protection is NOT armed."
+    echo "         Merge the relevant keys from $tpl into it by hand. --force would replace your file instead."
+  fi
+}
+
 print_not_enabled_summary() {
   local any=0
   echo ""
@@ -217,10 +257,17 @@ print_not_enabled_summary() {
   [ -f .github/workflows/zizmor.yml ]            || { echo "  - zizmor CI gate (audits your own GitHub Actions workflows): not enabled. Enable with ./install.sh --zizmor-ci"; any=1; }
   [ -f .github/workflows/socket-security.yml ]   || { echo "  - Socket Firewall CI gate (blocks a malicious/typosquat package at install time): not enabled. Enable with ./install.sh --socket-ci"; any=1; }
   [ -f .github/workflows/test-guard.yml ]        || { echo "  - test-guard CI gate (red-green: a new test must fail against the PR base before it may pass): not enabled. Enable with ./install.sh --test-guard"; any=1; }
-  [ -f .npmrc ]                                  || { echo "  - npm install-layer cooldown (.npmrc min-release-age, delays freshly published versions): not enabled. Enable with ./install.sh --npm-cooldown"; any=1; }
+  _pne_wired .npmrc min-release-age \
+    "npm install-layer cooldown (.npmrc min-release-age, delays freshly published versions)" \
+    "./install.sh --npm-cooldown" \
+    "add the min-release-age line from .npmrc.template to it" && any=1
   [ -f .claude/skills/coding-rules/SKILL.md ]    || { echo "  - Claude Code Skill (on-demand rules loading): not enabled. Enable with ./install.sh --claude-skill"; any=1; }
-  [ -f .claude/settings.json ]                   || { echo "  - Claude Code agent guardrails: not enabled. Enable with ./install.sh --claude"; any=1; }
-  [ -f .cursor/hooks.json ]                      || { echo "  - Cursor agent guardrails: not enabled. Enable with ./install.sh --cursor"; any=1; }
+  _pne_wired .claude/settings.json agent-precheck \
+    "Claude Code agent guardrails" "./install.sh --claude" \
+    "merge the hooks block from claude-settings.json.template into it" && any=1
+  _pne_wired .cursor/hooks.json agent-precheck \
+    "Cursor agent guardrails" "./install.sh --cursor" \
+    "merge the hooks block from cursor-hooks.json.template into it" && any=1
   [ -f .githooks/commit-msg ]                    || { echo "  - commit-msg hook (Conventional Commits): not enabled. Enable with ./install.sh --commit-msg"; any=1; }
   if [ "$any" -eq 0 ]; then
     echo "  (none: every opt-in protection above is already enabled in this project)"

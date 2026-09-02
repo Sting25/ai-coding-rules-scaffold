@@ -354,10 +354,12 @@ fi
 # PreToolUse hook (matcher Write|Edit|MultiEdit|Bash).
 if [ "$CLAUDE" -eq 1 ]; then
   cp_safe "$SCAFFOLD_DIR/claude-settings.json.template" ".claude/settings.json"
+  warn_unwired_optin ".claude/settings.json" agent-precheck "$SCAFFOLD_DIR/claude-settings.json.template"
 fi
 # Cursor: hooks.json wires beforeShellExecution + beforeReadFile (credential-path deny); no before-write hook, so secret-on-write stays unportable here.
 if [ "$CURSOR" -eq 1 ]; then
   cp_safe "$SCAFFOLD_DIR/cursor-hooks.json.template" ".cursor/hooks.json"
+  warn_unwired_optin ".cursor/hooks.json" agent-precheck "$SCAFFOLD_DIR/cursor-hooks.json.template"
   cp_pattern "$SCAFFOLD_DIR/githooks/lib/credential-read-patterns.txt.template" ".githooks/lib/credential-read-patterns.txt"
 fi
 
