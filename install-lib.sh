@@ -11,6 +11,17 @@
 # lib is ever sourced without it, 0 (= not --force) is the safe default.
 : "${FORCE:=0}"
 
+# install-manifest.sh defines the provenance helpers and install.sh sources it
+# BEFORE this file, so these stubs are dead there. scaffold-doctor.sh sources
+# install-lib.sh on its own (for check_paired_artifacts) and never copies a
+# file, so it gets inert no-ops rather than an undefined-function error if a
+# future doctor path ever reaches a cp_* helper.
+if ! declare -f manifest_record >/dev/null 2>&1; then
+  manifest_record() { :; }
+  manifest_says_ours() { return 1; }
+  _manifest_hash() { return 1; }
+fi
+
 # --- file ownership & the install/upgrade model -----------------------------
 # Re-running install.sh is the supported UPGRADE path, so each destination is
 # copied through the policy its OWNERSHIP demands:
@@ -202,6 +213,7 @@ cp_safe() {
   fi
   _cp_replace "$src" "$dst" || return 0
   echo "installed:    $dst"
+  manifest_record "$dst"
 }
 
 # cp_scaffold SRC DST — SCAFFOLD-OWNED code. Refreshes on diff so security fixes
@@ -224,15 +236,38 @@ cp_scaffold() {
   if [ -e "$dst" ] || [ -L "$dst" ]; then
     # Already current? Never compare THROUGH a symlink (A7).
     if [ ! -L "$dst" ] && cmp -s "$src" "$dst"; then
+      manifest_record "$dst"
       return
     fi
     _backup "$dst" || return 0
     _cp_replace "$src" "$dst" || return 0
     echo "updated:      $dst (refreshed to the shipped version)"
+    manifest_record "$dst"
     return
   fi
   _cp_replace "$src" "$dst" || return 0
   echo "installed:    $dst"
+  manifest_record "$dst"
+}
+
+# _drift_note DST HINT — the "we are keeping your file" message, worded by what
+# the manifest actually knows. A file WITH a manifest entry whose hash no longer
+# matches really is a hand-edit, and saying so is accurate. A file with NO entry
+# predates the manifest (or the user created it), and the old wording asserted
+# "your customizations are kept" to people who had customized nothing: that
+# false claim is how an untouched older release stayed stuck for versions while
+# its owner was told the installer was protecting their work (audit hist-03,
+# upgrade-path-3). A drifted file is deliberately NEVER recorded, since
+# recording it would make the next run believe the scaffold wrote those bytes
+# and refresh over the user's edit, so this stays the message until --force
+# resolves it.
+_drift_note() {
+  local dst=$1 hint=$2
+  if _manifest_hash "$dst" >/dev/null 2>&1; then
+    echo "note (drift):  $dst differs from the shipped version and from what the scaffold last wrote there, so your edits are kept. $hint"
+  else
+    echo "note (drift):  $dst differs from the shipped version. This install predates the install manifest, so nothing on disk records whether that is your edit or simply an older shipped version; it is kept as-is either way. $hint"
+  fi
 }
 
 # cp_pattern SRC DST — .forbidden-patterns/*.txt. Install if absent; if it drifts
@@ -243,13 +278,25 @@ cp_pattern() {
   local src=$1 dst=$2
   if [ -e "$dst" ] || [ -L "$dst" ]; then
     if [ ! -L "$dst" ] && cmp -s "$src" "$dst"; then
+      manifest_record "$dst"
+      return
+    fi
+    # Differs from what we ship TODAY, which is not the same as "the user
+    # edited it": an untouched install of an older version differs too, and used
+    # to be kept forever under a "your customizations are kept" note nobody had
+    # earned (audit hist-03 / upgrade-path-1: 26 of 37 secret patterns, and a
+    # SendGrid key committing clean). The manifest settles which one it is.
+    if [ ! -L "$dst" ] && manifest_says_ours "$dst"; then
+      _cp_replace "$src" "$dst" || return 0
+      echo "updated:      $dst (refreshed to the shipped patterns; unchanged since the scaffold last wrote it)"
+      manifest_record "$dst"
       return
     fi
     if [ "$FORCE" -eq 0 ]; then
       if [ -L "$dst" ]; then
         echo "skip (exists, symlink): $dst — left untouched; a scaffold path that is a symlink is suspicious. Replace it with --force."
       else
-        echo "note (drift):  $dst differs from the shipped patterns — your customizations are kept. Diff against forbidden-patterns/$(basename "$dst").template for new rules to merge, or re-run with --force to replace (backs yours up to .scaffold-bak)."
+        _drift_note "$dst" "Diff against forbidden-patterns/$(basename "$dst").template for new rules to merge, or re-run with --force to replace (backs yours up to .scaffold-bak)."
       fi
       return
     fi
@@ -257,6 +304,7 @@ cp_pattern() {
   fi
   _cp_replace "$src" "$dst" || return 0
   echo "installed:    $dst"
+  manifest_record "$dst"
 }
 
 # cp_scaffold_preserve SRC DST: a scaffold-owned CI workflow (today: lint.yml,
@@ -270,13 +318,26 @@ cp_scaffold_preserve() {
   local src=$1 dst=$2
   if [ -e "$dst" ] || [ -L "$dst" ]; then
     if [ ! -L "$dst" ] && cmp -s "$src" "$dst"; then
+      manifest_record "$dst"
+      return
+    fi
+    # Same manifest check as cp_pattern, for the same reason: an unmodified
+    # workflow from an older release is not a hand-edit. Keeping it as one is
+    # how a v0.12.0 install ended up with a lint.yml that never calls
+    # check-large-files and pins action SHAs a major version back, while the run
+    # told its owner their customizations were being preserved (audit hist-01 /
+    # upgrade-path-3).
+    if [ ! -L "$dst" ] && manifest_says_ours "$dst"; then
+      _cp_replace "$src" "$dst" || return 0
+      echo "updated:      $dst (refreshed to the shipped version; unchanged since the scaffold last wrote it)"
+      manifest_record "$dst"
       return
     fi
     if [ "$FORCE" -eq 0 ]; then
       if [ -L "$dst" ]; then
         echo "skip (exists, symlink): $dst, left untouched; a scaffold path that is a symlink is suspicious. Replace it with --force."
       else
-        echo "note (drift):  $dst differs from the shipped version: your customizations are kept. Diff against $src for upstream changes to merge, or re-run with --force to replace (backs yours up to .scaffold-bak)."
+        _drift_note "$dst" "Diff against $src for upstream changes to merge, or re-run with --force to replace (backs yours up to .scaffold-bak)."
       fi
       return
     fi
@@ -284,6 +345,7 @@ cp_scaffold_preserve() {
   fi
   _cp_replace "$src" "$dst" || return 0
   echo "installed:    $dst"
+  manifest_record "$dst"
 }
 
 # chmod +x only a real regular file. A scaffold path that cp_safe deliberately
@@ -370,55 +432,6 @@ check_paired_artifacts() {
     "$gap_fn" ".github/workflows/lint.yml is installed but neither tests.yml nor coverage.yml is: CI runs lint checks only, and no test ever executes on a PR or push" \
       "re-run install.sh to install the default tests.yml (or install.sh --coverage-gate for the stricter gate)"
   fi
-}
-
-# print_not_enabled_summary (P-19a): this scaffold's users typically do not
-# read code, and this installer is typically RUN BY AN AI AGENT on their
-# behalf, not by the human at a terminal (the real incident this responds to:
-# an agent hand-copied files instead of running the installer, hooks ended up
-# unarmed, gitleaks was never enabled, and a secret shipped that the disabled
-# layers would have caught). Every opt-in that is NOT enabled in the PROJECT
-# gets listed here, by name, with the exact command to turn it on: "silently
-# absent" is the failure mode this exists to close.
-#
-# Opens with a block addressed to the installing AGENT specifically, since
-# that is the actual reader roughly half the time, asking it to relay the
-# list to its human before treating the install as finished; the same text
-# reads fine for a human running this by hand.
-#
-# Presence checks, not this-run flags: a plain re-run of install.sh with no
-# flags passes GITLEAKS_HOOK=0, CLAUDE=0, etc. even when a prior run already
-# installed those gates, so checking the flag globals falsely reports an
-# already-armed gate as "not enabled". Check what is actually on disk in the
-# target project instead, same file-presence signals scaffold-doctor.sh's
-# "Protections not enabled" section uses (kept in sync with it by hand; there
-# is no shared list to source since this runs before scaffold-doctor.sh
-# exists in a fresh install).
-print_not_enabled_summary() {
-  local any=0
-  echo ""
-  echo "If you are an AI agent running this install: relay the list below to"
-  echo "your user verbatim, and ask which of these opt-in protections to"
-  echo "enable, before you consider this install finished."
-  echo ""
-  echo "Opt-in protections not enabled in this project:"
-  [ -f .githooks/lib/check-gitleaks ]            || { echo "  - gitleaks hook (local secret scan, pre-commit): not enabled. Enable with ./install.sh --gitleaks-hook"; any=1; }
-  [ -f .github/workflows/gitleaks.yml ]          || { echo "  - gitleaks CI gate (unskippable secret scan): not enabled. Enable with ./install.sh --gitleaks-ci"; any=1; }
-  echo "  - GitHub push protection (free, blocks a push containing a known secret pattern; on by default for public repos): not this installer's to enable. Turn it on in Repo Settings > Code security > Push protection."
-  [ -f .github/workflows/dependency-review.yml ] || { echo "  - dependency-review CI gate (blocks vulnerable/malicious deps on a PR): not enabled. Enable with ./install.sh --dependency-review"; any=1; }
-  [ -f .github/workflows/zizmor.yml ]            || { echo "  - zizmor CI gate (audits your own GitHub Actions workflows): not enabled. Enable with ./install.sh --zizmor-ci"; any=1; }
-  [ -f .github/workflows/socket-security.yml ]   || { echo "  - Socket Firewall CI gate (blocks a malicious/typosquat package at install time): not enabled. Enable with ./install.sh --socket-ci"; any=1; }
-  [ -f .github/workflows/test-guard.yml ]        || { echo "  - test-guard CI gate (red-green: a new test must fail against the PR base before it may pass): not enabled. Enable with ./install.sh --test-guard"; any=1; }
-  [ -f .npmrc ]                                  || { echo "  - npm install-layer cooldown (.npmrc min-release-age, delays freshly published versions): not enabled. Enable with ./install.sh --npm-cooldown"; any=1; }
-  [ -f .claude/skills/coding-rules/SKILL.md ]    || { echo "  - Claude Code Skill (on-demand rules loading): not enabled. Enable with ./install.sh --claude-skill"; any=1; }
-  [ -f .claude/settings.json ]                   || { echo "  - Claude Code agent guardrails: not enabled. Enable with ./install.sh --claude"; any=1; }
-  [ -f .cursor/hooks.json ]                      || { echo "  - Cursor agent guardrails: not enabled. Enable with ./install.sh --cursor"; any=1; }
-  [ -f .githooks/commit-msg ]                    || { echo "  - commit-msg hook (Conventional Commits): not enabled. Enable with ./install.sh --commit-msg"; any=1; }
-  if [ "$any" -eq 0 ]; then
-    echo "  (none: every opt-in protection above is already enabled in this project)"
-  fi
-  echo ""
-  echo "Check what is armed at any time: ./scaffold-doctor.sh, or 'npx ai-coding-rules-scaffold doctor' if you did not clone this repo."
 }
 
 # print_history_scan_note (P-05): check-secrets and gitleaks.yml only ever

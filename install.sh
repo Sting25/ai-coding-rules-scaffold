@@ -44,6 +44,12 @@
 # only prints a notice and keeps your file (--force replaces it, backed up first).
 # .githooks/local.d/ is never written to at all: it's where project-local checks
 # live precisely so an upgrade cannot unwire them.
+#
+# Every file this installer writes is recorded in .githooks/.scaffold-manifest
+# (path, sha256 of exactly what was written, scaffold version). That is what
+# lets a re-run tell an untouched file it wrote itself, which it REFRESHES, from
+# one you edited, which it keeps and reports. Commit the manifest; see
+# install-manifest.sh for the full model.
 
 set -euo pipefail
 
@@ -92,7 +98,7 @@ for arg in "$@"; do
     --coverage-gate) COVERAGE_GATE=1 ;;
     --no-test-workflow) NO_TEST_WORKFLOW=1 ;;
     --no-install) NO_INSTALL=1 ;;
-    --help|-h)    sed -n '2,46p' "$0"; exit 0 ;;
+    --help|-h)    sed -n '2,52p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -153,6 +159,10 @@ fi
 # own header comment for the full per-helper policy. SOURCED (not exec'd) so
 # they run in this shell with its globals (FORCE) and `set -euo pipefail`.
 # Extracted to keep this script under the scaffold's own 500-line cap.
+# The install manifest (provenance: which files WE wrote, and at which version)
+# is sourced FIRST, because install-lib.sh's copy policies call into it.
+# shellcheck source=install-manifest.sh
+. "$SCAFFOLD_DIR/install-manifest.sh"
 # shellcheck source=install-lib.sh
 . "$SCAFFOLD_DIR/install-lib.sh"
 
@@ -162,7 +172,7 @@ fi
 # shellcheck source=install-interactive.sh
 . "$SCAFFOLD_DIR/install-interactive.sh"  # -i/--interactive wizard
 # shellcheck source=install-claude.sh
-. "$SCAFFOLD_DIR/install-claude.sh"  # install_claude_md (CLAUDE.md merge)
+. "$SCAFFOLD_DIR/install-claude.sh"  # install_claude_md / install_agents_md
 
 # warn_pair_gap / warn_pair_note: install.sh's reporters for install-lib.sh's
 # check_paired_artifacts (#96); advisory only, so both just print (install.sh
@@ -174,24 +184,6 @@ warn_pair_gap() {
 }
 warn_pair_note() {
   echo "note: $1"
-}
-
-# install_agents_md — AGENTS.md carries a Project section the user fills in,
-# so an existing one is never clobbered (even with --force). Skip if present;
-# create from template only when absent.
-install_agents_md() {
-  # `[ -e ]` is false for a dangling symlink; test `-L` first and skip (same
-  # A7 defense as the cp_* helpers, missing from this handler, B1).
-  if [ -L "AGENTS.md" ]; then
-    echo "skip (exists, symlink): AGENTS.md — left untouched; a scaffold path that is a symlink is suspicious. Replace it with a real file to install the template."
-    return
-  fi
-  if [ -e "AGENTS.md" ]; then
-    echo "skip (exists): AGENTS.md — left untouched (your Project section is safe)"
-    return
-  fi
-  cp "$SCAFFOLD_DIR/AGENTS.md.template" "AGENTS.md"
-  echo "installed:    AGENTS.md"
 }
 
 # -i/--interactive: prompt now, before any file is written.
@@ -442,6 +434,12 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
 else
   echo "warning: not in a git repo — run 'git config core.hooksPath .githooks' after 'git init'"
 fi
+
+# Write the install manifest: one line per file this run wrote, carrying the
+# sha256 of exactly those bytes plus this scaffold's version. Runs after every
+# write and before the summaries, so the next upgrade can tell what it wrote
+# itself from what the project has since edited (install-manifest.sh).
+manifest_flush
 
 # Paired-artifact consistency check (#96): install.sh can leave a config half
 # without its CI-enforcement half if an earlier run used a different flag
