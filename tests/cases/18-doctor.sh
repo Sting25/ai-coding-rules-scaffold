@@ -148,6 +148,56 @@ doc_case "an executable local.d check is reported armed" 0 \
 doc_case "a missing shipped check is reported" 1 \
   "lib/check-hygiene is missing" rm -f .githooks/lib/check-hygiene
 
+# ...but on-disk-and-executable was the ONLY thing this section tested, which is
+# issue #72 restated: an upgrade preserved a customized lint.yml with no
+# check-large-files call site, the script sat on disk, and the report said
+# "lib/check-large-files armed ... 0 gaps" while an oversized file committed
+# clean. A check nothing calls is decoration, and the doctor has to say so.
+doc_drop_ci_callsite() {
+  grep -v 'check-large-files' .github/workflows/lint.yml >lint.tmp && mv lint.tmp .github/workflows/lint.yml
+}
+doc_drop_all_callsites() {
+  doc_drop_ci_callsite
+  grep -v 'check-large-files' .githooks/pre-commit >pc.tmp && mv pc.tmp .githooks/pre-commit
+  chmod +x .githooks/pre-commit
+}
+
+DOCT=$(doc_project)
+( cd "$DOCT" && doc_drop_all_callsites ) >/dev/null 2>&1
+doc_rc=0
+( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+# The script must still be present AND executable, or this would only be
+# re-proving the "missing check" case above.
+if [ "$doc_rc" -eq 1 ] && [ -x "$DOCT/.githooks/lib/check-large-files" ] \
+   && grep -qF "lib/check-large-files is installed and executable but nothing calls it" "$HOOK_OUT"; then
+  echo "  ✓ a check with no call site anywhere is a gap, not \"armed\""
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ an uncalled check was reported armed (exit $doc_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCT"
+
+# With only the CI half gone the hook still runs it, so this is half-wired, not
+# inert: a note, not a gap. It must survive --quiet, because that is the mode a
+# CI step or a pre-flight script reads, and "armed, 0 gaps" over a check no CI
+# job runs is the misleading summary #72 was made of.
+DOCT=$(doc_project)
+( cd "$DOCT" && doc_drop_ci_callsite ) >/dev/null 2>&1
+doc_rc=0
+( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+if [ "$doc_rc" -eq 0 ] && grep -qF "0 gaps" "$HOOK_OUT" \
+   && grep -qF "lib/check-large-files runs in the pre-commit hook but NO CI call site" "$HOOK_OUT"; then
+  echo "  ✓ a check with no CI call site is a --quiet-visible note, not a gap"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ missing CI call site misreported under --quiet (exit $doc_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCT"
+
 # (H) The two opt-in surfaces both fail OPEN when their tool is missing, and the
 # doctor's severities deliberately DIVERGE because their loudness does:
 # check-gitleaks announces itself on every commit (note), agent-precheck exits 0

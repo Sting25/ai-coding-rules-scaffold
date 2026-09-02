@@ -81,6 +81,18 @@ SECTION=""
 section() { SECTION=$1; [ "$QUIET" -eq 1 ] || printf '\n%s\n' "$1"; }
 ok()   { OKS=$((OKS + 1));   [ "$QUIET" -eq 1 ] || echo "  ✓ $1"; }
 note() { NOTES=$((NOTES + 1)); [ "$QUIET" -eq 1 ] || echo "  ! $1"; }
+# note_always <what-is-half-armed> — a note that --quiet may not swallow.
+# --quiet exists so a CI step or a pre-flight script can print gaps and nothing
+# else, and most notes are "you never opted into this", which such a caller
+# genuinely does not need. A guardrail that IS installed and has been switched
+# off or half-wired is the opposite: it is the one state where the summary line
+# "armed, N check(s) running, 0 gaps" is actively misleading, and hiding it is
+# how a project ends up believing a cap is enforcing something it no longer
+# enforces. Counted like any other note, so it still never affects exit status.
+note_always() {
+  NOTES=$((NOTES + 1))
+  if [ "$QUIET" -eq 1 ]; then echo "  ! [$SECTION] $1"; else echo "  ! $1"; fi
+}
 # gap <what-is-inert> [how-to-fix] — the fix line is not decoration: a report
 # that tells you something is broken without telling you the command that arms
 # it gets acknowledged and not acted on.
@@ -145,6 +157,32 @@ fi
 # The orchestrator calls these six unguarded, so a missing or non-executable
 # one makes the hook error out and BLOCK the commit — noisy, not silent, but
 # still broken, and worth naming precisely rather than leaving to a stack trace.
+#
+# Present and executable is still not the same as RUNNING, which is the whole
+# premise of this script and was the one thing this section did not test. Issue
+# #72 is exactly that shape: an upgrade preserved a customized
+# .github/workflows/lint.yml whose check-large-files call site was never there,
+# the script stayed on disk, and this report said "lib/check-large-files armed
+# ... 0 gaps" while an 800 KB file committed clean. So each check is now matched
+# against its CALLERS too.
+#
+# check_called_in NAME FILE... — is NAME invoked in any of those files?
+# Comment lines are stripped first: every one of these files discusses the
+# checks by name in its own header, and a header is not a call site. The name
+# must match as a whole word so one check's name cannot satisfy another's.
+check_called_in() {
+  local name=$1
+  shift
+  local re="(^|[^A-Za-z0-9_.-])${name}([^A-Za-z0-9_.-]|\$)" f body
+  for f in "$@"; do
+    [ -f "$f" ] || continue
+    body=$(grep -vE '^[[:space:]]*#' "$f" 2>/dev/null || true)
+    if grep -qE "$re" <<<"$body"; then
+      return 0
+    fi
+  done
+  return 1
+}
 section "shipped checks"
 for chk in check-size check-large-files check-patterns check-filenames check-secrets check-hygiene; do
   if [ ! -f ".githooks/lib/$chk" ]; then
@@ -152,8 +190,33 @@ for chk in check-size check-large-files check-patterns check-filenames check-sec
         "re-run install.sh to restore it"
   elif [ ! -x ".githooks/lib/$chk" ]; then
     gap "lib/$chk is not executable — every commit will error on it" "chmod +x .githooks/lib/$chk"
+  elif ! check_called_in "$chk" .githooks/pre-commit .githooks/commit-msg \
+                         .githooks/local.d/* .github/workflows/*.yml; then
+    gap "lib/$chk is installed and executable but nothing calls it — no invocation in .githooks/pre-commit or .github/workflows/, so it is decoration and the commits it should block are not blocked (issue #72)" \
+        "re-run install.sh to restore the call sites, then re-apply any customization you had made to the hook or workflow"
+  elif [ -f .github/workflows/lint.yml ] && ! check_called_in "$chk" .github/workflows/*.yml; then
+    # Half-wired, not inert: the hook still runs it locally, so this is a note
+    # rather than a gap. But --no-verify, a push from a machine without the
+    # hooks wired, and a web-UI edit all reach main with nobody having run it,
+    # which is what makes it worth saying out loud even under --quiet.
+    note_always "lib/$chk runs in the pre-commit hook but NO CI call site invokes it — a --no-verify commit or a push from an unwired clone reaches main unchecked (issue #72)"
   else
     ok "lib/$chk armed"
+  fi
+done
+# The opt-in checks arrive only with their flag, so absence is not a gap. Once
+# one IS on disk the same rule applies: a check nothing calls is decoration,
+# whichever flag installed it.
+for chk_path in .githooks/lib/check-*; do
+  [ -f "$chk_path" ] || continue
+  chk=$(basename "$chk_path")
+  case "$chk" in
+    check-size|check-large-files|check-patterns|check-filenames|check-secrets|check-hygiene) continue ;;
+  esac
+  if ! check_called_in "$chk" .githooks/pre-commit .githooks/commit-msg \
+                       .githooks/local.d/* .github/workflows/*.yml; then
+    gap "lib/$chk is installed but nothing calls it — no invocation in .githooks/ or .github/workflows/, so it never runs" \
+        "re-run install.sh with the flag that installed it, to restore its call site"
   fi
 done
 
