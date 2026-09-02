@@ -18,12 +18,15 @@
 #      checkout. In the hook the list is the staged files; in CI it's every
 #      tracked file, which catches a collision against an already-committed file.
 #
-#   3. Hidden Unicode (bidi / zero-width / tag). Invisible control characters
-#      hidden in a text file silently change how it reads: bidi overrides
-#      (CVE-2021-42574 "Trojan Source") reorder code; zero-width and tag-block
-#      characters smuggle instructions into agent-read files (AGENTS.md,
-#      coding-rules.md, .forbidden-patterns/*) — the Feb-2025 "Rules File
-#      Backdoor". Matches the UTF-8 byte sequences under LC_ALL=C (portable to
+#   3. Hidden Unicode (bidi / zero-width / tag / variation selector). Invisible
+#      control characters hidden in a text file silently change how it reads:
+#      bidi overrides (CVE-2021-42574 "Trojan Source") reorder code; zero-width,
+#      tag-block and variation-selector characters smuggle instructions into
+#      agent-read files (AGENTS.md, coding-rules.md, .forbidden-patterns/*) —
+#      the Feb-2025 "Rules File Backdoor". The variation selectors supplement
+#      (U+E0100–U+E01EF) is the byte-per-codepoint channel that carries a whole
+#      sentence invisibly, so it is matched alongside the tag block.
+#      Matches the UTF-8 byte sequences under LC_ALL=C (portable to
 #      BSD grep / bash 3.2). Binary blobs (a NUL in the first 8 KB) are skipped —
 #      images legitimately contain these byte sequences and aren't read as
 #      instructions. A legitimate leading BOM is allowed; a mid-file one is not.
@@ -192,12 +195,25 @@ HIDDEN_STATE=$(cfg rule-state hidden-unicode); [ -n "$HIDDEN_STATE" ] || HIDDEN_
 if [ "$HIDDEN_STATE" != disabled ]; then
   # Literal UTF-8 bytes via $'...' so this needs no \xHH regex support (BSD grep
   # / bash 3.2 safe) — matched under LC_ALL=C so each byte is one "character":
+  #   C2 AD        U+00AD soft hyphen (invisible, splits a keyword mid-word)
+  #   D8 9C        U+061C arabic letter mark (bidi, invisible)
   #   E2 80 8B-8D  zero-width space / non-joiner / joiner
+  #   E2 80 8E-8F  U+200E/U+200F left-to-right / right-to-left mark (bidi)
   #   E2 80 AA-AE  bidi embeddings & overrides (Trojan Source, CVE-2021-42574)
   #   E2 81 A0     word joiner;   E2 81 A6-A9  bidi isolates
   #   EF BB BF     zero-width no-break space (a mid-file BOM)
-  #   F3 A0 80-81 ··  tag block U+E0000–E007F (invisible "tag" smuggling)
-  HIDDEN_RE=$'\xe2\x80[\x8b-\x8d\xaa-\xae]|\xe2\x81[\xa0\xa6-\xa9]|\xef\xbb\xbf|\xf3\xa0[\x80\x81][\x80-\xbf]'
+  #   F3 A0 80-87 ··  U+E0000–U+E01FF: the tag block (U+E0000–E007F, invisible
+  #                "tag" smuggling) AND the variation selectors supplement
+  #                (U+E0100–U+E01EF). The latter is the byte-per-codepoint
+  #                smuggling channel used to hide a whole instruction ("SYSTEM:
+  #                ignore all prior rules") inside an agent-read file; it was
+  #                the one range the original tag-block-only expression missed,
+  #                and it is exactly the Rules File Backdoor surface.
+  # Err toward catching MORE here: a false positive costs one `scaffold-allow`
+  # comment, a false negative costs an agent following smuggled instructions.
+  # Deliberately NOT matched: EF B8 80-8F (U+FE00–FE0F, variation selectors 1-16),
+  # which follow emoji legitimately all over ordinary prose.
+  HIDDEN_RE=$'\xc2\xad|\xd8\x9c|\xe2\x80[\x8b-\x8f\xaa-\xae]|\xe2\x81[\xa0\xa6-\xa9]|\xef\xbb\xbf|\xf3\xa0[\x80-\x87][\x80-\xbf]'
   for file in "${FILES[@]}"; do
     # Skip only a genuine binary ASSET (binary content AND a binary extension) —
     # never a text/agent file whose "binary-ness" is one injected NUL (see above).
@@ -224,7 +240,7 @@ if [ "$HIDDEN_STATE" != disabled ]; then
     m=$(LC_ALL=C grep -anE -- "$HIDDEN_RE" <<<"$content" \
           | grep -ivE '(^[0-9]+:|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true)
     if [ -n "$m" ]; then
-      emit "$HIDDEN_STATE" "$file" "hidden Unicode control char (bidi / zero-width / tag) — strip it; this is the 'Rules File Backdoor' / Trojan Source surface"
+      emit "$HIDDEN_STATE" "$file" "hidden Unicode control char (bidi / zero-width / tag / variation selector) — strip it; this is the 'Rules File Backdoor' / Trojan Source surface"
       # Never echo the raw invisible bytes back to a terminal/CI log — sanitize
       # non-printing bytes to '.' so the offending line(s) are reviewable.
       printf '%s\n' "$m" | LC_ALL=C sed 's/[^[:print:][:space:]]/./g' | head -3 | sed 's/^/    /' >&2 || true
