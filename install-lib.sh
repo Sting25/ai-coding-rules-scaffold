@@ -20,6 +20,7 @@ if ! declare -f manifest_record >/dev/null 2>&1; then
   manifest_record() { :; }
   manifest_says_ours() { return 1; }
   _manifest_hash() { return 1; }
+  print_manifest_failure_summary() { return 0; }
 fi
 
 # --- file ownership & the install/upgrade model -----------------------------
@@ -107,18 +108,21 @@ _mkdir_safe() {
   return 0
 }
 
-# print_refused_writes_summary: the end-of-run report for the refusals above.
-# A symlinked scaffold directory makes EVERY write under it a skip, so the
-# install is genuinely incomplete and must not exit 0 pretending otherwise
-# ("no silent failures"). Returns 1 so the caller can fail the run.
+# print_refused_writes_summary: the end-of-run report for everything that left
+# this run incomplete: a symlinked scaffold directory (EVERY write under it is
+# skipped) and a failed manifest write (files installed but unrecorded, so the
+# next upgrade stops refreshing them). Returns 1, so the caller fails the run.
 print_refused_writes_summary() {
-  local d
-  [ -n "$SCAFFOLD_SYMLINK_DIRS" ] || return 0
-  echo ""
-  echo "INSTALL INCOMPLETE: nothing was written under these symlinked directories:"
-  for d in $SCAFFOLD_SYMLINK_DIRS; do echo "  - $d"; done
-  echo "Replace each with a real directory (or move the link aside) and re-run install.sh."
-  return 1
+  local d rc=0
+  print_manifest_failure_summary || rc=1   # install-manifest.sh, same contract
+  if [ -n "$SCAFFOLD_SYMLINK_DIRS" ]; then
+    echo ""
+    echo "INSTALL INCOMPLETE: nothing was written under these symlinked directories:"
+    for d in $SCAFFOLD_SYMLINK_DIRS; do echo "  - $d"; done
+    echo "Replace each with a real directory (or move the link aside) and re-run install.sh."
+    rc=1
+  fi
+  return "$rc"
 }
 
 # _cp_replace SRC DST — the actual write. `[ -e ]` alone is false for a DANGLING

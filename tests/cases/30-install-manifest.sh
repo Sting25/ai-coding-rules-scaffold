@@ -200,5 +200,88 @@ else
 fi
 rm -rf "$MF5"
 
+# (T) a manifest write that CANNOT happen is loud and fails the run. Every
+#     failure path in manifest_flush used to `return 0`: with .githooks at mode
+#     555 the only trace was the shell's own "Permission denied", no summary
+#     line mentioned it, and install.sh exited 0, so the project silently
+#     reverted to pre-manifest behavior on every later upgrade (audit verify-6).
+#     Trigger: something that is not a regular file at the manifest path, which
+#     no mode bit can make succeed, so this runs the same way for every user.
+MF6=$(_mf_project)
+rm -f "$MF6/.githooks/.scaffold-manifest"
+mkdir -p "$MF6/.githooks/.scaffold-manifest"
+MF6_RC=0
+( cd "$MF6" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1 || MF6_RC=$?
+if [ "$MF6_RC" -ne 0 ] \
+   && grep -q 'error: could not write .githooks/.scaffold-manifest' "$HOOK_OUT" \
+   && grep -q 'INSTALL INCOMPLETE: the install manifest was not written' "$HOOK_OUT" \
+   && grep -q 'next upgrade' "$HOOK_OUT"; then
+  echo "  ✓ a manifest write that cannot happen names the file, says what it costs, and fails the run"; PASS=$((PASS + 1))
+else
+  echo "  ✗ a failed manifest write must be named in the summary and must not exit 0 (rc=$MF6_RC)"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$MF6"
+
+# (T) the same, through the branch the audit actually hit: a read-only
+#     .githooks, where the write itself fails rather than being refused up
+#     front. A mode bit means nothing to root, so the case asserts whichever
+#     outcome is honest for the user running it: the probe decides which.
+MF7=$(_mf_project)
+chmod 555 "$MF7/.githooks"
+MF7_RC=0
+if : >"$MF7/.githooks/.scaffold-probe" 2>/dev/null; then
+  rm -f "$MF7/.githooks/.scaffold-probe"
+  chmod 755 "$MF7/.githooks"
+  ( cd "$MF7" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1 || MF7_RC=$?
+  if [ "$MF7_RC" -eq 0 ] && grep -q 'recorded: .*\.githooks/\.scaffold-manifest' "$HOOK_OUT"; then
+    echo "  ✓ a writable .githooks records the manifest (mode bits are not enforced for this user)"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ a writable .githooks must record the manifest (rc=$MF7_RC)"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+else
+  ( cd "$MF7" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1 || MF7_RC=$?
+  chmod 755 "$MF7/.githooks"
+  if [ "$MF7_RC" -ne 0 ] \
+     && grep -q 'error: could not write .githooks/.scaffold-manifest' "$HOOK_OUT" \
+     && grep -q 'INSTALL INCOMPLETE: the install manifest was not written' "$HOOK_OUT"; then
+    echo "  ✓ a read-only .githooks makes the manifest failure loud instead of exiting 0"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ a read-only .githooks must report the failed manifest write and fail the run (rc=$MF7_RC)"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+fi
+chmod 755 "$MF7/.githooks" 2>/dev/null || true
+rm -rf "$MF7"
+
+# (T) the scratch files an INTERRUPTED manifest write leaves behind
+#     (.scaffold-manifest.new.PID / .tmp.PID) are cleaned up by the next run and
+#     covered by the ignore rules meanwhile, so a routine `git add -A` can never
+#     commit one. Same class as the .scaffold-bak litter of upgrade-path-2, and
+#     it was reintroduced by the manifest itself (audit verify-7). Both halves
+#     are asserted, plus the positive outcome that the run still recorded the
+#     manifest it was cleaning up around.
+MF8=$(_mf_project)
+: >"$MF8/.githooks/.scaffold-manifest.new.999999"
+: >"$MF8/.githooks/.scaffold-manifest.tmp.999999"
+MF8_IGN=0
+if ( cd "$MF8" && git check-ignore -q .githooks/.scaffold-manifest.new.999999 \
+     && git check-ignore -q .githooks/.scaffold-manifest.tmp.999999 ); then
+  MF8_IGN=1
+fi
+( cd "$MF8" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
+if [ "$MF8_IGN" -eq 1 ] \
+   && [ ! -e "$MF8/.githooks/.scaffold-manifest.new.999999" ] \
+   && [ ! -e "$MF8/.githooks/.scaffold-manifest.tmp.999999" ] \
+   && grep -q 'recorded: .*\.githooks/\.scaffold-manifest' "$HOOK_OUT" \
+   && grep -q ' .githooks/pre-commit$' "$MF8/.githooks/.scaffold-manifest"; then
+  echo "  ✓ an interrupted write's scratch files are gitignored and swept by the next run"; PASS=$((PASS + 1))
+else
+  echo "  ✗ manifest scratch files must be ignored (ign=$MF8_IGN) and cleaned up by the next run"
+  find "$MF8/.githooks" -maxdepth 1 | sed 's/^/      /'; FAIL=$((FAIL + 1))
+fi
+rm -rf "$MF8"
+
 rm -rf "$(dirname "$MFNEXT")"
 reset_repo

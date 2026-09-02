@@ -53,9 +53,10 @@
 # before (audit enh-upgrade-1).
 #
 # The other upgrade-artifact question lives here too: ensure_backup_gitignore at
-# the bottom, which keeps the *.scaffold-bak copies an upgrade leaves behind out
-# of git. Same subject (what a re-run leaves on disk and how a project reads it),
-# and install-lib.sh is at the module cap.
+# the bottom, which keeps the artifacts an upgrade leaves behind (the
+# *.scaffold-bak copies, and this file's own scratch files) out of git. Same
+# subject (what a re-run leaves on disk and how a project reads it), and
+# install-lib.sh is at the module cap.
 
 # Defaults mirror install-lib.sh's `: "${FORCE:=0}"` so this file behaves if it
 # is ever sourced without install.sh having set the globals first.
@@ -156,26 +157,107 @@ manifest_says_ours() {
   return 1
 }
 
+# Set by _manifest_write_failed to the reason the write failed, empty otherwise.
+# print_manifest_failure_summary reads it at the end of the run, called from
+# install-lib.sh's print_refused_writes_summary.
+SCAFFOLD_MANIFEST_ERROR=""
+
+# _manifest_write_failed WHY: a failed manifest write is not a detail to
+# swallow. Every failure path here used to `return 0`, so with .githooks at mode
+# 555 the shell's own "Permission denied" was the only trace, no summary line
+# mentioned it, and install.sh exited 0; the next upgrade then found no entry
+# for any file, fell back to comparing against today's templates, and kept every
+# untouched older file as a "customization" again, which is the exact bug the
+# manifest exists to fix (audit verify-6). Loud now, in the same shape as the
+# symlinked-directory refusal: name the file, say what it costs, say what to do.
+_manifest_write_failed() {
+  SCAFFOLD_MANIFEST_ERROR=$1
+  rm -f "${SCAFFOLD_MANIFEST}.new.$$" "${SCAFFOLD_MANIFEST}.tmp.$$" 2>/dev/null || true
+  echo "error: could not write $SCAFFOLD_MANIFEST ($1)." >&2
+  echo "       The files above were installed, but nothing on disk now records that the" >&2
+  echo "       scaffold wrote them, so the NEXT upgrade cannot tell its own untouched" >&2
+  echo "       files from your edits: it will keep every drifted file instead of" >&2
+  echo "       refreshing it, and new detectors and updated CI pins will not arrive." >&2
+  echo "       Make $(dirname "$SCAFFOLD_MANIFEST") writable (or clear whatever sits at" >&2
+  echo "       the manifest path) and re-run install.sh." >&2
+}
+
+# print_manifest_failure_summary: the end-of-run half of the same report, so the
+# failure survives in the SUMMARY rather than only in scrollback. Returns 1, so
+# install.sh's `print_refused_writes_summary || exit 1` fails the run: an
+# install that did not record what it wrote is incomplete in the same way as one
+# that could not write through a symlinked directory.
+print_manifest_failure_summary() {
+  [ -n "$SCAFFOLD_MANIFEST_ERROR" ] || return 0
+  echo ""
+  echo "INSTALL INCOMPLETE: the install manifest was not written: $SCAFFOLD_MANIFEST"
+  echo "  Reason: $SCAFFOLD_MANIFEST_ERROR"
+  echo "  Without it the next upgrade reads every scaffold file as your edit and stops"
+  echo "  refreshing them. Fix that path and re-run install.sh."
+  return 1
+}
+
+# _manifest_sweep_stale: drop the scratch files an INTERRUPTED earlier run left
+# behind. manifest_flush writes <manifest>.new.PID and <manifest>.tmp.PID and
+# removes both, but a Ctrl-C or a kill between the two left them in .githooks/,
+# where nothing cleaned them up and no ignore rule covered them, so the next
+# `git add -A` committed them: the same defect as the .scaffold-bak copies
+# (audit upgrade-path-2, verify-7). This run's own files carry THIS pid and are
+# created after the sweep, so a sweep can never eat a write in progress.
+_manifest_sweep_stale() {
+  local f
+  for f in "$SCAFFOLD_MANIFEST".new.* "$SCAFFOLD_MANIFEST".tmp.*; do
+    { [ -f "$f" ] || [ -L "$f" ]; } || continue
+    rm -f "$f" 2>/dev/null || true
+  done
+}
+
 # manifest_flush: write the run's records, merged with the entries an earlier
 # run made for files this run did not touch. Sorted by path so a re-run produces
-# a stable diff rather than a reshuffled file.
+# a stable diff rather than a reshuffled file. Every step's status is checked:
+# see _manifest_write_failed above for why silence was the wrong answer.
 manifest_flush() {
-  local tmp new
+  local tmp new dir
   [ -n "$_MANIFEST_PENDING" ] || return 0
-  _mkdir_safe "$(dirname "$SCAFFOLD_MANIFEST")" || return 0
+  _manifest_sweep_stale
+  dir=$(dirname "$SCAFFOLD_MANIFEST")
   new="${SCAFFOLD_MANIFEST}.new.$$"
   tmp="${SCAFFOLD_MANIFEST}.tmp.$$"
-  printf '%s' "$_MANIFEST_PENDING" >"$new" || return 0
-  _manifest_header >"$tmp" || { rm -f "$new"; return 0; }
-  {
+  if ! _mkdir_safe "$dir"; then
+    _manifest_write_failed "$dir is not a real directory this install can write into"
+    return 0
+  fi
+  # A symlink or a directory at the manifest path: `mv -f` would replace
+  # someone's link, or move the new file INSIDE the directory and report
+  # success, leaving nothing readable where the next run looks.
+  if [ -L "$SCAFFOLD_MANIFEST" ] \
+     || { [ -e "$SCAFFOLD_MANIFEST" ] && [ ! -f "$SCAFFOLD_MANIFEST" ]; }; then
+    _manifest_write_failed "$SCAFFOLD_MANIFEST exists and is not a regular file"
+    return 0
+  fi
+  if ! printf '%s' "$_MANIFEST_PENDING" >"$new"; then
+    _manifest_write_failed "this run's records could not be written to $new"
+    return 0
+  fi
+  if ! _manifest_header >"$tmp"; then
+    _manifest_write_failed "the header could not be written to $tmp"
+    return 0
+  fi
+  if ! {
     if [ -f "$SCAFFOLD_MANIFEST" ]; then
       awk 'NR == FNR { if (NF == 3) seen[$3] = 1; next }
            substr($0, 1, 1) == "#" { next }
            NF == 3 && !($3 in seen)' "$new" "$SCAFFOLD_MANIFEST"
     fi
     cat "$new"
-  } | LC_ALL=C sort -k3,3 >>"$tmp"
-  mv -f "$tmp" "$SCAFFOLD_MANIFEST"
+  } | LC_ALL=C sort -k3,3 >>"$tmp"; then
+    _manifest_write_failed "the merged entries could not be written to $tmp"
+    return 0
+  fi
+  if ! mv -f "$tmp" "$SCAFFOLD_MANIFEST"; then
+    _manifest_write_failed "$tmp could not be moved into place"
+    return 0
+  fi
   rm -f "$new"
   _MANIFEST_PENDING=""
   echo "recorded:     $SCAFFOLD_MANIFEST (scaffold version $SCAFFOLD_VERSION), commit it"
@@ -189,26 +271,51 @@ manifest_flush() {
 # two ignore rules once, idempotently, and say so. Appended rather than written,
 # because .gitignore is the project's file; a symlinked one is left alone with
 # the rules printed instead, the same A7 posture as every other scaffold path.
+#
+# The rules: the backup copies an overwrite leaves beside the file it replaced,
+# and the scratch files an interrupted manifest write leaves in .githooks/
+# (verify-7). Both are local state a routine `git add -A` used to commit.
+SCAFFOLD_GITIGNORE_RULES='*.scaffold-bak
+*.scaffold-bak.*
+.githooks/.scaffold-manifest.new.*
+.githooks/.scaffold-manifest.tmp.*'
+
 ensure_backup_gitignore() {
-  local gi=".gitignore"
+  local gi=".gitignore" rule missing=''
   if [ -L "$gi" ]; then
-    echo "skip (exists, symlink): .gitignore, left untouched. Add '*.scaffold-bak' and '*.scaffold-bak.*' to it by hand, or an install backup can be committed."
+    echo "skip (exists, symlink): .gitignore, left untouched. Add these rules by hand, or an install artifact can be committed:"
+    printf '%s\n' "$SCAFFOLD_GITIGNORE_RULES" | sed 's/^/                        /'
     return 0
   fi
-  if [ -f "$gi" ] && grep -q '^[[:space:]]*\*\.scaffold-bak' "$gi"; then
-    return 0
-  fi
+  # Per RULE, not per block: an install that predates a rule (the manifest
+  # scratch files arrived after the backup copies did) still gets the missing
+  # one, and a re-run appends nothing.
+  while IFS= read -r rule; do
+    [ -n "$rule" ] || continue
+    if [ -f "$gi" ] && grep -qxF "$rule" "$gi"; then
+      continue
+    fi
+    missing="${missing}${rule}
+"
+  done <<RULES
+$SCAFFOLD_GITIGNORE_RULES
+RULES
+  [ -n "$missing" ] || return 0
   # Append on its own line even if the existing file has no trailing newline.
   if [ -f "$gi" ] && [ -s "$gi" ] && [ -n "$(tail -c 1 "$gi")" ]; then
     printf '\n' >>"$gi"
   fi
+  # Delimited, so uninstall.sh can take exactly this block back out again and
+  # nothing else (the same begin/end shape as the CLAUDE.md import block).
   {
     echo ""
-    echo "# ai-coding-rules-scaffold: the copy install.sh leaves beside a file it"
-    echo "# replaces, so an edit of yours is always recoverable. Local state, never"
-    echo "# something to commit."
-    echo "*.scaffold-bak"
-    echo "*.scaffold-bak.*"
+    echo "# ai-coding-rules-scaffold:begin"
+    echo "# Local install artifacts, never something to commit: the copy install.sh"
+    echo "# leaves beside a file it replaces, so an edit of yours is always"
+    echo "# recoverable, and the scratch files an interrupted manifest write leaves"
+    echo "# behind. uninstall.sh removes this block."
+    printf '%s' "$missing"
+    echo "# ai-coding-rules-scaffold:end"
   } >>"$gi"
-  echo "updated:      .gitignore (ignores the *.scaffold-bak copies install.sh leaves behind)"
+  echo "updated:      .gitignore (ignores the backup copies and manifest scratch files install.sh can leave behind)"
 }
