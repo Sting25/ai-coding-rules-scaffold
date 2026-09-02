@@ -36,7 +36,8 @@ UDRO=$(mktemp -d)
   && find . -path ./.git -prune -o -print | sort >"$UDRO/before.list" \
   && "$SCAFFOLD_DIR/uninstall.sh" --dry-run \
   && find . -path ./.git -prune -o -print | sort >"$UDRO/after.list" ) >"$HOOK_OUT" 2>&1
-UDRY_HOOKS=$( cd "$UDRY" && git config --get core.hooksPath || true )
+UDRY_HOOKS=$( cd "$UDRY" || exit 0
+              git config --get core.hooksPath || true )
 if diff -q "$UDRO/before.list" "$UDRO/after.list" >/dev/null 2>&1 \
    && [ -d "$UDRY/.claude" ] && [ -d "$UDRY/.cursor" ] \
    && [ -f "$UDRY/.githooks/pre-commit" ] \

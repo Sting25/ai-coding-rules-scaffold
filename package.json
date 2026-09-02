@@ -10,6 +10,7 @@
     "install-lib.sh",
     "install-manifest.sh",
     "install-optin.sh",
+    "install-wiring.sh",
     "install-interactive.sh",
     "install-claude.sh",
     "install-verify.sh",

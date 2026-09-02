@@ -399,18 +399,18 @@ fi
 # gate it defers to. install.sh writes both halves together, but an
 # interrupted install, a later re-run without a flag, or a hand-copied file
 # can leave only one half on disk (#96), and once that happens, nothing
-# checks again. Detection lives in install-lib.sh's check_paired_artifacts so
+# checks again. Detection lives in install-wiring.sh's check_paired_artifacts so
 # install.sh's own end-of-run summary reports the exact same states with the
 # exact same wording; sourced here rather than duplicated.
 section "paired artifacts"
-if [ -f "$SCAFFOLD_DIR/install-lib.sh" ]; then
-  # shellcheck disable=SC2317,SC2329  # invoked indirectly, by name, from check_paired_artifacts (SC2317 on older shellcheck, SC2329 on newer, same underlying finding)
+if [ -f "$SCAFFOLD_DIR/install-wiring.sh" ]; then
+  # shellcheck disable=SC2317,SC2329  # invoked indirectly, by name, from check_paired_artifacts (SC2317/2329 cannot see that)
   doctor_pair_note() { note "$1"; }
-  # shellcheck source=install-lib.sh
-  . "$SCAFFOLD_DIR/install-lib.sh"
+  # shellcheck source=install-wiring.sh
+  . "$SCAFFOLD_DIR/install-wiring.sh"
   check_paired_artifacts gap doctor_pair_note
 else
-  note "install-lib.sh not found next to scaffold-doctor.sh ($SCAFFOLD_DIR): paired-artifact checks skipped; re-fetch the full scaffold bundle, not just this one file"
+  note "install-wiring.sh not found next to scaffold-doctor.sh ($SCAFFOLD_DIR): paired-artifact checks skipped"
 fi
 
 # --- 9. protections not enabled ----------------------------------------------

@@ -81,14 +81,16 @@ reset_repo
 BAKH=$(mktemp -d)
 ( cd "$BAKH" && git init --quiet && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify >/dev/null 2>&1 \
-  && git add -A && git commit --quiet -m "base" --no-verify )
+  && git add -A && git commit --quiet -m "base" --no-verify )  # scaffold-allow: test fixture
 # Force a real backup on a scaffold-owned, executable file: edit it so the
 # re-run's refresh has something to back up.
 printf '\n# local edit that forces a backup\n' >>"$BAKH/.githooks/pre-commit"
 ( cd "$BAKH" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
 BAKH_STAGED=""
 if [ -f "$BAKH/.githooks/pre-commit.scaffold-bak" ]; then
-  BAKH_STAGED=$( cd "$BAKH" && git add -A >/dev/null 2>&1; cd "$BAKH" && git diff --cached --name-only | grep scaffold-bak || true )
+  BAKH_STAGED=$( cd "$BAKH" || exit 0
+                 git add -A >/dev/null 2>&1
+                 git diff --cached --name-only | grep scaffold-bak || true )
 fi
 if [ -f "$BAKH/.githooks/pre-commit.scaffold-bak" ] \
    && [ ! -x "$BAKH/.githooks/pre-commit.scaffold-bak" ] \

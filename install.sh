@@ -166,6 +166,8 @@ fi
 # shellcheck source=install-lib.sh
 . "$SCAFFOLD_DIR/install-lib.sh"
 
+# shellcheck source=install-wiring.sh
+. "$SCAFFOLD_DIR/install-wiring.sh" # _optin_wired, check_paired_artifacts
 # shellcheck source=install-optin.sh
 . "$SCAFFOLD_DIR/install-optin.sh"  # install_opt_in_* flag bodies
 
