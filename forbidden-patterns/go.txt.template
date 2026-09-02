@@ -3,41 +3,50 @@
 # Format: <regex><TAB><description>   (one per line; # comments ignored)
 # Separator is TAB - patterns can contain literal `|` for ERE alternation.
 # Case-sensitive ERE (grep -anE). Copy to your project as `.forbidden-patterns/go.txt`.
-# Active rules flag leftover debug output plus two security sinks (TLS bypass,
-# a dynamic shell command); panic/log.Fatal live in optional below.
+# Active rules flag leftover debug output plus one security sink (TLS bypass);
+# panic/log.Fatal live in optional below.
 
 (^|[^A-Za-z_.])fmt\.Print(ln|f)?[[:space:]]*\(	Remove fmt.Print/Println/Printf debug output - use the project logger
 (^|[^A-Za-z_.])println[[:space:]]*\(	Remove the builtin println() before committing
 (^|[^A-Za-z_.])spew\.Dump[[:space:]]*\(	Remove spew.Dump() debug dump before committing
 
-# --- Security: TLS bypass / command injection ---
-# `go vet` catches neither and the golangci-lint CI job ships commented out, so
-# nothing else in the scaffold sees these.
+# --- Security: TLS bypass ---
+# `go vet` does not catch this and the golangci-lint CI job ships commented out,
+# so nothing else in the scaffold sees it.
 #
 # TLS: the Go twin of backend.txt's `verify=False` and frontend.txt's
 # `rejectUnauthorized: false`, and it inherits their one known cost - a test
 # dialing a self-signed httptest server trips it. That is a true positive the
 # team may choose to accept, so mark those lines `// scaffold-allow`; most can
-# instead drop the field and use httptest.NewTLSServer(h).Client(). Only `: true`
-# fires: `InsecureSkipVerify: false`, `c.InsecureSkipVerify = insecure`, `if
-# c.InsecureSkipVerify {` and prose mentioning the field stay silent (144 lines
-# name the field across two Go distributions; 40 match, all of them real bypasses).
+# instead drop the field and use httptest.NewTLSServer(h).Client().
 #
-# exec: deliberately narrow - it needs ALL THREE of a literal shell as argv[0]
-# (sh/bash/zsh/ksh/dash, optionally /bin/- or /usr/bin/-prefixed, in the
-# exec.Command("sh", ...) or exec.CommandContext(ctx, "sh", ...) form), a `-c`
-# flag, and a script argument that is NOT one plain string literal. The third
-# clause is what keeps it honest: exec.Command("bash", "-c", "set -e; make") is a
-# fixed script with nothing to interpolate into and does NOT fire, while
-# exec.Command("sh", "-c", userInput), fmt.Sprintf(...) and "echo "+name do.
-# Also silent: a shell in a later argument (exec.Command("which", "bash"),
-# exec.Command("docker", "run", "alpine", "sh")), a variable program path
-# (exec.Command(binPath, "-c", script)), a shell running a script FILE
-# (exec.Command("bash", "./deploy.sh")), and a bare exec.Command("sh").
-# Over the 21,008 .go files of two Go distributions it matched 2 lines, both the
-# fmt.Sprintf-built-shell-script shape, and nothing else.
-InsecureSkipVerify[[:space:]]*:[[:space:]]*true	InsecureSkipVerify: true disables TLS cert validation (MITM risk) - fix the cert/CA, don't disable verification
-(^|[^A-Za-z_.])exec\.(Command\(|CommandContext\([^,]*,)[[:space:]]*"(/(usr/)?bin/)?(sh|bash|zsh|ksh|dash)"[[:space:]]*,[[:space:]]*"-[a-z]*c"[[:space:]]*,[[:space:]]*("[^"]*"[[:space:]]*\+|[^"[:space:]])	Shell -c with a built-up script string is a command-injection sink - pass the program and its args to exec.Command directly
+# Only `: true` on a WHOLE-WORD field name fires. Silent: `InsecureSkipVerify:
+# false`, `c.InsecureSkipVerify = insecure`, `if c.InsecureSkipVerify {`, and a
+# longer identifier that merely ends with the name - `DisallowInsecureSkipVerify:
+# true` means the OPPOSITE and used to fire before the left boundary was added.
+#
+# Comments are NOT silent. The hook is line-oriented, so commented-out code and
+# godoc examples showing the field DO fire; mark them `// scaffold-allow`.
+# Measured over 60,540 .go files - 48,866 of them third-party, across kubernetes,
+# moby, cockroachdb, vault, terraform, etcd, grpc-go, hugo, minio, traefik,
+# prometheus, golangci-lint and go-resty, plus the Go distribution: 595 lines
+# name the field, 264 match, 261 are real bypasses and 3 are comment-only (two
+# of those are go-resty godoc examples).
+# A tried-and-rejected tightening - refusing to match after a `//` on the line -
+# removed those 3 comments but ALSO silenced 3 real bypasses whose line carried a
+# `"tcp://"` URL. Trading a blocked comment for a silent hole is a bad deal, so
+# the rule stays line-blind and the marker is the escape hatch.
+(^|[^A-Za-z0-9_])InsecureSkipVerify[[:space:]]*:[[:space:]]*true	InsecureSkipVerify: true disables TLS cert validation (MITM risk) - fix the cert/CA, don't disable verification
+
+# No shell-command rule ships here. An `exec.Command("sh", "-c", ...)` rule used
+# to; it was measured over the corpus above and DROPPED. It fired on 24 lines,
+# not one of them a defect a committer had to fix, and its own carve-out for
+# fixed scripts only understood double-quoted literals, so moby's named constant
+# `exec.Command("sh", "-c", nsCommand)` and a golangci-lint bench line whose
+# script is a backtick raw string both fired. It is also defeated by plain gofmt:
+# wrapping the call across lines hides the real sink from a line-oriented grep,
+# so the shapes it did catch were the ones that happened to fit on one line.
+# Use gosec's G204, which decides this on the AST with type information.
 
 # Optional (opt-in) — uncomment a line to enable it:
 # (^|[^A-Za-z_.])print[[:space:]]*\(	Remove the builtin print() before committing (off by default: 'print' is a plausible method/field name)
@@ -48,6 +57,6 @@ InsecureSkipVerify[[:space:]]*:[[:space:]]*true	InsecureSkipVerify: true disable
 # ordinary values as well as errors, and a line-oriented regex cannot tell
 # `r0, _, _ := syscall.Syscall(...)`, `req, _ := http.NewRequest(...)` or the
 # package-level `var _ = flag.Bool(...)` from a dropped error. The obvious
-# pattern matched 11,217 lines in 2,694 of the 21,008 .go files of two Go
-# distributions - 13% of every file - so even as an opt-in it is a trap. Use
+# pattern matched 21,185 lines in 6,076 of the 48,866 third-party .go files of
+# the corpus above - 12% of every file - so even as an opt-in it is a trap. Use
 # errcheck / golangci-lint, which decide this on the AST.
