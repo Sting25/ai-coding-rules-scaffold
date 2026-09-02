@@ -262,5 +262,42 @@ if git rev-parse --git-dir >/dev/null 2>&1 \
   fi
 fi
 
+# --- what is deliberately left behind ---------------------------------------
+# The safe path keeps the likely-customized files and every *.scaffold-bak an
+# upgrade wrote, and it used to say nothing whatsoever about either: the policy
+# lived only in this script's header, so a run ended with "Done." over a project
+# that still had six scaffold files in it and no way to learn their names. A
+# leftover nobody can name is a leftover nobody removes.
+KEPT=""
+if [ "$REMOVE_ALL" -eq 0 ]; then
+  for kept_path in AGENTS.md coding-rules.md operational-rules.md; do
+    if [ -e "$kept_path" ]; then
+      KEPT="${KEPT}  ${kept_path}${NL}"
+    fi
+  done
+  for kept_path in .forbidden-patterns/*.txt; do
+    if [ -e "$kept_path" ]; then
+      KEPT="${KEPT}  ${kept_path}${NL}"
+    fi
+  done
+fi
+if [ -n "$KEPT" ]; then
+  echo ""
+  echo "kept (likely customized): yours to edit, so uninstall never deletes them."
+  printf '%s' "$KEPT"
+  echo "  remove them too with: uninstall.sh --all"
+fi
+
+# The backups an upgrade or a --force install wrote hold the ONLY copy of the
+# edits they replaced, so uninstall must never delete them. It must still name
+# them: a user who does not know they exist never merges anything back out.
+BAKS=$(find . -maxdepth 4 -name '*.scaffold-bak*' -not -path './.git/*' 2>/dev/null | sed 's|^\./||' | sort || true)
+if [ -n "$BAKS" ]; then
+  echo ""
+  echo "kept (your backups): the only copy of the edits they replaced."
+  printf '%s\n' "$BAKS" | sed 's/^/  /'
+  echo "  merge anything you still want out of them, then delete them yourself."
+fi
+
 echo ""
 [ "$DRY_RUN" -eq 1 ] && echo "Dry run — no files changed." || echo "Done."

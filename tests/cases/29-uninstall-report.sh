@@ -93,4 +93,60 @@ else
 fi
 rm -rf "$UHLP"
 
+# (D) A safe-mode uninstall deliberately keeps the likely-customized files
+# (AGENTS.md, coding-rules.md, operational-rules.md, .forbidden-patterns/) and
+# used to say nothing at all about them: the policy lived only in the script
+# header, so the run ended with "Done." over a project that still had six
+# scaffold files in it and no way to know. Assert every kept path is named, and
+# that the line names the flag that finishes the job.
+ULFT=$(un_project)
+( cd "$ULFT" && "$SCAFFOLD_DIR/uninstall.sh" ) >"$HOOK_OUT" 2>&1
+if grep -qF "kept (likely customized):" "$HOOK_OUT" \
+   && grep -qF "AGENTS.md" "$HOOK_OUT" \
+   && grep -qF "coding-rules.md" "$HOOK_OUT" \
+   && grep -qF "operational-rules.md" "$HOOK_OUT" \
+   && grep -qF ".forbidden-patterns/" "$HOOK_OUT" \
+   && grep -qF "uninstall.sh --all" "$HOOK_OUT" \
+   && [ -f "$ULFT/AGENTS.md" ] && [ -d "$ULFT/.forbidden-patterns" ]; then
+  echo "  ✓ a safe uninstall names every file it leaves behind"; PASS=$((PASS + 1))
+else
+  echo "  ✗ uninstall left files behind without naming them"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$ULFT"
+
+# (E) An upgrade's .scaffold-bak copies are the user's ONLY copy of their own
+# edits, so uninstall must not delete them. It must still say they are there:
+# they are scaffold-created files with a scaffold-shaped name, and a user who
+# does not know they exist never merges anything back out of them.
+UBAK=$(un_project)
+( cd "$UBAK" && printf '# local edit\n' >>.githooks/pre-commit \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --force --no-verify ) >/dev/null 2>&1
+( cd "$UBAK" && "$SCAFFOLD_DIR/uninstall.sh" ) >"$HOOK_OUT" 2>&1
+if [ -f "$UBAK/.githooks/pre-commit.scaffold-bak" ] \
+   && grep -qF "local edit" "$UBAK/.githooks/pre-commit.scaffold-bak" \
+   && grep -qF "kept (your backups):" "$HOOK_OUT" \
+   && grep -qF ".githooks/pre-commit.scaffold-bak" "$HOOK_OUT"; then
+  echo "  ✓ uninstall keeps .scaffold-bak copies and names them"; PASS=$((PASS + 1))
+else
+  echo "  ✗ .scaffold-bak backups were deleted or went unreported"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UBAK"
+
+# (F) --all really does remove the kept set, so the closing line is not advice
+# that goes nowhere. The kept block must NOT claim a file is still there when
+# the run just deleted it.
+UALL=$(un_project)
+( cd "$UALL" && "$SCAFFOLD_DIR/uninstall.sh" --all ) >"$HOOK_OUT" 2>&1
+if [ ! -e "$UALL/AGENTS.md" ] && [ ! -e "$UALL/coding-rules.md" ] \
+   && [ ! -e "$UALL/.forbidden-patterns" ] \
+   && ! grep -qF "kept (likely customized):" "$HOOK_OUT"; then
+  echo "  ✓ --all removes the kept set and drops the kept notice"; PASS=$((PASS + 1))
+else
+  echo "  ✗ --all left the customized files or still called them kept"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UALL"
+
 reset_repo
