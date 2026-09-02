@@ -1,6 +1,6 @@
 name: shellcheck
 
-# Runs on the scaffold's own shell scripts — NOT installed into consumer
+# Runs on the scaffold's own shell scripts, NOT installed into consumer
 # projects (unlike lint.yml.template). *.template files are templates but still
 # valid bash, so they are checked too.
 #

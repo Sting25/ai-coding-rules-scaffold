@@ -192,7 +192,6 @@ else
 fi
 reset_repo
 
-<<<<<<< HEAD
 # 42e. .cjs and .mjs are part of the JS file set. lint.yml lints
 #      *.ts|*.tsx|*.js|*.jsx|*.cjs|*.mjs|*.vue; the hook's case list dropped
 #      .cjs and .mjs, so a commit made up only of those files ran no linter and
@@ -337,7 +336,7 @@ else
   sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf node_modules "$TSB"
-=======
+
 # 42e. CI MIRROR of 42b2. The pre-commit hook and lint.yml must agree on what
 #      "eslint is installed" means. The hook gates on Node resolution from the
 #      project's node_modules (42b2); lint.yml's ESLint step used to gate only
@@ -429,5 +428,4 @@ else
   FAIL=$((FAIL + 1))
 fi
 rm -rf "$ESCI"
->>>>>>> fix/audit-ci-harness
 reset_repo
