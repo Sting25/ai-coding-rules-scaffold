@@ -140,7 +140,21 @@ scan() {
     raw_descs+=("$description")
   done <"$config"
 
-  [ ${#raw_patterns[@]} -eq 0 ] && return 0
+  # A present-but-EMPTY pattern file (every rule line deleted or commented out)
+  # is the gutting analogue of deleting it: one commit disarms the whole tier
+  # while dodging the orchestrator's deletion guard, which only sees
+  # --diff-filter=D. check-secrets has failed CLOSED on this since 3ef4ad9;
+  # check-patterns silently returned 0, so `printf '# scaffold-extensions: py\n'
+  # > .forbidden-patterns/backend.txt` committed with no output at all and every
+  # backend rule gone. Same shape as check-secrets: a config that EXISTS yet
+  # yields zero patterns fails closed at both gates. (ABSENCE is different and
+  # still fine — a repo simply has no php.txt; that is the `[ -f ]` return above.)
+  if [ ${#raw_patterns[@]} -eq 0 ]; then
+    local emsg="$config has no patterns — the forbidden-pattern scan for $stem is disabled. Restore its patterns (use 'git commit --no-verify' or delete the file if intended)."
+    if [ "$CI_MODE" -eq 1 ]; then echo "::error::$emsg"; else echo "✗ $emsg" >&2; fi
+    FAILED=1
+    return 0
+  fi
 
   # Validate each pattern up-front. An invalid ERE here would otherwise
   # poison the combined regex (silently dropping every file) and produce
@@ -159,7 +173,16 @@ scan() {
     descriptions+=("${raw_descs[$i]}")
   done
 
-  [ ${#patterns[@]} -eq 0 ] && return 0
+  # Every configured pattern was an invalid ERE and got dropped — the config is
+  # corrupt and this tier would silently scan for nothing. Fail CLOSED, same
+  # reasoning as the empty-config guard above and the matching guard in
+  # check-secrets.
+  if [ ${#patterns[@]} -eq 0 ]; then
+    local vmsg="$config has no valid patterns (all were invalid regexes) — the forbidden-pattern scan for $stem is disabled. Fix the patterns (use 'git commit --no-verify' if intended)."
+    if [ "$CI_MODE" -eq 1 ]; then echo "::error::$vmsg"; else echo "✗ $vmsg" >&2; fi
+    FAILED=1
+    return 0
+  fi
 
   # Combine all patterns into one ERE so a single grep call per file decides
   # whether to drop into the per-pattern attribution loop. Cuts grep calls

@@ -118,3 +118,23 @@ git add src/Mixed.Py
 cp_run "mixed-case .Py extension is scanned" "structlog" src/Mixed.Py
 reset_repo
 
+# 28i. GUTTED CONFIG FAILS CLOSED. Replacing backend.txt with just its header
+#      deleted every backend rule in one commit while dodging the orchestrator's
+#      deletion guard (which only sees --diff-filter=D), and check-patterns
+#      returned 0 with no output at all. check-secrets has failed closed on the
+#      same shape since 3ef4ad9; check-patterns now matches it.
+printf '# scaffold-extensions: py\n' >.forbidden-patterns/backend.txt
+printf 'import os\npri''nt("debug")\n' >gutted.py
+git add .forbidden-patterns/backend.txt gutted.py
+cp_run "gutted backend.txt fails closed" "has no patterns" gutted.py
+reset_repo
+
+# 28j. …and a config whose every rule is an invalid ERE is equally disabled, so
+#      it fails closed on the same reasoning rather than scanning for nothing.
+printf '# scaffold-extensions: py\n[unclosed\tbroken one\n(also unclosed\tbroken two\n' \
+  >.forbidden-patterns/backend.txt
+printf 'import os\npri''nt("debug")\n' >allbad.py
+git add .forbidden-patterns/backend.txt allbad.py
+cp_run "backend.txt with only invalid regexes fails closed" "has no valid patterns" allbad.py
+reset_repo
+
