@@ -38,6 +38,11 @@ versioning follows [SemVer](https://semver.org/).
   rather than scanning nothing. Unset means unchanged behavior; the shipped
   hook and CI leave both unset. Regression test: case 28.
 
+- **`SCAFFOLD_VERIFY_TTY`** makes the post-install toolchain prompt
+  reachable without a terminal, by pointing at a file of canned replies.
+  It exists so the auto-install branch can be tested; `CI` being set
+  still forces print-only behavior.
+
 ### Fixed
 
 - **Scanning scope: a type change no longer hides a file from every
@@ -94,12 +99,20 @@ versioning follows [SemVer](https://semver.org/).
 - **CI: the eslint step is guarded** so it cannot hard-fail from the
   global npx cache when `eslint.config.js` is absent.
 - **The test suite cannot silently shrink.** A case file that stopped
-  early dropped its assertions while the run still reported "0 failed";
-  there is now a floor. `exit "$FAIL"` also wrapped, so exactly 256
+  early dropped its assertions while the run still reported "0 failed".
+  Every case file now carries its own minimum, so a truncated file is
+  named and fails the run even when nothing reports a failure; a single
+  global number was tried first and did not work, because it sat far
+  enough below the real count to tolerate losing a whole case file. `exit "$FAIL"` also wrapped, so exactly 256
   failures exited 0. The shellcheck job discovers shell files instead
   of using a hand-maintained list that had drifted by three files, and
   a new check catches the dogfooded hooks drifting from their
   templates.
+- **`uninstall.sh` aborted mid-sweep on any absent path.** `force_remove`
+  ended on a failing test, which returns 1 under `errexit`, so one missing
+  file skipped the empty-directory pass, the hooksPath unwire, and the
+  leftovers report, and exited 1.
+
 - **Documentation corrections** across README, TECHNICAL and
   `coding-rules.md`: the direct-invocation examples fed newline stdin
   to scanners that read NUL (so a user following them scanned nothing),
