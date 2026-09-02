@@ -63,7 +63,12 @@ for case_file in \
   "$HERE/cases/25-interactive-install.sh" \
   "$HERE/cases/26-repo-adaptation-warn.sh" \
   "$HERE/cases/27-test-guard.sh" \
-  "$HERE/cases/28-check-patterns-scope.sh"; do
+  "$HERE/cases/28-check-patterns-scope.sh" \
+  "$HERE/cases/29-install-symlink-dirs.sh" \
+  "$HERE/cases/30-install-manifest.sh" \
+  "$HERE/cases/31-install-verify-offer.sh" \
+  "$HERE/cases/32-uninstall-report.sh" \
+  "$HERE/cases/33-harness-self-checks.sh"; do
   # shellcheck source=/dev/null
   . "$case_file"
 done

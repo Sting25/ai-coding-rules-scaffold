@@ -8,6 +8,26 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+- **Install manifest: upgrades now deliver what an untouched file is
+  missing (#154 audit; findings hist-01, hist-03, upgrade-path-1,
+  upgrade-path-3).** The installer could not tell "unchanged since I
+  wrote it" from "the user edited this", so it compared every installed
+  file against the CURRENT template. An untouched install of an older
+  version therefore looked like drift: it was preserved and notified,
+  and the user never received new checks, new secret detectors, or
+  updated action SHAs. Measured: a v0.12.0 install upgraded to HEAD kept
+  a `lint.yml` with zero `check-large-files` call sites; a v0.6.0
+  install kept 26 of 37 secret patterns and a SendGrid key committed
+  clean while the doctor reported "0 gaps". A new shipped module writes
+  `.githooks/.scaffold-manifest`, recording the sha256 and scaffold
+  version of every file the installer writes. On a later run a file
+  matching its recorded hash is refreshed silently and re-recorded; a
+  file that differs is a genuine hand-edit and is preserved and notified
+  exactly as before; a file with no entry falls back to today's
+  behavior, so nothing regresses for existing installs. A drifted file
+  is never recorded, so the mechanism cannot overwrite a user edit.
+  Every install now also has a recorded version on disk.
+
 - **`check-patterns` honors `CHECK_PATTERNS_INCLUDE` / `CHECK_PATTERNS_EXCLUDE`
   (#149).** Space-separated pattern-file basenames select or skip
   `.forbidden-patterns/*.txt` files for one run, so a downstream wrapper
@@ -19,6 +39,75 @@ versioning follows [SemVer](https://semver.org/).
   hook and CI leave both unset. Regression test: case 28.
 
 ### Fixed
+
+- **Scanning scope: a type change no longer hides a file from every
+  check.** The staged-file list used `--diff-filter=ACMR`, which omits
+  `T`. Replacing a symlink with a regular file (or the reverse) produced
+  an empty list, the hook took its "nothing staged" early exit, and all
+  six scanners ran on nothing.
+- **check-secrets now scans `.forbidden-patterns/*.txt`.** Credentials
+  parked in a pattern file passed both the hook and the whole-tree CI
+  scan.
+- **check-hygiene catches more invisible-character smuggling:** the
+  variation-selector supplement range and the LRM, RLM, SHY and ALM
+  invisibles. This is Rules-File-Backdoor defense.
+- **check-patterns matches extensions case-insensitively**, fails
+  closed on a gutted pattern config the way check-secrets already did,
+  refuses to run against a symlinked or unreadable config, and its
+  built-in fallback for `frontend.txt` now includes `svelte`.
+- **Tool detection asks what actually runs.** The ruff gate resolves a
+  virtualenv, `python3 -m ruff`, then PATH, so a venv-only install is
+  no longer reported as absent while lint errors commit clean (#144).
+  The phpcs gate checks `vendor/bin` first, matching CI. The eslint
+  file set includes `.cjs` and `.mjs`. One shared predicate now decides
+  whether a prettier config is present, covering every filename
+  prettier documents, and the hook and CI use the same one.
+- **`CDPATH` no longer disarms the hook.** With `CDPATH` set, `cd`
+  echoes the directory it lands in, so the hook's `$LIB` became a
+  two-line string and every scanner failed to launch. The scanners
+  themselves silently dropped all `.scaffold.toml` overrides for the
+  same reason, and the doctor reported a false wiring gap.
+- **`_backup` no longer reports a backup it did not make.** The copy
+  was unchecked, so a failed backup still printed "backed up:" and the
+  install then overwrote the user's file. Data-loss path.
+- **The installer refuses to delete a symlinked directory.** Creating
+  `.githooks`, `.claude`, `.cursor` or `.github` removed a symlink the
+  user had placed there, with no warning and no backup.
+- **A pre-existing agent config is no longer reported as armed.** An
+  existing `.claude/settings.json`, `.cursor/hooks.json` or `.npmrc`
+  made both the installer and the doctor claim a protection was enabled
+  when it was not wired in.
+- **`install.sh --force` no longer strips the test-guard section** from
+  `coding-rules.md` while leaving the CI gate armed.
+- **`uninstall.sh --dry-run` no longer deletes anything.** It removed
+  directories while printing "Dry run - no files changed."
+- **The doctor reports a check with no caller as a gap**, rather than
+  "armed, 0 gaps" because the script exists on disk. Evidence showed an
+  800 KB file committing clean under a green doctor report. It also now
+  reports `.scaffold.toml` rule disables, which `--quiet` hid entirely.
+- **`uninstall.sh` names every file it leaves behind**, and its
+  `--help` no longer truncates its own usage list.
+- **The repo-adaptation overwrite warning works for non-`#` files**
+  such as `eslint.config.js` and `vitest.config.ts`.
+- **`*.scaffold-bak` files** are no longer left executable and
+  untracked where `git add -A` would commit them.
+- **CI: the eslint step is guarded** so it cannot hard-fail from the
+  global npx cache when `eslint.config.js` is absent.
+- **The test suite cannot silently shrink.** A case file that stopped
+  early dropped its assertions while the run still reported "0 failed";
+  there is now a floor. `exit "$FAIL"` also wrapped, so exactly 256
+  failures exited 0. The shellcheck job discovers shell files instead
+  of using a hand-maintained list that had drifted by three files, and
+  a new check catches the dogfooded hooks drifting from their
+  templates.
+- **Documentation corrections** across README, TECHNICAL and
+  `coding-rules.md`: the direct-invocation examples fed newline stdin
+  to scanners that read NUL (so a user following them scanned nothing),
+  the `.scaffold.toml` override examples used rule ids that match no
+  shipped pattern (so a copied override was inert), the eslint peer
+  list was missing three packages, several counts and inventories were
+  stale or disagreed, and the repo-adaptation marker convention was
+  documented nowhere a consumer would find it.
 
 - **Pre-commit no longer runs a JS tool that is not installed in the
   project.** The hook gated ESLint, Prettier and tsc on
@@ -34,6 +123,15 @@ versioning follows [SemVer](https://semver.org/).
   `lint.yml` workflow (self-hosted or cached runners carry an npx cache
   too). Regression test: case 42b2. This is also why the test suite showed 5 machine-dependent
   failures on any host with a stale `~/.npm/_npx` ESLint entry.
+
+### Tests
+
+- Coverage added for behavior that shipped untested and could have been
+  deleted with the suite green: check-red-green's entire detection
+  logic, the prettier, tsc and phpcs failure paths, the stash safety
+  guards, `install.sh --cursor` and `--commit-msg`, and
+  `install-verify.sh`'s auto-install branch (which had no seam to test
+  through).
 
 ## [v0.15.0] - 2026-09-01
 
