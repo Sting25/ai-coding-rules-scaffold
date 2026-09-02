@@ -5,7 +5,7 @@
 #
 # Install (from project root) — install.sh handles all of this:
 #   .githooks/pre-commit
-#   .githooks/lib/{check-size,check-large-files,check-patterns,check-filenames,check-secrets}
+#   .githooks/lib/{check-size,check-large-files,check-patterns,check-filenames,check-secrets,check-hygiene}
 #   git config core.hooksPath .githooks
 #
 # Patterns are read from:

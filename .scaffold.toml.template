@@ -60,12 +60,12 @@
 # is the audit trail for those edits. This file owns disable + severity only, so
 # a regex never has to live in two places.
 #
-# [rules."php/var_dump( or print_r( left in code"]
+# [rules."php/Remove var_dump() before committing - dumps to stdout"]
 # disabled = true
 # reason   = "legacy reporting module, tracked in JIRA-1234"
 # by       = "alex 2026-06-11"
 #
-# [rules."frontend/console.log left in code"]
+# [rules."frontend/Use the project logger, not console.log"]
 # severity = "warn"
 # reason   = "debug logging allowed in the spike branch"
 # by       = "sam 2026-06-11"
