@@ -46,12 +46,13 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 #
 # WHAT A FLOOR COUNTS is assertions ATTEMPTED: passed, plus the ones a case
 # reported as a COUNTED skip (see the SKIP counter below). The two are the same
-# number for every case that does not touch SKIP, so the floors above are
-# unchanged by this. It matters for a case whose whole body sits behind an
-# optional tool AND which says how many assertions that costs — cases/35 (14
-# workflows, actionlint) and cases/36 (3 verdicts, pytest). Counting only
-# passes would force those floors to 0, the bare machine's number, and a 0 floor
-# guards nothing: the file could be emptied and the run would still be green.
+# number for every case that does not touch SKIP, so the floors in the list
+# below are unchanged by this. It matters for a case whose whole body sits
+# behind an optional tool AND which says how many assertions that costs —
+# cases/35 (14 workflows, actionlint) and cases/36 (3 verdicts, pytest).
+# Counting only passes would force those floors to 0, the bare machine's
+# number, and a 0 floor guards nothing: the file could be emptied and the run
+# would still be green.
 # Counting the declared skips lets them carry their real numbers on every
 # machine, so an early stop is caught whether the tool was there or not. A case
 # that skips without saying how much it skipped still has to use a 0 floor
@@ -88,7 +89,7 @@ CASE_FLOORS=(
   "15-local-checks.sh:7"
   "16-coverage-gate.sh:6"
   "17-whole-tree-configs.sh:10"
-  "18-doctor.sh:30"
+  "18-doctor.sh:32"
   "19-test-workflow.sh:17"
   "20-paired-artifacts.sh:19"
   "21-ci-workflow-drift.sh:25"
