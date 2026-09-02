@@ -283,5 +283,30 @@ else
 fi
 rm -rf "$MF8"
 
+# (T) uninstall removes what this branch added, and says so. The manifest was
+#     left behind, never named, and kept .githooks from ever reaching "removed
+#     empty" (audit verify-5), which is the upgrade-path-4 leftover defect
+#     reintroduced by the new file. The .gitignore block install.sh appends was
+#     never named or removed. Both are asserted here, together with the half
+#     that must not break: the project's own ignore rules survive.
+MF9=$(mktemp -d)
+( cd "$MF9" && git init --quiet && echo '{"name":"x"}' >package.json \
+  && printf 'node_modules/\n' >.gitignore \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >/dev/null 2>&1
+( cd "$MF9" && "$SCAFFOLD_DIR/uninstall.sh" --all ) >"$HOOK_OUT" 2>&1
+if [ ! -e "$MF9/.githooks" ] \
+   && grep -q 'removed: *\.githooks/\.scaffold-manifest' "$HOOK_OUT" \
+   && grep -qF 'removed empty: .githooks' "$HOOK_OUT" \
+   && grep -q 'stripped: *scaffold ignore rules from .gitignore' "$HOOK_OUT" \
+   && grep -qx 'node_modules/' "$MF9/.gitignore" \
+   && ! grep -q 'scaffold-bak' "$MF9/.gitignore"; then
+  echo "  ✓ uninstall names and removes the manifest and its ignore block, keeping the project's rules"; PASS=$((PASS + 1))
+else
+  echo "  ✗ uninstall must remove the manifest and the ignore block it added, and keep the rest"
+  sed 's/^/      /' "$HOOK_OUT"
+  sed 's/^/      /' "$MF9/.gitignore" 2>/dev/null || true; FAIL=$((FAIL + 1))
+fi
+rm -rf "$MF9"
+
 rm -rf "$(dirname "$MFNEXT")"
 reset_repo
