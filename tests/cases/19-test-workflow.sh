@@ -11,7 +11,7 @@
 # tests.yml (removing the install.sh call site would fail it), --coverage-gate
 # must yield coverage.yml WITHOUT the plain tests.yml (reverting the
 # priority-order fix would fail it), and --no-test-workflow must both skip the
-# workflow AND print the recorded-skip line the "record every skip" rule
+# workflow AND print the recorded-skip line the "capture what you notice and what you defer" rule
 # demands (removing either half fails it).
 
 echo "cases/19: default-on test workflow (#97) + robustness fixes (#96)"

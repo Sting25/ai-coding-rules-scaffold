@@ -31,7 +31,7 @@
 # so pytest/vitest run on every PR/push, no coverage threshold. `--coverage-gate` swaps that for
 # `.github/workflows/coverage.yml` (same tests, plus a diff-cover patch-coverage gate), never both
 # installed at once. Only `--no-test-workflow` leaves a repo with no test execution in CI, and it
-# says so loudly in the summary below, per the "record every skip" rule.
+# says so loudly in the summary below, per the "capture what you notice and what you defer" rule.
 #
 # On re-run (upgrade): scaffold-owned code (the hook, .githooks/lib/*, the
 # commit-msg hook) is REFRESHED when it differs from the shipped version, so

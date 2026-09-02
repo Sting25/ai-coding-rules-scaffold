@@ -137,7 +137,7 @@ ensure_test_guard_rules_section() {
 # ever executing), the bug this closes. Three end states, decided in order:
 # (1) --no-test-workflow installs NEITHER workflow, the one way a repo ends
 # up with no test execution in CI, and it must say so loudly per
-# operational-rules.md's "record every skip" (unless a workflow from a prior
+# operational-rules.md's "capture what you notice and what you defer" (unless a workflow from a prior
 # run is already on disk, which keeps running either way); (2) --coverage-gate
 # (or coverage.yml already on disk) installs coverage.yml, which already runs
 # the tests AND gates patch coverage of changed lines, not assertion quality,
