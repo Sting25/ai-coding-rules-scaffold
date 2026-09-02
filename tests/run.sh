@@ -99,7 +99,7 @@ CASE_FLOORS=(
   "25-interactive-install.sh:6"
   "26-repo-adaptation-warn.sh:6"
   "27-test-guard.sh:9"
-  "28-check-patterns-scope.sh:16"
+  "28-check-patterns-scope.sh:20"
   "29-install-symlink-dirs.sh:4"
   "30-install-manifest.sh:14"
   "31-install-verify-offer.sh:5"
