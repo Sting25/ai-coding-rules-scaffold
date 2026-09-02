@@ -15,6 +15,7 @@
     "install-claude.sh",
     "install-verify.sh",
     "uninstall.sh",
+    "uninstall-drop-lang.sh",
     "scaffold-doctor.sh",
     "bin/",
     "githooks/",

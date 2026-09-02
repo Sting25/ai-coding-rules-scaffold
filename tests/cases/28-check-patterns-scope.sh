@@ -290,3 +290,152 @@ printf 'import os\npri''nt("debug")\n' >nomanifest.py
 git add nomanifest.py
 cp_ci_silent "no manifest at all stays silent" nomanifest.py
 reset_repo
+
+# --- dropping a language on purpose: the escape from the #159 guard ---------
+echo ""
+echo "uninstall.sh --drop-lang, the supported way to clear a #159 manifest entry:"
+
+# These run against their OWN throwaway project (not the shared fixture repo
+# above), because they install and uninstall for real; the shared repo's
+# check-patterns is only ever invoked, never re-installed.
+#
+# check-patterns fails CLOSED when the manifest records a
+# .forbidden-patterns/<lang>.txt that is no longer in the checkout, because an
+# absent file alone cannot say whether a config was REMOVED or never installed.
+# That left a project which genuinely stopped using Go stuck: install.sh only
+# ever ADDS pattern files and manifest_flush carries forward every entry a run
+# did not touch, so the entry never cleared and the guard failed forever.
+# `uninstall.sh --drop-lang=<name>` is the supported way out — it removes the
+# file and the entry TOGETHER — and these assert both halves of the bargain:
+# that the route works, and that NOTHING ELSE does it, which is the security
+# property the guard is made of.
+MFD=$(mktemp -d)
+( cd "$MFD" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" \
+  && echo '{"name":"x"}' >package.json \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --all-langs --no-verify ) >/dev/null 2>&1
+( cd "$MFD" && printf 'package main\n' >drop.go && git add drop.go ) >/dev/null 2>&1
+
+# _mfd_cp: run the installed check-patterns in $MFD over the one staged file,
+# --ci like lint.yml does (the removal is invisible precisely on the server
+# side), leaving its output in $HOOK_OUT and echoing the exit status.
+_mfd_cp() {
+  local rc=0
+  ( cd "$MFD" && printf '%s\0' drop.go | .githooks/lib/check-patterns --ci ) >"$HOOK_OUT" 2>&1 || rc=$?
+  printf '%s' "$rc"
+}
+# _mfd_entry: 0 when the manifest still records .forbidden-patterns/go.txt.
+_mfd_entry() { grep -q ' \.forbidden-patterns/go\.txt$' "$MFD/.githooks/.scaffold-manifest"; }
+
+# MFD-a. The precondition AND the discoverability half: with go.txt deleted and
+#        its entry still recorded, the guard fires, and the message names the
+#        supported route by its exact invocation rather than telling the user to
+#        edit the manifest. The error and the flag have to point at each other,
+#        or the route may as well not exist.
+rm -f "$MFD/.forbidden-patterns/go.txt"
+mfd_rc=$(_mfd_cp)
+if [ "$mfd_rc" -ne 0 ] \
+   && grep -qF '.forbidden-patterns/go.txt is missing' "$HOOK_OUT" \
+   && grep -qF "uninstall.sh --drop-lang=go" "$HOOK_OUT" \
+   && ! grep -qF 'delete its line' "$HOOK_OUT"; then
+  echo "  ✓ a removed pattern file fails closed and the message names 'uninstall.sh --drop-lang=go'"; PASS=$((PASS + 1))
+else
+  echo "  ✗ the #159 guard must fire and name the supported drop route (rc=$mfd_rc)"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+
+# MFD-b. THE SECURITY-CRITICAL ONE. A normal install/upgrade run must NEVER
+#        prune an entry whose file is absent. If it did, `git rm --cached
+#        .forbidden-patterns/backend.txt` plus any later run would silently
+#        disarm every rule in that file and #159 would be reopened with extra
+#        steps: absence would have become self-authorising. So run a real
+#        upgrade (plain --frontend: this project has no go.mod, so go.txt is not
+#        reinstalled either), and require that the entry survives AND the guard
+#        still fires. Asserts the successful-run case specifically — a run that
+#        failed for some other reason would prove nothing.
+mfd_up=0
+( cd "$MFD" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1 || mfd_up=$?
+mfd_rc=$(_mfd_cp)
+if [ "$mfd_up" -eq 0 ] && _mfd_entry && [ ! -e "$MFD/.forbidden-patterns/go.txt" ] \
+   && [ "$mfd_rc" -ne 0 ] && grep -qF '.forbidden-patterns/go.txt is missing' "$HOOK_OUT"; then
+  echo "  ✓ a normal install/upgrade run never prunes the entry, so the guard still fires"; PASS=$((PASS + 1))
+else
+  echo "  ✗ an install run must NOT clear a manifest entry whose file is gone (install rc=$mfd_up, hook rc=$mfd_rc)"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+
+# MFD-c. --dry-run previews both halves and touches neither, so the guard is
+#        still failing afterwards. The same guarantee the rest of this script's
+#        dry run makes, on the one path that rewrites the manifest.
+mfd_dry=0
+( cd "$MFD" && "$SCAFFOLD_DIR/uninstall.sh" --dry-run --drop-lang=go ) >"$HOOK_OUT" 2>&1 || mfd_dry=$?
+# Captured BEFORE _mfd_cp, which writes the same file.
+mfd_out=$(cat "$HOOK_OUT")
+mfd_rc=$(_mfd_cp)
+if [ "$mfd_dry" -eq 0 ] \
+   && grep -qF 'would update: .githooks/.scaffold-manifest' <<<"$mfd_out" \
+   && grep -qF 'Dry run — no files changed.' <<<"$mfd_out" \
+   && _mfd_entry && [ "$mfd_rc" -ne 0 ]; then
+  echo "  ✓ --dry-run --drop-lang previews the manifest rewrite and changes nothing"; PASS=$((PASS + 1))
+else
+  echo "  ✗ a dry-run drop must report the rewrite and leave the entry in place (rc=$mfd_dry, hook rc=$mfd_rc)"
+  printf '%s\n' "$mfd_out" | sed 's/^/      /'; FAIL=$((FAIL + 1))
+fi
+
+# MFD-d. THE ROUTE ITSELF: the entry and the file go together, and check-patterns
+#        is then SILENT — exit 0 AND nothing said about a missing config, so a
+#        guard that reported without failing could not pass as quiet either.
+#        The other tiers must still scan, or "silent" would also be satisfied by
+#        a scanner that had stopped working.
+mfd_drop=0
+( cd "$MFD" && "$SCAFFOLD_DIR/uninstall.sh" --drop-lang=go ) >"$HOOK_OUT" 2>&1 || mfd_drop=$?
+mfd_out=$(cat "$HOOK_OUT")
+mfd_rc=$(_mfd_cp)
+if [ "$mfd_drop" -eq 0 ] \
+   && ! _mfd_entry && [ ! -e "$MFD/.forbidden-patterns/go.txt" ] \
+   && [ -f "$MFD/.forbidden-patterns/frontend.txt" ] \
+   && grep -qF 'dropped the .forbidden-patterns/go.txt entry' <<<"$mfd_out" \
+   && [ "$mfd_rc" -eq 0 ] && ! grep -qF 'is missing' "$HOOK_OUT"; then
+  echo "  ✓ --drop-lang removes the file and its entry together, and check-patterns goes silent"; PASS=$((PASS + 1))
+else
+  echo "  ✗ --drop-lang must clear both halves and leave check-patterns silent (uninstall rc=$mfd_drop, hook rc=$mfd_rc)"
+  printf '%s\n' "$mfd_out" | sed 's/^/      /'; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+
+# MFD-e. A language that was never installed: a reported no-op, not an error and
+#        not a silent one. Two shapes of it — the one just dropped (so the route
+#        is idempotent, and a re-run cannot be what breaks a repo) and one this
+#        scaffold does not ship at all.
+mfd_noop=0
+( cd "$MFD" && "$SCAFFOLD_DIR/uninstall.sh" --drop-lang=go \
+    && "$SCAFFOLD_DIR/uninstall.sh" --drop-lang=elixir ) >"$HOOK_OUT" 2>&1 || mfd_noop=$?
+mfd_out=$(cat "$HOOK_OUT")
+if [ "$mfd_noop" -eq 0 ] \
+   && [ "$(grep -cF 'nothing to do' <<<"$mfd_out")" -eq 2 ] \
+   && [ "$(_mfd_cp)" -eq 0 ] \
+   && [ -f "$MFD/.forbidden-patterns/frontend.txt" ]; then
+  echo "  ✓ --drop-lang for a language that was never installed is a reported no-op"; PASS=$((PASS + 1))
+else
+  echo "  ✗ dropping a never-installed language must say so and change nothing (rc=$mfd_noop)"
+  printf '%s\n' "$mfd_out" | sed 's/^/      /'; FAIL=$((FAIL + 1))
+fi
+
+# MFD-f. secrets.txt and shell.txt are NOT optional — install.sh writes both in
+#        every mode, for every stack — so there is no "stopped using it" state to
+#        reach and the route refuses rather than disarming a tier that applies to
+#        every project. Asserted with the artifacts: non-zero exit, both files
+#        still on disk, and both still recorded.
+mfd_ref=0
+( cd "$MFD" && "$SCAFFOLD_DIR/uninstall.sh" --drop-lang=secrets ) >"$HOOK_OUT" 2>&1 || mfd_ref=$?
+mfd_ref2=0
+( cd "$MFD" && "$SCAFFOLD_DIR/uninstall.sh" --drop-lang=shell ) >>"$HOOK_OUT" 2>&1 || mfd_ref2=$?
+if [ "$mfd_ref" -ne 0 ] && [ "$mfd_ref2" -ne 0 ] \
+   && [ "$(grep -cF 'is not optional' "$HOOK_OUT")" -eq 2 ] \
+   && [ -f "$MFD/.forbidden-patterns/secrets.txt" ] && [ -f "$MFD/.forbidden-patterns/shell.txt" ] \
+   && grep -q ' \.forbidden-patterns/secrets\.txt$' "$MFD/.githooks/.scaffold-manifest" \
+   && grep -q ' \.forbidden-patterns/shell\.txt$' "$MFD/.githooks/.scaffold-manifest"; then
+  echo "  ✓ --drop-lang refuses the non-optional secrets.txt / shell.txt and leaves both armed"; PASS=$((PASS + 1))
+else
+  echo "  ✗ --drop-lang must refuse secrets/shell and change nothing (rc=$mfd_ref/$mfd_ref2)"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$MFD"

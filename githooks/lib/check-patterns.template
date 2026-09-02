@@ -378,10 +378,16 @@ done
 # starting to fail on an old install. uninstall.sh removes the manifest in both
 # its modes, so an uninstalled repo cannot be left failing either.
 #
-# There is no supported route that DROPS a language: install.sh only ever adds
-# pattern files, and the manifest keeps entries for files a later run did not
-# touch. So the message names the manual escape, deleting that one line, rather
-# than pointing at a re-run that would not clear it.
+# THE SUPPORTED ROUTE OUT is `uninstall.sh --drop-lang=<name>`, which removes
+# the pattern file and its manifest entry TOGETHER and so lands the repo in the
+# "never installed" state above. The message names it, because the alternative a
+# user reaches for otherwise — hand-editing a file whose own header says "do not
+# edit" — is the habit this guard can least afford to teach. Nothing INFERS the
+# drop: an entry whose file is absent is precisely the signal here, so pruning
+# such entries automatically anywhere (manifest_flush, an install run) would
+# make `git rm --cached` self-authorising and reopen this hole. install.sh
+# stays purely additive for that reason; the removal lives on the removal
+# script, behind an explicit flag naming the language.
 #
 # secrets.txt is skipped for the same reason the discovery loop skips it: it is
 # check-secrets' domain, and check-secrets already fails closed on its absence.
@@ -408,7 +414,8 @@ if [ ${#FILES[@]} -gt 0 ] && [ -f "$SCAFFOLD_MANIFEST" ] && [ -r "$SCAFFOLD_MANI
       case " $CHECK_PATTERNS_EXCLUDE " in *" $mbase "*) continue ;; esac
     fi
     if [ -e "$recorded" ] || [ -h "$recorded" ]; then continue; fi
-    mmsg="$recorded is missing but $SCAFFOLD_MANIFEST records the scaffold installing it here, so it was removed and every forbidden-pattern rule it carries has stopped running, in CI and in every fresh clone. Restore it, or delete its line from $SCAFFOLD_MANIFEST if that language was dropped on purpose (use 'git commit --no-verify' if intended)."
+    mname=${mbase%.txt}
+    mmsg="$recorded is missing but $SCAFFOLD_MANIFEST records the scaffold installing it here, so it was removed and every forbidden-pattern rule it carries has stopped running, in CI and in every fresh clone. Restore it, or — if this project dropped that language on purpose — run 'uninstall.sh --drop-lang=$mname' from your scaffold checkout, which removes the file and its manifest entry together; do not hand-edit $SCAFFOLD_MANIFEST (use 'git commit --no-verify' if intended)."
     if [ "$CI_MODE" -eq 1 ]; then echo "::error::$mmsg"; else echo "✗ $mmsg" >&2; fi
     FAILED=1
   done <<EOF_MANIFEST

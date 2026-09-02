@@ -86,6 +86,7 @@ UHLP=$(mktemp -d)
 if grep -qF -- "uninstall.sh --help" "$UHLP/help.txt" \
    && grep -qF -- "uninstall.sh --all" "$UHLP/help.txt" \
    && grep -qF -- "uninstall.sh --dry-run" "$UHLP/help.txt" \
+   && grep -qF -- "uninstall.sh --drop-lang=" "$UHLP/help.txt" \
    && ! grep -qF "set -euo pipefail" "$UHLP/help.txt"; then
   echo "  ✓ --help lists every flag it accepts, including --help"; PASS=$((PASS + 1))
 else
