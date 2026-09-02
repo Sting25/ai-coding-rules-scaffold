@@ -3,9 +3,11 @@
 # Reads NUL-separated file paths on stdin (produced by `git ... -z`). Auto-
 # discovers every `.forbidden-patterns/*.txt` (except secrets.txt, which is
 # check-secrets' domain) and scans the files whose extension the pattern file
-# claims. A pattern file declares its extensions with a header line:
+# claims. Extensions are matched CASE-INSENSITIVELY, so `src/BAD.PY` is scanned
+# by backend.txt just like `src/bad.py`. A pattern file declares its extensions
+# with a header line:
 #   # scaffold-extensions: py
-#   # scaffold-extensions: ts tsx js jsx vue
+#   # scaffold-extensions: ts tsx js jsx vue svelte
 # so a new language is added by dropping `<lang>.txt` with that header — no edit
 # to this script. backend.txt / frontend.txt / shell.txt have a built-in
 # fallback mapping for backward compatibility.
@@ -106,8 +108,21 @@ scan() {
   local config=$1
   shift
   local exts=("$@")
-  [ -f "$config" ] || return 0
+  # config_usable() has already proven this is a readable regular file.
   [ ${#FILES[@]} -eq 0 ] && return 0
+
+  # Fold the declared extensions to lowercase ONCE. The extension match below
+  # folds the path too, so `src/BAD.PY` is scanned by backend.txt (`py`) exactly
+  # like `src/bad.py`. Matching case-SENSITIVELY was a fail-OPEN bypass: a file
+  # renamed to an upper- or mixed-case extension matched no arm, was dropped
+  # before the scan, and committed with zero findings at both the hook and the
+  # whole-tree CI gate. check-filenames already folds with tr for this reason;
+  # this is the same convention. (check-size's extension list is a SKIP list, so
+  # a case mismatch there fails CLOSED — more scanning — and is left alone.)
+  local exts_lc=() ext
+  for ext in "${exts[@]}"; do
+    exts_lc+=("$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]')")
+  done
 
   # Rule-id prefix for .scaffold.toml lookups: the pattern file's stem, e.g.
   # `php` for php.txt. A rule's full id is "<stem>/<description>".
@@ -133,7 +148,21 @@ scan() {
     raw_descs+=("$description")
   done <"$config"
 
-  [ ${#raw_patterns[@]} -eq 0 ] && return 0
+  # A present-but-EMPTY pattern file (every rule line deleted or commented out)
+  # is the gutting analogue of deleting it: one commit disarms the whole tier
+  # while dodging the orchestrator's deletion guard, which only sees
+  # --diff-filter=D. check-secrets has failed CLOSED on this since 3ef4ad9;
+  # check-patterns silently returned 0, so `printf '# scaffold-extensions: py\n'
+  # > .forbidden-patterns/backend.txt` committed with no output at all and every
+  # backend rule gone. Same shape as check-secrets: a config that EXISTS yet
+  # yields zero patterns fails closed at both gates. (ABSENCE is different and
+  # still fine — a repo simply has no php.txt; that is the `[ -f ]` return above.)
+  if [ ${#raw_patterns[@]} -eq 0 ]; then
+    local emsg="$config has no patterns — the forbidden-pattern scan for $stem is disabled. Restore its patterns (use 'git commit --no-verify' or delete the file if intended)."
+    if [ "$CI_MODE" -eq 1 ]; then echo "::error::$emsg"; else echo "✗ $emsg" >&2; fi
+    FAILED=1
+    return 0
+  fi
 
   # Validate each pattern up-front. An invalid ERE here would otherwise
   # poison the combined regex (silently dropping every file) and produce
@@ -152,7 +181,16 @@ scan() {
     descriptions+=("${raw_descs[$i]}")
   done
 
-  [ ${#patterns[@]} -eq 0 ] && return 0
+  # Every configured pattern was an invalid ERE and got dropped — the config is
+  # corrupt and this tier would silently scan for nothing. Fail CLOSED, same
+  # reasoning as the empty-config guard above and the matching guard in
+  # check-secrets.
+  if [ ${#patterns[@]} -eq 0 ]; then
+    local vmsg="$config has no valid patterns (all were invalid regexes) — the forbidden-pattern scan for $stem is disabled. Fix the patterns (use 'git commit --no-verify' if intended)."
+    if [ "$CI_MODE" -eq 1 ]; then echo "::error::$vmsg"; else echo "✗ $vmsg" >&2; fi
+    FAILED=1
+    return 0
+  fi
 
   # Combine all patterns into one ERE so a single grep call per file decides
   # whether to drop into the per-pattern attribution loop. Cuts grep calls
@@ -177,11 +215,12 @@ scan() {
     use_prefilter=0
   fi
 
-  local file ext keep content cap_rc pat desc m
+  local file file_lc keep content cap_rc pat desc m
   for file in "${FILES[@]}"; do
     keep=0
-    for ext in "${exts[@]}"; do
-      case "$file" in *."$ext") keep=1; break ;; esac
+    file_lc=$(printf '%s' "$file" | tr '[:upper:]' '[:lower:]')
+    for ext in "${exts_lc[@]}"; do
+      case "$file_lc" in *."$ext") keep=1; break ;; esac
     done
     [ "$keep" -eq 1 ] || continue
 
@@ -235,6 +274,13 @@ scan() {
 # dropping a `<lang>.txt` with that header — no edit to this script. The three
 # original files have a built-in fallback so an older copy without the header
 # keeps working.
+#
+# The fallback must stay in sync with what the shipped pattern file declares.
+# It drifted once: frontend.txt gained `svelte` in its header while this arm
+# still read `ts tsx js jsx vue`, so a header-less frontend.txt left every
+# `.svelte` file (and with it the `{@html}` XSS rule) unscanned. backend.txt
+# (`py`) and shell.txt (`sh bash`) match their headers exactly. A test strips
+# the header and re-scans to keep the two definitions pinned together.
 exts_for() {
   local cfg=$1 hdr
   hdr=$(grep -m1 -E '^#[[:space:]]*scaffold-extensions:' "$cfg" 2>/dev/null \
@@ -242,10 +288,32 @@ exts_for() {
   if [ -n "$hdr" ]; then printf '%s' "$hdr"; return; fi
   case "$(basename "$cfg")" in
     backend.txt)  printf 'py' ;;
-    frontend.txt) printf 'ts tsx js jsx vue' ;;
+    frontend.txt) printf 'ts tsx js jsx vue svelte' ;;
     shell.txt)    printf 'sh bash' ;;
     *)            printf '' ;;
   esac
+}
+
+# A discovered config that EXISTS but is not a readable REGULAR file is a
+# disarm, not an uninstalled tier. Measured: `rm backend.txt;
+# ln -s /nonexistent backend.txt` made every `[ -f ]`/`-e` test false (test(1)
+# follows the link), so the tier was skipped in silence with exit 0, while the
+# orchestrator's deletion guard saw only a diff-filter T, not a D. Returns 1
+# and prints, so the caller fails CLOSED. `-h` is checked first: a symlink to a
+# real file is equally a disarm, since it points the scanner at content the
+# repo does not track. Same guard and wording as check-secrets.
+config_usable() {
+  local c=$1 why=""
+  if [ -h "$c" ]; then why="is a symlink, not a regular file"
+  elif [ ! -f "$c" ]; then why="is not a regular file"
+  elif [ ! -r "$c" ]; then why="is not readable"
+  fi
+  if [ -n "$why" ]; then
+    local m="$c $why — the forbidden-pattern scan cannot read its patterns and is disabled. Restore it as a regular readable file (use 'git commit --no-verify' if intended)."
+    if [ "$CI_MODE" -eq 1 ]; then echo "::error::$m"; else echo "✗ $m" >&2; fi
+    return 1
+  fi
+  return 0
 }
 
 FAILED=0
@@ -254,7 +322,10 @@ INCLUDED=0
 # scans all files, not by extension), so skip it here. Then apply the optional
 # INCLUDE/EXCLUDE basename filter documented in the header.
 for cfg in .forbidden-patterns/*.txt; do
-  [ -e "$cfg" ] || continue   # no glob match → literal string; skip
+  # `-e` alone is not enough: a DANGLING symlink is not -e, so a config swapped
+  # for one would be skipped here and never reach the config_usable() guard.
+  # Both false still means "no glob match → literal string", which is skipped.
+  if [ ! -e "$cfg" ] && [ ! -h "$cfg" ]; then continue; fi
   base=$(basename "$cfg")
   case "$base" in secrets.txt) continue ;; esac
   if [ -n "${CHECK_PATTERNS_INCLUDE:-}" ]; then
@@ -264,6 +335,13 @@ for cfg in .forbidden-patterns/*.txt; do
     case " $CHECK_PATTERNS_EXCLUDE " in *" $base "*) continue ;; esac
   fi
   INCLUDED=$((INCLUDED + 1))
+  # Before exts_for(), which greps the file: on an unreadable config that grep
+  # yields nothing, and a header-less-looking config falls through to the
+  # "skipped" warning and exit 0 — the fail-OPEN path this guard replaces.
+  if ! config_usable "$cfg"; then
+    FAILED=1
+    continue
+  fi
   cfg_exts=$(exts_for "$cfg")
   if [ -z "$cfg_exts" ]; then
     echo "warning: $cfg: no '# scaffold-extensions:' header and no built-in mapping — skipped" >&2

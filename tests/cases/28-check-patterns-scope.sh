@@ -75,3 +75,84 @@ CP_ENV=(CHECK_PATTERNS_INCLUDE=backend.txt)
 run_cp "INCLUDE still honored after reinstall" scope_debug.py scope_debug.ts
 
 reset_repo
+
+# --- check-patterns config integrity ---------------------------------------
+# Everything below invokes check-patterns directly with a NUL list, like the
+# scoping cases above, so each assertion pins check-patterns' own verdict rather
+# than whichever sibling check happens to reject the same commit first.
+echo ""
+echo "check-patterns config integrity:"
+
+# cp_run <name> <expect-substring> <fixture...>: the fixtures must be STAGED
+# already; asserts check-patterns exits non-zero AND says the expected thing.
+cp_run() {
+  local name=$1 expect=$2; shift 2
+  local rc=0
+  printf '%s\0' "$@" | .githooks/lib/check-patterns >"$HOOK_OUT" 2>&1 || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    echo "  ✗ $name: check-patterns exited 0, expected a finding"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  elif ! grep -qF "$expect" "$HOOK_OUT"; then
+    echo "  ✗ $name: non-zero but missing: $expect"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  else
+    echo "  ✓ $name"; PASS=$((PASS + 1))
+  fi
+}
+
+# 28g. CASE-INSENSITIVE EXTENSIONS. The extension match was case-SENSITIVE, so
+#      renaming a file to `src/BAD.PY` matched no arm of backend.txt, was dropped
+#      before the scan, and committed with zero findings at the hook AND at the
+#      whole-tree CI gate. check-filenames has folded case with tr for exactly
+#      this reason; check-patterns now does too.
+mkdir -p src
+printf 'import os\npri''nt("debug")\n' >src/BAD.PY
+git add src/BAD.PY
+cp_run "upper-case .PY extension is scanned" "structlog" src/BAD.PY
+reset_repo
+
+# 28h. Mixed case too (.Py), so the fix is a fold and not a second hard-coded arm.
+mkdir -p src
+printf 'import os\npri''nt("debug")\n' >src/Mixed.Py
+git add src/Mixed.Py
+cp_run "mixed-case .Py extension is scanned" "structlog" src/Mixed.Py
+reset_repo
+
+# 28i. GUTTED CONFIG FAILS CLOSED. Replacing backend.txt with just its header
+#      deleted every backend rule in one commit while dodging the orchestrator's
+#      deletion guard (which only sees --diff-filter=D), and check-patterns
+#      returned 0 with no output at all. check-secrets has failed closed on the
+#      same shape since 3ef4ad9; check-patterns now matches it.
+printf '# scaffold-extensions: py\n' >.forbidden-patterns/backend.txt
+printf 'import os\npri''nt("debug")\n' >gutted.py
+git add .forbidden-patterns/backend.txt gutted.py
+cp_run "gutted backend.txt fails closed" "has no patterns" gutted.py
+reset_repo
+
+# 28j. …and a config whose every rule is an invalid ERE is equally disabled, so
+#      it fails closed on the same reasoning rather than scanning for nothing.
+printf '# scaffold-extensions: py\n[unclosed\tbroken one\n(also unclosed\tbroken two\n' \
+  >.forbidden-patterns/backend.txt
+printf 'import os\npri''nt("debug")\n' >allbad.py
+git add .forbidden-patterns/backend.txt allbad.py
+cp_run "backend.txt with only invalid regexes fails closed" "has no valid patterns" allbad.py
+reset_repo
+
+# 28k. BUILT-IN FALLBACK PARITY. The `# scaffold-extensions:` header wins, but a
+#      pattern file without one falls back to a built-in map. frontend.txt gained
+#      `svelte` in its header while the fallback still read `ts tsx js jsx vue`,
+#      so on the fallback path every .svelte file (and the {@html} XSS rule with
+#      it) went unscanned. Strip the header to force that path and re-scan.
+grep -v '^#[[:space:]]*scaffold-extensions:' .forbidden-patterns/frontend.txt >fe-noheader.tmp
+mv fe-noheader.tmp .forbidden-patterns/frontend.txt
+printf '<p>{@html userInput}</p>\n' >fallback.svelte
+git add .forbidden-patterns/frontend.txt fallback.svelte
+cp_run "header-less frontend.txt still scans .svelte (fallback parity)" "XSS" fallback.svelte
+
+# 28l. CONTROL for 28k: with the header stripped, an extension the fallback DOES
+#      declare must still be scanned — otherwise 28k could pass because the
+#      fallback path is broken outright rather than because svelte was added.
+printf 'console.log("debug");\n' >fallback.ts
+git add fallback.ts
+cp_run "header-less frontend.txt still scans .ts (fallback control)" "console.log" fallback.ts
+reset_repo

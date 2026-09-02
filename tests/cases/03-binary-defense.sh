@@ -155,6 +155,45 @@ echo "AWS=AKIA""IOSFODNN7EXAMPLE" >.forbidden-patterns/creds.env
 git add .forbidden-patterns/creds.env
 assert_rejects "secret in .forbidden-patterns/creds.env is scanned (not skipped)" "AWS access key"
 
+# 22k2. …and so is a .txt there. Narrowing the dir skip to *.txt (22k) left the
+#       last file-level exemption in place: a credential parked in
+#       .forbidden-patterns/notes.txt passed the hook AND the whole-tree CI scan.
+#       The exemption a pattern config actually needs is per-LINE and only for
+#       the regex field, so a file that is not a loaded config is scanned whole.
+echo "AWS=AKIA""IOSFODNN7EXAMPLE" >.forbidden-patterns/notes.txt
+git add .forbidden-patterns/notes.txt
+assert_rejects "secret in .forbidden-patterns/notes.txt is scanned" "AWS access key"
+
+# 22k3. Rule-SHAPED does not mean exempt. A payload dressed as `<secret><TAB>desc`
+#       in a file that no check ever loads (no scaffold-extensions header, not one
+#       of the four built-in basenames) is still a payload, and is caught.
+printf 'AKIA''IOSFODNN7EXAMPLE\tlooks like a rule\n' >.forbidden-patterns/notes.txt
+git add .forbidden-patterns/notes.txt
+assert_rejects "rule-shaped secret in an unloaded config file is scanned" "AWS access key"
+
+# 22k4. NEGATIVE, and the reason the exemption exists at all: the shipped configs
+#       must stay clean. Their regex fields look exactly like the credentials they
+#       match (the AWS rule literally spells AKIA), so scanning them naively would
+#       fail every commit. Asserts the POSITIVE outcome — exit 0 on the real
+#       installed configs — not merely that one message is absent.
+if printf '%s\0' .forbidden-patterns/secrets.txt .forbidden-patterns/backend.txt \
+     .forbidden-patterns/frontend.txt .forbidden-patterns/shell.txt \
+     | .githooks/lib/check-secrets >"$HOOK_OUT" 2>&1; then
+  echo "  ✓ shipped pattern configs scan clean (regex fields exempt, exit 0)"; PASS=$((PASS + 1))
+else
+  echo "  ✗ shipped pattern configs self-matched — the per-line regex exemption is broken"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
+# 22k5. The exemption is the REGEX FIELD only, not the whole line: a secret in a
+#       rule's DESCRIPTION (after the TAB) in a loaded config is still caught.
+#       Without this, "redact the pattern field" could quietly become "skip the
+#       line" and the bypass would reopen one edit later.
+printf 'ZZZDECOYZZZ\tsee AKIA''IOSFODNN7EXAMPLE for the real key\n' >>.forbidden-patterns/backend.txt
+git add .forbidden-patterns/backend.txt
+assert_rejects "secret in a rule description is still scanned" "AWS access key"
+
 # ── Per-rule case sensitivity: the `(?-i)` marker (issue #67) ────────────────
 # check-secrets used to apply -i to EVERY rule. `ACCA` is composed entirely of
 # hex characters, so case-folded the AWS rule matched inside ordinary SHA-256
