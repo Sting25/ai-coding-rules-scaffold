@@ -21,6 +21,7 @@ if ! declare -f manifest_record >/dev/null 2>&1; then
   manifest_says_ours() { return 1; }
   _manifest_hash() { return 1; }
   print_manifest_failure_summary() { return 0; }
+  print_gitignore_failure_summary() { return 0; }
 fi
 
 # --- file ownership & the install/upgrade model -----------------------------
@@ -115,6 +116,7 @@ _mkdir_safe() {
 print_refused_writes_summary() {
   local d rc=0
   print_manifest_failure_summary || rc=1   # install-manifest.sh, same contract
+  print_gitignore_failure_summary || rc=1  # install-manifest.sh, same contract
   if [ -n "$SCAFFOLD_SYMLINK_DIRS" ]; then
     echo ""
     echo "INSTALL INCOMPLETE: nothing was written under these symlinked directories:"

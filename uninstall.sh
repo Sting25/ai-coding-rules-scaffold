@@ -168,6 +168,19 @@ clean_claude_md() {
   echo "kept:         CLAUDE.md — no scaffold block found, left untouched"
 }
 
+# backups_remain: true when any *.scaffold-bak file the installer could have
+# left is still on disk. Used to decide whether the ignore rules that cover
+# them may be removed.
+backups_remain() {
+  local f
+  for f in ./*.scaffold-bak* .githooks/*.scaffold-bak* .githooks/lib/*.scaffold-bak* \
+           .github/workflows/*.scaffold-bak* .forbidden-patterns/*.scaffold-bak* \
+           .claude/*.scaffold-bak* .cursor/*.scaffold-bak*; do
+    [ -e "$f" ] && return 0
+  done
+  return 1
+}
+
 # clean_gitignore: install.sh appends a marked block of ignore rules for the
 # artifacts it can leave behind (*.scaffold-bak, the manifest scratch files).
 # Nothing here ever removed it or even named it, so an uninstalled project kept
@@ -195,6 +208,16 @@ _gitignore_has_unmarked_rules() {
 clean_gitignore() {
   local has_begin=0 has_end=0
   [ -e ".gitignore" ] || return 0
+  # Safe mode keeps every *.scaffold-bak file, and says so, because those are
+  # the only copy of the edits they replaced. Stripping the rules that ignore
+  # them in the same run would leave them untracked and unignored, so the next
+  # `git add -A` commits them. That is the defect this scaffold fixes for its
+  # own scratch files, so do not recreate it here: while a backup survives, the
+  # rules protecting it survive too.
+  if [ "$REMOVE_ALL" -eq 0 ] && backups_remain; then
+    echo "kept:         scaffold ignore rules in .gitignore (they cover the *.scaffold-bak files kept above)"
+    return 0
+  fi
   if [ -L ".gitignore" ]; then
     echo "kept:         .gitignore is a symlink, left untouched (remove any '*.scaffold-bak' rules by hand)"
     return 0

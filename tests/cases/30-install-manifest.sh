@@ -308,5 +308,50 @@ else
 fi
 rm -rf "$MF9"
 
+# MF10. A read-only .gitignore must FAIL the install loudly, not report
+#       "updated:" and exit 0. The ignore rules are load-bearing: they keep the
+#       *.scaffold-bak copies (the only surviving record of an edit an install
+#       replaced) out of a routine `git add -A`. Reported by the independent
+#       verification of this branch: the append failed, the installer said it
+#       had updated the file, exit was 0, and the backups were committable.
+#       Note the redirection order trap this exercises: `cmd >>file 2>/dev/null`
+#       applies >>file FIRST, so the shell prints its own "Permission denied"
+#       before 2>/dev/null exists, and the failure does not reliably surface as
+#       a non-zero status either. Hence the explicit check plus verify-after-write.
+MFRO=$(mktemp -d)
+( cd "$MFRO" && git init --quiet && echo '{"name":"x"}' >package.json \
+  && printf 'node_modules/\n' >.gitignore && chmod 444 .gitignore ) >/dev/null 2>&1
+( cd "$MFRO" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
+ro_rc=$?
+chmod 644 "$MFRO/.gitignore" 2>/dev/null || true
+if [ "$ro_rc" -ne 0 ] \
+   && grep -qF 'could not write .gitignore' "$HOOK_OUT" \
+   && grep -qF 'INSTALL INCOMPLETE: the ignore rules were not added' "$HOOK_OUT" \
+   && ! grep -qF 'updated:      .gitignore' "$HOOK_OUT"; then
+  echo "  ✓ a read-only .gitignore fails the install loudly instead of claiming success"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ read-only .gitignore: expected a non-zero exit, the error, and the summary (rc=$ro_rc)"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+
+# MF11. The positive control for MF10: a writable .gitignore still gets every
+#       shipped rule, and the run still exits 0. Without this, MF10 would pass
+#       against an installer that had simply stopped writing .gitignore at all.
+( cd "$MFRO" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
+rw_rc=$?
+missing_rule=""
+for r in '*.scaffold-bak' '*.scaffold-bak.*' '.githooks/.scaffold-manifest.new.*' '.githooks/.scaffold-manifest.tmp.*'; do
+  grep -qxF "$r" "$MFRO/.gitignore" 2>/dev/null || missing_rule="$r"
+done
+if [ "$rw_rc" -eq 0 ] && [ -z "$missing_rule" ] && grep -qx 'node_modules/' "$MFRO/.gitignore"; then
+  echo "  ✓ a writable .gitignore receives all four ignore rules and keeps the project's own"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ writable .gitignore: rc=$rw_rc, missing rule: ${missing_rule:-none}"
+  sed 's/^/      /' "$MFRO/.gitignore" 2>/dev/null; FAIL=$((FAIL + 1))
+fi
+rm -rf "$MFRO"
+
 rm -rf "$(dirname "$MFNEXT")"
 reset_repo

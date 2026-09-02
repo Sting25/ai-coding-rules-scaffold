@@ -280,6 +280,34 @@ SCAFFOLD_GITIGNORE_RULES='*.scaffold-bak
 .githooks/.scaffold-manifest.new.*
 .githooks/.scaffold-manifest.tmp.*'
 
+# _gitignore_write_failed: the ignore rules are load-bearing. They are what
+# keeps a backup copy (the only surviving record of an edit an install
+# replaced) out of a routine `git add -A`. Reporting "updated" when the write
+# failed is the silent-guardrail-failure shape this module refuses elsewhere.
+SCAFFOLD_GITIGNORE_ERROR=""
+_gitignore_write_failed() {
+  SCAFFOLD_GITIGNORE_ERROR="$1"
+  echo "error: could not write .gitignore ($1)." >&2
+  echo "       The ignore rules were NOT added, so the backup copies install.sh" >&2
+  echo "       leaves beside files it replaces, and the manifest scratch files an" >&2
+  echo "       interrupted write leaves in .githooks/, stay untracked and unignored:" >&2
+  echo "       a routine 'git add -A' will commit them." >&2
+  echo "       Make .gitignore writable and re-run install.sh, or add these by hand:" >&2
+  printf '%s\n' "$SCAFFOLD_GITIGNORE_RULES" | sed 's/^/         /' >&2
+}
+
+# print_gitignore_failure_summary: end-of-run half, so the failure survives in
+# the summary rather than only in scrollback. Returns 1 so install.sh's
+# `print_refused_writes_summary || exit 1` fails the run.
+print_gitignore_failure_summary() {
+  [ -n "$SCAFFOLD_GITIGNORE_ERROR" ] || return 0
+  echo ""
+  echo "INSTALL INCOMPLETE: the ignore rules were not added to .gitignore."
+  echo "  Reason: $SCAFFOLD_GITIGNORE_ERROR"
+  echo "  Until they are, install artifacts are committable by a routine 'git add -A'."
+  return 1
+}
+
 ensure_backup_gitignore() {
   local gi=".gitignore" rule missing=''
   if [ -L "$gi" ]; then
@@ -301,12 +329,32 @@ ensure_backup_gitignore() {
 $SCAFFOLD_GITIGNORE_RULES
 RULES
   [ -n "$missing" ] || return 0
+  # Check writability up front. A failed append redirection does not reliably
+  # propagate a non-zero status out of a compound command, so the write is also
+  # verified after the fact below: the rules are load-bearing (they keep the
+  # backup copies out of a routine `git add -A`), and reporting "updated" when
+  # nothing landed is the silent-guardrail-failure shape this module refuses.
+  if [ -f "$gi" ] && [ ! -w "$gi" ]; then
+    _gitignore_write_failed "not writable"
+    return 0
+  fi
+  if [ ! -f "$gi" ] && [ ! -w "." ]; then
+    _gitignore_write_failed "the project root is not writable"
+    return 0
+  fi
   # Append on its own line even if the existing file has no trailing newline.
   if [ -f "$gi" ] && [ -s "$gi" ] && [ -n "$(tail -c 1 "$gi")" ]; then
-    printf '\n' >>"$gi"
+    if ! printf '\n' 2>/dev/null >>"$gi"; then
+      _gitignore_write_failed "not writable"
+      return 0
+    fi
   fi
   # Delimited, so uninstall.sh can take exactly this block back out again and
   # nothing else (the same begin/end shape as the CLAUDE.md import block).
+  # The append is load-bearing: it is what keeps a backup copy out of a routine
+  # `git add -A`. A silent failure here would report success while leaving the
+  # artifacts unignored, which is the same shape as the manifest write failure
+  # this module already refuses to swallow, so check it the same way.
   {
     echo ""
     echo "# ai-coding-rules-scaffold:begin"
@@ -316,6 +364,16 @@ RULES
     echo "# behind. uninstall.sh removes this block."
     printf '%s' "$missing"
     echo "# ai-coding-rules-scaffold:end"
-  } >>"$gi"
+  } 2>/dev/null >>"$gi"
+  # Verify rather than trust: confirm every rule is actually present now.
+  while IFS= read -r rule; do
+    [ -n "$rule" ] || continue
+    if ! grep -qxF "$rule" "$gi" 2>/dev/null; then
+      _gitignore_write_failed "the append did not land"
+      return 0
+    fi
+  done <<VERIFY
+$SCAFFOLD_GITIGNORE_RULES
+VERIFY
   echo "updated:      .gitignore (ignores the backup copies and manifest scratch files install.sh can leave behind)"
 }

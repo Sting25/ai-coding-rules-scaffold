@@ -125,7 +125,8 @@ Tests run in CI by default: a plain install also drops `.github/workflows/tests.
 ```
 
 Before it copies anything else, every run (including the first) adds
-`*.scaffold-bak` / `*.scaffold-bak.*` to your `.gitignore`, creating the file
+`*.scaffold-bak`, `*.scaffold-bak.*`, `.githooks/.scaffold-manifest.new.*` and
+`.githooks/.scaffold-manifest.tmp.*` to your `.gitignore`, creating the file
 if you don't already have one, so an upgrade's backup copies never end up
 tracked. That happens before the symlink checks that can make the rest of
 the run refuse to write and exit non-zero, so a failed install still leaves

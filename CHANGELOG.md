@@ -25,8 +25,14 @@ versioning follows [SemVer](https://semver.org/).
   file that differs is a genuine hand-edit and is preserved and notified
   exactly as before; a file with no entry falls back to today's
   behavior, so nothing regresses for existing installs. A drifted file
-  is never recorded, so the mechanism cannot overwrite a user edit.
-  Every install now also has a recorded version on disk.
+  is never recorded, so the mechanism does not overwrite an edit it can
+  see. It is not proof, though: the manifest is a plaintext file with no
+  integrity check, so anything that rewrites it (a bad merge resolution,
+  an agent regenerating it from the current tree) could relabel an edit
+  as ours. A silent refresh therefore still takes a backup first, and a
+  manifest that cannot be written is a loud failure that ends the run
+  non-zero rather than a silent fallback. Every install now also has a
+  recorded version on disk.
 
 - **`check-patterns` honors `CHECK_PATTERNS_INCLUDE` / `CHECK_PATTERNS_EXCLUDE`
   (#149).** Space-separated pattern-file basenames select or skip
@@ -108,6 +114,17 @@ versioning follows [SemVer](https://semver.org/).
   of using a hand-maintained list that had drifted by three files, and
   a new check catches the dogfooded hooks drifting from their
   templates.
+- **`uninstall.sh` now removes and names the manifest**, and keeps the
+  ignore rules in place while any `*.scaffold-bak` file they cover is
+  still on disk. Stripping them alongside the backups it deliberately
+  keeps would leave those backups untracked and unignored, so the next
+  `git add -A` committed them.
+
+- **A `.gitignore` the installer cannot write is now a loud failure**
+  that ends the run non-zero. It previously printed "updated:" and
+  exited 0 while the rules never landed, leaving install artifacts
+  committable.
+
 - **`uninstall.sh` aborted mid-sweep on any absent path.** `force_remove`
   ended on a failing test, which returns 1 under `errexit`, so one missing
   file skipped the empty-directory pass, the hooksPath unwire, and the
