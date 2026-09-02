@@ -162,8 +162,33 @@ jobs:
         # AND prettier is installed — prettier formats, eslint checks correctness,
         # and the two intentionally don't overlap (no eslint-config-prettier).
         run: |
-          if { [ -f .prettierrc ] || [ -f .prettierrc.json ] || [ -f .prettierrc.js ] || [ -f prettier.config.js ]; } \
-             && node -e "require.resolve('prettier/package.json')" >/dev/null 2>&1; then
+          # prettier_config_present mirrors githooks/pre-commit.template verbatim:
+          # one predicate, so the hook and CI can never disagree about whether
+          # this is a prettier project. Covers every config filename prettier
+          # documents plus the package.json "prettier" key (read with node, since
+          # grepping for '"prettier"' also matches the devDependencies entry).
+          prettier_config_present() {
+            local c
+            for c in .prettierrc .prettierrc.json .prettierrc.json5 .prettierrc.yaml \
+                     .prettierrc.yml .prettierrc.toml .prettierrc.js .prettierrc.mjs \
+                     .prettierrc.cjs .prettierrc.ts .prettierrc.mts .prettierrc.cts \
+                     prettier.config.js prettier.config.mjs prettier.config.cjs \
+                     prettier.config.ts prettier.config.mts prettier.config.cts; do
+              if [ -f "$c" ]; then
+                return 0
+              fi
+            done
+            if [ -f package.json ] \
+               && node -e 'process.exit(Object.prototype.hasOwnProperty.call(require("./package.json"), "prettier") ? 0 : 1)' >/dev/null 2>&1; then
+              return 0
+            fi
+            return 1
+          }
+          if ! prettier_config_present; then
+            echo "no prettier config — skipping format check"
+            exit 0
+          fi
+          if node -e "require.resolve('prettier/package.json')" >/dev/null 2>&1; then
             changed=()
             while IFS= read -r -d '' f; do changed+=("$f"); done <changed.nul
             if [ ${#changed[@]} -eq 0 ]; then echo "no changed files — skipping format check"; exit 0; fi
@@ -172,7 +197,7 @@ jobs:
             # workflow so a fresh install never format-fails pre-existing files.
             npx --no-install prettier --check --ignore-unknown -- "${changed[@]}"
           else
-            echo "no prettier config or prettier not installed — skipping format check"
+            echo "prettier config present but prettier is not installed — skipping format check"
           fi
       - name: Type-check (tsc --noEmit)
         if: steps.detect.outputs.present == 'true'

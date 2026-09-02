@@ -224,3 +224,82 @@ else
 fi
 rm -rf node_modules "$CJSB"
 reset_repo
+
+# --- prettier config discovery + failure propagation ------------------------
+# The prettier block had no rejection test either: `|| FAILED=1` could be
+# deleted with the suite green. And the config predicate listed only four of
+# prettier's config filenames, so a .prettierrc.yaml project was never
+# format-checked in the hook OR in CI. One stub npx (fails for prettier,
+# succeeds otherwise) drives all three cases below.
+PRB=$(mktemp -d)
+cat >"$PRB/npx" <<'STUB'
+#!/bin/sh
+case "$*" in
+  *prettier*) echo "STUB PRETTIER: file needs formatting"; exit 1 ;;
+  *)          exit 0 ;;
+esac
+STUB
+chmod +x "$PRB/npx"
+mkdir -p node_modules/prettier
+echo '{"name":"prettier","version":"0.0.0-test"}' >node_modules/prettier/package.json
+
+# 42f. A YAML prettier config counts. This is the case the four-name list
+#      missed entirely: prettier reads .prettierrc.yaml, both layers skipped it,
+#      and nothing said so. Also proves the block propagates failure.
+printf 'semi: false\n' >.prettierrc.yaml
+echo 'const a = 1' >fmt.js
+git add .prettierrc.yaml fmt.js
+if PATH="$PRB:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ .prettierrc.yaml: hook accepted despite a prettier failure"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "STUB PRETTIER" "$HOOK_OUT"; then
+  echo "  ✓ .prettierrc.yaml is a prettier config and its findings fail the commit"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ .prettierrc.yaml: rejected, but prettier never ran"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
+# 42g. A top-level "prettier" KEY in package.json is a config (prettier reads
+#      it), so the format check must run.
+# reset_repo runs `git clean -fd`, which removes the untracked node_modules, so
+# each case below re-plants it.
+mkdir -p node_modules/prettier
+echo '{"name":"prettier","version":"0.0.0-test"}' >node_modules/prettier/package.json
+echo '{"name":"test","prettier":{"semi":false}}' >package.json
+echo 'const b = 1' >fmtkey.js
+git add package.json fmtkey.js
+if PATH="$PRB:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ package.json prettier key: hook accepted despite a prettier failure"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "STUB PRETTIER" "$HOOK_OUT"; then
+  echo "  ✓ a package.json \"prettier\" key is a prettier config"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ package.json prettier key: rejected, but prettier never ran"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
+# 42h. NEGATIVE: a prettier DEVDEPENDENCY is not a prettier config. The old
+#      `grep -qs '"prettier"' package.json` matched the dependency entry and ran
+#      a format check the project never configured (and that CI never ran), so
+#      the hook failed commits CI would have passed. With the failing stub still
+#      on PATH, an accepted commit is the proof prettier was not invoked; the
+#      eslint notice proves the hook did reach the JS tool section.
+mkdir -p node_modules/prettier
+echo '{"name":"prettier","version":"0.0.0-test"}' >node_modules/prettier/package.json
+echo '{"name":"test","devDependencies":{"prettier":"^3.0.0"}}' >package.json
+echo 'const c = 1' >fmtdep.js
+git add package.json fmtdep.js
+if PATH="$PRB:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1 \
+   && grep -qF "note: eslint not installed" "$HOOK_OUT"; then
+  echo "  ✓ a prettier devDependency alone is not treated as a prettier config"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ prettier devDependency: expected the JS section to run with no format check"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf node_modules "$PRB"
+reset_repo
