@@ -177,6 +177,90 @@ else
   echo "  - skipped php -l test (php not installed)"
 fi
 
+# --- phpcs integration -----------------------------------------------------
+# The phpcs block had no rejection test at all: `phpcs -- ... || FAILED=1` could
+# be deleted with the suite green. It also gated on PATH while lint.yml runs
+# ./vendor/bin/phpcs, so a composer-local phpcs (the normal install) was
+# invisible locally and enforced only server-side. All three cases below stub
+# phpcs so they are deterministic on a machine with no PHP toolchain.
+
+# Strip every directory that provides phpcs from PATH so "not on PATH" is a
+# property of the test, not of the host.
+NOPHPCS_PATH=
+OLDIFS=$IFS
+IFS=:
+for rd in $PATH; do
+  [ -x "$rd/phpcs" ] && continue
+  NOPHPCS_PATH="$NOPHPCS_PATH:$rd"
+done
+IFS=$OLDIFS
+NOPHPCS_PATH=${NOPHPCS_PATH#:}
+
+printf '<?xml version="1.0"?>\n<ruleset name="t"></ruleset>\n' >phpcs.xml
+printf '<?php\nclass Ok {}\n' >standards.php
+
+# (T) composer-local phpcs (./vendor/bin/phpcs) is found even with nothing on
+#     PATH, and its findings fail the commit.
+mkdir -p vendor/bin
+cat >vendor/bin/phpcs <<'STUB'
+#!/bin/sh
+echo "VENDOR PHPCS: 1 ERROR affecting 1 line"
+exit 1
+STUB
+chmod +x vendor/bin/phpcs
+git add phpcs.xml standards.php
+if PATH="$NOPHPCS_PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ vendor/bin/phpcs: hook accepted despite a phpcs failure"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "VENDOR PHPCS" "$HOOK_OUT"; then
+  echo "  ✓ composer-local vendor/bin/phpcs runs and its findings fail the commit"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ vendor/bin/phpcs: rejected, but vendor/bin/phpcs never ran"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf vendor
+reset_repo
+
+# (T) a phpcs on PATH (no vendor/bin) still runs, and still fails the commit.
+PHPCSB=$(mktemp -d)
+cat >"$PHPCSB/phpcs" <<'STUB'
+#!/bin/sh
+echo "PATH PHPCS: 1 ERROR affecting 1 line"
+exit 1
+STUB
+chmod +x "$PHPCSB/phpcs"
+printf '<?xml version="1.0"?>\n<ruleset name="t"></ruleset>\n' >phpcs.xml
+printf '<?php\nclass Ok {}\n' >standards.php
+git add phpcs.xml standards.php
+if PATH="$PHPCSB:$NOPHPCS_PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ PATH phpcs: hook accepted despite a phpcs failure"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "PATH PHPCS" "$HOOK_OUT"; then
+  echo "  ✓ a phpcs on PATH runs and its findings fail the commit"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ PATH phpcs: rejected, but phpcs never ran"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$PHPCSB"
+reset_repo
+
+# (T) genuinely absent (no vendor/bin, nothing on PATH): the skip notice fires
+#     and the commit is allowed. The notice must survive the vendor/bin change.
+printf '<?xml version="1.0"?>\n<ruleset name="t"></ruleset>\n' >phpcs.xml
+printf '<?php\nclass Ok {}\n' >standards.php
+git add phpcs.xml standards.php
+if PATH="$NOPHPCS_PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1 \
+   && grep -qF "note: phpcs not installed" "$HOOK_OUT"; then
+  echo "  ✓ phpcs-unavailable skip prints a notice and still exits 0"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ phpcs-unavailable skip: expected a note on stderr and exit 0"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
 # --- Multi-language forbidden patterns (config-driven check-patterns) -------
 # Each language file declares its extensions via a `# scaffold-extensions:`
 # header and is auto-discovered by check-patterns. Samples come from the

@@ -312,10 +312,21 @@ if [ ${#STAGED_PHP[@]} -gt 0 ]; then
   fi
 fi
 if [ ${#STAGED_PHP[@]} -gt 0 ] && { [ -f phpcs.xml ] || [ -f phpcs.xml.dist ] || [ -f composer.json ]; }; then
-  if command -v phpcs >/dev/null 2>&1; then
-    phpcs -- "${STAGED_PHP[@]}" || FAILED=1
+  # vendor/bin FIRST, matching lint.yml: composer installs phpcs into the
+  # project's own vendor/bin, and gating on PATH alone meant the two layers
+  # could never agree. A composer-local phpcs was invisible here while CI ran
+  # it, so the standard was enforced only server-side.
+  PHPCS_CMD=
+  if [ -x vendor/bin/phpcs ]; then
+    PHPCS_CMD=./vendor/bin/phpcs
+  elif command -v phpcs >/dev/null 2>&1; then
+    PHPCS_CMD=phpcs
+  fi
+  if [ -n "$PHPCS_CMD" ]; then
+    "$PHPCS_CMD" -- "${STAGED_PHP[@]}" || FAILED=1
   else
     echo "note: phpcs not installed, skipping the local coding-standard check on staged PHP files." >&2
+    echo "      Looked in vendor/bin and \$PATH." >&2
     echo "      CI's lint job is the authoritative gate; install phpcs for local feedback." >&2
   fi
 fi
