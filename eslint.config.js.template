@@ -48,6 +48,23 @@ import tseslint from 'typescript-eslint';
 // `includeIgnoreFile` is ESLint's own supported way to do it. Guarded on
 // existence because it throws on a missing file, and a repo without a
 // .gitignore must still lint rather than fail to load its config.
+//
+// THE COST, stated plainly: .gitignore is now part of this lint config, and it
+// is the only part of it that does not look like one. `echo 'src/' >>
+// .gitignore` un-lints a whole tree in a diff nobody reads as a lint change —
+// and it fails OPEN, not loud: both gates (.githooks/pre-commit,
+// .github/workflows/lint.yml) hand eslint EXPLICIT staged/changed paths, so an
+// ignored-but-modified file yields only the non-fatal "File ignored because of
+// a matching ignore pattern" warning and exit 0. gitignore does not untrack an
+// already-tracked file, so that code keeps being committed and shipped with
+// every rule below — no-floating-promises, no-explicit-any, the lot — silently
+// off. Treat .gitignore as a guarded file: review an addition to it exactly as
+// you would an edit to this file. Nothing in the scaffold catches this for you
+// today: no hook, no CI job and no scaffold-doctor check flags a source path
+// (src/, app/, lib/, packages/) appearing in .gitignore, so human review of that
+// one file is the whole guard. Do NOT "fix" this by deleting includeIgnoreFile —
+// a hardcoded ignore list re-opens #76 above and is editable in precisely the
+// same one-line way.
 const gitignorePath = path.resolve(import.meta.dirname, '.gitignore');
 const gitignore = fs.existsSync(gitignorePath) ? [includeIgnoreFile(gitignorePath)] : [];
 

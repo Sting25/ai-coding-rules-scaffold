@@ -16,6 +16,19 @@ name: coverage
 # (see RECOMMENDATIONS.md, "forcing tests"). A green check here is necessary, not
 # sufficient.
 #
+# TWO MORE CEILINGS, both of which produce a FALSE GREEN rather than a red, and
+# so are the ones worth knowing about:
+#   1. It measures PYTHON (pytest-cov) and VITEST, and nothing else. diff-cover
+#      scores a changed line it has no coverage data for as COVERED, not as 0%,
+#      so in a polyglot repo a brand-new untested .go/.rb/.rs/.java file, or a
+#      .ts file under Jest, used to pass at 100% by omission — the more of the
+#      repo the gate really covers, the more convincing that false green looks.
+#      The "blind spots" step below now FAILS the job on exactly that case.
+#   2. It is LINE-based. `branch = True` in .coveragerc feeds the local text
+#      report only; diff-cover has no branch option, so a changed one-line
+#      `if x: return` whose false arm is never taken scores as covered. The
+#      blind-spots step surfaces those as warnings — it does not fail on them.
+#
 # Runs on pull_request only — patch coverage is defined relative to the PR base.
 # Actions are pinned to a commit SHA (trailing comment = version); the SHAs match
 # lint.yml so Dependabot bumps them together. Tune DIFF_COVER_FAIL_UNDER below.
@@ -31,6 +44,19 @@ env:
   # needs a test exercising it. Lower it (e.g. 80) to ease adoption on an
   # existing codebase, then ratchet up.
   DIFF_COVER_FAIL_UNDER: "100"
+  # Extensions this repo has DELIBERATELY decided this gate will not measure,
+  # space-separated, no dots (e.g. "rb rs"). Everything else that changes in a
+  # language with no coverage step here fails the blind-spots step below rather
+  # than passing at 100% by omission. Same posture as .scaffold.toml: an
+  # exemption is allowed, but it has to be written down where a reviewer sees
+  # it. Put the reason in a comment on the line you add.
+  COVERAGE_UNMEASURED_OK_EXT: ""
+  # Individual PATHS this gate is not expected to measure, space-separated
+  # fnmatch globs or directory prefixes (e.g. "static/ tools/gen_*.py"). Prefer
+  # this over COVERAGE_UNMEASURED_OK_EXT: exempting "py" to excuse one
+  # unmeasurable script turns the gate off for the whole Python codebase. Same
+  # rule as above — put the reason in a comment on the line you add.
+  COVERAGE_UNMEASURED_OK_PATHS: ""
 
 jobs:
   patch-coverage:
@@ -166,7 +192,211 @@ jobs:
             echo "Add tests that emit coverage, or this gate cannot run."
             exit 1
           fi
+          # Echo the EFFECTIVE threshold into the log. The gate's one continuous
+          # off switch is this number, and "100" -> "0" leaves the workflow
+          # installed, the job green and the check name unchanged in branch
+          # protection. Printing it makes the downgrade visible in the CI log
+          # of the very PR that does it (scaffold-doctor.sh reports it too).
+          echo "patch-coverage threshold: ${DIFF_COVER_FAIL_UNDER}% of changed lines (scaffold default: 100)"
           # shellcheck disable=SC2086  # REPORTS is a deliberate space-split list
           diff-cover $REPORTS \
             --compare-branch "origin/$GITHUB_BASE_REF" \
             --fail-under "$DIFF_COVER_FAIL_UNDER"
+
+      # ── The gate's blind spots: what diff-cover scores green by omission ───
+      # Runs AFTER diff-cover, and only when diff-cover passed. That is on
+      # purpose: a red diff-cover already blocks the PR, and the failure mode
+      # this step exists for is the GREEN one — diff-cover printing "No lines
+      # with coverage information in this diff" and exiting 0.
+      #
+      # It FAILS (rather than warns) on unmeasured changed source files,
+      # matching what this workflow already does one step up when no report at
+      # all is produced ("Add tests that emit coverage, or this gate cannot
+      # run", exit 1) and what #71 established for the test steps: a coverage
+      # gate that cannot tell "measured and covered" from "never looked" is the
+      # bug, not a nit. Partially-covered branches are WARNINGS, not failures —
+      # diff-cover has no branch mode, so failing on them would enforce a
+      # stricter rule than DIFF_COVER_FAIL_UNDER advertises.
+      - name: Report the gate's blind spots (unmeasured files, partial branches)
+        run: |
+          python3 - <<'PY'
+          import fnmatch, os, re, subprocess, sys, xml.etree.ElementTree as ET
+
+          base = os.environ["GITHUB_BASE_REF"]
+          rng = "origin/%s...HEAD" % base   # same range diff-cover compares
+
+          # Languages this scaffold ships forbidden-pattern denylists for, i.e.
+          # the ones it already claims as in scope. Deliberately NOT a guess at
+          # "every source extension": a false failure here blocks real PRs.
+          CODE = {"py", "ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts",
+                  "vue", "svelte", "go", "java", "kt", "kts", "rb", "rs", "php"}
+          CODE -= {e.strip().lstrip(".") for e in
+                   os.environ.get("COVERAGE_UNMEASURED_OK_EXT", "").split()}
+
+          # Paths no coverage tool is expected to report, so requiring them to
+          # be measured would fail every ordinary PR. Tests are excluded from
+          # the denominator by .coveragerc's `omit` and vitest's `exclude`;
+          # config/type-stub files are excluded by convention.
+          # static/, public/ and assets/ are here for the Django/Rails/Flask
+          # shape: a browser asset in a repo with no JS test runner is not
+          # measurable by anything this workflow runs, so failing on it would
+          # block the first PR that touches one, with no remedy the author can
+          # act on. A repo that DOES measure them with vitest reports them
+          # normally and never reaches this list.
+          SKIP_DIR = ("node_modules/", "dist/", "build/", "vendor/", "coverage/",
+                      ".venv/", "venv/", "migrations/", "__tests__/", "tests/",
+                      "test/", "spec/", "__mocks__/", "e2e/", "fixtures/",
+                      "static/", "public/", "assets/")
+          SKIP_RE = re.compile(
+              r"(^|/)(test_[^/]+\.py|conftest\.py|setup\.py|__init__\.py"
+              r"|[^/]+_test\.[^/]+|[^/]+\.(test|spec)\.[^/]+"
+              r"|[^/]+\.config\.[^/]+|[^/]+\.d\.ts)$")
+
+          # Per-PATH exemption. The extension escape hatch is the wrong grain
+          # for the common case: one unmeasurable `scripts/deploy.py` should not
+          # cost the gate every .py file in the repo.
+          OK_PATHS = [p for p in
+                      os.environ.get("COVERAGE_UNMEASURED_OK_PATHS", "").split()
+                      if p]
+
+          def path_exempt(f):
+              # fnmatch globs ("tools/gen_*.py"); a bare prefix ("static/")
+              # matches everything under it. fnmatch's * crosses "/", which is
+              # the lenient direction and the one that cannot fail a good PR.
+              for p in OK_PATHS:
+                  if fnmatch.fnmatch(f, p) or f.startswith(p.rstrip("/") + "/"):
+                      return True
+              return False
+
+          def parts(p):
+              return tuple(p.replace("\\", "/").strip("/").split("/"))
+
+          def changed():
+              out = subprocess.run(
+                  ["git", "diff", "--name-only", "--diff-filter=ACM", rng],
+                  capture_output=True, text=True, check=True).stdout
+              return [f for f in out.split("\n") if f]
+
+          # Added/changed line numbers per file, from the same unified diff the
+          # gate scores. -U0 so only the touched lines land in the ranges.
+          def added_lines():
+              out = subprocess.run(["git", "diff", "-U0", rng],
+                                   capture_output=True, text=True, check=True).stdout
+              cur, acc = None, {}
+              for line in out.split("\n"):
+                  if line.startswith("+++ b/"):
+                      cur = line[6:]
+                  elif line.startswith("@@") and cur:
+                      m = re.search(r"\+(\d+)(?:,(\d+))?", line)
+                      if m:
+                          start = int(m.group(1))
+                          count = int(m.group(2) or 1)
+                          acc.setdefault(cur, set()).update(
+                              range(start, start + count))
+              return acc
+
+          reports = [r for r in ("coverage.xml", "coverage/cobertura-coverage.xml")
+                     if os.path.exists(r)]
+          measured, partial = [], []
+          for rpt in reports:
+              for cls in ET.parse(rpt).iter("class"):
+                  fn = cls.get("filename")
+                  if not fn:
+                      continue
+                  measured.append(parts(fn))
+                  for ln in cls.iter("line"):
+                      cc = ln.get("condition-coverage", "")
+                      if ln.get("branch") == "true" and cc and not cc.startswith("100%"):
+                          partial.append((fn, int(ln.get("number", "0")), cc))
+
+          def is_measured(path):
+              # Match on a path SUFFIX in either direction: coverage.py under
+              # `source = pkg` emits paths relative to pkg/, vitest emits them
+              # relative to the repo root. Erring toward "measured" keeps this
+              # step from failing a PR whose file really was in the report.
+              #
+              # KNOWN COST of that leniency: a report entry with ONE path
+              # component degrades to a basename match, so a measured
+              # root-level `utils.py` marks a changed `services/utils.py` as
+              # measured and this step stays quiet about it. That is a MISS
+              # (the file is still scored green by diff-cover), never a false
+              # failure — the deliberate trade, since the alternative fails
+              # PRs in every repo full of index.ts/__init__.py. If your layout
+              # emits one-component paths, set `source` to the package root so
+              # coverage.py emits qualified paths.
+              cp = parts(path)
+              for mp in measured:
+                  n = min(len(cp), len(mp))
+                  if n and cp[-n:] == mp[-n:]:
+                      return True
+              return False
+
+          unmeasured = []
+          for f in changed():
+              ext = f.rsplit(".", 1)[-1] if "." in f else ""
+              if ext not in CODE or SKIP_RE.search(f):
+                  continue
+              # Any dot-prefixed path component is tooling, not measured source:
+              # .eslintrc.js, .storybook/main.ts, .github/scripts/*.js. No
+              # coverage tool reports these, so requiring them would fail a PR
+              # that only touched config.
+              if any(c.startswith(".") for c in parts(f)):
+                  continue
+              # Leading "/" on both sides so "tests/" matches a top-level
+              # tests/ as well as a nested one, and never a "mytests/" prefix.
+              if any(("/" + d) in ("/" + f) for d in SKIP_DIR):
+                  continue
+              if path_exempt(f):
+                  continue
+              if not is_measured(f):
+                  unmeasured.append(f)
+
+          al = added_lines()   # hoisted: one `git diff -U0`, not one per line
+
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          def say(line):
+              print(line)
+              if summary:
+                  with open(summary, "a") as fh:
+                      fh.write(line + "\n")
+
+          say("### patch-coverage blind spots")
+          say("- reports read: %s" % (", ".join(reports) or "none"))
+          say("- changed source files with NO coverage data: %d" % len(unmeasured))
+          say("- changed lines with a partially-covered branch: %d" % len(
+              [p for p in partial if p[1] in al.get(p[0], ())]))
+
+          for fn, num, cc in partial:
+              if num in al.get(fn, ()):
+                  print("::warning file=%s,line=%d::partially-covered branch (%s). "
+                        "diff-cover is line-based and scores this as COVERED; the "
+                        "untaken arm is untested." % (fn, num, cc))
+
+          if unmeasured:
+              for f in unmeasured:
+                  print("::error file=%s::changed file produced no coverage data at "
+                        "all. diff-cover scores it as COVERED by omission, so the "
+                        "100%% gate cannot see it." % f)
+              say("")
+              say("**FAILED**: no coverage report mentions the files above. "
+                  "Three different causes look identical from here, so rule "
+                  "them out in this order:")
+              say("1. The file is in a language this workflow DOES measure, but "
+                  "the runner never walked it. For Python that is usually a "
+                  "directory that is not an importable package: coverage.py's "
+                  "`source = .` descends into packages, so `scripts/deploy.py` "
+                  "with no `scripts/__init__.py` is invisible. Add the "
+                  "`__init__.py`, or name the directory in .coveragerc's "
+                  "`source`. For JS/TS check vitest.config.ts's "
+                  "`coverage.include` and `coverage.exclude`.")
+              say("2. The file is not something this repo tests at all (a "
+                  "generated file, a one-off script). Name the PATH in "
+                  "COVERAGE_UNMEASURED_OK_PATHS — that exempts the path, not "
+                  "the language.")
+              say("3. The file is in a language this workflow does not measure "
+                  "(it runs pytest-cov and vitest only). Add a coverage step "
+                  "emitting Cobertura for it, or, if this repo has decided not "
+                  "to gate that language at all, list the extension in "
+                  "COVERAGE_UNMEASURED_OK_EXT with a reason.")
+              sys.exit(1)
+          PY

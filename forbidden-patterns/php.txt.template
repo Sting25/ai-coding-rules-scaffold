@@ -12,9 +12,73 @@
 (^|[^A-Za-z_>])dump[[:space:]]*\(	Remove dump() (var-dumper/Laravel/Symfony) before committing
 (^|[^A-Za-z_])xdebug_break[[:space:]]*\(	Remove xdebug_break() before committing
 
+# --- Security: RCE / command-injection / TLS sinks ---
+# php -l (the only PHP job the CI template runs) is a syntax check and flags
+# none of these, and no other layer of the scaffold sees them.
+#
+# Only two rules run blocking, because only two survived being measured
+# against ~20,400 real .php files (symfony, laravel/framework, WordPress,
+# phpunit, doctrine/dbal, guzzle, php-src). Blanket bans on exec(), shell_exec()
+# and friends, unserialize() and extract() did NOT survive: on that corpus they
+# fired 482 times and essentially every hit was legitimate code - proc_open()
+# with an argv array (the very "fixed argv" the advice asks for), shell_exec(
+# 'stty -g') with a constant command, exec('ln -s '.escapeshellarg($t)),
+# unserialize(serialize($e)) round-trips, unserialize($v, ['allowed_classes' =>
+# false]) (the hardened form), extract($__data, EXTR_SKIP) in a view renderer,
+# and 'extract('.$type.' from ' built as a SQL string. They are kept opt-in at
+# the bottom of this file instead of shipped blocking.
+#
+# A third rule - "RCE sink fed straight from request data", system($_GET['cmd'])
+# and friends - used to ship blocking here and no longer does. On the same
+# ~20,400 files it produced exactly one hit, and that hit was a false positive
+# (a guzzle security regression test); it also fired on the HARDENED
+# unserialize($_COOKIE['x'], ['allowed_classes' => false]), which is the safe
+# usage, and it never carried the comment guard, so linter messages, audit-log
+# strings and `// unserialize($_COOKIE[...])` comments matched it. A measured
+# precision of 0/1 is not a gate. A narrowed version is opt-in below.
+#
+# What keeps the eval() and CURLOPT rules quiet is a "nothing that opens a
+# comment earlier on the line" guard: no `*`, `/` or `#` may precede the match,
+# so `// eval(...)`, `# CURLOPT_SSL_VERIFYHOST => 0`, ` * @see eval()` docblock
+# prose and a commented-out `// CURLOPT_SSL_VERIFYPEER => false` never fire.
+# (Both examples name rules that actually ship blocking; system() does not - it
+# is opt-in at the bottom of this file.) The CURLOPT rule bars `'` and `"`
+# before the match as well, so a security tool's own rule
+# table (`['CURLOPT_SSL_VERIFYPEER => false' => 'MITM risk']`) and
+# `$pattern = "CURLOPT_SSL_VERIFYHOST, 0"` stay silent; it accepts `false`,
+# `FALSE` and `False`. eval() additionally requires the character immediately
+# before it to be punctuation other than `.`, `>`, `:`, `$` or a quote, so
+# `$c->eval(`, `Registry::eval(`, `$s.'x'.eval(`, the string `'eval()\'d code'`
+# and the method declaration `public function eval(` stay silent too, and it
+# requires a real argument, so a bare `eval()` written as prose - in an
+# undecorated block comment, a heredoc sample or HTML copy - does not fire.
+# The cost is recall: a call on a line that already contains a `/`, `*` or `#`
+# earlier (`$r = 1/2; eval($c);`) is not seen, and neither is an `eval(` whose
+# argument starts on the next line. The CURLOPT rule's extra `'`/`"` bar costs
+# recall the same way, and this is its most likely miss in real code: an
+# option ARRAY that quotes any earlier key -
+# `curl_setopt_array($ch, ['timeout' => 5, CURLOPT_SSL_VERIFYPEER => false]);`
+# - is a genuine disabled-verification call that the rule does not see, because
+# the `'` around `timeout` trips the guard before the constant is reached.
+# Measured recall on the corpus went 4 -> 3 when that quote guard went in.
+# That trade is deliberate - a missed call costs one finding, a false positive
+# costs the gate.
+# Backticks (PHP's shell-exec shorthand) are NOT covered: a regex cannot tell
+# `$cmd` from a backtick in a comment or a Markdown docblock.
+(^[[:space:]]*|^[^*/#]*(=>|[^A-Za-z0-9_.>:$*/#'"[:space:]]|(return|echo|print|throw|yield|<\?php)[[:space:]])[[:space:]]*)eval[[:space:]]*\([[:space:]]*[^)[:space:]]	eval() executes arbitrary code - there is no safe way to build one from input
+^[^*/#'"]*CURLOPT_SSL_VERIFY(PEER|HOST)[[:space:]]*(,|=>)[[:space:]]*([Ff][Aa][Ll][Ss][Ee]|0)([^0-9]|$)	Disabling cURL TLS verification (MITM risk) - fix the cert/CA bundle instead
+
 # Optional (opt-in) — uncomment a line to enable it:
 # (^|[^A-Za-z_])print_r[[:space:]]*\(	print_r() leaks to stdout unless 2nd arg is true - opt in if your app never returns its output
 # (^|[^A-Za-z_])var_export[[:space:]]*\(	var_export() leaks to stdout unless 2nd arg is true - opt in if your app never returns its output
 # (^|[^A-Za-z_])(die|exit)[[:space:]]*\(	die()/exit() - often legitimate control flow; opt in if your codebase forbids it
 # (^|[^A-Za-z_])(TODO|FIXME|XXX)($|[^A-Za-z0-9_])	TODO/FIXME/XXX not allowed - open a ticket instead
-# (^|[^A-Za-z_.>:])(eval|assert)[[:space:]]*\(	Avoid eval()/assert(string) - arbitrary-code-execution risk; excludes ->assert and ::assert test calls
+# (^|[^A-Za-z_.>:$])assert[[:space:]]*\(	assert(string) evaluates its argument as code on PHP 7 - off by default: assert($x instanceof Foo) is the PHPStan/Psalm type-narrowing idiom (eval() is an active rule above)
+# ^[^*/#'"]*(^|[^A-Za-z0-9_>:$])(system|passthru|shell_exec|exec|popen|proc_open|pcntl_exec|eval|extract|create_function)[[:space:]]*\([^)]*\$_(GET|POST|REQUEST|COOKIE|FILES)($|[^A-Za-z0-9_])	RCE sink fed straight from request data (system($_GET['cmd'])) - off by default: it hit once in ~20,400 real files and that hit was a false positive. unserialize() and assert() are excluded here - unserialize($_COOKIE[..], ['allowed_classes' => false]) is the hardened form and assert(isset($_GET['id'])) is a plain boolean check
+#
+# Measured on ~20,400 real .php files, the three blanket sink bans below fire
+# almost exclusively on legitimate code. Enable one only if your codebase has
+# genuinely retired the construct; expect to scaffold-allow existing call sites.
+# (^[[:space:]]*|^[^*/#]*(=>|[^A-Za-z0-9_.>:$*/#'"[:space:]]|(return|echo|print|throw|yield|<\?php)[[:space:]])[[:space:]]*)(system|passthru|shell_exec|exec|popen|proc_open|pcntl_exec)[[:space:]]*\(	Shell-execution sink - 135 hits on the corpus, ~all legitimate (proc_open() with an argv array, shell_exec('stty -g'), exec(...escapeshellarg($x))); enable only if you never shell out
+# (^[[:space:]]*|^[^*/#]*(=>|[^A-Za-z0-9_.>:$*/#'"[:space:]]|(return|echo|print|throw|yield|<\?php)[[:space:]])[[:space:]]*)unserialize[[:space:]]*\(	unserialize() is PHP object injection when fed untrusted input - but 320 corpus hits were serialize() round-trips, cache stores and the hardened unserialize($v, ['allowed_classes' => false]); enable only if you never serialize your own data
+# (^[[:space:]]*|^[^*/#]*(=>|[^A-Za-z0-9_.>:$*/#'"[:space:]]|(return|echo|print|throw|yield|<\?php)[[:space:]])[[:space:]]*)extract[[:space:]]*\(	extract() overwrites arbitrary locals - but all 9 corpus hits were view renderers doing extract($__data, EXTR_SKIP) or SQL strings; enable only if you never render PHP templates

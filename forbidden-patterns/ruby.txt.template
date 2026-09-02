@@ -4,7 +4,9 @@
 # Separator is TAB - patterns can contain literal `|` for ERE alternation.
 # Patterns are case-SENSITIVE, scanned against the staged blob. Copy to your
 # project as `.forbidden-patterns/ruby.txt`.
-# Targets debugger breakpoints (binding.pry/irb, byebug, debugger) and pp.
+# Debug rules target breakpoints (binding.pry/irb, byebug, debugger) and pp; a
+# second block below targets code-execution and TLS-downgrade sinks. Command
+# injection is NOT covered - see the NOT COVERED note in that block.
 # Rails.logger and raise are intentionally NOT banned. puts/p are FP-prone
 # for CLI tools and ship commented below.
 # The `debugger` pattern excludes a trailing `:` so the `debugger:` keyword/hash
@@ -18,8 +20,111 @@
 (^|[^A-Za-z_])save_and_open_(page|screenshot)($|[^A-Za-z0-9_])	Remove Capybara save_and_open_page/screenshot debug call before committing
 (^|[^A-Za-z_.])pp([[:space:]]+[^[:space:]=]|[[:space:]]*\()	Remove pp() pretty-print debug call; use the logger instead
 
-# Optional (opt-in) — uncomment a line to enable it:
+# --- Security: code-execution and TLS-downgrade sinks ---
+# install.sh ships this file to any repo with a Gemfile - a Rails app, but also
+# a plain gem or a CLI - so every rule here has to stay quiet on ordinary
+# library Ruby, not just on controllers. Each was first measured against ~16k
+# real .rb/.rake files (Ruby 3.1-3.3 stdlib, bundler/rubygems/rubocop/rails/
+# devise/sidekiq/haml/liquid gem sources, and the rubygems.org, mastodon and
+# forem applications), then re-measured adversarially over a ~34k-file corpus
+# that added Discourse and capistrano. That second pass DELETED one rule
+# outright and narrowed four more; the notes below describe the rules as they
+# now stand, not as they were first written.
+#
+# eval() is matched in CALL POSITION only - the name must start the statement or
+# follow an operator/`(`/`,` - so the declarations `def eval(expr)` and the name
+# `evaluate(` do not fire. `Kernel.eval`/`obj.eval` are excluded with them (the
+# `.` anchor): a deliberate trade for silence on every method of that name.
+# `#`, `-`, a quote and a backtick are excluded as the preceding character, so
+# a doc comment (`# eval code`), a CSP directive (`'wasm-unsafe-eval'`, which is
+# in every modern Rails content_security_policy initializer), a bare string
+# `'eval'` in a method-name list and a markdown `` `eval` `` all stay silent.
+# The argument must be a real one - `(` or whitespace-then-non-space - so
+# `start_with?("(eval")` does not fire either. The keyword branch (`... and
+# eval x`, `return eval x`) carries its own `^[^#]*` anchor, because without it
+# ordinary security prose - "do not eval untrusted strings", measured in
+# capistrano - fired on the `not eval` in the sentence. Cost of that anchor: an
+# `eval` further along a line that already contains a `#` (in a string or an
+# interpolation) is invisible to that branch. What is left is irreducible: a
+# class that defines its OWN `eval` and calls it unqualified looks exactly like
+# the Kernel#eval sink to a regex.
+# Marshal.load fires only where its argument is an EXPRESSION -
+# `Marshal.load(params[:blob])`, `Marshal.load(request.body.read)`,
+# `Marshal.load(@blob)`. A BARE LOCAL VARIABLE is exempt, and so is anything
+# starting `Mar` or `::`. That is deliberate: the deep-copy idiom is written
+# `Marshal.load(Marshal.dump(x))` but just as often
+# `dumped = Marshal.dump(x); Marshal.load(dumped)` (capistrano, twice) or
+# `Marshal.load(::Marshal.dump(x))`, and no regex can tell that variable from an
+# untrusted one. The earlier `Mar`-prefix-only exemption covered only the first
+# of those three spellings and fired on the other two.
+# KNOWN HOLE, stated plainly: a load from a variable you filled somewhere else
+# is NOT caught. `^[^#]*` keeps doc comments quiet - the un-anchored version
+# flagged 7 of them, including stdlib singleton.rb and rubocop's own cop
+# documentation.
+# YAML: only the explicitly unsafe entry points are banned, and only outside
+# comments (`^[^#]*`) - 17 of the 30 measured hits were doc comments, stdlib
+# psych.rb among them. Plain `YAML.load` / `YAML.load_file` are SAFE on
+# psych >= 4 (Ruby 3.1+), where load is safe_load - banning them would fire on
+# ordinary config code in every modern app. Pinned to psych 3.x? Enable the
+# opt-in load rule at the bottom of this file.
+# send()/public_send() fire only on `params[...]`, `params.fetch(...)`,
+# `params.dig(...)`, or a `request.`-derived params hash. `params.<anything
+# else>` is NOT enough: `params` is an ordinary local Hash in plenty of
+# non-Rails code, and `@channel.send(params.to_json)` has to stay silent. A
+# bare `request.` first argument is not enough either: `socket.send(request.to_s)`
+# and `client.send(request.body)` are ordinary networking code.
+# VERIFY_NONE fires only where the constant is ASSIGNED (`= `, `=>`, `name:`),
+# never where it is compared: `if ctx.verify_mode != OpenSSL::SSL::VERIFY_NONE`
+# is a check that verification is ON, and flagging it inverts its meaning.
+#
+# NOT COVERED - command injection. A rule for a shell string built by
+# interpolation (`system("git log #{ref}")`) used to ship here and was DELETED:
+# across the ~34k-file corpus it produced 37 hits and ZERO true positives, 21 of
+# them in Discourse alone - including commands already escaped through
+# `shelljoin`, and a `2>&1` redirect where the "pass an argument array instead"
+# fix it demanded is not expressible. Its `^[^#]*` guard was also defeated by
+# any earlier `#{...}` on the line, so it was not even reliably disarmed by a
+# comment. Nothing in this file flags `system` / `exec` / `spawn` / `IO.popen` /
+# `Open3.*` today; use a taint-aware analyzer (brakeman) for that class of bug.
+(^[[:space:]]*|[^A-Za-z0-9_.@:#'"`[[:space:]-][[:space:]]*|^[^#]*(^|[^A-Za-z0-9_])(return|yield|then|else|and|or|not)[[:space:]]+)eval([[:space:]]*\(|[[:space:]]+[^[:space:]])	eval() executes arbitrary code - never build one from input
+^[^#]*(^|[^A-Za-z_.])Marshal\.load[[:space:]]*\([[:space:]]*(([A-LN-Za-z_]|M[^a]|Ma[^r])[A-Za-z0-9_]*[.[(]|[^A-Za-z0-9_:[:space:])])	Marshal.load on untrusted bytes instantiates arbitrary objects (RCE) - use JSON
+^[^#]*(^|[^A-Za-z_.])(YAML|Psych)\.unsafe_load(_file)?[[:space:]]*\(	YAML.unsafe_load bypasses psych 4 safe loading and instantiates arbitrary objects (RCE) - use YAML.safe_load with permitted_classes
+(^|[^A-Za-z_])(send|public_send)[[:space:]]*\([[:space:]]*(params[[:space:]]*(\[|\.(fetch|dig)[[:space:]]*\()|request\.(params|query_parameters|request_parameters|GET|POST)[[:space:]]*(\[|\.))	send() with a request-derived method name invokes any method on the receiver - allowlist the name
+^[^#]*([^!=<>]=>?|[A-Za-z_]:)[[:space:]]*(::)?OpenSSL::SSL::VERIFY_NONE	Assigning VERIFY_NONE disables TLS cert validation (MITM risk) - fix the cert/CA instead
+
+# Optional (opt-in) - uncomment a line to enable it:
 # (^|[^A-Za-z_.])puts[[:space:]]*[\( ]	puts is common legitimate CLI output - enable only if your app uses a logger exclusively
 # (^|[^A-Za-z_.])p[[:space:]]+[^[:space:]=]	p is FP-prone (single-letter, also a common local var) - opt in with care
 # (^|[^A-Za-z_])(TODO|FIXME|XXX)($|[^A-Za-z0-9_])	TODO/FIXME/XXX not allowed - open a ticket instead
 # (^|[^A-Za-z_])(binding\.remote_pry|PryRemote)($|[^A-Za-z0-9_])	Remove remote-pry breakpoint before committing
+# Enable the next line ONLY on psych 3.x / Ruby <= 3.0, where YAML.load really is
+# the unsafe loader. On psych >= 4 (Ruby 3.1+) load IS safe_load and this fires
+# on every ordinary YAML.load(File.read(config)) in the app.
+# (^|[^A-Za-z_.])(YAML|Psych)\.load(_file)?[[:space:]]*\(	YAML.load/load_file instantiates arbitrary objects on psych < 4 - use YAML.safe_load (off by default: safe, and very common, on psych >= 4)
+#
+# `class_eval`/`module_eval`/`instance_eval` on a STRING or heredoc. Enable in an
+# APPLICATION repo only. It is the standard codegen idiom of every library that
+# defines methods dynamically: 371 hits across the measured corpus (ActiveRecord
+# associations, ActiveSupport, kaminari, ransack, simple_form...), all of them
+# benign `class_eval <<~RUBY` with compile-time-known names, and 0 in the three
+# real applications. A regex cannot see whether the interpolated name came from
+# a user, so on a gem or an engine this blocks nothing but legitimate macros.
+# (^|[^A-Za-z_])(instance_eval|class_eval|module_eval)[[:space:]]*\(?[[:space:]]*(["']|<<[-~]?["']?[A-Z_])	instance_eval/class_eval on a STRING or heredoc executes arbitrary code - define the method literally or allowlist the name
+#
+# Rails output safety (`.html_safe`, `raw()`) - the ERB twins of the
+# dangerouslySetInnerHTML / v-html / {@html} sinks frontend.txt bans. Both ship
+# OFF, for two measured reasons. (1) They are POLICY, not defect detection:
+# `"".html_safe`, `json_escape(json).html_safe` and `<<~HTML.html_safe` are safe
+# by construction, and the three real applications carry 48 `.html_safe` and 4
+# `raw()` call sites in .rb files - most already reviewed and marked
+# `rubocop:disable Rails/OutputSafety`. Enabling this blocks a first commit on
+# dozens of lines its author did not write and cannot fix. (2) `raw` is a common
+# ordinary method name outside Rails - REXML (stdlib) calls its own `raw()`.
+# Enable them on a greenfield app that has adopted "never mark HTML safe by
+# hand, always sanitize", and expect to audit the existing call sites first.
+# COVERAGE NOTE: this file scans `rb rake` only, so these two rules never see a
+# view. In the measured applications the same sinks appear on 169 lines of
+# .erb/.haml against 52 lines of .rb - the majority of the real exposure is in
+# templates that no pattern file currently claims.
+# \.html_safe($|[^A-Za-z0-9_?])	.html_safe marks a string as trusted HTML - a stored-XSS sink; sanitize instead (the .html_safe? predicate is allowed)
+# ^([^#]*[^A-Za-z0-9_.@:#[:space:]])?[[:space:]]*raw[[:space:]]*\([[:space:]]*[^)[:space:]]	Rails raw() bypasses HTML escaping (XSS) - sanitize it, or render it escaped

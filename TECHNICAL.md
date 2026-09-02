@@ -557,6 +557,15 @@ A `git pull` in the scaffold clone picks up new rules / patterns upstream.
 
 Safe mode only removes files whose content matches the current scaffold template byte-for-byte, so local edits are never lost. `AGENTS.md`, `coding-rules.md`, and `.forbidden-patterns/` are kept unless you pass `--all`. `CLAUDE.md` is treated as a regenerable pointer and removed if unchanged.
 
+**Dropping one language (`--drop-lang=<name>`):** the one partial mode, and the only supported way to stop using a language you installed a pattern file for. `check-patterns` fails closed when `.githooks/.scaffold-manifest` records a `.forbidden-patterns/<name>.txt` that is no longer in the checkout (#159) — an absent file on its own cannot say whether the config was _removed_ or _never installed_, and the entry is what tells them apart, so untracking one can never quietly disarm its rules in CI and in every fresh clone. `install.sh` is purely additive and the manifest carries forward every entry a run did not touch, so a project that genuinely stops using Go needs a way to say so:
+
+```sh
+~/src/ai-coding-rules-scaffold/uninstall.sh --drop-lang=go            # removes the file AND its manifest entry
+~/src/ai-coding-rules-scaffold/uninstall.sh --dry-run --drop-lang=go  # preview
+```
+
+It removes `.forbidden-patterns/go.txt` and that path's manifest line together, leaving the "never installed" state the guard stays silent about, and touches nothing else — commit both changes in the same commit. It is deliberately an explicit, separate invocation: no install or upgrade run ever prunes an entry whose file is missing, because that absence is exactly the signal the guard fires on. Dropping a language that was never installed is a reported no-op, and `secrets.txt` / `shell.txt` are refused — `install.sh` writes both in every mode for every stack, so neither is a language a project can stop using. Do not hand-edit the manifest to silence the guard; use this flag.
+
 ## What this scaffold deliberately omits
 
 | Concern                                                       | Where it lives instead                                                                               |

@@ -162,6 +162,12 @@ are working for: which check, which file, which marker or config
 entry, and why. A one-line suppression is invisible to anyone not
 reading the diff, and the person deciding whether it was justified
 is usually not reading the diff.
+Deleting is weakening: removing a test file, a test case, or the CI
+workflow that runs them stops the check existing at all, and does it
+quietly — nothing goes red, the diff reads as cleanup. Never delete a
+test in the same change as the code it covered. Name the test, why it
+no longer applies, and where the coverage went; "removed outdated
+tests" is not a justification, it is the sentence that hides one.
 _Anchor:_ a guardrail flagged a file; exempting it was one line and
 fixing it a few — but an exemption, unlike a fix, never expires, so
 suppressions accrete until the scanner no longer scans.
@@ -226,13 +232,16 @@ the tool's rewind had never seen the files.
 
 ### Back up and confirm before destructive work on live data
 
-A `DROP`, a `TRUNCATE`, an unbounded `DELETE` or `UPDATE`, or a
-migration against anything but a local throwaway store is a
-two-step action: confirm a current backup exists, then get an
-explicit yes that names the target and what will be lost.
-Automatic backups are the cheap half; the confirmation is the
-half that catches the wrong connection string. Quote the blast
-radius in table names and row counts, not as a pasted command.
+A `DROP`, a `TRUNCATE`, an unbounded `DELETE` or `UPDATE`, a
+migration, or a wipe of a bucket, document collection, or search
+index — a "reset the data and start clean" counts — against
+anything but a local throwaway store is a two-step action: confirm
+a current backup exists, then get an explicit yes that names the
+target and what will be lost. Automatic backups are the cheap
+half; the confirmation is the half that catches the wrong
+connection string. Quote the blast radius in the store's own units
+— table rows, bucket objects, collection documents — not as a
+pasted command.
 _Anchor:_ an agent ran a destructive operation against a
 production database it believed was a test instance and emptied
 it in seconds; there was no staging tier and no recent backup.
@@ -353,7 +362,13 @@ and required rediscovery from scratch.
 A feature PR that bumps the version strands the mainline on an
 unreleased number the moment it merges, and consumers that track the
 branch install untagged builds. Bump, changelog heading, tag, and
-release move together in a dedicated release change.
+release move together in a dedicated release change. The trigger is
+narrow: a staged edit to the project's own top-level `version` in
+`package.json`, `pyproject.toml`, `Cargo.toml` or an equivalent
+packaging manifest — never a dependency's pinned `version`, which is
+an ordinary bump. If the project uses Conventional Commits, that edit
+belongs only in a commit subject spelled `chore(release): vX.Y.Z` —
+not `release:`, not `build(release):`.
 _Anchor:_ a feature merge bumped to 0.18.0 while the latest tag was
 v0.17.0; marketplace installs tracked main and picked up an unreleased
 version, and an earlier install matched no released version at all.

@@ -34,6 +34,12 @@
 # Bare `--` was dropped as a leader (cross-language bypass); see check-secrets
 # for why inline suppression isn't a hostile-committer boundary. Use sparingly.
 #
+# A pattern file that the install manifest (.githooks/.scaffold-manifest)
+# records but that is no longer in the checkout fails CLOSED (#159). Auto-
+# discovery alone cannot see a REMOVED config, only an absent one, and the two
+# look identical; a manifest entry is what makes them different. A repo with no
+# manifest entry, or no manifest at all, keeps the old silent behavior.
+#
 # Output: human-readable on tty; ::error file=...:: when --ci is passed.
 # Exit:   0 if all OK, 1 if any violation.
 
@@ -350,6 +356,74 @@ for cfg in .forbidden-patterns/*.txt; do
   # shellcheck disable=SC2086  # word-splitting $cfg_exts into separate args is intentional
   scan "$cfg" $cfg_exts
 done
+
+# --- a pattern file the installer wrote that is no longer here ---------------
+# The discovery loop above can only iterate files that EXIST, so a config that
+# was REMOVED is indistinguishable from a language this project never installed:
+# both are absent, both scan nothing, both exit 0. That is the hole in #159.
+# `git rm --cached .forbidden-patterns/backend.txt` leaves the file on disk for
+# the person who ran it, so their hook stays armed, while CI's checkout and
+# every fresh clone have no backend.txt at all, and there every backend rule
+# stopped running with no output anywhere. Measured: violation present plus
+# backend.txt exits 1; the same violation with backend.txt absent exits 0 and
+# prints nothing.
+#
+# The install manifest (.githooks/.scaffold-manifest) supplies the half this
+# scanner lacked. An ENTRY for a path means "the installer wrote this file
+# here", so entry present plus file absent is unambiguously REMOVED and fails
+# closed, exactly like a gutted or unreadable config above. The silent cases
+# stay silent: no entry and no file is still "never installed" (a repo simply
+# has no php.txt), and a repo with NO manifest at all, which is every install
+# predating the manifest, falls back to precisely today's behavior rather than
+# starting to fail on an old install. uninstall.sh removes the manifest in both
+# its modes, so an uninstalled repo cannot be left failing either.
+#
+# THE SUPPORTED ROUTE OUT is `uninstall.sh --drop-lang=<name>`, which removes
+# the pattern file and its manifest entry TOGETHER and so lands the repo in the
+# "never installed" state above. The message names it, because the alternative a
+# user reaches for otherwise — hand-editing a file whose own header says "do not
+# edit" — is the habit this guard can least afford to teach. Nothing INFERS the
+# drop: an entry whose file is absent is precisely the signal here, so pruning
+# such entries automatically anywhere (manifest_flush, an install run) would
+# make `git rm --cached` self-authorising and reopen this hole. install.sh
+# stays purely additive for that reason; the removal lives on the removal
+# script, behind an explicit flag naming the language.
+#
+# secrets.txt is skipped for the same reason the discovery loop skips it: it is
+# check-secrets' domain, and check-secrets already fails closed on its absence.
+# INCLUDE/EXCLUDE are honored so a wrapper scoped to one tier is not failed by
+# another tier's removal. `-e` or `-h` means the path is still there in some
+# form, which is config_usable()'s case (a dangling symlink), not this one.
+#
+# The manifest is written by the installer and lives in the project, while
+# install-manifest.sh's read helpers are sourced only by install.sh and are not
+# shipped into a hook, so they cannot be called from here. This reads the same
+# `NF == 3` line shape those helpers parse, with the comment skip manifest_flush
+# uses; a path containing a space is not NF == 3 and is skipped, exactly as
+# _manifest_hash skips it.
+SCAFFOLD_MANIFEST=".githooks/.scaffold-manifest"
+if [ ${#FILES[@]} -gt 0 ] && [ -f "$SCAFFOLD_MANIFEST" ] && [ -r "$SCAFFOLD_MANIFEST" ]; then
+  while IFS= read -r recorded; do
+    [ -n "$recorded" ] || continue
+    mbase=${recorded##*/}
+    case "$mbase" in secrets.txt) continue ;; esac
+    if [ -n "${CHECK_PATTERNS_INCLUDE:-}" ]; then
+      case " $CHECK_PATTERNS_INCLUDE " in *" $mbase "*) ;; *) continue ;; esac
+    fi
+    if [ -n "${CHECK_PATTERNS_EXCLUDE:-}" ]; then
+      case " $CHECK_PATTERNS_EXCLUDE " in *" $mbase "*) continue ;; esac
+    fi
+    if [ -e "$recorded" ] || [ -h "$recorded" ]; then continue; fi
+    mname=${mbase%.txt}
+    mmsg="$recorded is missing but $SCAFFOLD_MANIFEST records the scaffold installing it here, so it was removed and every forbidden-pattern rule it carries has stopped running, in CI and in every fresh clone. Restore it, or — if this project dropped that language on purpose — run 'uninstall.sh --drop-lang=$mname' from your scaffold checkout, which removes the file and its manifest entry together; do not hand-edit $SCAFFOLD_MANIFEST (use 'git commit --no-verify' if intended)."
+    if [ "$CI_MODE" -eq 1 ]; then echo "::error::$mmsg"; else echo "✗ $mmsg" >&2; fi
+    FAILED=1
+  done <<EOF_MANIFEST
+$(awk 'substr($0, 1, 1) == "#" { next }
+       NF == 3 && $3 ~ "^\\.forbidden-patterns/[^/]+\\.txt$" { print $3 }' \
+     "$SCAFFOLD_MANIFEST" 2>/dev/null || true)
+EOF_MANIFEST
+fi
 
 if [ -n "${CHECK_PATTERNS_INCLUDE:-}" ] && [ "$INCLUDED" -eq 0 ]; then
   echo "warning: CHECK_PATTERNS_INCLUDE='$CHECK_PATTERNS_INCLUDE' matched no .forbidden-patterns/*.txt, nothing was scanned" >&2

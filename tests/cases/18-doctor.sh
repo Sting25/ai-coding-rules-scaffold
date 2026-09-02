@@ -127,6 +127,14 @@ doc_case "a pattern file with no scaffold-extensions header is reported" 1 \
   "no '# scaffold-extensions:' header" \
   bash -c 'printf "forbidden\tno header here\n" >.forbidden-patterns/custom.txt'
 
+# Both of those catch only the file gutted to ZERO active rules, which no
+# realistic hand-edit produces: a secrets.txt trimmed from its 42 shipped rules
+# to ONE stays "armed (1 active patterns)" and sails through every assertion
+# above. That drift case, and the narrowing companion that keeps it from going
+# red on a project's own added rules, are cases/37 — they judge the file's
+# CONTENT against the shipped template rather than its arming, which is the line
+# this file stops at.
+
 # (E) Overrides. scaffold-config fails open to EMPTY output when missing, and
 # empty output means "no override" — so a .scaffold.toml full of intentional
 # overrides is silently ignored.
@@ -415,5 +423,11 @@ else
   FAIL=$((FAIL + 1))
 fi
 rm -rf "$DOCT"
+
+# (L) The .gitignore-derived ESLint ignore check (#76) — eslint.config.js
+# calls includeIgnoreFile(.gitignore), so one appended .gitignore line can
+# un-lint tracked source at pre-commit AND in CI — is cases/37, with the
+# shipped-rule drift check: same content-vs-arming question, and it carries
+# its own eslint.config.js fixtures.
 
 reset_repo

@@ -25,6 +25,7 @@ select = [
     "PL",    # pylint subset (branches, statements)
     "PT",    # pytest style
     "RUF",   # ruff-specific rules
+    "PGH",   # pygrep-hooks: rejects the CODE-LESS suppression — bare `# type: ignore` (PGH003), bare `# noqa` (PGH004); the coded forms stay legal. Python twin of frontend.txt's @ts-ignore / @ts-nocheck ban
 ]
 
 # A CURATED flake8-bandit subset (not the whole "S" category — S603/S607/S404/

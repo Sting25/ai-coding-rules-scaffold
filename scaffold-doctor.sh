@@ -57,10 +57,23 @@ done
 
 # Captured BEFORE any cd: this is where scaffold-doctor.sh itself lives (the
 # npm package root, the Homebrew libexec dir, or a git clone), which is also
-# where install-lib.sh ships alongside it in all three distribution paths.
-# Used by the "paired artifacts" section below to reuse install.sh's own
-# detection logic instead of duplicating it.
+# where install-wiring.sh and scaffold-doctor-gates.sh ship alongside it in all
+# three distribution paths: the first lets the "paired artifacts" section reuse
+# install.sh's own detection logic, the second carries sections 9-12.
 SCAFFOLD_DIR="$(cd "$(dirname "$0")" && pwd)"
+# If dirname(1) is NOT on PATH (the narrowed PATH tests/cases/18-doctor.sh runs
+# this script under), the substitution is empty, `cd ""` is a no-op, and this
+# lands on the PROJECT directory instead. Every template comparison below then
+# finds no template; the notes in sections 8 and 10 say so out loud rather than
+# skipping in silence, which is the part that matters.
+# Sections 9-12 are SOURCED from beside this script, and losing THEM is not that
+# same degrading: inline they still RAN. So the module lookup — only the module
+# lookup — falls back to $0's own directory, through one symlink hop (a doctor
+# linked onto PATH), computed here: a relative $0 is relative to the caller's cwd.
+DOCTOR_DIR="$SCAFFOLD_DIR"; _d0=$0
+[ ! -L "$_d0" ] || { _t=$(readlink "$_d0"); case $_t in /*) _d0=$_t ;; *) _d0=${_d0%/*}/$_t ;; esac; }
+[ -f "$DOCTOR_DIR/scaffold-doctor-gates.sh" ] || [ "${_d0%/*}" = "$_d0" ] ||
+  DOCTOR_DIR="$(cd "${_d0%/*}" 2>/dev/null && pwd)" || DOCTOR_DIR="$SCAFFOLD_DIR"
 
 # The shipped checks read their config by BARE RELATIVE PATH
 # (".forbidden-patterns/secrets.txt", ".scaffold.toml"), which works because git
@@ -269,6 +282,49 @@ else
       fi
     fi
   done
+  # Baseline drift. Counting active patterns (above) only catches the file
+  # gutted to ZERO — the one state no realistic hand-edit produces. Deleting
+  # all but one of secrets.txt's rules leaves "armed (1 active patterns)" on
+  # screen while the AWS-key, JWT, PEM and hardcoded-credential rules are gone,
+  # and every other layer agrees: check-secrets fails closed only at zero, and
+  # pre-commit's DELETED_CONFIG guard only fires on whole-file deletion. These
+  # files are cp_pattern — scaffold-shipped but user-EXTENDED — so extra local
+  # rules are expected and healthy; only rules that were SHIPPED and are now
+  # absent are reported. Compared on the pattern column (tab-separated field 1)
+  # so a reworded description is not drift. A scaffold UPGRADE that adds new
+  # shipped rules lands here too, and correctly so: from this project's side
+  # "rules the scaffold ships that this repo does not run" is one state with
+  # one fix, whether it was reached by deleting them or by never merging them.
+  # A doctor copied out of the bundle on its own has nothing to compare against
+  # and would skip every file below in total silence — the same failure the
+  # paired-artifacts section already names out loud, and one this check must not
+  # inherit quietly: "no drift reported" would then mean "not looked at".
+  if [ -d .forbidden-patterns ] && [ ! -d "$SCAFFOLD_DIR/forbidden-patterns" ]; then
+    note "forbidden-patterns/ templates not found next to scaffold-doctor.sh ($SCAFFOLD_DIR): shipped-rule drift cannot be checked; re-fetch the full scaffold bundle, not just this one file"
+  fi
+  for cfg in .forbidden-patterns/*.txt; do
+    [ -e "$cfg" ] || continue
+    base=$(basename "$cfg")
+    tmpl="$SCAFFOLD_DIR/forbidden-patterns/$base.template"
+    # No template = a project-local pattern file (or a doctor copied without
+    # the bundle): nothing to compare against, and not a defect.
+    [ -f "$tmpl" ] || continue
+    # One awk pass, and only tools case 18's narrowed-PATH runs provide (awk,
+    # grep, sed): a doctor that dies on a missing coreutil would be its own bug.
+    missing=$(awk -F'\t' '
+      FNR == NR { if ($0 !~ /^[[:space:]]*(#|$)/) have[$1] = 1; next }
+      $0 ~ /^[[:space:]]*(#|$)/ { next }
+      !($1 in have) { print $1 }
+    ' "$cfg" "$tmpl" 2>/dev/null || true)
+    [ -n "$missing" ] || continue
+    nmiss=$(printf '%s\n' "$missing" | grep -c '' || true)
+    gap "$base is missing $nmiss shipped rule(s) — those patterns are not enforced by the hook or by CI (both read this one file)" \
+        "diff $cfg against forbidden-patterns/$base.template and merge the missing rules back, or re-run install.sh --force (yours is backed up to .scaffold-bak). If nothing was deleted here, this project is simply behind the scaffold release you just ran the doctor from — same line, same fix, and it clears on upgrade"
+    if [ "$QUIET" -eq 0 ]; then
+      printf '%s\n' "$missing" | sed -n '1,8{s/^/        - /;p;}'
+      [ "${nmiss:-0}" -le 8 ] || echo "        - ... and $((nmiss - 8)) more"
+    fi
+  done
 fi
 
 # --- 5. opt-in surfaces -----------------------------------------------------
@@ -413,31 +469,20 @@ else
   note "install-wiring.sh not found next to scaffold-doctor.sh ($SCAFFOLD_DIR): paired-artifact checks skipped"
 fi
 
-# --- 9. protections not enabled ----------------------------------------------
-# P-19b: this scaffold's users typically do not read code and often ask their
-# agent "run scaffold-doctor and tell me what is off" rather than reading the
-# report themselves. Section 5 above already notes two of these (gitleaks
-# hook, agent guardrails) mid-report; this promotes ALL of them, every
-# opt-in this project could have but does not, into one clearly titled
-# section near the end, so that question has one direct answer instead of a
-# note to spot among many. Pure presence checks: a hand-copied file counts
-# as "enabled" here, same as everywhere else in this script. Notes only,
-# same contract as every note() above: this never affects exit status.
-section "Protections not enabled"
-PNE_ANY=0
-_pne() { note "$1"; PNE_ANY=1; }
-[ -f .githooks/lib/check-gitleaks ]            || _pne "gitleaks hook (local secret scan, pre-commit): not installed. Enable with install.sh --gitleaks-hook"
-[ -f .github/workflows/gitleaks.yml ]          || _pne "gitleaks CI gate (unskippable secret scan): not installed. Enable with install.sh --gitleaks-ci"
-[ -f .github/workflows/dependency-review.yml ] || _pne "dependency-review CI gate (blocks a PR that adds a vulnerable/malicious dependency): not installed. Enable with install.sh --dependency-review"
-[ -f .github/workflows/zizmor.yml ]            || _pne "zizmor CI gate (audits your own GitHub Actions workflows): not installed. Enable with install.sh --zizmor-ci"
-[ -f .github/workflows/socket-security.yml ]   || _pne "Socket Firewall CI gate (blocks a malicious/typosquat package at install time): not installed. Enable with install.sh --socket-ci"
-[ -f .github/workflows/test-guard.yml ]        || _pne "test-guard CI gate (red-green: a new test must fail against the PR base before it may pass): not installed. Enable with install.sh --test-guard"
-[ -f .claude/settings.json ]                   || _pne "Claude Code agent guardrails: not installed. Enable with install.sh --claude"
-[ -f .cursor/hooks.json ]                      || _pne "Cursor agent guardrails: not installed. Enable with install.sh --cursor"
-[ -f .githooks/commit-msg ]                    || _pne "commit-msg hook (Conventional Commits): not installed. Enable with install.sh --commit-msg"
-[ -f .npmrc ]                                   || _pne "npm install-layer cooldown (.npmrc min-release-age, delays freshly published versions): not installed. Enable with install.sh --npm-cooldown"
-[ -f .claude/skills/coding-rules/SKILL.md ]     || _pne "Claude Code Skill (on-demand rules loading): not installed. Enable with install.sh --claude-skill"
-[ "$PNE_ANY" -eq 1 ] || ok "every opt-in protection is enabled in this project"
+# --- 9-12. the gates beyond the hook -----------------------------------------
+# The CI backstop, the patch-coverage gate, the lint ignore derivation and the
+# not-enabled inventory live in scaffold-doctor-gates.sh (its header says which
+# and why), SOURCED so they run in this shell with these counters, these helpers
+# and this `set -euo pipefail` — install.sh's arrangement with install-lib.sh,
+# extracted for the same reason: this file's own 500-line cap. Missing, it is
+# section 8's note and not uninstall.sh's hard error, because a doctor copied
+# out of the bundle alone must still report what it can.
+if [ -f "$DOCTOR_DIR/scaffold-doctor-gates.sh" ]; then
+  # shellcheck source=scaffold-doctor-gates.sh
+  . "$DOCTOR_DIR/scaffold-doctor-gates.sh"
+else
+  note "scaffold-doctor-gates.sh not found next to scaffold-doctor.sh ($DOCTOR_DIR): the server-side backstop, patch-coverage, lint-ignore and protections-not-enabled checks are skipped; re-fetch the full scaffold bundle, not just this one file"
+fi
 
 # --- summary ----------------------------------------------------------------
 echo ""

@@ -3,7 +3,8 @@
 # Format: <regex><TAB><description>   (one per line; # comments ignored)
 # Separator is TAB - patterns can contain literal `|` for ERE alternation.
 # Patterns are POSIX ERE, matched case-sensitively with `grep -anE`.
-# Bans console debug output; keeps logger.info/warn/error intact.
+# Bans console debug output (keeps logger.info/warn/error intact) plus two
+# narrow command-execution / TLS sinks below.
 # printStackTrace ban is no-arg only; printStackTrace(writer) is allowed (logging idiom).
 # Copy to your project as `.forbidden-patterns/java.txt`.
 
@@ -11,6 +12,73 @@
 (^|[^A-Za-z_])System\.err\.print(ln|f)?[[:space:]]*\(	Use logger.error(), not System.err.print/println/printf
 \.printStackTrace[[:space:]]*\([[:space:]]*\)	Log the exception via the logger, not e.printStackTrace(); pass a PrintWriter to capture it instead
 
+# --- Security: command execution / TLS validation ---
+# Java ships no linter template, no hook lint and a placeholder CI job, so this
+# file is the only gate in front of these lines. Each rule is deliberately much
+# narrower than the vulnerability class it names: a miss costs one finding, a
+# false positive fails a build in someone else's repo on code they did not
+# write. On the ~19k-file first pass both rules were silent. On the 37.9k-file
+# latest pass they fire four times in total - Runtime.exec once (ant) and
+# checkServerTrusted three times (testcontainers) - and all four hits are TRUE
+# positives: real built-command exec and real empty-body TrustManagers. Zero
+# false positives on either pass. Corpus: BouncyCastle, Netty, HttpClient,
+# Spring, Hibernate, Tomcat, Jetty, Kafka, ZooKeeper, Guava, commons-*,
+# Jackson, Mockito, JUnit, ant, testcontainers - library AND test sources.
+#
+# Runtime.exec: only a CONCATENATED or String.format()-BUILT command string -
+# the `+` branch stops at `)`, `,` and `{` so it cannot reach inside the
+# fixed-argv forms. A bare literal `exec("ls -la")` does NOT fire: it is a
+# fixed command, not a built one, and the message would be wrong about it.
+# Do not widen the `+` branch back to `[^)]*\+`: unanchored, it matched the
+# `+` inside `exec(new String[]{javaHome + "/bin/java", ...})` and so blocked
+# the very fixed-argv shape this rule's own message tells people to use.
+# Deliberately missed: `exec(cmd)` with a bare variable, a receiver held in a
+# `Runtime` local, a call split across lines, and a concatenation whose leading
+# literal contains `)`, `,` or `{`.
+#
+# checkServerTrusted: only a DECLARATION whose body is EMPTY on the same line -
+# `{}` / `{ }`, optionally after a `throws` clause. It is a TRIPWIRE, not
+# coverage: measured against real trust-all TrustManagers it catches about 17%
+# of them - the other ~83% write the empty body across two or more lines
+# (`{ //nop }` or a comment on its own line) and the scan is line-at-a-time.
+# Do not describe this rule as catching trust-all TrustManagers generally.
+# What it does not fire on is the point: delegating, wrapping and pinning
+# implementations, interface declarations, a body that merely contains `{}`,
+# and calls to `delegate.checkServerTrusted(...)` - including inside a one-line
+# `try { ... } catch (CertificateException e) {}`.
+#
+# Removed after testing, do not re-add as written: `\.readObject[[:space:]]*\(\)`.
+# `readObject()` is also the ASN.1, PEM and ObjectInput reader API and the body
+# of every custom `private void readObject` hook - 367 hits over the corpus,
+# essentially all benign. Line-level regex cannot tell those from a
+# java.io.ObjectInputStream fed untrusted bytes.
+#
+# Removed after testing, do not re-add as written:
+# `(^|[^A-Za-z0-9_])ALLOW_ALL_HOSTNAME_VERIFIER[[:space:]]*[),;]`. It caught
+# nothing: zero hits across 37.9k real Java files. What it did match is English
+# prose, which supplies the trailing `,` or `;` just as code does - including
+# the security-hardening comment that tells the next person to remove the
+# constant ("remove ALLOW_ALL_HOSTNAME_VERIFIER, it disables checks;"). A rule
+# with no measured catch and a demonstrated false positive on its own advice is
+# net-negative in someone else's pre-commit hook. Requiring a `[.(]` prefix
+# does drop the prose hits, but there is still nothing measured for it to
+# catch, so the whole rule is gone rather than narrowed.
+(^|[^A-Za-z_])Runtime\.getRuntime[[:space:]]*\([[:space:]]*\)[[:space:]]*\.exec[[:space:]]*\([[:space:]]*("[^"]*"[[:space:]]*\+|String\.format|[^),{]*\+)	Runtime.exec() on a built command string is a command-injection sink (it also splits the string on whitespace) - use ProcessBuilder with a fixed argv
+(^|[^A-Za-z_])checkServerTrusted[[:space:]]*\([^)]*\)[[:space:]]*(throws[[:space:]][A-Za-z0-9_,.[:space:]]*)?\{[[:space:]]*\}	An EMPTY checkServerTrusted() accepts every certificate - that is TLS validation switched off (MITM risk); validate the chain or keep the platform TrustManager
+
 # Optional (opt-in) — uncomment a line to enable it:
 # (^|[^A-Za-z_])(TODO|FIXME|XXX)($|[^A-Za-z0-9_])	TODO/FIXME/XXX not allowed - open a ticket instead
 # (^|[^A-Za-z_])System\.out\.printf[[:space:]]*\(	Use a logger, not System.out.printf (FP-prone in CLI tools)
+# Java deserialization ships OFF. `new ObjectInputStream(...)` on untrusted
+# bytes is RCE, but the regex cannot see where the bytes came from, and in real
+# code most constructions are serialization round-trip TESTS and deep-copy /
+# session-cache helpers reading bytes the same process just wrote (24 of the 35
+# corpus hits). Enable it in a module that should never use Java serialization
+# at all, and expect to mark its round-trip tests with scaffold-allow.
+# (^|[^A-Za-z_])new[[:space:]]+([A-Za-z_][A-Za-z0-9_]*\.)*ObjectInputStream[[:space:]]*\(	Java deserialization of untrusted bytes is RCE (CVE-2015-4852 class) - use JSON/protobuf with a schema
+# setAccessible(true) ships OFF: it is a design smell, not a sink, and it is
+# ordinary in Jackson/Spring/Hibernate glue, JUnit ReflectionTestUtils-style test
+# helpers and any DI container (113 corpus hits across 65 files) - an always-on
+# rule blocks correct commits in every one of those. Enable it in an
+# application module that should contain no reflection of its own.
+# \.setAccessible[[:space:]]*\([[:space:]]*true[[:space:]]*\)	setAccessible(true) defeats access control and final-field safety - drop the reflection (off by default: routine in framework glue and tests)

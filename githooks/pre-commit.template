@@ -42,8 +42,8 @@ LIB="$HOOK_DIR/lib"
 # A staged deletion of a .forbidden-patterns/*.txt that also removes the file
 # from disk makes the matching check find no config and exit 0 — a one-commit
 # way to land a secret AND neuter the scan. A staged deletion whose file is
-# still on disk (`git rm --cached`) is a different thing and only warns; see the
-# untrack-vs-delete note below.
+# still on disk (`git rm --cached`) is a different thing and only warns for the
+# two configs CI re-arms itself; see the untrack-vs-delete note below.
 # Checked BEFORE the empty-staged-list exit, since a delete-only commit has an
 # empty ACMRT list. Use `git commit --no-verify` if a removal is intended (uninstall).
 # `--no-renames` is load-bearing: git's default rename detection reports a
@@ -63,9 +63,23 @@ if [ -n "$DELETED_CONFIG" ]; then
   #
   # This does not reopen the neutering paths closed by 5ced87a / 3ef4ad9: those
   # cover a config that is GONE, gutted to zero patterns, or renamed away, and
-  # all three still fail. Server-side the untracked config is absent from the
-  # repo entirely, where `check-secrets --ci` fails CLOSED — so the warn is
-  # local-only leniency, not a hole.
+  # all three still fail.
+  #
+  # But local-only leniency is sound ONLY where the server-side scan refuses to
+  # run without the config, because an untracked config is absent from CI's
+  # checkout and from every fresh clone. That holds for exactly two files:
+  #   secrets.txt — check-secrets exits 1 on a missing config in --ci mode.
+  #   shell.txt   — check-patterns now does the same, on the same reasoning:
+  #                 install.sh writes secrets.txt and shell.txt in EVERY mode, so
+  #                 their absence server-side can only mean "removed after
+  #                 install".
+  # For every other .forbidden-patterns/*.txt it is FALSE. backend/frontend/
+  # <lang>.txt are installed conditionally, so check-patterns cannot tell a
+  # removed config from a language this project never had and must stay silent —
+  # untracking one disables its rules for every clone AND for CI with nothing
+  # anywhere reporting it. The old blanket note ("CI ... fails closed there") was
+  # verified against check-secrets only and was wrong for those files. This hook
+  # is the only gate that can see the removal at all, so for them it refuses.
   #
   # Treat unreadable or non-regular as gone: the checks cannot read it either.
   GONE_CONFIG=""
@@ -83,9 +97,29 @@ EOF_DELCFG
     echo "       Refusing — re-add it, or use 'git commit --no-verify' if intended." >&2
     exit 1
   fi
+  # Split the untracked configs by whether the CI scanner fails closed on their
+  # absence (see the note above): the two always-installed ones warn, the rest
+  # refuse.
+  LENIENT_CONFIG=""
+  STRICT_CONFIG=""
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    case "${f##*/}" in
+      secrets.txt|shell.txt) LENIENT_CONFIG="$LENIENT_CONFIG$f"$'\n' ;;
+      *)                     STRICT_CONFIG="$STRICT_CONFIG$f"$'\n' ;;
+    esac
+  done <<EOF_UNTRACKED
+$DELETED_CONFIG
+EOF_UNTRACKED
+  if [ -n "$STRICT_CONFIG" ]; then
+    echo "error: this commit untracks forbidden-pattern config that nothing enforces server-side — check-patterns cannot tell a removed optional config from a language this project never installed, so these rules stop running in every fresh clone and in CI:" >&2
+    printf '%s' "$STRICT_CONFIG" | sed 's/^/       /' >&2
+    echo "       Refusing — re-add it, or use 'git commit --no-verify' if intended." >&2
+    exit 1
+  fi
   echo "note: forbidden-pattern config untracked but still present on disk — local scanning stays active:" >&2
-  printf '%s\n' "$DELETED_CONFIG" | sed 's/^/       /' >&2
-  echo "       CI has no copy of an untracked config, so a guardrails job fails closed there." >&2
+  printf '%s' "$LENIENT_CONFIG" | sed 's/^/       /' >&2
+  echo "       CI has no copy of an untracked config, and check-secrets/check-patterns fail closed on a missing secrets.txt/shell.txt, so a guardrails job fails closed there." >&2
 fi
 
 # The T in ACMRT is load-bearing: git reports a symlink replaced by a regular

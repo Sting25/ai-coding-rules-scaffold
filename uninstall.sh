@@ -9,9 +9,22 @@
 # .forbidden-patterns/*.txt) are always left alone unless --all is given.
 # CLAUDE.md is user-owned — only a scaffold-created file or our appended block is removed.
 #
+# DROPPING ONE LANGUAGE (--drop-lang=<name>) is the only partial mode here, and
+# it is the route check-patterns names when it fails closed on a pattern file
+# .githooks/.scaffold-manifest records but the checkout no longer has (#159).
+# It takes .forbidden-patterns/<name>.txt and that path's manifest entry out
+# TOGETHER, which is the "never installed" state the guard stays silent about;
+# without it a project that genuinely stopped using Go failed that guard forever
+# with no escape but hand-editing the manifest. It is an explicit invocation and
+# never a side effect of an install or upgrade, because an entry whose file is
+# absent IS the signal the guard fires on — see uninstall-drop-lang.sh.
+#
 # Usage:
 #   uninstall.sh          # safe mode: only unchanged generated files
 #   uninstall.sh --all    # also remove AGENTS.md / coding-rules.md / patterns
+#   uninstall.sh --drop-lang=go   # stop using ONE language: removes
+#                         # .forbidden-patterns/go.txt AND its manifest entry
+#                         # together, and touches nothing else
 #   uninstall.sh --dry-run
 #   uninstall.sh --help
 
@@ -20,11 +33,19 @@ set -euo pipefail
 SCAFFOLD_DIR="$(cd "$(dirname "$0")" && pwd)"
 DRY_RUN=0
 REMOVE_ALL=0
+DROP_MODE=0
+DROP_LANG=""
 
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
     --all)     REMOVE_ALL=1 ;;
+    # `=`-joined so this single-pass loop can carry a value at all, and so a
+    # bare `--drop-lang` can never swallow the next argument by accident.
+    --drop-lang=*) DROP_MODE=1; DROP_LANG=${arg#*=} ;;
+    --drop-lang)
+      echo "error: --drop-lang needs the language in the same argument: --drop-lang=go" >&2
+      exit 1 ;;
     # Print the header by its SHAPE, not by line number: every comment line
     # after the shebang, stopping at the first line that is not one. The old
     # hardcoded `sed -n '2,15p'` was one line short of the header, so the only
@@ -34,6 +55,14 @@ for arg in "$@"; do
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
+
+# --all already removes .forbidden-patterns/ and the manifest outright, so the
+# two together can only mean the caller expected one of them not to happen.
+if [ "$DROP_MODE" -eq 1 ] && [ "$REMOVE_ALL" -eq 1 ]; then
+  echo "error: --drop-lang and --all cannot be combined: --all removes .forbidden-patterns/" >&2
+  echo "       and the install manifest outright, which drops every language at once." >&2
+  exit 1
+fi
 
 # A dry run must not touch the filesystem. The empty-directory sweep at the end
 # of this script cannot ask the filesystem whether a directory is empty during a
@@ -109,6 +138,27 @@ force_remove() {
     echo "removed:      $path"
   fi
 }
+
+# --drop-lang does that one thing and stops: the rest of this script would take
+# the hooks and the workflows with it. Sourced on demand (and only here), so a
+# plain uninstall never depends on the extra module being present.
+if [ "$DROP_MODE" -eq 1 ]; then
+  if [ ! -f "$SCAFFOLD_DIR/uninstall-drop-lang.sh" ]; then
+    echo "error: uninstall-drop-lang.sh is missing from $SCAFFOLD_DIR" >&2
+    echo "       — re-fetch the full scaffold bundle, not just this one file." >&2
+    exit 1
+  fi
+  # shellcheck source=uninstall-drop-lang.sh
+  . "$SCAFFOLD_DIR/uninstall-drop-lang.sh"
+  drop_lang "$DROP_LANG" || exit 1
+  echo ""
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "Dry run — no files changed."
+  else
+    echo "Done."
+  fi
+  exit 0
+fi
 
 # clean_claude_md — CLAUDE.md is user-owned. If we created it wholesale
 # (byte-equal to the pointer template), remove it. If we appended our marked

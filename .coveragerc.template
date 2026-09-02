@@ -2,10 +2,21 @@
 # stacks). Configures coverage.py for the patch-coverage gate; pair with
 # `pytest --cov --cov-report=xml` (the coverage.yml CI job runs exactly that).
 [run]
+# Records which BRANCH ARMS ran, not just which lines. Read the ceiling on this
+# in [report] below before treating it as gate protection — it is not.
 branch = True
 # Adjust to your package layout (e.g. `src`). The gate measures CHANGED lines,
 # so this just scopes what counts as "your code".
 source = .
+# ⚠ `omit` IS AN OFF SWITCH FOR THE GATE, NOT JUST FOR THE LOCAL REPORT. An
+# omitted path never reaches coverage.xml, and diff-cover scores a changed line
+# it has NO data for as COVERED — so adding `*/payments/*` here makes every
+# changed line under payments/ pass the 100% gate silently, with nothing in the
+# hook, in CI or in the diff to say a rule was turned down. This is the same
+# move operational-rules.md forbids as "widening a skip-list": if you must do
+# it, say so out loud in the PR. scaffold-doctor.sh reports any entry here that
+# is not in the shipped .coveragerc.template, so the drift is at least visible
+# on demand; keep this list to things that are genuinely not your source.
 omit =
     */tests/*
     */test_*.py
@@ -13,5 +24,12 @@ omit =
     */venv/*
 
 [report]
-# Surface partially-covered branches in the local report.
+# `branch = True` above feeds THIS LOCAL REPORT ONLY. The CI gate is diff-cover,
+# which is line-based and has no branch/partial option at all: a changed line
+# reported as condition-coverage "50% (1/2)" — a one-line `if x: return` whose
+# false arm no test ever takes — scores as fully covered and passes at 100%.
+# coverage.yml's blind-spot step surfaces those changed lines as CI warnings so
+# they are not invisible, but nothing FAILS on them. This report is where you
+# see the arms the gate cannot: read it, don't assume the green check read it
+# for you.
 show_missing = True

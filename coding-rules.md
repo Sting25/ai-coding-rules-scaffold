@@ -32,6 +32,8 @@ Stack-specific deny patterns live in `.forbidden-patterns/*.txt` (one per langua
 
    Defaults: Python — `ruff`, `pyright`/`mypy`, `pytest`, `hypothesis`. TypeScript — `eslint`+`prettier`, `tsc`, `vitest`/`jest`, `fast-check`. New stacks pick equivalents and document the choice in the project's `AGENTS.md`.
 
+   **A test you have never watched fail is not evidence.** Write it before the change, or run it against the base commit yourself — a test written against code that already exists passes by construction and constrains nothing. A new test that legitimately passes on base (characterization before a refactor, coverage backfill) must say so and why. Never delete a test in the same change as the code it covered; deleting, skipping, or loosening a test to turn a build green is not a fix — see "Fix the file, not the guardrail" in `operational-rules.md`. `install.sh --test-guard` adds the red-green half of this as an opt-in CI gate.
+
 9. **Don't skip the pre-commit hook (`--no-verify`) unless explicitly asked.** It runs the size/pattern/secret guards plus the linter (`ruff` / `eslint`), and — for TypeScript — `tsc --noEmit` whenever a `tsconfig.json` is present. Wire the rest of your type-checker (`pyright` / `mypy`) into CI per the project's `AGENTS.md`; the type-aware `eslint` config and `tsc` cover the TypeScript side at commit time and in CI.
 
 ## Observability

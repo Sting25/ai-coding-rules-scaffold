@@ -14,9 +14,80 @@ System\.(out|err)\.print(ln)?[[:space:]]*\(	Use the project's logger, not System
 (^|[^A-Za-z0-9_])printStackTrace[[:space:]]*\(	Log the exception via the project's logger, not printStackTrace()
 (^|[^A-Za-z0-9_.])TODO[[:space:]]*\(	kotlin.TODO() throws NotImplementedError at runtime - finish the impl or open a ticket
 
+# --- Security: JVM RCE / TLS sinks (java.txt's rules, Kotlin syntax) ---
+# Kotlin reaches the same JVM sinks and has no linter, hook lint or real CI job
+# here either. Both rules below were measured against 32,956 real .kt/.kts files
+# (ktor, kotlinx.coroutines, kotlinx.serialization, okhttp, Exposed, detekt, koin,
+# leakcanary, AnkiDroid, Signal-Android, element-android, nowinandroid,
+# duckduckgo/Android, thunderbird-android, compose-multiplatform, dokka, ksp,
+# sqldelight, wire, ktlint). Hits in that corpus: Runtime.exec 1, checkServerTrusted
+# 2, all three true positives. Both rules are deliberately LOW RECALL - they cover
+# the shapes a line-at-a-time scan can actually judge, not every shell-out or every
+# trust-all. A clean run is not evidence that neither exists in the tree.
+#
+# Runtime.exec fires ONLY when the command string is built by Kotlin string
+# interpolation on the same line - a `$` that starts a real template (`$name`,
+# `${expr}`). The literal-dollar forms do NOT fire: `\$` is how Kotlin escapes a
+# dollar that is not interpolation (652 lines / 205 files in the corpus) and
+# `${'$'}` is the same thing spelled for code generators and Gradle .kts (419
+# lines / 67 files). Of the 49,411 corpus lines holding a `$` inside a double-quoted
+# string, this rule's template test rejects 2,122 that a bare `"[^"]*\$` test accepts.
+# A `//` earlier on the line also suppresses it, so prose naming the antipattern
+# stays quiet. A constant command (`exec("sqlite3 --version")`,
+# `exec(arrayOf("git", "rev-parse", "HEAD"))`) and a command assembled on an earlier
+# line (`exec(cmd)`) stay quiet too - the last is a deliberate miss. Note the
+# single-String `exec` overload does NOT run a shell (Java splits on whitespace), so
+# on that overload the exposure is argument injection rather than shell injection.
+#
+# checkServerTrusted fires ONLY on a `fun` DECLARATION starting its own line whose
+# entire body is an empty `{}` or `= Unit`, with nothing after the body. Only an
+# optional `: Unit` return type may sit between `)` and the body. A fully validating
+# function that takes a default no-op callback - `..., onReject: (CertificateException)
+# -> Unit = {}) { validateOrThrow(...) }` - therefore does NOT fire: that declaration
+# shape occurs on 76 real corpus lines and the earlier, looser rule flagged 75 of
+# them as empty trust-alls. A real implementation, a `delegate.checkServerTrusted(...)`
+# call, an X509TrustManagerExtensions overload, and prose or a quoted string naming
+# the antipattern also stay quiet; code inside a `"""..."""` fixture still fires,
+# because it is byte-identical to the real thing.
+# RECALL IS KNOWN-POOR: the corpus holds 8 genuine trust-all implementations and this
+# rule catches 2. All 6 misses are signatures that ktlint/spotless wrapped across
+# several lines, which this scan cannot see.
+# ALLOW_ALL_HOSTNAME_VERIFIER, ObjectInputStream and setAccessible/isAccessible are
+# NOT active rules - all three sit in the opt-in block below, with the measurements
+# that put them there.
+^([^/]|/[^/])*(^|[^A-Za-z0-9_])Runtime\.getRuntime[[:space:]]*\([[:space:]]*\)[[:space:]]*\.exec[[:space:]]*\(([^)\\]|\\[^)"])*"([^"\\]|\\[^$])*\$(\{[[:space:]]*[A-Za-z_]|[A-Za-z_])	Runtime.exec() with an interpolated command string is an injection sink (shell injection via sh -c, argument injection on the single-String overload) - use ProcessBuilder with a fixed argv
+^[[:space:]]*(@[A-Za-z0-9_(),.:"[:space:]]*[[:space:]]+)*((override|public|private|internal|protected|open|final|actual|expect|abstract|suspend|inline)[[:space:]]+)*fun[[:space:]]+checkServerTrusted[[:space:]]*\([^)]*\)[[:space:]]*(:[[:space:]]*Unit[[:space:]]*)?(\{[[:space:]]*\}|=[[:space:]]*Unit)[[:space:]]*$	An EMPTY checkServerTrusted() accepts every certificate - that is TLS validation switched off (MITM risk); validate the chain or keep the platform TrustManager
+
 # Optional (opt-in) — uncomment a line to enable it:
 # (^|[^A-Za-z_])(TODO|FIXME|XXX)($|[^A-Za-z0-9_])	TODO/FIXME/XXX comment not allowed - open a ticket instead (FP-prone in comments/strings)
 # @Disabled($|[^A-Za-z0-9_])	Disabled JUnit5 test committed - re-enable or delete (may be intentional)
 # (^|[^A-Za-z_])(it|i)gnore[[:space:]]*=[[:space:]]*true	Ignored test annotation - re-enable or delete (FP-prone; matches config flags)
 # !![[:space:]]*($|[^=])	Avoid the !! not-null assertion - use safe calls or requireNotNull (very FP-prone)
 # GlobalScope\.	Avoid GlobalScope - use a structured-concurrency CoroutineScope (some scripts legitimately use it)
+# ALLOW_ALL_HOSTNAME_VERIFIER ships OFF: it was an active rule and was dropped for
+# measuring zero value against a live FP surface. The constant belongs to Apache
+# HttpClient, which Android dropped at API 23 - it appears 0 times in the 32,956-file
+# corpus, in any spelling. What it does hit is people WRITING DOWN the policy: a
+# review note, a detector's banned-list, a regression test asserting the string is
+# absent, and a KDoc migration note all carry the qualified name and all blocked the
+# commit under the old `\.ALLOW_ALL_HOSTNAME_VERIFIER` anchor - the person hitting it
+# is the security-conscious reviewer. It also does not cover how hostname
+# verification is actually disabled today (OkHttp's `hostnameVerifier { _, _ -> true }`).
+# The form below is narrowed to assignment/argument/import position, which keeps the
+# four prose shapes quiet. Enable it only in a codebase still on Apache HttpClient.
+# (=|\(|^import[[:space:]]+[A-Za-z0-9_.]*)[[:space:]]*[A-Za-z0-9_.]*\.ALLOW_ALL_HOSTNAME_VERIFIER	ALLOW_ALL_HOSTNAME_VERIFIER disables TLS hostname checking (MITM risk) - keep the default verifier
+# ObjectInputStream ships OFF: the API is a real RCE sink, but nothing on the line
+# says whether the bytes are untrusted. All 8 matches in the real corpus were
+# legitimate - Java-serialization round-trips in tests, and reading back a blob the
+# same process wrote (leakcanary, element-android's encrypted secret store). Enable
+# it in a service that deserializes bytes arriving from another party; leave it off
+# in a codebase that only round-trips its own data.
+# (^|[^A-Za-z0-9_])ObjectInputStream[[:space:]]*\(	Java deserialization of untrusted bytes is RCE (CVE-2015-4852 class) - use JSON/protobuf with a schema
+# setAccessible/isAccessible ship OFF: a design smell, not a sink, and routine in
+# framework glue and test helpers - 47 matches across 29 files in the real corpus
+# (kotlinx.serialization, Exposed, ktor, Signal-Android), every one of them ordinary
+# reflection. `isAccessible` is also an ordinary property name, so the opt-in form
+# below is anchored to `.isAccessible =` - that keeps `Room(name = "Lab", isAccessible
+# = true)` and `r.copy(isAccessible = true)` quiet. Enable it only in a codebase that
+# has decided against reflection outright.
+# (\.setAccessible[[:space:]]*\([[:space:]]*true[[:space:]]*\)|\.isAccessible[[:space:]]*=[[:space:]]*true)	setAccessible/isAccessible = true defeats access control and final-field safety - drop the reflection (off by default: routine in framework glue and tests)
