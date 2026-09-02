@@ -3,7 +3,7 @@
 # Format: <regex><TAB><description>   (one per line; # comments ignored)
 # Separator is TAB - patterns can contain literal `|` for ERE alternation.
 # Patterns are POSIX ERE, matched case-sensitively with `grep -anE`.
-# Bans console debug output (keeps logger.info/warn/error intact) plus three
+# Bans console debug output (keeps logger.info/warn/error intact) plus two
 # narrow command-execution / TLS sinks below.
 # printStackTrace ban is no-arg only; printStackTrace(writer) is allowed (logging idiom).
 # Copy to your project as `.forbidden-patterns/java.txt`.
@@ -17,39 +17,51 @@
 # file is the only gate in front of these lines. Each rule is deliberately much
 # narrower than the vulnerability class it names: a miss costs one finding, a
 # false positive fails a build in someone else's repo on code they did not
-# write. All three are silent across ~19k real Java files (BouncyCastle, Netty,
+# write. Both are silent across the real-world corpus they were measured on
+# (~19k files on the first pass, 37.9k on the latest: BouncyCastle, Netty,
 # HttpClient, Spring, Hibernate, Tomcat, Jetty, Kafka, ZooKeeper, Guava,
 # commons-*, Jackson, Mockito, JUnit - library AND test sources).
 #
-# Runtime.exec: only the STRING-COMMAND form - a literal, a `+` concatenation,
-# or String.format(). The fixed-argv forms `exec(new String[]{...})` and
-# `exec(list.toArray(...))` are already the recommended shape and never fire
-# (all 6 real-world hits in the corpus were exactly those). Deliberately
-# missed: `exec(cmd)` with a bare variable, a receiver held in a `Runtime`
-# local, and a call split across lines.
+# Runtime.exec: only a CONCATENATED or String.format()-BUILT command string -
+# the `+` branch stops at `)`, `,` and `{` so it cannot reach inside the
+# fixed-argv forms. A bare literal `exec("ls -la")` does NOT fire: it is a
+# fixed command, not a built one, and the message would be wrong about it.
+# Do not widen the `+` branch back to `[^)]*\+`: unanchored, it matched the
+# `+` inside `exec(new String[]{javaHome + "/bin/java", ...})` and so blocked
+# the very fixed-argv shape this rule's own message tells people to use.
+# Deliberately missed: `exec(cmd)` with a bare variable, a receiver held in a
+# `Runtime` local, a call split across lines, and a concatenation whose leading
+# literal contains `)`, `,` or `{`.
 #
 # checkServerTrusted: only a DECLARATION whose body is EMPTY on the same line -
-# `{}` / `{ }`, optionally after a `throws` clause. That is the copy-pasted
-# trust-all TrustManager and nothing else. Delegating, wrapping and pinning
+# `{}` / `{ }`, optionally after a `throws` clause. It is a TRIPWIRE, not
+# coverage: measured against real trust-all TrustManagers it catches about 17%
+# of them - the other ~83% write the empty body across two or more lines
+# (`{ //nop }` or a comment on its own line) and the scan is line-at-a-time.
+# Do not describe this rule as catching trust-all TrustManagers generally.
+# What it does not fire on is the point: delegating, wrapping and pinning
 # implementations, interface declarations, a body that merely contains `{}`,
 # and calls to `delegate.checkServerTrusted(...)` - including inside a one-line
-# `try { ... } catch (CertificateException e) {}` - do not fire. A trust-all
-# whose empty body is split across two lines is missed: the scan is line-at-a-
-# time, and real ones usually are (`{ //nop }` on its own line).
-#
-# ALLOW_ALL_HOSTNAME_VERIFIER: only where the constant is USED - immediately
-# followed by `)`, `,` or `;`. Prose naming it ("never use
-# ALLOW_ALL_HOSTNAME_VERIFIER here") and HttpClient's own declaration of it do
-# not fire.
+# `try { ... } catch (CertificateException e) {}`.
 #
 # Removed after testing, do not re-add as written: `\.readObject[[:space:]]*\(\)`.
 # `readObject()` is also the ASN.1, PEM and ObjectInput reader API and the body
 # of every custom `private void readObject` hook - 367 hits over the corpus,
 # essentially all benign. Line-level regex cannot tell those from a
 # java.io.ObjectInputStream fed untrusted bytes.
-(^|[^A-Za-z_])Runtime\.getRuntime[[:space:]]*\([[:space:]]*\)[[:space:]]*\.exec[[:space:]]*\([[:space:]]*("|String\.format|[^)]*\+)	Runtime.exec() on a built command string is a command-injection sink (it also splits the string on whitespace) - use ProcessBuilder with a fixed argv
+#
+# Removed after testing, do not re-add as written:
+# `(^|[^A-Za-z0-9_])ALLOW_ALL_HOSTNAME_VERIFIER[[:space:]]*[),;]`. It caught
+# nothing: zero hits across 37.9k real Java files. What it did match is English
+# prose, which supplies the trailing `,` or `;` just as code does - including
+# the security-hardening comment that tells the next person to remove the
+# constant ("remove ALLOW_ALL_HOSTNAME_VERIFIER, it disables checks;"). A rule
+# with no measured catch and a demonstrated false positive on its own advice is
+# net-negative in someone else's pre-commit hook. Requiring a `[.(]` prefix
+# does drop the prose hits, but there is still nothing measured for it to
+# catch, so the whole rule is gone rather than narrowed.
+(^|[^A-Za-z_])Runtime\.getRuntime[[:space:]]*\([[:space:]]*\)[[:space:]]*\.exec[[:space:]]*\([[:space:]]*("[^"]*"[[:space:]]*\+|String\.format|[^),{]*\+)	Runtime.exec() on a built command string is a command-injection sink (it also splits the string on whitespace) - use ProcessBuilder with a fixed argv
 (^|[^A-Za-z_])checkServerTrusted[[:space:]]*\([^)]*\)[[:space:]]*(throws[[:space:]][A-Za-z0-9_,.[:space:]]*)?\{[[:space:]]*\}	An EMPTY checkServerTrusted() accepts every certificate - that is TLS validation switched off (MITM risk); validate the chain or keep the platform TrustManager
-(^|[^A-Za-z0-9_])ALLOW_ALL_HOSTNAME_VERIFIER[[:space:]]*[),;]	ALLOW_ALL_HOSTNAME_VERIFIER disables TLS hostname checking (MITM risk) - keep the default verifier
 
 # Optional (opt-in) — uncomment a line to enable it:
 # (^|[^A-Za-z_])(TODO|FIXME|XXX)($|[^A-Za-z0-9_])	TODO/FIXME/XXX not allowed - open a ticket instead
