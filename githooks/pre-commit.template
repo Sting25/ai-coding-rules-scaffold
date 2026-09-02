@@ -205,6 +205,22 @@ fi
 # each check below prints a one-line notice to stderr and skips (exit stays
 # 0), so the hook stays usable on machines that haven't run `pip install
 # ruff` yet while still telling the developer why nothing ran.
+# "Installed" for a JS tool means resolvable from THIS project's node_modules
+# (walking upward, so hoisted monorepos count). `npx --no-install <tool>` is
+# not that test: it also answers from npm's global _npx cache (measured: an
+# empty directory reports eslint 10.9.1 when ~/.npm/_npx holds one). A cached
+# tool then runs against this project's config with none of the config's own
+# imports installed, crashes, and fails the commit for a tool the project never
+# asked for. Node's resolver never consults that cache, so it is the gate; npx
+# only launches the binary once the gate passes.
+js_tool_installed() {
+  if command -v node >/dev/null 2>&1 && command -v npx >/dev/null 2>&1 \
+     && node -e "require.resolve('$1/package.json')" >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
 STAGED_PY=()
 STAGED_JS=()
 STAGED_PHP=()
@@ -229,10 +245,10 @@ if [ ${#STAGED_PY[@]} -gt 0 ] && { [ -f ruff.toml ] || [ -f pyproject.toml ]; };
 fi
 
 if [ ${#STAGED_JS[@]} -gt 0 ] && { [ -f eslint.config.js ] || [ -f package.json ]; }; then
-  if command -v npx >/dev/null 2>&1 && npx --no-install eslint --version >/dev/null 2>&1; then
+  if js_tool_installed eslint; then
     npx --no-install eslint -- "${STAGED_JS[@]}" || FAILED=1
   else
-    echo "note: eslint not installed (or not resolvable via npx), skipping the local lint pass on staged JS/TS files." >&2
+    echo "note: eslint not installed in this project's node_modules, skipping the local lint pass on staged JS/TS files." >&2
     echo "      CI's lint job is the authoritative gate; run 'npm install' for local feedback." >&2
   fi
 fi
@@ -244,10 +260,10 @@ fi
 # the linter above. `prettier --write` is the fix.
 if [ ${#STAGED_JS[@]} -gt 0 ] \
    && { [ -f .prettierrc ] || [ -f .prettierrc.json ] || [ -f .prettierrc.js ] || [ -f prettier.config.js ] || grep -qs '"prettier"' package.json; }; then
-  if command -v npx >/dev/null 2>&1 && npx --no-install prettier --version >/dev/null 2>&1; then
+  if js_tool_installed prettier; then
     npx --no-install prettier --check -- "${STAGED_JS[@]}" || FAILED=1
   else
-    echo "note: prettier not installed (or not resolvable via npx), skipping the local format check on staged JS/TS files." >&2
+    echo "note: prettier not installed in this project's node_modules, skipping the local format check on staged JS/TS files." >&2
     echo "      CI's lint job is the authoritative gate; run 'npm install' for local feedback." >&2
   fi
 fi
@@ -257,10 +273,10 @@ fi
 # tsconfig.json and its compiler options. A missing/unresolvable tsc prints a
 # notice and skips, like the checks above; CI is the authoritative backstop.
 if [ ${#STAGED_JS[@]} -gt 0 ] && [ -f tsconfig.json ]; then
-  if command -v npx >/dev/null 2>&1 && npx --no-install tsc --version >/dev/null 2>&1; then
+  if js_tool_installed typescript; then
     npx --no-install tsc --noEmit || FAILED=1
   else
-    echo "note: TypeScript not installed (or not resolvable via npx), skipping the local tsc type check." >&2
+    echo "note: TypeScript not installed in this project's node_modules, skipping the local tsc type check." >&2
     echo "      CI's lint job is the authoritative gate; run 'npm install' for local feedback." >&2
   fi
 fi

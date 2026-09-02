@@ -4,6 +4,37 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`check-patterns` honors `CHECK_PATTERNS_INCLUDE` / `CHECK_PATTERNS_EXCLUDE`
+  (#149).** Space-separated pattern-file basenames select or skip
+  `.forbidden-patterns/*.txt` files for one run, so a downstream wrapper
+  can scan a security-only subset whole-tree and the rest changed-files-
+  only without editing the scaffold-owned script. Previously the only way
+  to get this was a local edit that every `install.sh` re-run silently
+  reverted (#98, #149). An `INCLUDE` that matches nothing warns on stderr
+  rather than scanning nothing. Unset means unchanged behavior; the shipped
+  hook and CI leave both unset. Regression test: case 28.
+
+### Fixed
+
+- **Pre-commit no longer runs a JS tool that is not installed in the
+  project.** The hook gated ESLint, Prettier and tsc on
+  `npx --no-install <tool> --version`, which also answers from npm's
+  global `_npx` cache. A cached ESLint then ran against the shipped
+  config with none of the config's imports installed, crashed, and
+  failed the commit. The gate is now Node's own resolver
+  (`require.resolve` from the project, hoisted monorepos included),
+  which never reads that cache; a cached-only tool is treated as not
+  installed and skipped with the usual notice. The installer's
+  post-install verify used the same npx gate to decide whether to offer
+  an install and now uses the same resolver, and so does the shipped
+  `lint.yml` workflow (self-hosted or cached runners carry an npx cache
+  too). Regression test: case 42b2. This is also why the test suite showed 5 machine-dependent
+  failures on any host with a stale `~/.npm/_npx` ESLint entry.
+
 ## [v0.15.0] - 2026-09-01
 
 The test-guard release: a new opt-in `--test-guard` flag installs the

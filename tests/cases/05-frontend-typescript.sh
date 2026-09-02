@@ -88,7 +88,9 @@ assert_passes "console.warn allowed; clean .ts with no tsconfig passes"
 #     skip. Documents intent and exercises the path on machines that have a
 #     project-local tsc. The hook runs `tsc --noEmit` project-wide when a
 #     tsconfig.json exists.
-if npx --no-install tsc --version >/dev/null 2>&1; then
+#     The predicate is the hook's own gate (Node resolution from node_modules),
+#     not `npx --no-install`, which also answers from the global npx cache.
+if node -e "require.resolve('typescript/package.json')" >/dev/null 2>&1; then
   echo '{"compilerOptions":{"strict":true,"noEmit":true}}' >tsconfig.json
   echo 'const n: number = "definitely not a number";' >typeerr.ts
   git add tsconfig.json typeerr.ts
@@ -100,37 +102,57 @@ fi
 # 42b. eslint block rejection. The JS-linter integration in the pre-commit
 #      orchestrator had no rejection test — eslint isn't resolvable in the temp
 #      repo, so it silently skips, meaning a regression that stops eslint
-#      findings from setting FAILED would ship green. Stub `npx` on an isolated
-#      PATH so the --version gate passes and the lint run fails, proving the
-#      block propagates a non-zero exit into the hook's failure.
+#      findings from setting FAILED would ship green. Plant a project-local
+#      node_modules/eslint so the hook's Node-resolution gate passes, and stub
+#      `npx` on an isolated PATH so the lint run fails, proving the block
+#      propagates a non-zero exit into the hook's failure.
 ESB=$(mktemp -d)
 cat >"$ESB/npx" <<'STUB'
 #!/bin/sh
-# `--no-install eslint --version` → ok (gate); `eslint -- <files>` → fail (lint).
+# `eslint -- <files>` → fail (lint); anything else → ok.
 case "$*" in
-  *--version*) exit 0 ;;
-  *eslint*)    echo "eslint: problems found"; exit 1 ;;
-  *)           exit 0 ;;
+  *eslint*) echo "eslint: problems found"; exit 1 ;;
+  *)        exit 0 ;;
 esac
 STUB
 chmod +x "$ESB/npx"
+mkdir -p node_modules/eslint
+echo '{"name":"eslint","version":"0.0.0-test"}' >node_modules/eslint/package.json
 echo 'const x = 1' >lintme.js
 git add lintme.js
 if PATH="$ESB:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
-  echo "  ✗ eslint block — hook accepted despite an eslint failure"; FAIL=$((FAIL + 1))
+  echo "  ✗ eslint block: hook accepted despite an eslint failure"; FAIL=$((FAIL + 1))
 elif grep -qF "Pre-commit failed" "$HOOK_OUT"; then
-  echo "  ✓ eslint findings fail the pre-commit hook"; PASS=$((PASS + 1))
+  echo "  ✓ eslint findings fail the pre-commit hook (project-local install)"; PASS=$((PASS + 1))
 else
-  echo "  ✗ eslint block — rejected but not via the linter path"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  echo "  ✗ eslint block: rejected but not via the linter path"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf node_modules
+reset_repo
+
+# 42b2. REGRESSION: a tool that npx can resolve (global _npx cache) but that is
+#       NOT in this project's node_modules must be treated as not installed:
+#       skip notice, exit 0. Same stub as 42b (npx "runs" eslint and fails),
+#       no node_modules planted. Before the Node-resolution gate this was the
+#       cached-eslint crash that failed 5 cases on any machine with a stale
+#       ~/.npm/_npx eslint entry, so this case is deterministic on purpose.
+echo 'const z = 1' >cachedonly.js
+git add cachedonly.js
+if PATH="$ESB:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1 \
+   && grep -qF "note: eslint not installed" "$HOOK_OUT"; then
+  echo "  ✓ npx-resolvable but not project-local eslint is skipped, not run"; PASS=$((PASS + 1))
+else
+  echo "  ✗ npx-resolvable but not project-local eslint: expected skip notice and exit 0"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$ESB"
 reset_repo
 
 # 42c. skip notice: when npx can't resolve eslint (a matching .js file is
 #      staged and eslint.config.js ships from the scaffold install), the hook
-#      must print a one-line notice to stderr and still exit 0. Stub `npx` so
-#      `--no-install eslint --version` always fails, regardless of whether
-#      eslint happens to be resolvable on this machine.
+#      must print a one-line notice to stderr and still exit 0. No node_modules
+#      exists in the temp repo, so the Node-resolution gate fails; the failing
+#      `npx` stub proves the hook never even launches the tool.
 NPXFAIL=$(mktemp -d)
 cat >"$NPXFAIL/npx" <<'STUB'
 #!/bin/sh

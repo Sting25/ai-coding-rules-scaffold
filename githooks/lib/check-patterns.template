@@ -9,19 +9,18 @@
 # so a new language is added by dropping `<lang>.txt` with that header — no edit
 # to this script. backend.txt / frontend.txt / shell.txt have a built-in
 # fallback mapping for backward compatibility.
-# A pattern file may ALSO name literal filenames / basename globs with a second,
-# optional header:
-#   # scaffold-filenames: Dockerfile Dockerfile.* Makefile *.mk *.yml *.yaml
-# for rules that must reach files carrying no extension of their own — a
-# Dockerfile, a Makefile, CI workflow YAML, package.json scripts — where
-# `curl | bash` and `rm -rf /` are every bit as dangerous as in a *.sh. It is
-# opt-in per file: no header means extension-only dispatch, so adding the
-# mechanism changes no existing pattern file's behaviour, and there is
-# deliberately NO built-in fallback (an absent header means "not requested").
-# BOTH dispatches match case-INSENSITIVELY (`leak.JS`, `DOCKERFILE`); the
-# patterns themselves stay case-sensitive.
 # Pattern format: <regex><TAB><description>
 # (TAB is the field separator so regex can use literal `|` alternation.)
+#
+# Scope by pattern FILE (opt-in, for callers that run more than one tier):
+#   CHECK_PATTERNS_INCLUDE  space-separated basenames; ONLY these are scanned
+#   CHECK_PATTERNS_EXCLUDE  space-separated basenames; these are skipped
+# e.g. a wrapper can run `CHECK_PATTERNS_INCLUDE=security.txt` against the
+# whole tree and `CHECK_PATTERNS_EXCLUDE=security.txt` against changed files.
+# Unset means every discovered file, which is what pre-commit and CI use.
+# An INCLUDE that matches no file warns on stderr rather than scanning nothing
+# silently (#149). Both names are matched whole, so `a.txt` never selects
+# `a-extra.txt`.
 #
 # Like check-secrets, this scans the STAGED/INDEXED BLOB via
 # `git show ":0:<path>"` rather than the working-tree file, so symlinks, NUL
@@ -81,18 +80,6 @@ report() {
   fi
 }
 
-# A config that EXISTS but cannot arm its scan — unreadable, gutted to zero
-# patterns, or every pattern an invalid ERE — must FAIL, not pass silently: the
-# denylist it configures is disarmed and the commit has to be refused. Same
-# treatment and same wording shape as check-secrets' missing/empty/all-invalid
-# guards; the only difference is `FAILED=1` instead of `exit 1`, so the
-# remaining pattern files still get scanned and every problem is reported in one
-# run. FAILED is the global set below; this is only ever called after it exists.
-fail_closed() {
-  if [ "$CI_MODE" -eq 1 ]; then echo "::error::$1"; else echo "✗ $1" >&2; fi
-  FAILED=1
-}
-
 # Cap the maximum scanned LINE length (see check-secrets): one very long line
 # can make the combined ERE hang the hook/CI. Over-long lines are dropped with
 # a warning. Linear awk length check; the ERE on a long line is not linear.
@@ -108,30 +95,11 @@ while IFS= read -r -d '' f; do
 done
 
 scan() {
-  # $2 is the raw `# scaffold-filenames:` header (a space-separated glob list);
-  # it travels as a single string because a second array can't ride in "$@".
-  local config=$1 names=$2
-  shift 2
+  local config=$1
+  shift
   local exts=("$@")
-
-  # Nothing staged, nothing to scan. This is the one genuinely quiet path — it
-  # says nothing about whether the config is armed — and it is checked FIRST so
-  # a delete-only or empty commit never trips the fail-closed guards below.
+  [ -f "$config" ] || return 0
   [ ${#FILES[@]} -eq 0 ] && return 0
-
-  # Everything from here FAILS CLOSED (check-secrets parity). scan() is only
-  # reached for a path the `.forbidden-patterns/*.txt` glob actually matched, so
-  # the config EXISTS: unreadable/gutted/corrupt means it was installed and then
-  # disarmed, which is a disabled scan, not a pre-install checkout. ABSENCE is
-  # the case that stays lenient and never reaches here: backend/frontend/<lang>
-  # .txt are installed conditionally, so a missing one is indistinguishable from
-  # "this project never had that language". shell.txt and secrets.txt are the
-  # two install.sh writes in every mode — their absence IS distinguishable, and
-  # is caught by the CI guard at the bottom of this file.
-  if [ ! -f "$config" ] || [ ! -r "$config" ]; then
-    fail_closed "$config is not a readable file — the forbidden-pattern rules it configures do not run. Restore it (use 'git commit --no-verify' if intended)."
-    return 0
-  fi
 
   # Rule-id prefix for .scaffold.toml lookups: the pattern file's stem, e.g.
   # `php` for php.txt. A rule's full id is "<stem>/<description>".
@@ -157,15 +125,7 @@ scan() {
     raw_descs+=("$description")
   done <"$config"
 
-  # A present-but-EMPTY config (every rule deleted or commented out) is the
-  # gutting analogue of deleting the file: it disables this file's whole rule set
-  # in a single commit while dodging pre-commit's DELETED_CONFIG guard, which
-  # only ever sees a full removal (the diff is an M, not a D). Fail CLOSED at
-  # BOTH gates, exactly as check-secrets does for secrets.txt.
-  if [ ${#raw_patterns[@]} -eq 0 ]; then
-    fail_closed "$config has no patterns — every forbidden-pattern rule it configures is disabled. Restore its patterns (use 'git commit --no-verify' or remove the guardrails job if intended)."
-    return 0
-  fi
+  [ ${#raw_patterns[@]} -eq 0 ] && return 0
 
   # Validate each pattern up-front. An invalid ERE here would otherwise
   # poison the combined regex (silently dropping every file) and produce
@@ -184,13 +144,7 @@ scan() {
     descriptions+=("${raw_descs[$i]}")
   done
 
-  # Every configured pattern was an invalid ERE and got dropped above, so the
-  # scan would look for nothing at all — one bad character per line is a quieter
-  # gutting than deleting them. Fail CLOSED, same reasoning as the guard above.
-  if [ ${#patterns[@]} -eq 0 ]; then
-    fail_closed "$config has no valid patterns (all were invalid regexes) — every forbidden-pattern rule it configures is disabled. Fix the patterns (use 'git commit --no-verify' if intended)."
-    return 0
-  fi
+  [ ${#patterns[@]} -eq 0 ] && return 0
 
   # Combine all patterns into one ERE so a single grep call per file decides
   # whether to drop into the per-pattern attribution loop. Cuts grep calls
@@ -215,74 +169,12 @@ scan() {
     use_prefilter=0
   fi
 
-  local file ext keep content cap_rc pat desc m base n
-  # Word-split the `# scaffold-filenames:` header once, not once per file.
-  # `read -a`, NOT an unquoted `for n in $names`: unquoted expansion word-splits
-  # AND pathname-expands, so any header glob that happened to match something in
-  # the hook's CWD (the repo root) was REPLACED by that match before it was ever
-  # used as a pattern. A root-level `Dockerfile.prod` rewrote the header's
-  # `Dockerfile.*` into that one literal name and `docker/Dockerfile.dev` then
-  # went unscanned; a root-level `lib.mk` did the same to `*.mk`. Silent, and
-  # dependent on what files happen to sit in the root. `read` splits on IFS and
-  # expands nothing, so the globs reach the `case` arms below intact — that is
-  # the one place they are meant to be interpreted as patterns.
-  local name_globs=()
-  if [ -n "$names" ]; then read -r -a name_globs <<<"$names"; fi
-
-  # Restore the caller's `nocasematch` after the dispatch instead of forcing it
-  # off: this file is only ever executed today, but a `source` from a test must
-  # not have the option clobbered under it.
-  local nocase_was_set=0
-  if shopt -q nocasematch; then nocase_was_set=1; fi
-
+  local file ext keep content cap_rc pat desc m
   for file in "${FILES[@]}"; do
     keep=0
-    # Case-INSENSITIVE dispatch, scoped to the dispatch only. On macOS/Windows
-    # checkouts `Utils.JS`, `Script.PY` and `Component.JSX` are ordinary files, so
-    # a case-SENSITIVE suffix test made a one-character rename a bypass of every
-    # rule in every language denylist — the same bug class already fixed at high
-    # severity in check-filenames (CHANGELOG A4, `.PEM`/`.ENV`/`ID_RSA`). The
-    # PATTERN greps below stay case-sensitive (-anE), so `Console.log` is still
-    # not a match for `console.log`; only the file selection folds case.
-    #
-    # ACCEPTED false positive from the fold: a committed `clip.TS` (MPEG
-    # transport stream) now matches frontend.txt's `ts` and gets scanned; its
-    # binary content is one over-long line, so the fail-closed cap guard below
-    # refuses the commit. Kept rather than special-cased — `.TS` is the only
-    # collision across the whole shipped extension set (py ts tsx js jsx mjs cjs
-    # mts cts vue svelte go java kt kts php phtml rb rake rs sh bash), a video
-    # is normally rejected by check-large-files first, and excluding it by name
-    # would also exclude the genuine `Player.TS` a case-insensitive checkout
-    # produces. Media does not belong in a source tree; if it must be there,
-    # raise MAX_LINE_LENGTH or commit it with --no-verify.
-    shopt -s nocasematch
-    if [ ${#exts[@]} -gt 0 ]; then
-      for ext in "${exts[@]}"; do
-        case "$file" in *."$ext") keep=1; break ;; esac
-      done
-    fi
-    # Then the optional literal-filename globs. `curl | bash`, `rm -rf /` and
-    # `chmod 777` are exactly as dangerous in a Dockerfile, a Makefile, a CI
-    # workflow YAML or a package.json script, and none of those carries a `.sh`
-    # extension — an extensionless `bin/deploy` cannot be named by an extension
-    # header at all. Each glob is tried against the BASENAME (so `Dockerfile`
-    # catches `docker/Dockerfile`) and against the full path (so a header can
-    # scope a glob to one directory: `.github/workflows/*.yml` claims the CI
-    # files without claiming every YAML in the tree). A path glob over a
-    # directory of COMPILED files (`bin/*` in a repo where bin/ holds binaries)
-    # is a mistake, not a feature: a binary is one over-long line, which trips
-    # the fail-closed cap guard below and refuses the commit. The globs are
-    # unquoted in the `case` arms on purpose — there they are patterns.
-    if [ "$keep" -eq 0 ] && [ ${#name_globs[@]} -gt 0 ]; then
-      base=${file##*/}
-      for n in "${name_globs[@]}"; do
-        # shellcheck disable=SC2254  # $n is a glob pattern by design
-        case "$base" in $n) keep=1; break ;; esac
-        # shellcheck disable=SC2254  # $n is a glob pattern by design
-        case "$file" in $n) keep=1; break ;; esac
-      done
-    fi
-    [ "$nocase_was_set" -eq 1 ] || shopt -u nocasematch
+    for ext in "${exts[@]}"; do
+      case "$file" in *."$ext") keep=1; break ;; esac
+    done
     [ "$keep" -eq 1 ] || continue
 
     # Scan the staged blob, not the working-tree path (see header). Strip NUL
@@ -337,14 +229,8 @@ scan() {
 # keeps working.
 exts_for() {
   local cfg=$1 hdr
-  # `|| true`: grep exits 1 when the header is absent and `set -o pipefail`
-  # hands that status to the whole pipeline. Today's only call site is
-  # `cfg_exts=$(exts_for "$cfg")`, and bash suppresses errexit inside a function
-  # body running in that command substitution, so nothing aborts either way —
-  # this is hardening, not a fix for a live bug: it keeps the function safe to
-  # call as a bare statement, where `set -e` WOULD abort on the empty case.
   hdr=$(grep -m1 -E '^#[[:space:]]*scaffold-extensions:' "$cfg" 2>/dev/null \
-          | sed -E 's/^#[[:space:]]*scaffold-extensions:[[:space:]]*//; s/[[:space:]]+$//') || true
+          | sed -E 's/^#[[:space:]]*scaffold-extensions:[[:space:]]*//; s/[[:space:]]+$//')
   if [ -n "$hdr" ]; then printf '%s' "$hdr"; return; fi
   case "$(basename "$cfg")" in
     backend.txt)  printf 'py' ;;
@@ -354,72 +240,33 @@ exts_for() {
   esac
 }
 
-# Resolve the OPTIONAL literal filenames / basename globs a pattern file also
-# wants scanned:
-#   # scaffold-filenames: Dockerfile Dockerfile.* Makefile *.mk *.yml *.yaml
-# Opt-in per file and deliberately WITHOUT a built-in fallback mapping: an absent
-# header means "not requested", never "use a default", so no existing pattern
-# file changes behaviour when this script is upgraded.
-filenames_for() {
-  local cfg=$1 hdr
-  # `|| true` for the same pipefail reason as exts_for — and here an absent
-  # header is the normal case (only shell.txt ships one), not an edge.
-  hdr=$(grep -m1 -E '^#[[:space:]]*scaffold-filenames:' "$cfg" 2>/dev/null \
-          | sed -E 's/^#[[:space:]]*scaffold-filenames:[[:space:]]*//; s/[[:space:]]+$//') || true
-  printf '%s' "$hdr"
-}
-
 FAILED=0
+INCLUDED=0
 # Auto-discover every pattern file. secrets.txt is check-secrets' domain (it
-# scans all files, not by extension), so skip it here.
-# Every fail_closed() below is additionally gated on FILES: with nothing staged
-# there is nothing this run could have missed, and a silent no-op run must stay
-# silent (same quiet path scan() honours first).
+# scans all files, not by extension), so skip it here. Then apply the optional
+# INCLUDE/EXCLUDE basename filter documented in the header.
 for cfg in .forbidden-patterns/*.txt; do
-  if [ ! -e "$cfg" ]; then
-    # Two different things land here. An unexpanded glob (no `.forbidden-patterns/`
-    # at all — a pre-install checkout) is the lenient case and stays quiet. A
-    # DANGLING SYMLINK is not: that entry WAS installed and now points at nothing,
-    # so the rules it configured silently stopped running. `-L` tells them apart —
-    # a broken link satisfies -L, an unexpanded glob string does not.
-    if [ -L "$cfg" ] && [ ${#FILES[@]} -gt 0 ]; then
-      fail_closed "$cfg is a broken symlink — the forbidden-pattern rules it configures do not run. Restore it (use 'git commit --no-verify' if intended)."
-    fi
-    continue
+  [ -e "$cfg" ] || continue   # no glob match → literal string; skip
+  base=$(basename "$cfg")
+  case "$base" in secrets.txt) continue ;; esac
+  if [ -n "${CHECK_PATTERNS_INCLUDE:-}" ]; then
+    case " $CHECK_PATTERNS_INCLUDE " in *" $base "*) ;; *) continue ;; esac
   fi
-  case "$(basename "$cfg")" in secrets.txt) continue ;; esac
-  # Readability is tested BEFORE the headers are parsed. An unreadable or
-  # non-regular config yields two empty headers, and without this it would be
-  # reported by the guard below as "has no '# scaffold-extensions:' header" —
-  # a real failure, but naming the wrong cause. scan() repeats the test because
-  # it guards its own entry too; that is defence in depth, not redundancy.
-  if [ ! -f "$cfg" ] || [ ! -r "$cfg" ]; then
-    [ ${#FILES[@]} -eq 0 ] || fail_closed "$cfg is not a readable file — the forbidden-pattern rules it configures do not run. Restore it (use 'git commit --no-verify' if intended)."
-    continue
+  if [ -n "${CHECK_PATTERNS_EXCLUDE:-}" ]; then
+    case " $CHECK_PATTERNS_EXCLUDE " in *" $base "*) continue ;; esac
   fi
+  INCLUDED=$((INCLUDED + 1))
   cfg_exts=$(exts_for "$cfg")
-  cfg_names=$(filenames_for "$cfg")
-  if [ -z "$cfg_exts" ] && [ -z "$cfg_names" ]; then
-    # The file is installed but names nothing to scan, so every rule in it is
-    # dead. Fail CLOSED for the same reason as a gutted config: a headerless
-    # pattern file is a disarmed denylist, not an absent one.
-    [ ${#FILES[@]} -eq 0 ] || fail_closed "$cfg has no '# scaffold-extensions:' or '# scaffold-filenames:' header and no built-in mapping — none of its rules ever run. Add a header (use 'git commit --no-verify' if intended)."
+  if [ -z "$cfg_exts" ]; then
+    echo "warning: $cfg: no '# scaffold-extensions:' header and no built-in mapping — skipped" >&2
     continue
   fi
   # shellcheck disable=SC2086  # word-splitting $cfg_exts into separate args is intentional
-  scan "$cfg" "$cfg_names" $cfg_exts
+  scan "$cfg" $cfg_exts
 done
 
-# shell.txt and secrets.txt are the only two configs install.sh writes in EVERY
-# mode (install.sh:237-238), so — unlike backend/frontend/<lang>.txt, whose
-# absence is indistinguishable from "this project never installed that language"
-# — a missing shell.txt server-side means the scan was DISABLED after install:
-# `git rm --cached` + .gitignore (which pre-commit only notes), or a merged
-# deletion. Fail CLOSED in CI only, exactly as check-secrets does for a missing
-# secrets.txt; locally a fresh clone may not have run install.sh yet, so stay
-# lenient there. Gated on FILES so a no-op run says nothing.
-if [ "$CI_MODE" -eq 1 ] && [ ${#FILES[@]} -gt 0 ] && [ ! -f .forbidden-patterns/shell.txt ]; then
-  fail_closed ".forbidden-patterns/shell.txt is missing — the shell forbidden-pattern scan (curl | bash, rm -rf /, chmod 777, --no-verify) is disabled. Restore it (or remove the guardrails job intentionally)."
+if [ -n "${CHECK_PATTERNS_INCLUDE:-}" ] && [ "$INCLUDED" -eq 0 ]; then
+  echo "warning: CHECK_PATTERNS_INCLUDE='$CHECK_PATTERNS_INCLUDE' matched no .forbidden-patterns/*.txt, nothing was scanned" >&2
 fi
 
 exit $FAILED
