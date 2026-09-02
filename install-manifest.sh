@@ -45,6 +45,11 @@
 #
 # It also gives every install a recorded version, which nothing on disk carried
 # before (audit enh-upgrade-1).
+#
+# The other upgrade-artifact question lives here too: ensure_backup_gitignore at
+# the bottom, which keeps the *.scaffold-bak copies an upgrade leaves behind out
+# of git. Same subject (what a re-run leaves on disk and how a project reads it),
+# and install-lib.sh is at the module cap.
 
 # Defaults mirror install-lib.sh's `: "${FORCE:=0}"` so this file behaves if it
 # is ever sourced without install.sh having set the globals first.
@@ -168,4 +173,36 @@ manifest_flush() {
   rm -f "$new"
   _MANIFEST_PENDING=""
   echo "recorded:     $SCAFFOLD_MANIFEST (scaffold version $SCAFFOLD_VERSION), commit it"
+}
+
+# ensure_backup_gitignore — the other half of the same problem: making the
+# backups non-executable stops them being RUN, not being COMMITTED. Nothing in
+# the installer had ever touched .gitignore, so every upgrade left untracked
+# *.scaffold-bak files that the next `git add -A` swept into the repo (measured:
+# 6 of them after a v0.8.0 -> HEAD upgrade, 2 of those in .githooks/). Add the
+# two ignore rules once, idempotently, and say so. Appended rather than written,
+# because .gitignore is the project's file; a symlinked one is left alone with
+# the rules printed instead, the same A7 posture as every other scaffold path.
+ensure_backup_gitignore() {
+  local gi=".gitignore"
+  if [ -L "$gi" ]; then
+    echo "skip (exists, symlink): .gitignore, left untouched. Add '*.scaffold-bak' and '*.scaffold-bak.*' to it by hand, or an install backup can be committed."
+    return 0
+  fi
+  if [ -f "$gi" ] && grep -q '^[[:space:]]*\*\.scaffold-bak' "$gi"; then
+    return 0
+  fi
+  # Append on its own line even if the existing file has no trailing newline.
+  if [ -f "$gi" ] && [ -s "$gi" ] && [ -n "$(tail -c 1 "$gi")" ]; then
+    printf '\n' >>"$gi"
+  fi
+  {
+    echo ""
+    echo "# ai-coding-rules-scaffold: the copy install.sh leaves beside a file it"
+    echo "# replaces, so an edit of yours is always recoverable. Local state, never"
+    echo "# something to commit."
+    echo "*.scaffold-bak"
+    echo "*.scaffold-bak.*"
+  } >>"$gi"
+  echo "updated:      .gitignore (ignores the *.scaffold-bak copies install.sh leaves behind)"
 }

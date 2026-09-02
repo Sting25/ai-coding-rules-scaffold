@@ -172,6 +172,15 @@ _backup() {
     echo "       Skipping this one file (left untouched); nothing is overwritten without a backup." >&2
     return 1
   fi
+  # A backup is an inert copy, never something git or a hook should execute.
+  # These land as SIBLINGS of the file they back up, so .githooks/pre-commit
+  # produced .githooks/pre-commit.scaffold-bak at mode 100755, untracked and
+  # un-ignored: a routine `git add -A` committed it as if it were a hook (audit
+  # upgrade-path-2). Strip the execute bits, never through a symlink backup
+  # (`cp -P` keeps it a link, and chmod would follow it to the target).
+  if [ -f "$bak" ] && [ ! -L "$bak" ]; then
+    chmod a-x "$bak" 2>/dev/null || true
+  fi
   echo "backed up:    $dst -> $bak"
   _warn_repo_adaptations "$dst" "$bak"
 }

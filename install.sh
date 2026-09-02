@@ -191,6 +191,11 @@ if [ "$INTERACTIVE" -eq 1 ]; then
   run_interactive
 fi
 
+# Before anything can be backed up: teach .gitignore about the *.scaffold-bak
+# copies this run may leave behind, so a routine `git add -A` never sweeps one
+# into a commit (audit upgrade-path-2).
+ensure_backup_gitignore
+
 # Always
 cp_safe "$SCAFFOLD_DIR/coding-rules.md" "coding-rules.md"
 cp_safe "$SCAFFOLD_DIR/operational-rules.md" "operational-rules.md"
