@@ -230,7 +230,9 @@ rm -rf "$MF6"
 MF7=$(_mf_project)
 chmod 555 "$MF7/.githooks"
 MF7_RC=0
-if : >"$MF7/.githooks/.scaffold-probe" 2>/dev/null; then
+# 2>/dev/null goes FIRST: redirections apply left to right, so with the probe
+# first the shell prints its own "Permission denied" before stderr is silenced.
+if : 2>/dev/null >"$MF7/.githooks/.scaffold-probe"; then
   rm -f "$MF7/.githooks/.scaffold-probe"
   chmod 755 "$MF7/.githooks"
   ( cd "$MF7" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1 || MF7_RC=$?
@@ -321,8 +323,11 @@ rm -rf "$MF9"
 MFRO=$(mktemp -d)
 ( cd "$MFRO" && git init --quiet && echo '{"name":"x"}' >package.json \
   && printf 'node_modules/\n' >.gitignore && chmod 444 .gitignore ) >/dev/null 2>&1
-( cd "$MFRO" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
-ro_rc=$?
+# Capture the expected non-zero exit explicitly. Under `set -euo pipefail` a
+# bare subshell that exits non-zero aborts the whole sourced case file before
+# `$?` can be read, which is why this reads as `|| ro_rc=$?` (issue #148).
+ro_rc=0
+( cd "$MFRO" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1 || ro_rc=$?
 chmod 644 "$MFRO/.gitignore" 2>/dev/null || true
 if [ "$ro_rc" -ne 0 ] \
    && grep -qF 'could not write .gitignore' "$HOOK_OUT" \
@@ -338,8 +343,8 @@ fi
 # MF11. The positive control for MF10: a writable .gitignore still gets every
 #       shipped rule, and the run still exits 0. Without this, MF10 would pass
 #       against an installer that had simply stopped writing .gitignore at all.
-( cd "$MFRO" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
-rw_rc=$?
+rw_rc=0
+( cd "$MFRO" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1 || rw_rc=$?
 missing_rule=""
 for r in '*.scaffold-bak' '*.scaffold-bak.*' '.githooks/.scaffold-manifest.new.*' '.githooks/.scaffold-manifest.tmp.*'; do
   grep -qxF "$r" "$MFRO/.gitignore" 2>/dev/null || missing_rule="$r"
