@@ -320,24 +320,61 @@ rm -rf "$MF9"
 #       applies >>file FIRST, so the shell prints its own "Permission denied"
 #       before 2>/dev/null exists, and the failure does not reliably surface as
 #       a non-zero status either. Hence the explicit check plus verify-after-write.
+#
+#       WHY THE PROBE. `chmod 444` is this assertion's PRECONDITION, not the
+#       thing it asserts, and the precondition does not hold for every user:
+#       uid 0 bypasses the mode bit (and some filesystems ignore modes
+#       outright), so the file stays writable, the installer correctly succeeds,
+#       and the assertion goes red for WHO ran it rather than for anything the
+#       installer did — the environment-dependent failure this suite refuses to
+#       write off as flaky. So the precondition is MEASURED first: chmod 444 a
+#       scratch file on the same filesystem and try to append to it, which also
+#       catches mode-ignoring filesystems that an `id -u` check would miss. When
+#       it cannot hold, this is a COUNTED skip that names what did not run (the
+#       driver's floor counts PASS + SKIP), never a silent pass and never a red.
+#
+#       WHY IT IS NOT SUBSTITUTED. The root-proof trigger MF6 uses (a directory
+#       where a regular file is expected) reaches a DIFFERENT branch here: an
+#       unwritable .gitignore is refused up front, named, and summarised, but a
+#       .gitignore that is a directory passes install.sh's `-w` test for root,
+#       the block redirection then fails, and under `set -e` install.sh exits 1
+#       with no output at all (its stderr is already going to /dev/null).
+#       Asserting that would assert less, under messages these greps do not
+#       match, so root gets an honest skip and non-root still runs the real
+#       thing.
 MFRO=$(mktemp -d)
 ( cd "$MFRO" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
-  && printf 'node_modules/\n' >.gitignore && chmod 444 .gitignore ) >/dev/null 2>&1
-# Capture the expected non-zero exit explicitly. Under `set -euo pipefail` a
-# bare subshell that exits non-zero aborts the whole sourced case file before
-# `$?` can be read, which is why this reads as `|| ro_rc=$?` (issue #148).
-ro_rc=0
-( cd "$MFRO" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1 || ro_rc=$?
-chmod 644 "$MFRO/.gitignore" 2>/dev/null || true
-if [ "$ro_rc" -ne 0 ] \
-   && grep -qF 'could not write .gitignore' "$HOOK_OUT" \
-   && grep -qF 'INSTALL INCOMPLETE: the ignore rules were not added' "$HOOK_OUT" \
-   && ! grep -qF 'updated:      .gitignore' "$HOOK_OUT"; then
-  echo "  ✓ a read-only .gitignore fails the install loudly instead of claiming success"
-  PASS=$((PASS + 1))
+  && printf 'node_modules/\n' >.gitignore ) >/dev/null 2>&1
+# The precondition probe, on the same filesystem as the .gitignore above.
+# 2>/dev/null goes FIRST: redirections apply left to right, so with the append
+# first the shell prints its own "Permission denied" before stderr is silenced.
+: >"$MFRO/.mode-probe"
+chmod 444 "$MFRO/.mode-probe"
+mf_modes_enforced=1
+if : 2>/dev/null >>"$MFRO/.mode-probe"; then mf_modes_enforced=0; fi
+chmod 644 "$MFRO/.mode-probe" 2>/dev/null || true
+rm -f "$MFRO/.mode-probe"
+if [ "$mf_modes_enforced" -eq 0 ]; then
+  echo "  - SKIP: a chmod 444 file is still writable for this user (uid $(id -u), or a filesystem that ignores mode bits), so a read-only .gitignore cannot be staged — 1 assertion (the loud failure when the ignore rules cannot be written) did NOT run; run the suite as a non-root user to cover it"
+  SKIP=$((SKIP + 1))
 else
-  echo "  ✗ read-only .gitignore: expected a non-zero exit, the error, and the summary (rc=$ro_rc)"
-  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  chmod 444 "$MFRO/.gitignore"
+  # Capture the expected non-zero exit explicitly. Under `set -euo pipefail` a
+  # bare subshell that exits non-zero aborts the whole sourced case file before
+  # `$?` can be read, which is why this reads as `|| ro_rc=$?` (issue #148).
+  ro_rc=0
+  ( cd "$MFRO" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1 || ro_rc=$?
+  chmod 644 "$MFRO/.gitignore" 2>/dev/null || true
+  if [ "$ro_rc" -ne 0 ] \
+     && grep -qF 'could not write .gitignore' "$HOOK_OUT" \
+     && grep -qF 'INSTALL INCOMPLETE: the ignore rules were not added' "$HOOK_OUT" \
+     && ! grep -qF 'updated:      .gitignore' "$HOOK_OUT"; then
+    echo "  ✓ a read-only .gitignore fails the install loudly instead of claiming success"
+    PASS=$((PASS + 1))
+  else
+    echo "  ✗ read-only .gitignore: expected a non-zero exit, the error, and the summary (rc=$ro_rc)"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
 fi
 
 # MF11. The positive control for MF10: a writable .gitignore still gets every
