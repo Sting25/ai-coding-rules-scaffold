@@ -1,9 +1,12 @@
 # shellcheck shell=bash
-# install-claude.sh — Claude Code-specific install steps. Extracted to its
-# own file because install.sh and install-lib.sh are both already at the
-# scaffold's own 500-line cap (the same reason install-interactive.sh is a
-# separate file). SOURCED (not exec'd) so it runs in install.sh's shell,
-# after install-lib.sh is loaded and before any file is written.
+# install-claude.sh: the two agent-rules-file handlers, CLAUDE.md and
+# AGENTS.md. Both are USER-OWNED prose with their own merge/skip rules rather
+# than a cp_* copy policy, so they live together here. Extracted to its own file
+# because install.sh and install-lib.sh are both already at the scaffold's own
+# 500-line cap (the same reason install-interactive.sh is a separate file);
+# install_agents_md joined install_claude_md here when install.sh hit that cap
+# again. SOURCED (not exec'd) so it runs in install.sh's shell, after
+# install-lib.sh is loaded and before any file is written.
 
 # install_claude_md — CLAUDE.md is USER-OWNED project memory, not a scaffold
 # file. Never replace it (not even with --force). If absent, create it from
@@ -43,4 +46,22 @@ install_claude_md() {
     printf '<!-- ai-coding-rules-scaffold:end -->\n'
   } >>"CLAUDE.md"
   echo "merged:       appended @AGENTS.md + @coding-rules.md imports to existing CLAUDE.md (your content kept)"
+}
+
+# install_agents_md — AGENTS.md carries a Project section the user fills in,
+# so an existing one is never clobbered (even with --force). Skip if present;
+# create from template only when absent.
+install_agents_md() {
+  # `[ -e ]` is false for a dangling symlink; test `-L` first and skip (same
+  # A7 defense as the cp_* helpers, missing from this handler, B1).
+  if [ -L "AGENTS.md" ]; then
+    echo "skip (exists, symlink): AGENTS.md — left untouched; a scaffold path that is a symlink is suspicious. Replace it with a real file to install the template."
+    return
+  fi
+  if [ -e "AGENTS.md" ]; then
+    echo "skip (exists): AGENTS.md — left untouched (your Project section is safe)"
+    return
+  fi
+  cp "$SCAFFOLD_DIR/AGENTS.md.template" "AGENTS.md"
+  echo "installed:    AGENTS.md"
 }

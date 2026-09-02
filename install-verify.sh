@@ -17,9 +17,31 @@
 : "${VERIFY:=1}"
 : "${NO_INSTALL:=0}"
 
-# Set by run_toolchain_verify, read by offer. Deliberately a global, not a
-# local: offer is a sibling function, so dynamic scope is what carries it.
+# Set by run_toolchain_verify, read by offer. Deliberately globals, not locals:
+# offer is a sibling function, so dynamic scope is what carries them.
 CAN_AUTORUN=0
+# Which fd the prompts are answered from: 0 (stdin, the real-terminal case) or
+# 3 (SCAFFOLD_TTY, below).
+VERIFY_ANSWER_FD=0
+
+# SCAFFOLD_VERIFY_TTY: the answer source for the prompts in `offer`, the same
+# kind of seam install-interactive.sh gives the wizard through SCAFFOLD_TTY, but
+# a SEPARATE name, and empty by default.
+#
+# Separate because the wizard defaults SCAFFOLD_TTY to /dev/tty and is sourced
+# into this same shell first, so reusing that name would silently inherit
+# /dev/tty here. Empty by default because run_toolchain_verify's whole safety
+# rule is "only ever auto-run a package manager when stdin is a real terminal":
+# reading from /dev/tty would start prompting inside `curl ... | bash` and other
+# piped runs, where the wizard's /dev/tty is an opt-in the user asked for with
+# -i and this is not.
+#
+# Point it at a file of canned answers (one per prompt, in prompt order) and the
+# auto-install branch becomes reachable without a terminal. That branch had no
+# test at all (audit ctg-05): nothing in tests/ ever supplied a TTY, so `offer`
+# never prompted and never ran a package manager anywhere in the suite, and
+# replacing the whole function with `offer(){ return 0; }` went undetected.
+: "${SCAFFOLD_VERIFY_TTY:=}"
 
 # Detect the project's package manager from lockfiles / available binaries.
 js_install_cmd() {
@@ -55,7 +77,11 @@ offer() {
   fi
   if [ "$CAN_AUTORUN" -eq 1 ]; then
     printf "  ? %s not installed — install now with '%s %s'? [y/N] " "$label" "$base" "$pkgs"
-    read -r reply || reply=""
+    if [ "$VERIFY_ANSWER_FD" -eq 3 ]; then
+      read -r reply <&3 || reply=""
+    else
+      read -r reply || reply=""
+    fi
     case "$reply" in
       [yY]|[yY][eE][sS])
         # shellcheck disable=SC2086  # word-split the package list deliberately
@@ -74,8 +100,21 @@ offer() {
 # behavior) so CI and piped/scripted runs never install.
 run_toolchain_verify() {
   CAN_AUTORUN=0
-  if [ "$VERIFY" -eq 1 ] && [ "$NO_INSTALL" -eq 0 ] && [ -t 0 ] && [ -z "${CI:-}" ]; then
-    CAN_AUTORUN=1
+  VERIFY_ANSWER_FD=0
+  if [ "$VERIFY" -eq 1 ] && [ "$NO_INSTALL" -eq 0 ] && [ -z "${CI:-}" ]; then
+    if [ -t 0 ]; then
+      CAN_AUTORUN=1
+    elif [ -n "$SCAFFOLD_VERIFY_TTY" ] && [ -r "$SCAFFOLD_VERIFY_TTY" ]; then
+      # Explicitly pointed at an answer source: prompt, reading from fd 3 so a
+      # piped or script-fed stdin is never mistaken for a person. A path that
+      # passes `-r` can still fail to open (a /dev/tty with no controlling
+      # terminal is the usual one), so an unopenable source falls back to the
+      # print-only behavior rather than aborting the install under errexit.
+      if exec 3<"$SCAFFOLD_VERIFY_TTY" 2>/dev/null; then
+        VERIFY_ANSWER_FD=3
+        CAN_AUTORUN=1
+      fi
+    fi
   fi
 
   if [ "$VERIFY" -eq 1 ]; then

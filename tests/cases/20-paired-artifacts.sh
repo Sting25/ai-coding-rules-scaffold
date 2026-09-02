@@ -200,3 +200,79 @@ fi
 rm -rf "$DOCLESS" "$PT"
 
 reset_repo
+
+# (D) agent-precheck <-> the runtime config that invokes it (audit
+# code-install-policy-1). --claude/--cursor install .githooks/lib/agent-precheck,
+# but cp_safe SKIPS a pre-existing .claude/settings.json or .cursor/hooks.json:
+# the precheck then sits on disk, executable, invoked by nothing, while
+# install.sh omitted all three opt-ins from its "not enabled" list and the
+# doctor printed "0 gaps" and exited 0. Measured with stub configs in place,
+# `grep -rl agent-precheck .claude .cursor` found nothing while the doctor's
+# output was byte-identical to a correctly-wired install's.
+pa_stub_agent_project() {
+  local t
+  t=$(mktemp -d)
+  ( cd "$t" && git init --quiet \
+    && echo '{"name":"t"}' >package.json \
+    && mkdir -p .claude .cursor \
+    && echo '{"permissions":{"allow":["Bash(ls:*)"]}}' >.claude/settings.json \
+    && echo '{"hooks":{}}' >.cursor/hooks.json \
+    && "$SCAFFOLD_DIR/install.sh" --frontend --claude --cursor --no-verify ) >/dev/null 2>&1
+  printf '%s' "$t"
+}
+
+pa_wired_agent_project() {
+  local t
+  t=$(mktemp -d)
+  ( cd "$t" && git init --quiet \
+    && echo '{"name":"t"}' >package.json \
+    && "$SCAFFOLD_DIR/install.sh" --frontend --claude --no-verify ) >/dev/null 2>&1
+  printf '%s' "$t"
+}
+
+pa_case "agent-precheck installed with configs that never invoke it is a gap" \
+  pa_stub_agent_project 1 "nothing invokes it: neither .claude/settings.json nor .cursor/hooks.json mentions agent-precheck" true
+
+pa_case_absent "a --claude install that actually wires the precheck is not a gap" \
+  pa_wired_agent_project "nothing invokes it" true
+
+# (D) the same detection on install.sh's own end-of-run summary: an opt-in whose
+# config exists but is not wired must be reported as PRESENT BUT NOT ARMED with
+# the merge instruction, not silently counted as enabled, and the install must
+# warn at the moment cp_safe skips the file. That summary is written for an AI
+# agent relaying it to its user, so "silently absent" is the whole failure mode.
+PAW=$(mktemp -d)
+( cd "$PAW" && git init --quiet && echo '{"name":"t"}' >package.json \
+  && mkdir -p .claude .cursor \
+  && echo '{"permissions":{"allow":["Bash(ls:*)"]}}' >.claude/settings.json \
+  && echo '{"hooks":{}}' >.cursor/hooks.json \
+  && echo 'registry=https://registry.npmjs.org/' >.npmrc \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --claude --cursor --npm-cooldown --no-verify ) >"$HOOK_OUT" 2>&1
+if grep -q "warning: .claude/settings.json exists but does not mention 'agent-precheck'" "$HOOK_OUT" \
+   && grep -q "warning: .cursor/hooks.json exists but does not mention 'agent-precheck'" "$HOOK_OUT" \
+   && grep -q "warning: .npmrc exists but does not mention 'min-release-age'" "$HOOK_OUT" \
+   && grep -q "Claude Code agent guardrails: PRESENT BUT NOT ARMED" "$HOOK_OUT" \
+   && grep -q "Cursor agent guardrails: PRESENT BUT NOT ARMED" "$HOOK_OUT" \
+   && grep -q "npm install-layer cooldown .*: PRESENT BUT NOT ARMED" "$HOOK_OUT" \
+   && ! grep -q "note: .npmrc sets min-release-age=7" "$HOOK_OUT"; then
+  echo "  ✓ install reports a present-but-unwired opt-in as not armed, with the merge fix"; PASS=$((PASS + 1))
+else
+  echo "  ✗ install should report a present-but-unwired opt-in as not armed, not as enabled"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$PAW"
+
+# (D) the control: a clean install that really does wire all three says nothing
+# about them at all, so the new wording cannot become background noise.
+PAOK=$(mktemp -d)
+( cd "$PAOK" && git init --quiet && echo '{"name":"t"}' >package.json \
+  && "$SCAFFOLD_DIR/install.sh" --frontend --claude --cursor --npm-cooldown --no-verify ) >"$HOOK_OUT" 2>&1
+if ! grep -q "PRESENT BUT NOT ARMED" "$HOOK_OUT" \
+   && ! grep -q "is NOT armed" "$HOOK_OUT" \
+   && grep -q "note: .npmrc sets min-release-age=7" "$HOOK_OUT" \
+   && grep -q "min-release-age" "$PAOK/.npmrc" \
+   && grep -q "agent-precheck" "$PAOK/.claude/settings.json"; then
+  echo "  ✓ a correctly wired install reports no unarmed opt-in and keeps its normal notes"; PASS=$((PASS + 1))
+else
+  echo "  ✗ a correctly wired install should report no unarmed opt-in"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$PAOK"
