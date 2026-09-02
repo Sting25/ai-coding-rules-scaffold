@@ -18,16 +18,15 @@
 (^|[^A-Za-z_])unimplemented![[:space:]]*[([{]	Unfinished code: unimplemented!() left in - implement before committing
 (^|[^A-Za-z_])unreachable![[:space:]]*[([{]	unreachable!() panics in prod if hit - prove it or return a Result
 
-# --- Security: TLS bypass and unchecked/UB calls ---
+# --- Security: TLS bypass ---
 # danger_accept_invalid_certs is reqwest's TLS off-switch - the same bypass
 # backend.txt bans as verify=False and frontend.txt as rejectUnauthorized: false.
-# The unchecked rule allows a turbofish (`mem::transmute::<u32, f32>(x)`) and a
-# method call (`arr.get_unchecked(i)`); `from_utf8(`, `.get(` and a method named
-# `get_unchecked_len(` do not match. The `(` must follow the name IMMEDIATELY (as
-# rustfmt writes every call), so prose that names the function with a space -
-# `// Never use transmute (see bytemuck)` - does not fire.
-danger_accept_invalid_(certs|hostnames)[[:space:]]*\([[:space:]]*true	reqwest danger_accept_invalid_certs/hostnames(true) disables TLS validation (MITM risk) - fix the cert/CA
-(^|[^A-Za-z_])(transmute|transmute_copy|from_utf8_unchecked|get_unchecked(_mut)?)(::<[^(]*>)?\(	Unchecked/transmute call - UB if the invariant is wrong; use the checked API (from_utf8, .get(), bytemuck)
+# Only the literal `(true)` argument fires. The method definition
+# (`fn danger_accept_invalid_certs(mut self, accept: bool)`), a wrapper that
+# forwards the flag, a config-driven call (`(cfg.accept_invalid_certs)`), the
+# `(false)` call and a `Debug` field named after it are all silent, and the
+# word-end guard after `true` keeps a `(true_flag)` argument out.
+danger_accept_invalid_(certs|hostnames)[[:space:]]*\([[:space:]]*true($|[^A-Za-z0-9_])	reqwest danger_accept_invalid_certs/hostnames(true) disables TLS validation (MITM risk) - fix the cert/CA
 
 # Optional (opt-in) — uncomment a line to enable it:
 # (^|[^A-Za-z_])panic![[:space:]]*[([{]	panic!() aborts the thread - prefer returning a Result (opt-in: noisy)
@@ -40,3 +39,12 @@ danger_accept_invalid_(certs|hostnames)[[:space:]]*\([[:space:]]*true	reqwest da
 # application crate that should contain none - or better, put
 # `#![forbid(unsafe_code)]` in lib.rs, which the compiler enforces and a grep cannot.
 # (^|[^A-Za-z_])unsafe[[:space:]]*(\{|fn[[:space:]]|impl[[:space:]])	unsafe block/fn/impl - memory safety is yours now; justify it in review (opt-in: normal in FFI/systems crates)
+# The same reasoning retires `transmute`/`from_utf8_unchecked`: they are only
+# reachable inside an `unsafe` block, so an always-on rule fires on deliberate,
+# reviewed code rather than on a defect. A grep also cannot see comments or
+# string literals - a `// SAFETY:` note naming the call, or a build-system test
+# that embeds Rust source as a string, trips it just as hard. Enable it in a
+# crate that should contain no `unsafe` at all. `get_unchecked` is left out even
+# here: `Pin::get_unchecked_mut()` is how every hand-written Future projects its
+# pin, and `unsafe fn get_unchecked(` is a method definition, not a call.
+# (^|[^A-Za-z_])(transmute|transmute_copy|from_utf8_unchecked)(::<[^(]*>)?\(	transmute/from_utf8_unchecked - UB if the invariant is wrong; prefer bytemuck or str::from_utf8 (opt-in: fires on reviewed unsafe code too)
