@@ -75,6 +75,30 @@ doc_case "a ./-prefixed core.hooksPath is armed, not a gap" 0 \
 doc_case "a trailing-slash core.hooksPath is armed, not a gap" 0 \
   "0 gaps" git config core.hooksPath .githooks/
 
+# ...and none of those spellings may depend on the caller's environment. CDPATH,
+# which plenty of shell profiles export, makes `cd` ECHO the directory it landed
+# in on STDOUT, where the `2>/dev/null` on those cd's cannot suppress it. The
+# relative `cd .githooks` picked up the echo and the absolute one did not, so
+# the two resolved paths stopped matching and a demonstrably wired project was
+# reported as a hard gap, exit 1. Every case above sets no CDPATH, so the whole
+# spelling family was certified healthy in exactly the environment that works.
+doc_hookspath_relative() { git config core.hooksPath ./.githooks; }
+for doc_spell in doc_hookspath_absolute doc_hookspath_relative; do
+  DOCT=$(doc_project)
+  ( cd "$DOCT" && "$doc_spell" ) >/dev/null 2>&1
+  doc_rc=0
+  ( cd "$DOCT" && CDPATH=. "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+  if [ "$doc_rc" -eq 0 ] && grep -qF "0 gaps" "$HOOK_OUT"; then
+    echo "  ✓ ${doc_spell#doc_hookspath_} core.hooksPath stays armed with CDPATH set"
+    PASS=$((PASS + 1))
+  else
+    echo "  ✗ CDPATH turned a wired ${doc_spell#doc_hookspath_} hooksPath into a gap (exit $doc_rc)"
+    sed 's/^/      /' "$HOOK_OUT"
+    FAIL=$((FAIL + 1))
+  fi
+  rm -rf "$DOCT"
+done
+
 # (C) git ignores a hook file without the executable bit — no error, no warning,
 # no commit blocked.
 doc_case "a non-executable pre-commit is reported" 1 \

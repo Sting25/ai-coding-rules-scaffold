@@ -20,6 +20,16 @@
 # is healthy, and a doctor that cried wolf about it would stop being read.
 set -euo pipefail
 
+# CDPATH is inherited from the caller's environment and makes `cd` ECHO the
+# directory it landed in, on stdout, where `2>/dev/null` cannot suppress it. The
+# wiring check below resolves two paths with `$(cd ... && pwd -P)`; a relative
+# `cd .githooks` gets the echo prepended and an absolute one does not, so the
+# two resolved paths stop matching and a correctly wired project is reported as
+# a hard gap, exit 1. Measured: `CDPATH=. scaffold-doctor.sh --quiet` turned a
+# clean "0 gaps" into a false [wiring] gap for both the absolute and the
+# `./.githooks` spelling of core.hooksPath.
+unset CDPATH
+
 usage() {
   cat <<'USAGE'
 usage: scaffold-doctor.sh [--quiet]
