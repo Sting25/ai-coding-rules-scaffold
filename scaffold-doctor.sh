@@ -81,7 +81,7 @@ SECTION=""
 section() { SECTION=$1; [ "$QUIET" -eq 1 ] || printf '\n%s\n' "$1"; }
 ok()   { OKS=$((OKS + 1));   [ "$QUIET" -eq 1 ] || echo "  ✓ $1"; }
 note() { NOTES=$((NOTES + 1)); [ "$QUIET" -eq 1 ] || echo "  ! $1"; }
-# note_always <what-is-half-armed> — a note that --quiet may not swallow.
+# note_always <what-is-half-armed>: a note that --quiet may not swallow.
 # --quiet exists so a CI step or a pre-flight script can print gaps and nothing
 # else, and most notes are "you never opted into this", which such a caller
 # genuinely does not need. A guardrail that IS installed and has been switched
@@ -166,7 +166,7 @@ fi
 # ... 0 gaps" while an 800 KB file committed clean. So each check is now matched
 # against its CALLERS too.
 #
-# check_called_in NAME FILE... — is NAME invoked in any of those files?
+# check_called_in NAME FILE... (is NAME invoked in any of those files?)
 # Comment lines are stripped first: every one of these files discusses the
 # checks by name in its own header, and a header is not a call site. The name
 # must match as a whole word so one check's name cannot satisfy another's.
@@ -192,14 +192,14 @@ for chk in check-size check-large-files check-patterns check-filenames check-sec
     gap "lib/$chk is not executable — every commit will error on it" "chmod +x .githooks/lib/$chk"
   elif ! check_called_in "$chk" .githooks/pre-commit .githooks/commit-msg \
                          .githooks/local.d/* .github/workflows/*.yml; then
-    gap "lib/$chk is installed and executable but nothing calls it — no invocation in .githooks/pre-commit or .github/workflows/, so it is decoration and the commits it should block are not blocked (issue #72)" \
+    gap "lib/$chk is installed and executable but nothing calls it: no invocation in .githooks/pre-commit or .github/workflows/, so it is decoration and the commits it should block are not blocked (issue #72)" \
         "re-run install.sh to restore the call sites, then re-apply any customization you had made to the hook or workflow"
   elif [ -f .github/workflows/lint.yml ] && ! check_called_in "$chk" .github/workflows/*.yml; then
     # Half-wired, not inert: the hook still runs it locally, so this is a note
     # rather than a gap. But --no-verify, a push from a machine without the
     # hooks wired, and a web-UI edit all reach main with nobody having run it,
     # which is what makes it worth saying out loud even under --quiet.
-    note_always "lib/$chk runs in the pre-commit hook but NO CI call site invokes it — a --no-verify commit or a push from an unwired clone reaches main unchecked (issue #72)"
+    note_always "lib/$chk runs in the pre-commit hook but NO CI call site invokes it: a --no-verify commit or a push from an unwired clone reaches main unchecked (issue #72)"
   else
     ok "lib/$chk armed"
   fi
@@ -215,7 +215,7 @@ for chk_path in .githooks/lib/check-*; do
   esac
   if ! check_called_in "$chk" .githooks/pre-commit .githooks/commit-msg \
                        .githooks/local.d/* .github/workflows/*.yml; then
-    gap "lib/$chk is installed but nothing calls it — no invocation in .githooks/ or .github/workflows/, so it never runs" \
+    gap "lib/$chk is installed but nothing calls it: no invocation in .githooks/ or .github/workflows/, so it never runs" \
         "re-run install.sh with the flag that installed it, to restore its call site"
   fi
 done
@@ -352,7 +352,7 @@ else
   if [ -x .githooks/lib/scaffold-audit ]; then
     # The audit block was printed verbatim and never counted, so a project that
     # had switched the 500 KB cap and the whole size rule off still summarised
-    # as "armed: N check(s) running, 0 gaps" — and under --quiet, which is the
+    # as "armed: N check(s) running, 0 gaps", and under --quiet, which is the
     # mode a CI step or an agent asked "what is off here?" actually reads, the
     # overrides did not appear at all. Measured: --quiet output was byte-identical
     # with and without a .scaffold.toml disabling three rules.
@@ -373,13 +373,13 @@ else
           audit_cap=""
           audit_rule=${audit_line#*rule \"}
           audit_rule=${audit_rule%%\"*}
-          note_always "rule \"$audit_rule\" is DISABLED in .scaffold.toml — it is installed and it blocks nothing"
+          note_always "rule \"$audit_rule\" is DISABLED in .scaffold.toml: it is installed and it blocks nothing"
           ;;
         *'rule "'*severity=*)
           audit_cap=""
           audit_rule=${audit_line#*rule \"}
           audit_rule=${audit_rule%%\"*}
-          note_always "rule \"$audit_rule\" is downgraded to severity=${audit_line##*severity=} in .scaffold.toml — it reports and no longer blocks"
+          note_always "rule \"$audit_rule\" is downgraded to severity=${audit_line##*severity=} in .scaffold.toml: it reports and no longer blocks"
           ;;
         *' = '*)
           if [ -n "$audit_cap" ]; then

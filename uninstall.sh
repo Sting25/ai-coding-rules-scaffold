@@ -55,7 +55,7 @@ is_marked() {
   return 1
 }
 
-# dir_would_be_empty DIR — true when every entry in DIR is a path a real run
+# dir_would_be_empty DIR: true when every entry in DIR is a path a real run
 # would already have removed (or DIR has no entries at all). Hidden entries are
 # globbed explicitly: an unmatched glob stays literal, which the -e/-L test then
 # skips.
