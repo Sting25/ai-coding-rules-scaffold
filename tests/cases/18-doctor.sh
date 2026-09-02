@@ -127,6 +127,66 @@ doc_case "a pattern file with no scaffold-extensions header is reported" 1 \
   "no '# scaffold-extensions:' header" \
   bash -c 'printf "forbidden\tno header here\n" >.forbidden-patterns/custom.txt'
 
+# Counting active patterns only catches the file gutted to ZERO, which no
+# realistic hand-edit produces. A secrets.txt trimmed from its 42 shipped rules
+# to ONE left every layer green — "armed (1 active patterns)", check-secrets
+# fails closed only at zero, and pre-commit's deleted-config guard fires only on
+# whole-file deletion — so an agent could drop the AWS/JWT/PEM rules in one
+# commit and land a live key in the next. The count is derived from the shipped
+# template rather than hardcoded, so adding a rule to the scaffold does not turn
+# this into a false red.
+doc_trim_secrets() {
+  grep -vE '^[[:space:]]*(#|$)' .forbidden-patterns/secrets.txt | head -1 >secrets.tmp \
+    && mv secrets.tmp .forbidden-patterns/secrets.txt
+}
+DOCT=$(doc_project)
+( cd "$DOCT" && doc_trim_secrets ) >/dev/null 2>&1
+doc_rc=0
+( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+doc_shipped=$(grep -cvE '^[[:space:]]*(#|$)' "$SCAFFOLD_DIR/forbidden-patterns/secrets.txt.template" || true)
+doc_missing=$(sed -n 's/.*secrets\.txt is missing \([0-9][0-9]*\) shipped rule(s).*/\1/p' "$HOOK_OUT" | tail -1)
+# The file must still be present and still counted armed, or this would only be
+# re-proving the "missing secrets.txt" and "no active patterns" cases above.
+if [ "$doc_rc" -eq 1 ] && [ -s "$DOCT/.forbidden-patterns/secrets.txt" ] \
+   && grep -qF "secrets.txt armed (1 active patterns)" "$HOOK_OUT" \
+   && grep -qF "shipped rule(s)" "$HOOK_OUT" \
+   && [ "${doc_missing:-0}" -eq $((doc_shipped - 1)) ] \
+   && grep -q '^        - ' "$HOOK_OUT"; then
+  echo "  ✓ a secrets.txt trimmed to one rule is reported as shipped-rule drift"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ trimmed secrets.txt not reported as drift (exit $doc_rc, missing ${doc_missing:-none} of $doc_shipped)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCT"
+
+# ...and the narrowing companion, without which "report missing shipped rules"
+# could quietly widen into "report any difference" one edit later. These files
+# are shipped-then-EXTENDED by design: a project adding its own denylist rules
+# has lost nothing, so the doctor must stay silent and exit 0. A drift check
+# that goes red on legitimate customization gets switched off, and then the
+# trimmed-secrets hole above is open again.
+doc_extend_patterns() {
+  printf '(?-i)ACME_INTERNAL_[A-Z0-9]{16}\tacme internal token\n' >>.forbidden-patterns/secrets.txt
+  printf '# a house rule of our own\n' >>.forbidden-patterns/shell.txt
+  printf 'acme_deploy_prod\tno prod deploys from a shell script\n' >>.forbidden-patterns/shell.txt
+}
+DOCT=$(doc_project)
+( cd "$DOCT" && doc_extend_patterns ) >/dev/null 2>&1
+doc_rc=0
+( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+if [ "$doc_rc" -eq 0 ] && grep -qF "0 gaps" "$HOOK_OUT" \
+   && ! grep -qF "shipped rule(s)" "$HOOK_OUT"; then
+  echo "  ✓ pattern files with locally ADDED rules report no drift"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ locally added pattern rules were reported as drift (exit $doc_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCT"
+
 # (E) Overrides. scaffold-config fails open to EMPTY output when missing, and
 # empty output means "no override" — so a .scaffold.toml full of intentional
 # overrides is silently ignored.
