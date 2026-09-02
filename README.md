@@ -15,7 +15,7 @@ Drop-in guardrails that **block bad code from being committed or merged**. One `
 
 - **Debug leftovers** — `print()`, `console.log`, `debugger`, `breakpoint()`, `pdb`/`ipdb`, `dbg!`, `var_dump`, and the per-language equivalents.
 - **Secrets & key files** — AWS / GCP / GitHub / GitLab / OpenAI / Anthropic / Stripe / Slack / Docker tokens, private keys, URL-embedded credentials, and stray `.env` / `*.pem` / SSH-key files.
-- **Runaway file growth** — a hard **500-line cap** that forces a file to be split before it outgrows an agent's context window (the one rule never to raise).
+- **Runaway file growth**, a hard **500-line cap** that forces a file to be split before it outgrows an agent's context window (the one rule never to raise), plus a **500 KB cap** on any single committed file that blocks large binaries (videos, model checkpoints, database dumps, zipped exports).
 - **Insecure shortcuts** — `curl | bash`, `rm -rf /`, `chmod 777`, disabled TLS verification (`verify=False`, `curl -k`, `rejectUnauthorized: false`), raw `innerHTML`/XSS sinks, and `git --no-verify` hook bypasses.
 - **Repo-hygiene rot** — leftover merge-conflict markers, case-only filename collisions, and hidden-Unicode (Trojan-Source) tricks.
 - **Lint & type regressions** — `ruff` for Python; type-aware `eslint` + `tsc` + `prettier` for TS/JS; deny-lists for Vue, Svelte, PHP, Go, Rust, Java, Kotlin, Ruby, and shell.
@@ -120,8 +120,18 @@ Tests run in CI by default: a plain install also drops `.github/workflows/tests.
 ./install.sh --coverage-gate # swap the default tests.yml for coverage.yml (tests + patch-coverage gate)
 ./install.sh --no-test-workflow # opt out of the default CI test-execution workflow (loud recorded skip)
 ./install.sh --no-install   # detect missing tools but never auto-run a package manager
+./install.sh --interactive  # wizard: prompts for stack + each opt-in flag above (-i, needs a terminal)
 ./install.sh --help         # show usage
 ```
+
+Before it copies anything else, every run (including the first) adds
+`*.scaffold-bak`, `*.scaffold-bak.*`, `.githooks/.scaffold-manifest.new.*` and
+`.githooks/.scaffold-manifest.tmp.*` to your `.gitignore`, creating the file
+if you don't already have one, so an upgrade's backup copies never end up
+tracked. That happens before the symlink checks that can make the rest of
+the run refuse to write and exit non-zero, so a failed install still leaves
+this `.gitignore` change behind. See [What lands in your project](./TECHNICAL.md#what-lands-in-your-project)
+in TECHNICAL.md.
 
 **Re-running is the upgrade path.** Running `install.sh` again refreshes
 scaffold-owned code: the pre-commit hook, the `.githooks/lib/*` scanners, and
@@ -132,7 +142,13 @@ the rules docs, …) are left untouched, and `.forbidden-patterns/*.txt` files
 and the CI workflows (`lint.yml`, `tests.yml`, `coverage.yml`, `gitleaks.yml`,
 `dependency-review.yml`, `zizmor.yml`, `socket-security.yml`, `test-guard.yml`)
 that you've edited are kept with a drift notice rather than overwritten (use
-`--force` to take the shipped version, backed up to `.scaffold-bak`).
+`--force` to take the shipped version, backed up to `.scaffold-bak`). Any
+scaffold-owned file the installer does overwrite is backed up first, and if
+that file contains a `# Repo adaptation: <why>` comment line, the installer
+prints a loud warning naming it instead of only the routine `backed up:`
+line, so a customization to a file that would otherwise be silently
+refreshed gets noticed. See [Update & uninstall](./TECHNICAL.md#update--uninstall)
+in TECHNICAL.md for the full contract.
 
 Language pattern files are auto-installed when their manifest is detected
 (`go.mod`, `Cargo.toml`, `composer.json`, `pom.xml`/`build.gradle`, `Gemfile`,
@@ -144,17 +160,20 @@ deps.** At the end, `install.sh` runs a **detect → offer** pass: it checks for
 each tool its configs assume (`ruff`, `pytest`+coverage / `eslint`, `tsc`,
 `prettier`, `vitest`) and, for anything missing, offers to install it. The
 auto-install only runs when it's **safe** — an interactive terminal, not
-`--no-verify`, not inside CI (`$CI`), and not `--no-install`. In any
-non-interactive context it falls back to just printing the command, so CI and
-piped/scripted runs never mutate your `package.json` or environment. The
-package manager is detected from your lockfiles (`npm`/`pnpm`/`yarn`,
-`pip`/`uv`).
+`--no-verify`, not inside CI (`$CI`), and not `--no-install`. In any other
+non-interactive context it falls back to just printing the command, so CI
+and piped/scripted runs never mutate your `package.json` or environment.
+Outside CI, point `SCAFFOLD_VERIFY_TTY` at a file of canned replies (one
+per prompt, in prompt order, e.g. `y`/`n` lines) to answer those prompts
+without a real terminal, for a scripted install that still wants a per-tool
+yes/no; `$CI` being set overrides it back to print-only. The package
+manager is detected from your lockfiles (`npm`/`pnpm`/`yarn`, `pip`/`uv`).
 
 To install the linters by hand instead:
 
 ```sh
-pip install ruff pytest pytest-cov                                      # Python
-npm i -D eslint @eslint/js typescript-eslint typescript prettier vitest # TS/JS
+pip install ruff pytest pytest-cov  # Python
+npm i -D eslint @eslint/js @eslint/compat typescript-eslint eslint-plugin-import-x eslint-plugin-unused-imports typescript prettier vitest @vitest/coverage-v8  # TS/JS
 ```
 
 ### Already have commit history? Scan it once for secrets
@@ -187,7 +206,7 @@ If your project already uses Husky or lefthook, `install.sh` detects the existin
    .githooks/pre-commit
    ```
 
-Either way, the `lib/check-*` scripts in `.githooks/lib/` are also runnable directly (`git ls-files | .githooks/lib/check-secrets`), so you can wire them into any orchestrator.
+Either way, the `lib/check-*` scripts in `.githooks/lib/` are also runnable directly. They read a **NUL-separated** file list on stdin (`git ls-files -z | .githooks/lib/check-secrets`), not newline-separated; a plain `git ls-files |` pipe (no `-z`) silently scans nothing. So you can wire them into any orchestrator.
 
 ## AI agent integration
 
@@ -240,7 +259,7 @@ git commit -m "should be rejected"
 # → hook prints: ✗ some_module.py: Use structlog (or the project's logger), not print()
 ```
 
-Want to confirm the guardrails are actually wired up, not just present? Run `./scaffold-doctor.sh`; see [Check whether it's armed](./TECHNICAL.md#check-whether-its-armed) in TECHNICAL.md for what it checks.
+Want to confirm the guardrails are actually wired up, not just present? `scaffold-doctor.sh` is not installed into your project, so run `npx ai-coding-rules-scaffold doctor` from inside your project (works no matter how you installed); or, if you have a git clone of this scaffold repo, run `<path to that clone>/scaffold-doctor.sh` with your project as the working directory. See [Check whether it's armed](./TECHNICAL.md#check-whether-its-armed) in TECHNICAL.md for what it checks.
 
 ## Platform notes
 

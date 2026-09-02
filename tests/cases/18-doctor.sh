@@ -16,7 +16,7 @@ echo "cases/18 — scaffold-doctor (armed vs merely installed)"
 doc_project() {
   local t
   t=$(mktemp -d)
-  ( cd "$t" && git init --quiet \
+  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" \
     && echo '#!/usr/bin/env bash' >run.sh \
     && "$SCAFFOLD_DIR/install.sh" --shell --no-verify ) >/dev/null 2>&1
   printf '%s' "$t"
@@ -75,6 +75,30 @@ doc_case "a ./-prefixed core.hooksPath is armed, not a gap" 0 \
 doc_case "a trailing-slash core.hooksPath is armed, not a gap" 0 \
   "0 gaps" git config core.hooksPath .githooks/
 
+# ...and none of those spellings may depend on the caller's environment. CDPATH,
+# which plenty of shell profiles export, makes `cd` ECHO the directory it landed
+# in on STDOUT, where the `2>/dev/null` on those cd's cannot suppress it. The
+# relative `cd .githooks` picked up the echo and the absolute one did not, so
+# the two resolved paths stopped matching and a demonstrably wired project was
+# reported as a hard gap, exit 1. Every case above sets no CDPATH, so the whole
+# spelling family was certified healthy in exactly the environment that works.
+doc_hookspath_relative() { git config core.hooksPath ./.githooks; }
+for doc_spell in doc_hookspath_absolute doc_hookspath_relative; do
+  DOCT=$(doc_project)
+  ( cd "$DOCT" && "$doc_spell" ) >/dev/null 2>&1
+  doc_rc=0
+  ( cd "$DOCT" && CDPATH=. "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+  if [ "$doc_rc" -eq 0 ] && grep -qF "0 gaps" "$HOOK_OUT"; then
+    echo "  ✓ ${doc_spell#doc_hookspath_} core.hooksPath stays armed with CDPATH set"
+    PASS=$((PASS + 1))
+  else
+    echo "  ✗ CDPATH turned a wired ${doc_spell#doc_hookspath_} hooksPath into a gap (exit $doc_rc)"
+    sed 's/^/      /' "$HOOK_OUT"
+    FAIL=$((FAIL + 1))
+  fi
+  rm -rf "$DOCT"
+done
+
 # (C) git ignores a hook file without the executable bit — no error, no warning,
 # no commit blocked.
 doc_case "a non-executable pre-commit is reported" 1 \
@@ -109,6 +133,104 @@ doc_case "a pattern file with no scaffold-extensions header is reported" 1 \
 doc_case "a .scaffold.toml with no scaffold-config helper is reported" 1 \
   "silently ignored" rm -f .githooks/lib/scaffold-config
 
+# A rule switched off in .scaffold.toml is a deliberately disarmed guardrail:
+# never a gap (the project asked for it), but the doctor used to pipe the audit
+# block through sed and never count or classify a single line of it, so the run
+# still summarised as "N check(s) running, 0 gaps" with the whole size rule and
+# the 500 KB cap off. Under --quiet, the mode a CI step or an agent asked "what
+# is off here?" actually reads, the overrides did not appear at all: the output
+# was byte-identical with and without the disables.
+doc_disable_rules() {
+  cat >.scaffold.toml <<'DISABLED_TOML'
+[rules."large-files"]
+disabled = true
+reason = "large binary fixtures"
+
+[rules."size"]
+disabled = true
+
+[rules."shell/curl piped to shell"]
+severity = "warn"
+DISABLED_TOML
+}
+doc_raise_caps() {
+  cat >.scaffold.toml <<'CAPS_TOML'
+[size]
+max_lines = 5000
+CAPS_TOML
+}
+# The note count in the summary line, so "the report mentions it somewhere" is
+# not mistaken for "the report counts it".
+doc_note_count() { sed -n 's/.*, \([0-9][0-9]*\) note(s).*/\1/p' "$1" | tail -1; }
+
+DOCT=$(doc_project)
+doc_rc=0
+( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+doc_notes_before=$(doc_note_count "$HOOK_OUT")
+( cd "$DOCT" && doc_disable_rules ) >/dev/null 2>&1
+doc_rc=0
+( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+doc_notes_after=$(doc_note_count "$HOOK_OUT")
+if [ "$doc_rc" -eq 0 ] \
+   && grep -qF 'rule "large-files" is DISABLED' "$HOOK_OUT" \
+   && grep -qF 'rule "size" is DISABLED' "$HOOK_OUT" \
+   && grep -qF 'rule "shell/curl piped to shell" is downgraded to severity=warn' "$HOOK_OUT" \
+   && [ "$doc_notes_after" -eq $((doc_notes_before + 3)) ]; then
+  echo "  ✓ --quiet names every disabled rule and counts it as a note"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ --quiet hid the .scaffold.toml disables (exit $doc_rc, notes $doc_notes_before -> $doc_notes_after)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+# The full report must name them too, as notes rather than as an uncounted
+# passthrough of the audit block.
+doc_rc=0
+( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+if [ "$doc_rc" -eq 0 ] && [ "$(grep -c 'is DISABLED in .scaffold.toml' "$HOOK_OUT")" -eq 2 ]; then
+  echo "  ✓ the full report classifies each disable as a note, not a gap"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ full report mishandled the disables (exit $doc_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCT"
+
+# A raised cap disarms a guardrail exactly as a disable does, so it is reported
+# the same way, with the new value, because "500 KB" is the thing the reader
+# believes is in force.
+DOCT=$(doc_project)
+( cd "$DOCT" && doc_raise_caps ) >/dev/null 2>&1
+doc_rc=0
+( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+if [ "$doc_rc" -eq 0 ] && grep -qF "[size] cap overridden in .scaffold.toml: max_lines = 5000" "$HOOK_OUT"; then
+  echo "  ✓ --quiet names a raised cap and the value now in force"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ a raised cap went unreported under --quiet (exit $doc_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCT"
+
+# ...and the shipped, override-free .scaffold.toml must stay silent: a doctor
+# that reported an off-switch on every clean project would train the reader to
+# skip the line that matters.
+DOCT=$(doc_project)
+doc_rc=0
+( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+if [ "$doc_rc" -eq 0 ] && grep -qF "0 gaps" "$HOOK_OUT" \
+   && ! grep -qF "in .scaffold.toml" "$HOOK_OUT"; then
+  echo "  ✓ an override-free .scaffold.toml reports no off-switches"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ a clean .scaffold.toml produced override noise (exit $doc_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCT"
+
 # (F) In local.d/ the executable bit IS the on/off switch, so a non-executable
 # entry is a deliberate state. It must be REPORTED but must NOT count as a gap —
 # a doctor that cries wolf about intentional configuration stops being read.
@@ -123,6 +245,56 @@ doc_case "an executable local.d check is reported armed" 0 \
 # one breaks every commit. Loud, not silent — but still worth naming precisely.
 doc_case "a missing shipped check is reported" 1 \
   "lib/check-hygiene is missing" rm -f .githooks/lib/check-hygiene
+
+# ...but on-disk-and-executable was the ONLY thing this section tested, which is
+# issue #72 restated: an upgrade preserved a customized lint.yml with no
+# check-large-files call site, the script sat on disk, and the report said
+# "lib/check-large-files armed ... 0 gaps" while an oversized file committed
+# clean. A check nothing calls is decoration, and the doctor has to say so.
+doc_drop_ci_callsite() {
+  grep -v 'check-large-files' .github/workflows/lint.yml >lint.tmp && mv lint.tmp .github/workflows/lint.yml
+}
+doc_drop_all_callsites() {
+  doc_drop_ci_callsite
+  grep -v 'check-large-files' .githooks/pre-commit >pc.tmp && mv pc.tmp .githooks/pre-commit
+  chmod +x .githooks/pre-commit
+}
+
+DOCT=$(doc_project)
+( cd "$DOCT" && doc_drop_all_callsites ) >/dev/null 2>&1
+doc_rc=0
+( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+# The script must still be present AND executable, or this would only be
+# re-proving the "missing check" case above.
+if [ "$doc_rc" -eq 1 ] && [ -x "$DOCT/.githooks/lib/check-large-files" ] \
+   && grep -qF "lib/check-large-files is installed and executable but nothing calls it" "$HOOK_OUT"; then
+  echo "  ✓ a check with no call site anywhere is a gap, not \"armed\""
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ an uncalled check was reported armed (exit $doc_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCT"
+
+# With only the CI half gone the hook still runs it, so this is half-wired, not
+# inert: a note, not a gap. It must survive --quiet, because that is the mode a
+# CI step or a pre-flight script reads, and "armed, 0 gaps" over a check no CI
+# job runs is the misleading summary #72 was made of.
+DOCT=$(doc_project)
+( cd "$DOCT" && doc_drop_ci_callsite ) >/dev/null 2>&1
+doc_rc=0
+( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+if [ "$doc_rc" -eq 0 ] && grep -qF "0 gaps" "$HOOK_OUT" \
+   && grep -qF "lib/check-large-files runs in the pre-commit hook but NO CI call site" "$HOOK_OUT"; then
+  echo "  ✓ a check with no CI call site is a --quiet-visible note, not a gap"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ missing CI call site misreported under --quiet (exit $doc_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCT"
 
 # (H) The two opt-in surfaces both fail OPEN when their tool is missing, and the
 # doctor's severities deliberately DIVERGE because their loudness does:

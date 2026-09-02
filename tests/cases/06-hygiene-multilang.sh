@@ -134,6 +134,52 @@ printf 'safe instruction%s hidden tag\n' "$tag" >tagsmuggle.md
 git add tagsmuggle.md
 assert_rejects "tag-block hidden Unicode (U+E0001) is rejected" "hidden Unicode"
 
+# 45m2. Variation selectors supplement (U+E0100, bytes F3 A0 84 80). HIDDEN_RE
+#       matched only F3 A0 80-81 (the tag block), so this adjacent plane-14 range
+#       was the live smuggling channel: one codepoint per byte encodes a whole
+#       sentence ("SYSTEM: ignore all prior rules") invisibly into an agent-read
+#       file, and it committed clean. Encode two of them so this is the range, not
+#       one stray byte.
+vsel=$(printf '\xf3\xa0\x84\x80\xf3\xa0\x84\xa1')
+printf 'Project conventions.%s\n' "$vsel" >vselsmuggle.md
+git add vselsmuggle.md
+assert_rejects "variation-selector-supplement smuggling (U+E0100) is rejected" "hidden Unicode"
+
+# 45m3. LRM / RLM (U+200E / U+200F, bytes E2 80 8E / 8F). Directional marks sit
+#       one byte past the old E2 80 8B-8D zero-width range and reorder rendered
+#       text exactly like the U+202x overrides that ARE matched.
+lrm=$(printf '\xe2\x80\x8e')
+printf 'allow %sadmin only\n' "$lrm" >lrm.md
+git add lrm.md
+assert_rejects "left-to-right mark (U+200E) is rejected" "hidden Unicode"
+
+rlm=$(printf '\xe2\x80\x8f')
+printf 'deny %sroot\n' "$rlm" >rlm.md
+git add rlm.md
+assert_rejects "right-to-left mark (U+200F) is rejected" "hidden Unicode"
+
+# 45m4. Soft hyphen (U+00AD, bytes C2 AD), invisible, and splitting a keyword
+#       with it hides the word from a reviewer and from a naive grep.
+shy=$(printf '\xc2\xad')
+printf 'never run rm %s-rf /\n' "$shy" >shy.md
+git add shy.md
+assert_rejects "soft hyphen (U+00AD) is rejected" "hidden Unicode"
+
+# 45m5. Arabic letter mark (U+061C, bytes D8 9C), the third invisible bidi
+#       control, in a different UTF-8 lead-byte range from the E2 80 family.
+alm=$(printf '\xd8\x9c')
+printf 'grant %sread\n' "$alm" >alm.md
+git add alm.md
+assert_rejects "arabic letter mark (U+061C) is rejected" "hidden Unicode"
+
+# 45m6. NEGATIVE: emoji variation selector VS16 (U+FE0F, bytes EF B8 8F) is
+#       deliberately NOT matched, it follows emoji legitimately in ordinary
+#       prose, and matching it would make the widened range unusable. Pins the
+#       boundary so a future "catch everything invisible" edit fails here.
+printf 'ship it \xe2\x9c\x85\xef\xb8\x8f today\n' >emoji.md
+git add emoji.md
+assert_passes "emoji variation selector (U+FE0F) is not flagged"
+
 # 45n. diff3 common-ancestor conflict marker (|||||||) — CONFLICT_RE matches three
 #      shapes but only <<< / >>> had a fixture. A diff3 resolve can leave the base
 #      marker behind after the user removes the <<< / >>> lines.
@@ -176,6 +222,90 @@ if command -v php >/dev/null 2>&1; then
 else
   echo "  - skipped php -l test (php not installed)"
 fi
+
+# --- phpcs integration -----------------------------------------------------
+# The phpcs block had no rejection test at all: `phpcs -- ... || FAILED=1` could
+# be deleted with the suite green. It also gated on PATH while lint.yml runs
+# ./vendor/bin/phpcs, so a composer-local phpcs (the normal install) was
+# invisible locally and enforced only server-side. All three cases below stub
+# phpcs so they are deterministic on a machine with no PHP toolchain.
+
+# Strip every directory that provides phpcs from PATH so "not on PATH" is a
+# property of the test, not of the host.
+NOPHPCS_PATH=
+OLDIFS=$IFS
+IFS=:
+for rd in $PATH; do
+  [ -x "$rd/phpcs" ] && continue
+  NOPHPCS_PATH="$NOPHPCS_PATH:$rd"
+done
+IFS=$OLDIFS
+NOPHPCS_PATH=${NOPHPCS_PATH#:}
+
+printf '<?xml version="1.0"?>\n<ruleset name="t"></ruleset>\n' >phpcs.xml
+printf '<?php\nclass Ok {}\n' >standards.php
+
+# (T) composer-local phpcs (./vendor/bin/phpcs) is found even with nothing on
+#     PATH, and its findings fail the commit.
+mkdir -p vendor/bin
+cat >vendor/bin/phpcs <<'STUB'
+#!/bin/sh
+echo "VENDOR PHPCS: 1 ERROR affecting 1 line"
+exit 1
+STUB
+chmod +x vendor/bin/phpcs
+git add phpcs.xml standards.php
+if PATH="$NOPHPCS_PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ vendor/bin/phpcs: hook accepted despite a phpcs failure"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "VENDOR PHPCS" "$HOOK_OUT"; then
+  echo "  ✓ composer-local vendor/bin/phpcs runs and its findings fail the commit"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ vendor/bin/phpcs: rejected, but vendor/bin/phpcs never ran"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf vendor
+reset_repo
+
+# (T) a phpcs on PATH (no vendor/bin) still runs, and still fails the commit.
+PHPCSB=$(mktemp -d)
+cat >"$PHPCSB/phpcs" <<'STUB'
+#!/bin/sh
+echo "PATH PHPCS: 1 ERROR affecting 1 line"
+exit 1
+STUB
+chmod +x "$PHPCSB/phpcs"
+printf '<?xml version="1.0"?>\n<ruleset name="t"></ruleset>\n' >phpcs.xml
+printf '<?php\nclass Ok {}\n' >standards.php
+git add phpcs.xml standards.php
+if PATH="$PHPCSB:$NOPHPCS_PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ PATH phpcs: hook accepted despite a phpcs failure"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "PATH PHPCS" "$HOOK_OUT"; then
+  echo "  ✓ a phpcs on PATH runs and its findings fail the commit"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ PATH phpcs: rejected, but phpcs never ran"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$PHPCSB"
+reset_repo
+
+# (T) genuinely absent (no vendor/bin, nothing on PATH): the skip notice fires
+#     and the commit is allowed. The notice must survive the vendor/bin change.
+printf '<?xml version="1.0"?>\n<ruleset name="t"></ruleset>\n' >phpcs.xml
+printf '<?php\nclass Ok {}\n' >standards.php
+git add phpcs.xml standards.php
+if PATH="$NOPHPCS_PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1 \
+   && grep -qF "note: phpcs not installed" "$HOOK_OUT"; then
+  echo "  ✓ phpcs-unavailable skip prints a notice and still exits 0"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ phpcs-unavailable skip: expected a note on stderr and exit 0"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
 
 # --- Multi-language forbidden patterns (config-driven check-patterns) -------
 # Each language file declares its extensions via a `# scaffold-extensions:`

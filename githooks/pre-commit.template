@@ -5,7 +5,7 @@
 #
 # Install (from project root) — install.sh handles all of this:
 #   .githooks/pre-commit
-#   .githooks/lib/{check-size,check-large-files,check-patterns,check-filenames,check-secrets}
+#   .githooks/lib/{check-size,check-large-files,check-patterns,check-filenames,check-secrets,check-hygiene}
 #   git config core.hooksPath .githooks
 #
 # Patterns are read from:
@@ -22,6 +22,14 @@
 
 set -euo pipefail
 
+# CDPATH must not reach the `$(cd ... && pwd)` below. When cd resolves its
+# argument through CDPATH it PRINTS the directory it landed in, and that line
+# is captured ahead of pwd's, so the variable ends up holding two lines and
+# every path built from it is wrong. Hooks are invoked by relative path, so a
+# developer with CDPATH='.' in their shell profile hit this on every commit.
+# Unset rather than `CDPATH= cd` so any later cd in this file is safe too.
+unset CDPATH
+
 HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
 LIB="$HOOK_DIR/lib"
 
@@ -37,7 +45,7 @@ LIB="$HOOK_DIR/lib"
 # still on disk (`git rm --cached`) is a different thing and only warns; see the
 # untrack-vs-delete note below.
 # Checked BEFORE the empty-staged-list exit, since a delete-only commit has an
-# empty ACMR list. Use `git commit --no-verify` if a removal is intended (uninstall).
+# empty ACMRT list. Use `git commit --no-verify` if a removal is intended (uninstall).
 # `--no-renames` is load-bearing: git's default rename detection reports a
 # `git mv secrets.txt secrets.txt.disabled` as an R (rename), not a D, so the
 # guard's list would be empty and the neutered-config commit would pass. Treating
@@ -80,8 +88,13 @@ EOF_DELCFG
   echo "       CI has no copy of an untracked config, so a guardrails job fails closed there." >&2
 fi
 
+# The T in ACMRT is load-bearing: git reports a symlink replaced by a regular
+# file (or the reverse) as a TYPE CHANGE, not as M. Without T such a path was
+# absent from the list, so every scanner ran on nothing and the new content
+# committed unread. CI's ci-changed-files already uses --diff-filter=d, which
+# includes T, so this also puts the two layers back in step.
 STAGED_LIST=$(mktemp)
-git -c core.quotepath=off diff --cached -z --name-only --diff-filter=ACMR >"$STAGED_LIST"
+git -c core.quotepath=off diff --cached -z --name-only --diff-filter=ACMRT >"$STAGED_LIST"
 if [ ! -s "$STAGED_LIST" ]; then
   rm -f "$STAGED_LIST"
   exit 0
@@ -187,6 +200,68 @@ js_tool_installed() {
   return 1
 }
 
+# Is this a prettier project? ONE predicate, mirrored verbatim in
+# .github/workflows/lint.yml.template, because the hook and CI disagreeing on
+# this question is how a format check ends up running in exactly one of the two
+# places. The old four-name list missed every YAML/JSON5/TOML/mjs/cjs/ts form
+# prettier documents, so a .prettierrc.yaml project was never format-checked
+# anywhere. The package.json "prettier" key is read with node rather than
+# grepped: `grep '"prettier"' package.json` also matches the devDependencies
+# entry, which is a dependency, not a config.
+prettier_config_present() {
+  local c
+  for c in .prettierrc .prettierrc.json .prettierrc.json5 .prettierrc.yaml \
+           .prettierrc.yml .prettierrc.toml .prettierrc.js .prettierrc.mjs \
+           .prettierrc.cjs .prettierrc.ts .prettierrc.mts .prettierrc.cts \
+           prettier.config.js prettier.config.mjs prettier.config.cjs \
+           prettier.config.ts prettier.config.mts prettier.config.cts; do
+    if [ -f "$c" ]; then
+      return 0
+    fi
+  done
+  if [ -f package.json ] && command -v node >/dev/null 2>&1 \
+     && node -e 'process.exit(Object.prototype.hasOwnProperty.call(require("./package.json"), "prettier") ? 0 : 1)' >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+# Resolve a Python tool the way it is actually installed, not the way it happens
+# to land on PATH. `command -v ruff` alone answered "not installed" for the
+# ordinary case of a pip/uv install into the project's venv with the venv not
+# activated, so real lint errors committed clean (#144). Routes, in order: the
+# active virtualenv, this project's .venv/ or venv/, PATH, then
+# `python3 -m <tool>` for a `pip install --user` that exposes the module but no
+# console script on PATH. Sets PY_TOOL_CMD to the argv prefix that runs the tool
+# and returns 0; returns 1 only when no route works, so the skip notice below
+# still fires when the tool is genuinely absent.
+PY_TOOL_CMD=()
+py_tool() {
+  local name=$1 cand
+  PY_TOOL_CMD=()
+  if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/$name" ]; then
+    PY_TOOL_CMD=("$VIRTUAL_ENV/bin/$name")
+    return 0
+  fi
+  for cand in .venv venv; do
+    if [ -x "$cand/bin/$name" ]; then
+      PY_TOOL_CMD=("./$cand/bin/$name")
+      return 0
+    fi
+  done
+  if command -v "$name" >/dev/null 2>&1; then
+    PY_TOOL_CMD=("$name")
+    return 0
+  fi
+  # --version doubles as a check that the module is actually runnable, not just
+  # importable-shaped, so a broken install falls through to the notice.
+  if command -v python3 >/dev/null 2>&1 && python3 -m "$name" --version >/dev/null 2>&1; then
+    PY_TOOL_CMD=(python3 -m "$name")
+    return 0
+  fi
+  return 1
+}
+
 STAGED_PY=()
 STAGED_JS=()
 STAGED_PHP=()
@@ -194,7 +269,7 @@ while IFS= read -r -d '' f; do
   [ -z "$f" ] && continue
   case "$f" in
     *.py)                  STAGED_PY+=("$f") ;;
-    *.ts|*.tsx|*.js|*.jsx|*.vue) STAGED_JS+=("$f") ;;
+    *.ts|*.tsx|*.js|*.jsx|*.cjs|*.mjs|*.vue) STAGED_JS+=("$f") ;;
     *.php|*.phtml)         STAGED_PHP+=("$f") ;;
   esac
 done <"$STAGED_LIST"
@@ -202,10 +277,11 @@ done <"$STAGED_LIST"
 # Config detection mirrors `lint.yml`'s `hashFiles(...)` predicate so the
 # hook fires in the same projects where CI does.
 if [ ${#STAGED_PY[@]} -gt 0 ] && { [ -f ruff.toml ] || [ -f pyproject.toml ]; }; then
-  if command -v ruff >/dev/null 2>&1; then
-    ruff check -- "${STAGED_PY[@]}" || FAILED=1
+  if py_tool ruff; then
+    "${PY_TOOL_CMD[@]}" check -- "${STAGED_PY[@]}" || FAILED=1
   else
     echo "note: ruff not installed, skipping the local lint pass on staged .py files." >&2
+    echo "      Looked in .venv/bin, venv/bin, \$PATH and 'python3 -m ruff'." >&2
     echo "      CI's lint job is the authoritative gate; install ruff for local feedback." >&2
   fi
 fi
@@ -224,8 +300,7 @@ fi
 # --check on staged files when a prettier config exists and prettier is
 # installed. A missing/unresolvable prettier prints a notice and skips, like
 # the linter above. `prettier --write` is the fix.
-if [ ${#STAGED_JS[@]} -gt 0 ] \
-   && { [ -f .prettierrc ] || [ -f .prettierrc.json ] || [ -f .prettierrc.js ] || [ -f prettier.config.js ] || grep -qs '"prettier"' package.json; }; then
+if [ ${#STAGED_JS[@]} -gt 0 ] && prettier_config_present; then
   if js_tool_installed prettier; then
     npx --no-install prettier --check -- "${STAGED_JS[@]}" || FAILED=1
   else
@@ -262,10 +337,21 @@ if [ ${#STAGED_PHP[@]} -gt 0 ]; then
   fi
 fi
 if [ ${#STAGED_PHP[@]} -gt 0 ] && { [ -f phpcs.xml ] || [ -f phpcs.xml.dist ] || [ -f composer.json ]; }; then
-  if command -v phpcs >/dev/null 2>&1; then
-    phpcs -- "${STAGED_PHP[@]}" || FAILED=1
+  # vendor/bin FIRST, matching lint.yml: composer installs phpcs into the
+  # project's own vendor/bin, and gating on PATH alone meant the two layers
+  # could never agree. A composer-local phpcs was invisible here while CI ran
+  # it, so the standard was enforced only server-side.
+  PHPCS_CMD=
+  if [ -x vendor/bin/phpcs ]; then
+    PHPCS_CMD=./vendor/bin/phpcs
+  elif command -v phpcs >/dev/null 2>&1; then
+    PHPCS_CMD=phpcs
+  fi
+  if [ -n "$PHPCS_CMD" ]; then
+    "$PHPCS_CMD" -- "${STAGED_PHP[@]}" || FAILED=1
   else
     echo "note: phpcs not installed, skipping the local coding-standard check on staged PHP files." >&2
+    echo "      Looked in vendor/bin and \$PATH." >&2
     echo "      CI's lint job is the authoritative gate; install phpcs for local feedback." >&2
   fi
 fi

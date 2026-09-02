@@ -45,7 +45,7 @@ LC_EOF
 # config, so nothing but the guardrails and local.d can decide the exit status.
 _fixture() {
   local d; d=$(mktemp -d)
-  ( cd "$d" && git init --quiet && git config core.hooksPath .nohooks \
+  ( cd "$d" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && git config core.hooksPath .nohooks \
     && printf '#!/usr/bin/env bash\necho seed\n' >seed.sh && git add -A \
     && git -c user.email=t@t -c user.name=t commit --quiet -m seed \
     && "$SCAFFOLD_DIR/install.sh" --shell ) >/dev/null 2>&1

@@ -108,3 +108,87 @@ else
 fi
 rm -rf "$NG"
 reset_repo
+
+# --- dev-setup.sh detects a stale render (--check + the generated local.d hook) -
+# The rendered .githooks/ tree is a gitignored build artifact, so no CI job can
+# ever see it go stale: measured on this repo, .githooks/pre-commit still
+# carried the pre-e06e154 `npx --no-install eslint --version` gate days after
+# the template had moved to Node resolution, and committing printed no warning
+# of any kind. `--check` is the detector, and dev-setup renders
+# .githooks/local.d/00-template-drift so it actually fires, at the only moment
+# it can: the commit that runs the stale hook.
+DS=$(mktemp -d)
+_b4_fakeclone "$DS/clone"
+
+# (T) a clone that has never rendered is DRIFT, not "in sync by default".
+ds_rc=0
+( cd "$DS/clone" && bash scripts/dev-setup.sh --check ) >"$HOOK_OUT" 2>&1 || ds_rc=$?
+if [ "$ds_rc" -ne 0 ] && grep -qF ".githooks/pre-commit is missing" "$HOOK_OUT"; then
+  echo "  ✓ dev-setup --check fails and names the artifact before anything is rendered"; PASS=$((PASS + 1))
+else
+  echo "  ✗ dev-setup --check should fail on an unrendered clone (rc=$ds_rc)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+
+# (T) --check renders NOTHING. A checker that silently fixes what it checks can
+#     never report drift, so this is the property that makes the case above real.
+if [ ! -e "$DS/clone/.githooks/pre-commit" ]; then
+  echo "  ✓ dev-setup --check writes nothing (it reports, it does not render)"; PASS=$((PASS + 1))
+else
+  echo "  ✗ dev-setup --check rendered files instead of only reporting"; FAIL=$((FAIL + 1))
+fi
+
+# (T) POSITIVE CONTROL: after a real render the same command reports in-sync and
+#     exits 0, so the case above is not passing on a checker that always fails.
+( cd "$DS/clone" && bash scripts/dev-setup.sh ) >/dev/null 2>&1
+ds_rc=0
+( cd "$DS/clone" && bash scripts/dev-setup.sh --check ) >"$HOOK_OUT" 2>&1 || ds_rc=$?
+if [ "$ds_rc" -eq 0 ] && grep -qF "rendered artifacts match their templates" "$HOOK_OUT"; then
+  echo "  ✓ dev-setup --check passes right after a render"; PASS=$((PASS + 1))
+else
+  echo "  ✗ dev-setup --check should pass on a freshly rendered clone (rc=$ds_rc)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+
+# (T) the wiring: the render leaves an EXECUTABLE local.d check, which is what
+#     the shipped pre-commit's local.d loop requires to run it (a non-executable
+#     file there is inert, so the mode is load-bearing, not cosmetic).
+if [ -x "$DS/clone/.githooks/local.d/00-template-drift" ]; then
+  echo "  ✓ dev-setup renders an executable local.d/00-template-drift"; PASS=$((PASS + 1))
+else
+  echo "  ✗ dev-setup did not render an executable local.d/00-template-drift"; FAIL=$((FAIL + 1))
+fi
+
+# (T) that hook is SILENT and exits 0 while the render is current: a drift check
+#     that talks on every commit gets disabled, and one that fails on every
+#     commit gets bypassed.
+ds_rc=0
+( cd "$DS/clone" && printf '' | ./.githooks/local.d/00-template-drift ) >"$HOOK_OUT" 2>&1 || ds_rc=$?
+if [ "$ds_rc" -eq 0 ] && [ ! -s "$HOOK_OUT" ]; then
+  echo "  ✓ the local.d drift check is silent and exits 0 when the render is current"; PASS=$((PASS + 1))
+else
+  echo "  ✗ local.d drift check should be a silent exit 0 in sync (rc=$ds_rc)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+
+# (T) THE FINDING: edit a template, do not re-render, and the next commit's
+#     local.d pass must block it and name both the stale file and the fix.
+printf '\n# template moved on\n' >>"$DS/clone/githooks/pre-commit.template"
+ds_rc=0
+( cd "$DS/clone" && printf '' | ./.githooks/local.d/00-template-drift ) >"$HOOK_OUT" 2>&1 || ds_rc=$?
+if [ "$ds_rc" -ne 0 ] \
+   && grep -qF ".githooks/pre-commit is stale against githooks/pre-commit.template" "$HOOK_OUT" \
+   && grep -qF "bash scripts/dev-setup.sh" "$HOOK_OUT"; then
+  echo "  ✓ a template edited without re-rendering fails the commit, naming the fix"; PASS=$((PASS + 1))
+else
+  echo "  ✗ stale render should block the commit with the file and the fix (rc=$ds_rc)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+
+# (T) re-rendering clears it, so the fix the message prints is the actual fix.
+( cd "$DS/clone" && bash scripts/dev-setup.sh ) >/dev/null 2>&1
+ds_rc=0
+( cd "$DS/clone" && printf '' | ./.githooks/local.d/00-template-drift ) >"$HOOK_OUT" 2>&1 || ds_rc=$?
+if [ "$ds_rc" -eq 0 ]; then
+  echo "  ✓ re-running dev-setup.sh clears the drift the hook reported"; PASS=$((PASS + 1))
+else
+  echo "  ✗ re-rendering did not clear the reported drift (rc=$ds_rc)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$DS"
+reset_repo
