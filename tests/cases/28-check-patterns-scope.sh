@@ -75,3 +75,46 @@ CP_ENV=(CHECK_PATTERNS_INCLUDE=backend.txt)
 run_cp "INCLUDE still honored after reinstall" scope_debug.py scope_debug.ts
 
 reset_repo
+
+# --- check-patterns config integrity ---------------------------------------
+# Everything below invokes check-patterns directly with a NUL list, like the
+# scoping cases above, so each assertion pins check-patterns' own verdict rather
+# than whichever sibling check happens to reject the same commit first.
+echo ""
+echo "check-patterns config integrity:"
+
+# cp_run <name> <expect-substring> <fixture...>: the fixtures must be STAGED
+# already; asserts check-patterns exits non-zero AND says the expected thing.
+cp_run() {
+  local name=$1 expect=$2; shift 2
+  local rc=0
+  printf '%s\0' "$@" | .githooks/lib/check-patterns >"$HOOK_OUT" 2>&1 || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    echo "  ✗ $name: check-patterns exited 0, expected a finding"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  elif ! grep -qF "$expect" "$HOOK_OUT"; then
+    echo "  ✗ $name: non-zero but missing: $expect"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  else
+    echo "  ✓ $name"; PASS=$((PASS + 1))
+  fi
+}
+
+# 28g. CASE-INSENSITIVE EXTENSIONS. The extension match was case-SENSITIVE, so
+#      renaming a file to `src/BAD.PY` matched no arm of backend.txt, was dropped
+#      before the scan, and committed with zero findings at the hook AND at the
+#      whole-tree CI gate. check-filenames has folded case with tr for exactly
+#      this reason; check-patterns now does too.
+mkdir -p src
+printf 'import os\npri''nt("debug")\n' >src/BAD.PY
+git add src/BAD.PY
+cp_run "upper-case .PY extension is scanned" "structlog" src/BAD.PY
+reset_repo
+
+# 28h. Mixed case too (.Py), so the fix is a fold and not a second hard-coded arm.
+mkdir -p src
+printf 'import os\npri''nt("debug")\n' >src/Mixed.Py
+git add src/Mixed.Py
+cp_run "mixed-case .Py extension is scanned" "structlog" src/Mixed.Py
+reset_repo
+

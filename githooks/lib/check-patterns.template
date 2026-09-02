@@ -3,7 +3,9 @@
 # Reads NUL-separated file paths on stdin (produced by `git ... -z`). Auto-
 # discovers every `.forbidden-patterns/*.txt` (except secrets.txt, which is
 # check-secrets' domain) and scans the files whose extension the pattern file
-# claims. A pattern file declares its extensions with a header line:
+# claims. Extensions are matched CASE-INSENSITIVELY, so `src/BAD.PY` is scanned
+# by backend.txt just like `src/bad.py`. A pattern file declares its extensions
+# with a header line:
 #   # scaffold-extensions: py
 #   # scaffold-extensions: ts tsx js jsx vue
 # so a new language is added by dropping `<lang>.txt` with that header — no edit
@@ -101,6 +103,19 @@ scan() {
   [ -f "$config" ] || return 0
   [ ${#FILES[@]} -eq 0 ] && return 0
 
+  # Fold the declared extensions to lowercase ONCE. The extension match below
+  # folds the path too, so `src/BAD.PY` is scanned by backend.txt (`py`) exactly
+  # like `src/bad.py`. Matching case-SENSITIVELY was a fail-OPEN bypass: a file
+  # renamed to an upper- or mixed-case extension matched no arm, was dropped
+  # before the scan, and committed with zero findings at both the hook and the
+  # whole-tree CI gate. check-filenames already folds with tr for this reason;
+  # this is the same convention. (check-size's extension list is a SKIP list, so
+  # a case mismatch there fails CLOSED — more scanning — and is left alone.)
+  local exts_lc=() ext
+  for ext in "${exts[@]}"; do
+    exts_lc+=("$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]')")
+  done
+
   # Rule-id prefix for .scaffold.toml lookups: the pattern file's stem, e.g.
   # `php` for php.txt. A rule's full id is "<stem>/<description>".
   local stem
@@ -169,11 +184,12 @@ scan() {
     use_prefilter=0
   fi
 
-  local file ext keep content cap_rc pat desc m
+  local file file_lc keep content cap_rc pat desc m
   for file in "${FILES[@]}"; do
     keep=0
-    for ext in "${exts[@]}"; do
-      case "$file" in *."$ext") keep=1; break ;; esac
+    file_lc=$(printf '%s' "$file" | tr '[:upper:]' '[:lower:]')
+    for ext in "${exts_lc[@]}"; do
+      case "$file_lc" in *."$ext") keep=1; break ;; esac
     done
     [ "$keep" -eq 1 ] || continue
 
