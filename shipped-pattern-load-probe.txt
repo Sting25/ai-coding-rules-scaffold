@@ -1,0 +1,1 @@
+a benign line with no forbidden pattern in it
