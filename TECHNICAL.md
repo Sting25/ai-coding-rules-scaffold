@@ -586,6 +586,35 @@ the Conventional-Commits `commit-msg` hook. Edit a `*.template`, re-run the scri
 to refresh. Only the `*.template` files are tracked; the rendered copies are
 build artifacts.
 
+### Why `scaffold-doctor.sh` reports 2 guardrails "installed but NOT running"
+
+This is expected and deliberate. Read this before "fixing" it.
+
+Since 2026-09-02 the doctor reports a check as a GAP when the script is on disk
+but nothing invokes it, rather than calling it armed because the file exists. On
+this repo that surfaces two:
+
+| Reported not running      | Why it stays that way                                                                                                                                     |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib/check-red-green`     | Part of the opt-in `--test-guard` layer. This repo never opted in, and the gate is built around per-test suites rather than this repo's shell case files. |
+| `lib/check-mutation-diff` | Same layer, same reason. Also needs `mutmut`, which this repo does not depend on.                                                                         |
+
+They are present only because `scripts/dev-setup.sh` renders every template it
+finds. Wiring them is tracked as item 2 of the harness-adoption issue, not an
+oversight.
+
+Two others that used to appear in that list were genuine and were wired on
+2026-09-02:
+
+- **`lib/agent-precheck`** now has `.claude/settings.json` invoking it. It was
+  installed and unreferenced, so the agent write-guard was nominal.
+- **`lib/check-gitleaks`** now has `.github/workflows/gitleaks.yml` behind it.
+  The local pass tells developers CI is the authoritative gate; without the
+  workflow that statement was untrue for this repo.
+
+If the count changes, something moved. Two is the expected number; anything else
+deserves a look rather than a shrug.
+
 ## Using this without an AI
 
 The scaffold works fine without any AI tool. Drop the files in, run the hook — same enforcement. `coding-rules.md` is just a named place to put the rules humans should read.

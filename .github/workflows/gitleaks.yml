@@ -1,9 +1,13 @@
 name: gitleaks
 
-# OPT-IN secret-scanning backstop. Copy to your project as
-# `.github/workflows/gitleaks.yml`, or install it with
-# `install.sh --gitleaks-ci`. Not installed by default: it adds a third-party
-# action dependency, so opt in deliberately.
+# The scaffold's own gitleaks gate, dogfooding what install.sh --gitleaks-ci
+# installs for consumers. Rendered from .github/workflows/gitleaks.yml.template;
+# edit the template, not this file.
+#
+# Wired on 2026-09-02 because scaffold-doctor reported the local gitleaks pass
+# installed with no CI gate behind it. The pre-commit hook tells developers that
+# CI is the authoritative gate, so shipping the local pass without the server
+# side made that message untrue for this repo.
 #
 # Why this exists alongside check-secrets:
 #   The scaffold's `check-secrets` is a NARROW, offline regex gate — it catches
