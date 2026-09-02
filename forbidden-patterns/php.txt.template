@@ -28,14 +28,15 @@
 # and 'extract('.$type.' from ' built as a SQL string. They are kept opt-in at
 # the bottom of this file instead of shipped blocking.
 #
-# What makes the two name-based rules quiet is the `^[^*/#]*` guard: nothing
-# before the match on that line may be `*`, `/` or `#`, so `// eval(...)`,
-# `# system('reboot')` and ` * @see eval()` docblock prose never fire. The
-# character immediately before the name must be punctuation other than `.`,
-# `>`, `:`, `$` or a quote, so `$c->eval(`, `Registry::eval(`, `$s.'x'.eval(`,
-# `'eval()\'d code'` and the method declaration `public function eval(` stay
-# silent too. The cost is recall: a call on a line that already contains a `/`,
-# `*` or `#` earlier (`$r = 1/2; eval($c);`) is not seen. That trade is
+# What keeps the eval() and CURLOPT rules quiet is the `^[^*/#]*` guard: nothing
+# on the line before the match may be `*`, `/` or `#`, so `// eval(...)`,
+# `# system('reboot')`, ` * @see eval()` docblock prose and a commented-out
+# `// CURLOPT_SSL_VERIFYPEER => false` never fire. eval() additionally requires
+# the character immediately before it to be punctuation other than `.`, `>`,
+# `:`, `$` or a quote, so `$c->eval(`, `Registry::eval(`, `$s.'x'.eval(`, the
+# string `'eval()\'d code'` and the method declaration `public function eval(`
+# stay silent too. The cost is recall: a call on a line that already contains a
+# `/`, `*` or `#` earlier (`$r = 1/2; eval($c);`) is not seen. That trade is
 # deliberate - a missed call costs one finding, a false positive costs the gate.
 # Backticks (PHP's shell-exec shorthand) are NOT covered: a regex cannot tell
 # `$cmd` from a backtick in a comment or a Markdown docblock.
@@ -55,6 +56,6 @@
 # Measured on ~20,400 real .php files, the three blanket sink bans below fire
 # almost exclusively on legitimate code. Enable one only if your codebase has
 # genuinely retired the construct; expect to scaffold-allow existing call sites.
-# (^[[:space:]]*|^[^*/#]*(=>|[^A-Za-z0-9_.>:$*/#'"[:space:]]|(return|echo|print|throw|yield|<\?php)[[:space:]])[[:space:]]*)(system|passthru|shell_exec|exec|popen|proc_open|pcntl_exec)[[:space:]]*\(	Shell-execution sink - 142 hits on the corpus, ~all legitimate (proc_open() with an argv array, shell_exec('stty -g'), exec(...escapeshellarg($x))); enable only if you never shell out
-# (^[[:space:]]*|^[^*/#]*(=>|[^A-Za-z0-9_.>:$*/#'"[:space:]]|(return|echo|print|throw|yield|<\?php)[[:space:]])[[:space:]]*)unserialize[[:space:]]*\(	unserialize() is PHP object injection when fed untrusted input - but 327 corpus hits were serialize() round-trips, cache stores and the hardened unserialize($v, ['allowed_classes' => false]); enable only if you never serialize your own data
-# (^[[:space:]]*|^[^*/#]*(=>|[^A-Za-z0-9_.>:$*/#'"[:space:]]|(return|echo|print|throw|yield|<\?php)[[:space:]])[[:space:]]*)extract[[:space:]]*\(	extract() overwrites arbitrary locals - but all 13 corpus hits were view renderers doing extract($__data, EXTR_SKIP) or SQL strings; enable only if you never render PHP templates
+# (^[[:space:]]*|^[^*/#]*(=>|[^A-Za-z0-9_.>:$*/#'"[:space:]]|(return|echo|print|throw|yield|<\?php)[[:space:]])[[:space:]]*)(system|passthru|shell_exec|exec|popen|proc_open|pcntl_exec)[[:space:]]*\(	Shell-execution sink - 135 hits on the corpus, ~all legitimate (proc_open() with an argv array, shell_exec('stty -g'), exec(...escapeshellarg($x))); enable only if you never shell out
+# (^[[:space:]]*|^[^*/#]*(=>|[^A-Za-z0-9_.>:$*/#'"[:space:]]|(return|echo|print|throw|yield|<\?php)[[:space:]])[[:space:]]*)unserialize[[:space:]]*\(	unserialize() is PHP object injection when fed untrusted input - but 320 corpus hits were serialize() round-trips, cache stores and the hardened unserialize($v, ['allowed_classes' => false]); enable only if you never serialize your own data
+# (^[[:space:]]*|^[^*/#]*(=>|[^A-Za-z0-9_.>:$*/#'"[:space:]]|(return|echo|print|throw|yield|<\?php)[[:space:]])[[:space:]]*)extract[[:space:]]*\(	extract() overwrites arbitrary locals - but all 9 corpus hits were view renderers doing extract($__data, EXTR_SKIP) or SQL strings; enable only if you never render PHP templates
