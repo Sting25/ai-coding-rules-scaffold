@@ -99,7 +99,19 @@ _backup() {
     fi
     bak="${dst}.scaffold-bak.${n}"
   done
-  cp -P "$dst" "$bak"
+  # The copy is LOAD-BEARING, so its exit status is checked (audit
+  # shell-03-backup-silent-failure). _backup is always called with errexit
+  # disabled (`_backup "$dst" || return 0`, or `if _backup ...`), so an
+  # unchecked `cp` failure was swallowed: the run still printed "backed up:"
+  # and the caller still overwrote the user's file, with no backup on disk and
+  # exit 0. Measured with an unreadable destination: the local edit was gone
+  # and no .scaffold-bak existed. Failing here makes every caller skip that one
+  # file instead, the same policy as the >99-slot cap below.
+  if ! cp -P "$dst" "$bak"; then
+    echo "error: could not back up $dst -> $bak (the copy failed: unreadable file, full disk, or a read-only directory)." >&2
+    echo "       Skipping this one file (left untouched); nothing is overwritten without a backup." >&2
+    return 1
+  fi
   echo "backed up:    $dst -> $bak"
   _warn_repo_adaptations "$dst" "$bak"
 }
