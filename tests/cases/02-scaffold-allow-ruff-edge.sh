@@ -22,9 +22,25 @@ echo "AKIA""IOSFODNN7EXAMPLE  # scaffold-allow docs example" >example.md
 git add example.md
 assert_passes "scaffold-allow exempts secret on docs line"
 
+# Strip every directory that provides ruff from the real PATH, rather than
+# assuming ruff is absent, so the ruff-unavailable cases below hold on a machine
+# that has ruff installed. Computed once, used by 13a2 and 13b.
+NOTOOL_PATH=
+OLDIFS=$IFS
+IFS=:
+for rd in $PATH; do
+  [ -x "$rd/ruff" ] && continue
+  NOTOOL_PATH="$NOTOOL_PATH:$rd"
+done
+IFS=$OLDIFS
+NOTOOL_PATH=${NOTOOL_PATH#:}
+
 # 13. ruff lint integration — the hook should run ruff on staged .py when
-#     ruff.toml is present and ruff is on PATH. Skipped otherwise.
-if command -v ruff >/dev/null 2>&1; then
+#     ruff.toml is present and ruff is resolvable. The guard mirrors the hook's
+#     own resolution chain (#144), so a ruff that is only importable as a module
+#     (pip install --user, no console script on PATH) still exercises this case
+#     instead of skipping it.
+if command -v ruff >/dev/null 2>&1 || python3 -m ruff --version >/dev/null 2>&1; then
   cat >badimports.py <<'EOF'
 import sys
 import os
@@ -35,24 +51,83 @@ else
   echo "  - skipped ruff test (ruff not installed)"
 fi
 
-# 13b. skip notice: a staged .py file with ruff unavailable must print a
-#      one-line notice to stderr and still exit 0 (pyproject.toml, present
-#      since the bootstrap fixture, is enough to satisfy the check's config
-#      gate). Strip any directory that provides ruff from the real PATH,
-#      rather than assuming it's absent, so this holds even on a machine
-#      that has ruff installed.
-NOTOOL_PATH=
-OLDIFS=$IFS
-IFS=:
-for rd in $PATH; do
-  [ -x "$rd/ruff" ] && continue
-  NOTOOL_PATH="$NOTOOL_PATH:$rd"
-done
-IFS=$OLDIFS
-NOTOOL_PATH=${NOTOOL_PATH#:}
+# 13a1. VENV-ONLY ruff (#144). The overwhelmingly common Python setup is a
+#       pip/uv install into the project's .venv with the venv NOT activated:
+#       ruff is installed, but not on PATH. The old `command -v ruff` gate
+#       printed "not installed" and let real lint errors commit clean. A stub
+#       .venv/bin/ruff stands in for the real binary so the case is
+#       deterministic everywhere, and it exits non-zero so this also proves the
+#       findings still reach FAILED.
+mkdir -p .venv/bin
+cat >.venv/bin/ruff <<'STUB'
+#!/bin/sh
+echo "VENV RUFF: F401 unused import"
+exit 1
+STUB
+chmod +x .venv/bin/ruff
+echo 'ok = True' >venvruff.py
+git add venvruff.py
+if PATH="$NOTOOL_PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ venv-only ruff: hook accepted despite a ruff failure"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+elif grep -qF "VENV RUFF" "$HOOK_OUT"; then
+  echo "  ✓ ruff in .venv/bin is found and its findings fail the commit"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ venv-only ruff: rejected, but .venv/bin/ruff never ran"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf .venv
+reset_repo
+
+# 13a2. MODULE-ONLY ruff. `pip install --user` can leave ruff importable with no
+#       console script on PATH at all; `python3 -m ruff` is then the only route.
+#       Stub python3 (nothing else in the hook's default path shells out to it)
+#       so the case is deterministic and does not depend on the host's Python.
+PYSTUB=$(mktemp -d)
+cat >"$PYSTUB/python3" <<'STUB'
+#!/bin/sh
+case "$*" in
+  "-m ruff --version") echo "ruff 0.0.0-test"; exit 0 ;;
+  "-m ruff check"*)    echo "MODULE RUFF: F401 unused import"; exit 1 ;;
+esac
+exit 1
+STUB
+chmod +x "$PYSTUB/python3"
+echo 'ok = True' >modruff.py
+git add modruff.py
+if PATH="$PYSTUB:$NOTOOL_PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ module-only ruff: hook accepted despite a ruff failure"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+elif grep -qF "MODULE RUFF" "$HOOK_OUT"; then
+  echo "  ✓ 'python3 -m ruff' is used when no ruff binary exists"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ module-only ruff: rejected, but python3 -m ruff never ran"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$PYSTUB"
+reset_repo
+
+# 13b. skip notice: a staged .py file with ruff unavailable by EVERY route must
+#      print a one-line notice to stderr and still exit 0 (pyproject.toml,
+#      present since the bootstrap fixture, is enough to satisfy the check's
+#      config gate). ruff is stripped from PATH, there is no .venv/venv, and the
+#      python3 stub has no ruff module — so the notice is the only correct
+#      outcome, not an accident of what the host happens to have installed.
+NORUFF=$(mktemp -d)
+cat >"$NORUFF/python3" <<'STUB'
+#!/bin/sh
+exit 1
+STUB
+chmod +x "$NORUFF/python3"
 echo 'ok = True' >noruff.py
 git add noruff.py
-if PATH="$NOTOOL_PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1 \
+if PATH="$NORUFF:$NOTOOL_PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1 \
    && grep -qF "note: ruff not installed" "$HOOK_OUT"; then
   echo "  ✓ ruff-unavailable skip prints a notice and still exits 0"
   PASS=$((PASS + 1))
@@ -61,6 +136,7 @@ else
   sed 's/^/      /' "$HOOK_OUT"
   FAIL=$((FAIL + 1))
 fi
+rm -rf "$NORUFF"
 reset_repo
 
 # 14. unicode filename — `core.quotepath=on` (git default) would emit the

@@ -200,6 +200,42 @@ js_tool_installed() {
   return 1
 }
 
+# Resolve a Python tool the way it is actually installed, not the way it happens
+# to land on PATH. `command -v ruff` alone answered "not installed" for the
+# ordinary case of a pip/uv install into the project's venv with the venv not
+# activated, so real lint errors committed clean (#144). Routes, in order: the
+# active virtualenv, this project's .venv/ or venv/, PATH, then
+# `python3 -m <tool>` for a `pip install --user` that exposes the module but no
+# console script on PATH. Sets PY_TOOL_CMD to the argv prefix that runs the tool
+# and returns 0; returns 1 only when no route works, so the skip notice below
+# still fires when the tool is genuinely absent.
+PY_TOOL_CMD=()
+py_tool() {
+  local name=$1 cand
+  PY_TOOL_CMD=()
+  if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/$name" ]; then
+    PY_TOOL_CMD=("$VIRTUAL_ENV/bin/$name")
+    return 0
+  fi
+  for cand in .venv venv; do
+    if [ -x "$cand/bin/$name" ]; then
+      PY_TOOL_CMD=("./$cand/bin/$name")
+      return 0
+    fi
+  done
+  if command -v "$name" >/dev/null 2>&1; then
+    PY_TOOL_CMD=("$name")
+    return 0
+  fi
+  # --version doubles as a check that the module is actually runnable, not just
+  # importable-shaped, so a broken install falls through to the notice.
+  if command -v python3 >/dev/null 2>&1 && python3 -m "$name" --version >/dev/null 2>&1; then
+    PY_TOOL_CMD=(python3 -m "$name")
+    return 0
+  fi
+  return 1
+}
+
 STAGED_PY=()
 STAGED_JS=()
 STAGED_PHP=()
@@ -215,10 +251,11 @@ done <"$STAGED_LIST"
 # Config detection mirrors `lint.yml`'s `hashFiles(...)` predicate so the
 # hook fires in the same projects where CI does.
 if [ ${#STAGED_PY[@]} -gt 0 ] && { [ -f ruff.toml ] || [ -f pyproject.toml ]; }; then
-  if command -v ruff >/dev/null 2>&1; then
-    ruff check -- "${STAGED_PY[@]}" || FAILED=1
+  if py_tool ruff; then
+    "${PY_TOOL_CMD[@]}" check -- "${STAGED_PY[@]}" || FAILED=1
   else
     echo "note: ruff not installed, skipping the local lint pass on staged .py files." >&2
+    echo "      Looked in .venv/bin, venv/bin, \$PATH and 'python3 -m ruff'." >&2
     echo "      CI's lint job is the authoritative gate; install ruff for local feedback." >&2
   fi
 fi
