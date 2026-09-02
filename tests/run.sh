@@ -89,7 +89,7 @@ CASE_FLOORS=(
   "15-local-checks.sh:7"
   "16-coverage-gate.sh:6"
   "17-whole-tree-configs.sh:10"
-  "18-doctor.sh:32"
+  "18-doctor.sh:34"
   "19-test-workflow.sh:17"
   "20-paired-artifacts.sh:19"
   "21-ci-workflow-drift.sh:25"
