@@ -15,7 +15,7 @@ Enforcement runs in two places, sharing the same scripts:
 - **Pre-commit hook** — blocks the commit locally, scanning only your **staged** files. Fast feedback, skippable with `--no-verify`.
 - **CI workflow** — blocks the PR server-side. Unskippable.
 
-Both invoke the same `lib/check-*` scripts (`check-size`, `check-large-files`, `check-patterns`, `check-filenames`, `check-secrets`, `check-hygiene`). The hook and CI can't drift apart because there's nothing to keep in sync — they call the same code. What differs is _scope_. The hook scans your staged files; CI scopes its **quality gates** (ruff, eslint/prettier, and the size / forbidden-pattern / hygiene guardrails) to the **PR/push diff** via the shared `.githooks/lib/ci-changed-files` helper, so installing onto an existing repo doesn't retroactively fail pre-existing code. The **secret and credential-filename scans stay whole-tree** in CI — the non-overridable security boundary, where catching an already-committed key is the whole point. Same scripts everywhere: scoped to the diff for quality gates, whole-tree for secrets. Each script is also runnable on its own (`git ls-files | .githooks/lib/check-secrets`), so you can wire it into Husky, lefthook, or any other orchestrator without rewriting the logic.
+Both invoke the same `lib/check-*` scripts (`check-size`, `check-large-files`, `check-patterns`, `check-filenames`, `check-secrets`, `check-hygiene`). The hook and CI can't drift apart because there's nothing to keep in sync — they call the same code. What differs is _scope_. The hook scans your staged files; CI scopes its **quality gates** (ruff, eslint/prettier, and the size / forbidden-pattern / hygiene guardrails) to the **PR/push diff** via the shared `.githooks/lib/ci-changed-files` helper, so installing onto an existing repo doesn't retroactively fail pre-existing code. The **secret and credential-filename scans stay whole-tree** in CI — the non-overridable security boundary, where catching an already-committed key is the whole point. Same scripts everywhere: scoped to the diff for quality gates, whole-tree for secrets. Each script is also runnable on its own. It reads a **NUL-separated** file list on stdin, not newline-separated (`git ls-files -z | .githooks/lib/check-secrets`; a plain `git ls-files |` pipe scans nothing, silently), so you can wire it into Husky, lefthook, or any other orchestrator without rewriting the logic.
 
 ## Supported stacks
 
@@ -33,7 +33,7 @@ Two always-on enforcement layers (pre-commit hook + CI mirror) plus optional age
 - **Java / Kotlin** — `java.txt` / `kotlin.txt`: `System.out.println`, `println`, `printStackTrace`; setup-java/Gradle CI stubs.
 - **Ruby** — `ruby.txt`: `binding.pry`, `puts` (opt-in); setup-ruby CI stub.
 - **Shell** (`*.sh`/`*.bash`) — `shell.txt`: `curl | bash`, `rm -rf /`, `chmod 777`, `git --no-verify` (hook-bypass). `shell.txt` and `secrets.txt` ship in **every** mode, so a Python or frontend project with shell scripts gets shell-pattern coverage too; `install.sh --shell` (or the manifest-less auto-detect fallback) is for projects that are _only_ shell, with no Python/TS toolchain configs to install.
-- **Every language / all files** — `secrets.txt` token shapes (AWS `AKIA`/Bedrock, GCP, GitHub, GitLab PAT + runner/deploy/agent tokens, Slack, OpenAI/Anthropic, Stripe, Supabase, OpenRouter, HuggingFace, structural JWTs, private keys, URL-embedded creds), credential-file blocking (`.env`, `*.pem`, SSH keys), the 500-line file-size cap, merge-conflict markers, case-only filename collisions, and hidden-Unicode (Trojan-Source) scanning.
+- **Every language / all files** — `secrets.txt` token shapes (AWS `AKIA`/Bedrock, GCP, GitHub, GitLab PAT + runner/deploy/agent tokens, Slack, OpenAI/Anthropic, Stripe, Supabase, OpenRouter, HuggingFace, structural JWTs, private keys, URL-embedded creds), credential-file blocking (`.env`, `*.pem`, SSH keys), the 500-line file-size cap, the 500 KB large-binary cap (`check-large-files`), merge-conflict markers, case-only filename collisions, and hidden-Unicode (Trojan-Source) scanning.
 
 Language pattern files auto-install when their manifest is detected (`go.mod`, `Cargo.toml`, `composer.json`, `pom.xml`/`build.gradle`, `Gemfile`), or install them all with `--all-langs`. Anything not listed still gets the always-on cross-language layers (secrets, file size, filenames, hygiene). Adding a new language is just dropping a `.forbidden-patterns/<lang>.txt` with a `# scaffold-extensions:` header — no script changes.
 
@@ -53,8 +53,8 @@ Language pattern files auto-install when their manifest is detected (`go.mod`, `
 | `.prettierrc.json.template`                                             | `.prettierrc.json`                                              | Prettier formatting config (runs separately from eslint)                                                                                                                          |
 | `.prettierignore.template`                                              | `.prettierignore`                                               | Paths Prettier should not format                                                                                                                                                  |
 | `vitest.config.ts.template`                                             | `vitest.config.ts`                                              | Vitest runner + V8 coverage config (skipped if the project uses Jest)                                                                                                             |
-| `githooks/pre-commit.template`                                          | `.githooks/pre-commit`                                          | Hook orchestrator — invokes the five `lib/check-*` scripts                                                                                                                        |
-| `githooks/lib/check-{size,patterns,filenames,secrets,hygiene}.template` | `.githooks/lib/check-{size,patterns,filenames,secrets,hygiene}` | Reusable check scripts; the same scripts run from CI so hook and CI can't drift                                                                                                   |
+| `githooks/pre-commit.template`                                          | `.githooks/pre-commit`                                          | Hook orchestrator — invokes the six `lib/check-*` scripts below unconditionally, plus `check-gitleaks` when `--gitleaks-hook` is installed                                       |
+| `githooks/lib/check-{size,large-files,patterns,filenames,secrets,hygiene}.template` | `.githooks/lib/check-{size,large-files,patterns,filenames,secrets,hygiene}` | Reusable check scripts; the same scripts run from CI so hook and CI can't drift                                                                                                   |
 | `githooks/lib/scaffold-config.template`                                 | `.githooks/lib/scaffold-config`                                 | Reads per-project rule overrides from `.scaffold.toml` (per-path size caps, per-rule disable / severity)                                                                          |
 | `githooks/lib/scaffold-audit.template`                                  | `.githooks/lib/scaffold-audit`                                  | Lists every active override in `.scaffold.toml`; run locally and echoed by CI                                                                                                     |
 | `githooks/local.d/README.md.template`                                   | `.githooks/local.d/README.md`                                   | Documents the project-local check contract. The **directory** is yours: drop executables in and hook + CI both run them, and `install.sh` never writes into it                    |
@@ -165,12 +165,12 @@ ships empty (all examples commented), so it changes nothing until you edit it.
 default     = 800          # raise the project-wide line cap (default 500)
 "legacy/**" = 2000         # most-specific matching glob wins
 
-[rules."php/var_dump( or print_r( left in code"]
+[rules."php/Remove var_dump() before committing - dumps to stdout"]
 disabled = true            # turn a forbidden-pattern rule off entirely
 reason   = "legacy reporting module, JIRA-1234"
 by       = "alex 2026-06-11"
 
-[rules."frontend/console.log left in code"]
+[rules."frontend/Use the project logger, not console.log"]
 severity = "warn"          # error (default) → warn: still reported, doesn't fail
 
 [rules.case-collision]     # hygiene ids: conflict-marker, case-collision, hidden-unicode
@@ -274,12 +274,14 @@ minimal; turn them on per project.
   dependencies. (Pairs with `release-please` for automated SemVer releases —
   see [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md).)
 
-- **gitleaks CI backstop (`.github/workflows/gitleaks.yml.template`).** Copy it
-  in to add a broad, entropy-based secret scanner as a _separate_ CI job. The
+- **gitleaks CI backstop (`install.sh --gitleaks-ci` → `.github/workflows/gitleaks.yml`).**
+  Adds a broad, entropy-based secret scanner as a _separate_ CI job. The
   built-in `check-secrets` is a narrow offline regex gate (the specific token
   shapes in `secrets.txt`); gitleaks' ~150 maintained rules catch provider
   tokens the hand-written list can't enumerate. Not auto-installed — it adds a
-  third-party action dependency. Pinned to a commit SHA; bump via Dependabot.
+  third-party action dependency. Follows the same drift-preserving policy as
+  the other CI workflows (see [Update & uninstall](#update--uninstall)).
+  Pinned to a commit SHA; bump via Dependabot.
 
 - **Local gitleaks pass (`install.sh --gitleaks-hook`).** The fast local echo of
   the gitleaks CI job: a `lib/check-gitleaks` that runs `gitleaks git
@@ -447,12 +449,14 @@ real fixture: with that file gone, a genuine `AKIA…` AWS access key commits
 clean, with no output at all.
 
 `scaffold-doctor.sh` checks each guardrail's arming mechanism, not just its
-presence on disk:
+presence on disk. It is not installed into your project (see [Scripts (stay
+in the scaffold repo)](#what-lands-in-your-project) above), so reach it one
+of two ways, run with your project as the current directory:
 
 ```sh
-./scaffold-doctor.sh            # from anywhere inside the working tree
-./scaffold-doctor.sh --quiet    # gaps + summary only — for CI / pre-flight use
-npx ai-coding-rules-scaffold doctor
+npx ai-coding-rules-scaffold doctor              # works no matter how you installed
+<path to your scaffold clone>/scaffold-doctor.sh # if you have a git clone
+<path to your scaffold clone>/scaffold-doctor.sh --quiet # gaps + summary only, for CI / pre-flight use
 ```
 
 Each line is `✓` armed, `✗` gap (installed but inert — a commit that should
@@ -502,7 +506,9 @@ it.
 
 ## Update & uninstall
 
-**Update:** re-running `install.sh` is the upgrade path. Scaffold-owned code (the hook, the `lib/check-*` scanners, the `commit-msg` hook) is refreshed whenever it differs from the shipped version (that's how you receive security fixes), and **any file it overwrites is backed up to `<file>.scaffold-bak` first, with a `backed up:` line in the output**, so an edit you made to one is recoverable rather than silently gone. The four shipped CI workflows (`.github/workflows/lint.yml`, `tests.yml`, `coverage.yml`, `gitleaks.yml`) are scaffold-owned but commonly project-edited (adding local CI steps to `lint.yml`) or pre-existing under a scaffold-claimed filename (`tests.yml` especially), so they all follow a drift-preserving policy instead: `lint.yml` since #105, the other three since #110. A re-run that finds one changed from the shipped version keeps your edit and prints a `note (drift):` line rather than overwriting it; `install.sh --force` replaces it anyway, backed up first. If you have been wiring project-local checks into `.githooks/pre-commit` or `.github/workflows/lint.yml`, move them to `.githooks/local.d/` (see [Customize per project](#customize-per-project)); that directory is never written by an upgrade.
+**Update:** re-running `install.sh` is the upgrade path. Scaffold-owned code (the hook, the `lib/check-*` scanners, the `commit-msg` hook) is refreshed whenever it differs from the shipped version (that's how you receive security fixes), and **any file it overwrites is backed up to `<file>.scaffold-bak` first, with a `backed up:` line in the output**, so an edit you made to one is recoverable rather than silently gone. The eight shipped CI workflows (`.github/workflows/lint.yml`, `tests.yml`, `coverage.yml`, `gitleaks.yml`, `dependency-review.yml`, `zizmor.yml`, `socket-security.yml`, `test-guard.yml`) are scaffold-owned but commonly project-edited (adding local CI steps to `lint.yml`) or pre-existing under a scaffold-claimed filename (`tests.yml` especially), so they all follow a drift-preserving policy instead: `lint.yml` since #105, `tests.yml`/`coverage.yml`/`gitleaks.yml` since #110, the rest since each opt-in flag shipped. A re-run that finds one changed from the shipped version keeps your edit and prints a `note (drift):` line rather than overwriting it; `install.sh --force` replaces it anyway, backed up first. If you have been wiring project-local checks into `.githooks/pre-commit` or `.github/workflows/lint.yml`, move them to `.githooks/local.d/` (see [Customize per project](#customize-per-project)); that directory is never written by an upgrade.
+
+**Marking a customization so an overwrite warns instead of staying silent:** any time a file the installer is about to replace or refresh (a plain `cp_scaffold` refresh, or `--force` on a normally drift-preserving or preserved file) contains a comment line reading `# Repo adaptation: <why>`, the installer prints a loud `warning:` naming that exact line and the path of the `.scaffold-bak` it just wrote, instead of only the routine `backed up:` line. Add this marker next to any edit you make to a scaffold-owned file that a plain drift note would not otherwise protect, most usefully in `.githooks/pre-commit` (refreshed on every re-run, not drift-preserving) or a CI workflow you plan to `--force` past later. It does not stop the overwrite; it makes sure you notice.
 
 Your own config files are a separate case: they're local forks of the templates and are left alone entirely unless you pass `--force`. `install.sh --force` replaces them, backing up each changed file to `<file>.scaffold-bak` first so no edit is lost — and it never overwrites your `CLAUDE.md` (the import block is merged in once) or `AGENTS.md` (left as-is, since its Project section is yours). Diff first:
 
