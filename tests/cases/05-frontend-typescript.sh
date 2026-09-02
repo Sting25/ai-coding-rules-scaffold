@@ -191,3 +191,36 @@ else
   FAIL=$((FAIL + 1))
 fi
 reset_repo
+
+# 42e. .cjs and .mjs are part of the JS file set. lint.yml lints
+#      *.ts|*.tsx|*.js|*.jsx|*.cjs|*.mjs|*.vue; the hook's case list dropped
+#      .cjs and .mjs, so a commit made up only of those files ran no linter and
+#      printed no skip notice either — it just went through, and the divergence
+#      surfaced in CI. The stub echoes its arguments so this asserts the files
+#      actually reached eslint, not merely that the commit was refused.
+CJSB=$(mktemp -d)
+cat >"$CJSB/npx" <<'STUB'
+#!/bin/sh
+case "$*" in
+  *eslint*) echo "STUB ESLINT RAN on: $*"; exit 1 ;;
+  *)        exit 0 ;;
+esac
+STUB
+chmod +x "$CJSB/npx"
+mkdir -p node_modules/eslint
+echo '{"name":"eslint","version":"0.0.0-test"}' >node_modules/eslint/package.json
+echo 'module.exports = {}' >only.cjs
+echo 'export const v = 1' >only.mjs
+git add only.cjs only.mjs
+if PATH="$CJSB:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ .cjs/.mjs: hook accepted, eslint never linted them"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "only.cjs" "$HOOK_OUT" && grep -qF "only.mjs" "$HOOK_OUT"; then
+  echo "  ✓ staged .cjs and .mjs are linted like lint.yml lints them"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ .cjs/.mjs: rejected, but not with both files passed to eslint"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf node_modules "$CJSB"
+reset_repo
