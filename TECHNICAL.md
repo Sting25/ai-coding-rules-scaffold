@@ -595,6 +595,42 @@ the Conventional-Commits `commit-msg` hook. Edit a `*.template`, re-run the scri
 to refresh. Only the `*.template` files are tracked; the rendered copies are
 build artifacts.
 
+### Shell rules for the scaffold's own scripts
+
+Two rules that used to live in `operational-rules.md` are shell- and
+CI-specific and anchored to this repo's own scripts, so they belong here rather
+than in a file that installs into other people's projects.
+
+**A conditional must not be a shell function's last command under errexit.**
+Under `set -euo pipefail`, a trailing `[[ ... ]] && cmd` makes the function
+return 1 on the false path, and a failed command substitution in a bare
+assignment aborts the whole script. End helpers with an explicit if/fi so the
+negative path returns 0.
+_Anchor:_ a sid-guard tightening made a session-start hook abort on routine
+stray files; context loading silently stopped, and only independent
+verification caught it because the suite passed.
+
+**In cross-platform fallback chains, the noisy-failure variant goes last.**
+Order `A || B` so the variant that misbehaves on the wrong platform never runs
+first. Some commands "fail" by succeeding partially with garbage on stdout (GNU
+`stat -f` prints filesystem stats), which poisons the captured value even
+though the fallback also runs.
+_Anchor:_ a BSD-first stat chain made a required Linux CI job a coin flip; it
+passed for weeks by luck, then failed an unrelated PR.
+
+### End every session on this repo with a rules retrospective
+
+Before handoff, walk the session's incidents against the add-criteria in
+`operational-rules.md` and propose additions through this repo's issue flow; a
+lesson that lives only in a transcript or a repo-local issue is lost to every
+other project. This is a contributor practice for the scaffold itself, which is
+why it is not in `operational-rules.md`: that file ships into other people's
+repositories, where an instruction to file issues against this tracker does not
+belong.
+_Anchor:_ an orchestration session filed its lessons as a repo-local issue
+only; the owner had to ask explicitly before the generalizable rules were
+proposed to the global file every session actually loads.
+
 ### Why `scaffold-doctor.sh` reports 2 guardrails "installed but NOT running"
 
 This is expected and deliberate. Read this before "fixing" it.

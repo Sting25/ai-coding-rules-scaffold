@@ -216,7 +216,7 @@ jobs:
         if: steps.detect.outputs.present == 'true'
         # Project-wide type-check, guarded: only runs when a tsconfig.json is
         # present AND TypeScript is installed — mirrors the pre-commit hook so
-        # the two layers stay in lockstep. coding-rules.md rule 9 mandates a
+        # the two layers stay in lockstep. coding-rules.md rule 7 mandates a
         # type-checker; this is where it runs server-side.
         run: |
           # NOTE: a type-check is inherently WHOLE-PROGRAM (types are interdependent),

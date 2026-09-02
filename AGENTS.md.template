@@ -48,7 +48,7 @@ you do it, it goes in the plain-language change summary below, by name.
 change or run it against the base commit — a test written against code that
 already exists passes by construction and constrains nothing. If a new test
 legitimately passes on base (characterization before a refactor, coverage
-backfill), say so and why. See `coding-rules.md` rule 8.
+backfill), say so and why. See `coding-rules.md` rule 6.
 
 In a monorepo, run `pytest` from the directory holding the pytest config, not
 from the repo root. pytest reads exactly one ini-file and the rootdir one wins,
@@ -78,13 +78,13 @@ Give it unprompted, and give it even when the answer is "nothing destructive, no
 
 ## Operational rules
 
-See [`operational-rules.md`](./operational-rules.md) for process, collaboration, and judgment patterns extracted from real incidents — pre-flight checks before long jobs, smoke at the smallest scale that exercises the full path, "agent reports measurements / user calls done", scope discipline, and surfacing uncertainty rather than guessing. Not tool-enforceable; meant to be skimmed before non-trivial work.
+See [`operational-rules.md`](./operational-rules.md) for process, collaboration, and judgment patterns extracted from real incidents — pre-flight checks before long jobs, smoke at the smallest scale that exercises the full path, "agent reports measurements / user calls done", scope discipline, and capturing what you notice or defer instead of dropping it silently. Not tool-enforceable; meant to be skimmed before non-trivial work.
 
 ## Git discipline
 
 - **Never `--amend` a commit that has been pushed.** Amending public history forces everyone else to reset.
 - **Never `push --force` or `push --force-with-lease`** without explicit instruction for this specific push. On `main` / `master`, refuse even with instruction — ask first.
-- **Never `git commit --no-verify`.** The pre-commit hook is the enforcement layer; bypassing it defeats the whole scaffold. If the hook is wrong, fix the hook.
+- **Never `git commit --no-verify` to get past a check that is failing.** The pre-commit hook is the enforcement layer; bypassing it defeats the whole scaffold. If the hook is wrong, fix the hook. The one exception is a commit the hook is built to refuse and whose own message offers the bypass: deliberately removing forbidden-pattern config (an uninstall, or `uninstall.sh --drop-lang=<lang>`), or a confirmed false positive in the secret scan. Never assume it — take it only when the hook printed it, name it in your change summary, and mark the line `# scaffold-allow: <reason>` if it lives in a committed script (`shell.txt` blocks the flag otherwise).
 - **Never push unless asked.** Committing is local and reversible; pushing is not. Wait for explicit "push it" / "open a PR" before `git push`.
 - **Never `reset --hard`, `checkout .`, or `clean -fd`** on a dirty tree without confirming — those destroy uncommitted work silently.
 - **Make a restore point before risky multi-step work.** Tag a green point (`git tag pre-<name>`), never a dirty checkpoint commit: the pre-commit hook rejects those and `--no-verify` is not the way out. Editor rewind/checkpoint features don't cover shell-command changes.

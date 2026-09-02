@@ -74,7 +74,7 @@ _Added 2026-06-11._
 
 **Adopt if:** `ty` reaches 1.0 stable (0.0.x beta as of mid-2026) **and** type errors are reaching CI more than ~1/week from agent sessions.
 
-**What it is.** `coding-rules.md` rule 9 wires `tsc --noEmit` into the pre-commit hook for TypeScript but defers Python type-checking (`pyright`/`mypy`) to CI because they're too slow for a hook. The Rust-based `ty` / `pyrefly` remove the speed objection (10–60× faster). When `ty` is stable, the hook can gain `ty check` behind the same guard as `tsc` — run only when the binary is on PATH and a config is present, silently skip otherwise, CI stays authoritative. Rule 8's `pyright`/`mypy` remain the conformance reference and stay unchanged. Docs-only until then — no change to any `check-*` script.
+**What it is.** `coding-rules.md` rule 7 wires `tsc --noEmit` into the pre-commit hook for TypeScript but defers Python type-checking (`pyright`/`mypy`) to CI because they're too slow for a hook. The Rust-based `ty` / `pyrefly` remove the speed objection (10–60× faster). When `ty` is stable, the hook can gain `ty check` behind the same guard as `tsc` — run only when the binary is on PATH and a config is present, silently skip otherwise, CI stays authoritative. Rule 6's `pyright`/`mypy` remain the conformance reference and stay unchanged. Docs-only until then — no change to any `check-*` script.
 
 ---
 

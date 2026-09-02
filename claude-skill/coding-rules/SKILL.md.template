@@ -10,8 +10,8 @@ issue #118). Two files at the project root carry the actual rules:
 
 - `coding-rules.md`, code-level rules: forbidden patterns, style, security.
 - `operational-rules.md`, process and collaboration rules: pre-flight checks
-  before long jobs, commit discipline, scope discipline, surfacing
-  uncertainty instead of guessing.
+  before long jobs, commit discipline, scope discipline, and capturing what
+  you notice or defer instead of dropping it silently.
 
 When this Skill triggers, read both files in full before writing or editing
 code, before a commit, or before answering a question about this project's
