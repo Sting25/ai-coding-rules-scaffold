@@ -92,6 +92,9 @@ CASE_FLOORS=(
   "31-install-verify-offer.sh:5"
   "32-uninstall-report.sh:6"
   "33-harness-self-checks.sh:12"
+  "34-shipped-pattern-files.sh:0"
+  "35-workflow-template-validity.sh:0"
+  "36-red-green-verdict.sh:0"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and
@@ -126,6 +129,27 @@ fi
 # shellcheck source=lib/common.sh disable=SC1091
 . "$HERE/lib/common.sh"
 
+# --- the skip counter ------------------------------------------------------
+# common.sh owns PASS and FAIL; SKIP is the driver's, because it exists for the
+# result line printed here. A case whose optional tool is missing (actionlint,
+# pytest, ...) prints a "- SKIP:" line and adds the assertions it did NOT run to
+# this counter.
+#
+# WHY IT IS REPORTED. A skipped assertion did not run, and an assertion that
+# never ran must not look identical to one that passed. With only "N passed, N
+# failed" on the result line, a case that skips its whole body — actionlint off
+# PATH, pytest not importable — is indistinguishable from a clean green run: the
+# guard is not armed, nothing failed, and the summary says so in the same words
+# it uses when the guard did fire. Printing the skips keeps that distinction
+# visible in the one line people actually read (and in CI logs, where a skip
+# that should never happen on a provisioned runner is the signal that a tool
+# install step was dropped).
+#
+# It is deliberately NOT an error: skipping on a bare machine is the intended
+# behaviour, and the per-case floors below are measured with those tools absent,
+# so a skip can never push a case under its floor.
+SKIP=0
+
 # Bootstrap left us in $WORK; make sure every case file runs from there (some
 # cases cd into their own temp dirs and cd back to "$WORK").
 cd "$WORK"
@@ -152,7 +176,7 @@ done
 
 # --- result and exit status ------------------------------------------------
 echo ""
-echo "Result: $PASS passed, $FAIL failed"
+echo "Result: $PASS passed, $FAIL failed, $SKIP skipped"
 
 # A file that went quiet is a red run even with nothing failing: those
 # assertions did not fail, they never ran, and "0 failed" over a suite that

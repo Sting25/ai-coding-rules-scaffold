@@ -21,12 +21,23 @@
 # --- Security: TLS bypass ---
 # danger_accept_invalid_certs is reqwest's TLS off-switch - the same bypass
 # backend.txt bans as verify=False and frontend.txt as rejectUnauthorized: false.
-# Only the literal `(true)` argument fires. The method definition
+# Only the literal `(true)` argument fires, and only on a line whose first
+# non-blank character is not `/` or `*` - so a `//`, `///`, `//!`, `/*` or
+# ` * ` block-comment continuation that merely NAMES the call stays silent,
+# indented or not. That guard is leading-comment only
+# (`^[[:space:]]*[^/*[:space:]]`), deliberately NOT the php-style "no `/`
+# anywhere before the match": chained builder calls routinely contain a `/`
+# earlier on the line (a URL in a string argument), and the php-style guard was
+# measured to drop those real call sites.
+# Also silent: the method definition
 # (`fn danger_accept_invalid_certs(mut self, accept: bool)`), a wrapper that
 # forwards the flag, a config-driven call (`(cfg.accept_invalid_certs)`), the
-# `(false)` call and a `Debug` field named after it are all silent, and the
-# word-end guard after `true` keeps a `(true_flag)` argument out.
-danger_accept_invalid_(certs|hostnames)[[:space:]]*\([[:space:]]*true($|[^A-Za-z0-9_])	reqwest danger_accept_invalid_certs/hostnames(true) disables TLS validation (MITM risk) - fix the cert/CA
+# `(false)` call and a `Debug` field named after it, and the word-end guard
+# after `true` keeps a `(true_flag)` argument out.
+# Known and accepted: a trailing comment AFTER real code on the same line
+# (`let x = 1; // danger_accept_invalid_certs(true)`) still fires, because the
+# guard only inspects the start of the line.
+^[[:space:]]*[^/*[:space:]].*danger_accept_invalid_(certs|hostnames)[[:space:]]*\([[:space:]]*true($|[^A-Za-z0-9_])	reqwest danger_accept_invalid_certs/hostnames(true) disables TLS validation (MITM risk) - fix the cert/CA
 
 # Optional (opt-in) — uncomment a line to enable it:
 # (^|[^A-Za-z_])panic![[:space:]]*[([{]	panic!() aborts the thread - prefer returning a Result (opt-in: noisy)

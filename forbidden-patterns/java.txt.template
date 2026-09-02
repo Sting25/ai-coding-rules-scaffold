@@ -17,10 +17,13 @@
 # file is the only gate in front of these lines. Each rule is deliberately much
 # narrower than the vulnerability class it names: a miss costs one finding, a
 # false positive fails a build in someone else's repo on code they did not
-# write. Both are silent across the real-world corpus they were measured on
-# (~19k files on the first pass, 37.9k on the latest: BouncyCastle, Netty,
-# HttpClient, Spring, Hibernate, Tomcat, Jetty, Kafka, ZooKeeper, Guava,
-# commons-*, Jackson, Mockito, JUnit - library AND test sources).
+# write. On the ~19k-file first pass both rules were silent. On the 37.9k-file
+# latest pass they fire four times in total - Runtime.exec once (ant) and
+# checkServerTrusted three times (testcontainers) - and all four hits are TRUE
+# positives: real built-command exec and real empty-body TrustManagers. Zero
+# false positives on either pass. Corpus: BouncyCastle, Netty, HttpClient,
+# Spring, Hibernate, Tomcat, Jetty, Kafka, ZooKeeper, Guava, commons-*,
+# Jackson, Mockito, JUnit, ant, testcontainers - library AND test sources.
 #
 # Runtime.exec: only a CONCATENATED or String.format()-BUILT command string -
 # the `+` branch stops at `)`, `,` and `{` so it cannot reach inside the
