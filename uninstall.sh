@@ -25,10 +25,48 @@ for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
     --all)     REMOVE_ALL=1 ;;
-    --help|-h) sed -n '2,15p' "$0"; exit 0 ;;
+    # Print the header by its SHAPE, not by line number: every comment line
+    # after the shebang, stopping at the first line that is not one. The old
+    # hardcoded `sed -n '2,15p'` was one line short of the header, so the only
+    # flag it never listed was --help itself, and any edit to the header would
+    # have silently moved the truncation point again.
+    --help|-h) awk 'NR > 1 && /^#/ { print; next } NR > 1 { exit }' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
+
+# A dry run must not touch the filesystem. The empty-directory sweep at the end
+# of this script cannot ask the filesystem whether a directory is empty during a
+# dry run, because nothing has been deleted yet: .githooks/lib still holds every
+# file a real run would have removed by then. WOULD_REMOVE records each path a
+# real run would delete and the sweep replays the same order against that list,
+# so a dry run names exactly the directories a real run clears without touching
+# one of them. Before this existed the sweep called rmdir unguarded, so
+# `uninstall.sh --dry-run` genuinely deleted directories while its last line
+# said "no files changed".
+NL='
+'
+WOULD_REMOVE=""
+mark_removed() { WOULD_REMOVE="${WOULD_REMOVE}${1}${NL}"; }
+is_marked() {
+  case "${NL}${WOULD_REMOVE}" in
+    *"${NL}${1}${NL}"*) return 0 ;;
+  esac
+  return 1
+}
+
+# dir_would_be_empty DIR: true when every entry in DIR is a path a real run
+# would already have removed (or DIR has no entries at all). Hidden entries are
+# globbed explicitly: an unmatched glob stays literal, which the -e/-L test then
+# skips.
+dir_would_be_empty() {
+  local dir=$1 entry
+  for entry in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
+    { [ -e "$entry" ] || [ -L "$entry" ]; } || continue
+    is_marked "$entry" || return 1
+  done
+  return 0
+}
 
 same_as_template() {
   # $1 = installed path, $2 = template path
@@ -43,6 +81,7 @@ remove_if_unmodified() {
   if same_as_template "$installed" "$template"; then
     if [ "$DRY_RUN" -eq 1 ]; then
       echo "would remove: $installed"
+      mark_removed "$installed"
     else
       rm "$installed"
       echo "removed:      $installed"
@@ -57,6 +96,7 @@ force_remove() {
   [ -e "$path" ] || return
   if [ "$DRY_RUN" -eq 1 ]; then
     echo "would remove: $path"
+    mark_removed "$path"
   else
     rm -rf "$path"
     echo "removed:      $path"
@@ -72,6 +112,7 @@ clean_claude_md() {
   if same_as_template "CLAUDE.md" "$SCAFFOLD_DIR/CLAUDE.md.pointer"; then
     if [ "$DRY_RUN" -eq 1 ]; then
       echo "would remove: CLAUDE.md (scaffold-created pointer)"
+      mark_removed "CLAUDE.md"
     else
       rm "CLAUDE.md"
       echo "removed:      CLAUDE.md (scaffold-created pointer)"
@@ -198,7 +239,13 @@ fi
 for dir in .githooks/lib .githooks/local.d .githooks .github/workflows .github \
            .claude/skills/coding-rules .claude/skills .claude .cursor; do
   [ -d "$dir" ] || continue
-  if rmdir "$dir" 2>/dev/null; then
+  if [ "$DRY_RUN" -eq 1 ]; then
+    # Never rmdir here: a dry run reports, it does not delete.
+    if dir_would_be_empty "$dir"; then
+      echo "would remove empty: $dir"
+      mark_removed "$dir"
+    fi
+  elif rmdir "$dir" 2>/dev/null; then
     echo "removed empty: $dir"
   fi
 done
@@ -213,6 +260,43 @@ if git rev-parse --git-dir >/dev/null 2>&1 \
     git config --unset core.hooksPath
     echo "unset:        core.hooksPath"
   fi
+fi
+
+# --- what is deliberately left behind ---------------------------------------
+# The safe path keeps the likely-customized files and every *.scaffold-bak an
+# upgrade wrote, and it used to say nothing whatsoever about either: the policy
+# lived only in this script's header, so a run ended with "Done." over a project
+# that still had six scaffold files in it and no way to learn their names. A
+# leftover nobody can name is a leftover nobody removes.
+KEPT=""
+if [ "$REMOVE_ALL" -eq 0 ]; then
+  for kept_path in AGENTS.md coding-rules.md operational-rules.md; do
+    if [ -e "$kept_path" ]; then
+      KEPT="${KEPT}  ${kept_path}${NL}"
+    fi
+  done
+  for kept_path in .forbidden-patterns/*.txt; do
+    if [ -e "$kept_path" ]; then
+      KEPT="${KEPT}  ${kept_path}${NL}"
+    fi
+  done
+fi
+if [ -n "$KEPT" ]; then
+  echo ""
+  echo "kept (likely customized): yours to edit, so uninstall never deletes them."
+  printf '%s' "$KEPT"
+  echo "  remove them too with: uninstall.sh --all"
+fi
+
+# The backups an upgrade or a --force install wrote hold the ONLY copy of the
+# edits they replaced, so uninstall must never delete them. It must still name
+# them: a user who does not know they exist never merges anything back out.
+BAKS=$(find . -maxdepth 4 -name '*.scaffold-bak*' -not -path './.git/*' 2>/dev/null | sed 's|^\./||' | sort || true)
+if [ -n "$BAKS" ]; then
+  echo ""
+  echo "kept (your backups): the only copy of the edits they replaced."
+  printf '%s\n' "$BAKS" | sed 's/^/  /'
+  echo "  merge anything you still want out of them, then delete them yourself."
 fi
 
 echo ""
