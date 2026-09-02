@@ -40,7 +40,7 @@ fi
 OFFTMP=$(mktemp -d)
 ( cd "$OFFTMP" && git init --quiet && echo '{"name":"x"}' >package.json \
   && "$SCAFFOLD_DIR/install.sh" --frontend </dev/null ) >"$HOOK_OUT" 2>&1
-if grep -q "not installed — run:" "$HOOK_OUT" \
+if grep -q "not installed, run:" "$HOOK_OUT" \
    && ! grep -q "install now with" "$HOOK_OUT" \
    && [ ! -d "$OFFTMP/node_modules" ]; then
   echo "  ✓ detect/offer is print-only + non-mutating without a TTY"; PASS=$((PASS + 1))
