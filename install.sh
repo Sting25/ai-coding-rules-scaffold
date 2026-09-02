@@ -477,3 +477,9 @@ case "$MODE" in
   *) echo "  - Verify the hook: add 'print(\"x\")' to a .py file, 'git add' it, try to commit — hook should reject" ;;
 esac
 print_history_scan_note; print_not_enabled_summary
+
+# A symlinked scaffold DIRECTORY (.githooks, .github, .claude, .cursor) makes
+# every write under it a refusal in _mkdir_safe, so this run really did not
+# install what it was asked to: name the paths once and FAIL, rather than
+# exiting 0 over a half-written install (audit code-install-policy-2).
+print_refused_writes_summary || exit 1

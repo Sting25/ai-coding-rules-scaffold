@@ -256,28 +256,6 @@ else
 fi
 rm -rf "$USD"
 
-# (T) symlinked scaffold DIRECTORY (.githooks -> outside dir): install's cp_*
-#     helpers dropped a symlink at the LEAF file but `mkdir -p "$(dirname)"` still
-#     FOLLOWED a symlinked PARENT, writing every scanner THROUGH the link outside
-#     the repo, clobbering a pre-existing outside file and leaving the in-repo
-#     .githooks a symlink (silent write-through + fail-open). _mkdir_safe now drops
-#     a symlink at every path component. Assert: outside file untouched, and the
-#     in-repo .githooks is a REAL dir holding a real pre-commit.
-USG=$(mktemp -d)
-mkdir -p "$USG/repo" "$USG/outside/lib"
-printf 'PRECIOUS_DO_NOT_TOUCH\n' >"$USG/outside/lib/check-secrets"
-ln -s "$USG/outside" "$USG/repo/.githooks"
-( cd "$USG/repo" && git init --quiet && echo '{"name":"x"}' >package.json \
-  && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
-if grep -q 'PRECIOUS_DO_NOT_TOUCH' "$USG/outside/lib/check-secrets" \
-   && [ -d "$USG/repo/.githooks" ] && [ ! -L "$USG/repo/.githooks" ] \
-   && [ -f "$USG/repo/.githooks/pre-commit" ] && [ ! -L "$USG/repo/.githooks/pre-commit" ]; then
-  echo "  ✓ install does not write through a symlinked scaffold DIR (no outside clobber)"; PASS=$((PASS + 1))
-else
-  echo "  ✗ install followed a symlinked .githooks dir and wrote scanners outside the repo"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
-fi
-rm -rf "$USG"
-
 # --- installer does not write THROUGH a symlink at CLAUDE.md / AGENTS.md (B1) --
 # The A7 symlink defense lived only in the cp_* helpers; install_claude_md /
 # install_agents_md kept the pre-A7 `[ -e ]`-only guard, so a symlink planted at

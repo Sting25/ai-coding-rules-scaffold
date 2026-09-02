@@ -45,24 +45,69 @@
 # The four policies share one write MECHANISM (_cp_replace) and one backup
 # routine (_backup), so the A7 symlink defenses live in exactly one place.
 
+# SCAFFOLD_SYMLINK_DIRS — the symlinked directories _mkdir_safe has already
+# refused this run, so the explanation prints once per path rather than once per
+# file underneath it, and so install.sh can fail the run at the end instead of
+# exiting 0 over a half-written install. Space separated; scaffold paths never
+# contain a space.
+SCAFFOLD_SYMLINK_DIRS=""
+
 # _mkdir_safe DIR — create DIR as real directories, never following a symlink at
 # ANY path component. `rm -f "$dst"` in _cp_replace drops a symlink at the LEAF
 # file, but a plain `mkdir -p` follows a symlinked PARENT (e.g. a planted
 # `.githooks -> ~/.ssh` or `.github -> $HOME`), sending every scanner/hook/CI
 # workflow, and any overwrite, THROUGH the link and outside the repo, while the
-# in-tree path stays a symlink (a silent write-through + fail-open). Walk the
-# path top-down, dropping any symlink component before descending, so we always
-# land real dirs in the tree. Mirrors scripts/dev-setup.sh's _mkdir_safe (B4).
+# in-tree path stays a symlink (a silent write-through + fail-open).
+#
+# This used to `rm -f` the symlink component and carry on. That closed the
+# write-through, but it DELETED a directory link the user had put there, with no
+# warning, no backup and no summary line: a `.claude -> ../shared-claude` was
+# gone after one install and the shared notes it pointed at were orphaned, while
+# the only log line was "installed: .claude/settings.json" (audit
+# code-install-policy-2). Deleting someone's link is a bigger decision than an
+# installer gets to make silently, and every LEAF symlink is already refused
+# with "skip (exists, symlink)" rather than removed. So: refuse the write, name
+# the link and its target, say what to do, and let the caller skip that file.
 _mkdir_safe() {
-  local dir=$1 path='' comp
+  local dir=$1 path='' comp target
   while [ -n "$dir" ]; do
     comp=${dir%%/*}
     case $dir in */*) dir=${dir#*/} ;; *) dir= ;; esac
     [ -z "$comp" ] && continue
     path="${path:+$path/}$comp"
-    [ -L "$path" ] && rm -f "$path"
-    [ -d "$path" ] || mkdir "$path"
+    if [ -L "$path" ]; then
+      case " $SCAFFOLD_SYMLINK_DIRS " in
+        *" $path "*) ;;
+        *)
+          SCAFFOLD_SYMLINK_DIRS="$SCAFFOLD_SYMLINK_DIRS $path"
+          target=$(readlink "$path" 2>/dev/null || true)
+          echo "error: $path is a symlink${target:+ -> $target}, not a real directory." >&2
+          echo "       Refusing to write scaffold files through it (they would land outside the" >&2
+          echo "       repo), and refusing to delete it (it is yours). Nothing under $path was" >&2
+          echo "       installed. Decide which you want, then re-run install.sh:" >&2
+          echo "         mv $path ${path}.link   # keep the link aside, install into a real dir" >&2
+          echo "         rm $path                # drop the link for good" >&2
+          ;;
+      esac
+      return 1
+    fi
+    [ -d "$path" ] || mkdir "$path" || return 1
   done
+  return 0
+}
+
+# print_refused_writes_summary — end-of-run report for the refusals above.
+# A symlinked scaffold directory makes EVERY write under it a skip, so the
+# install is genuinely incomplete and must not exit 0 pretending otherwise
+# ("no silent failures"). Returns 1 so the caller can fail the run.
+print_refused_writes_summary() {
+  local d
+  [ -n "$SCAFFOLD_SYMLINK_DIRS" ] || return 0
+  echo ""
+  echo "INSTALL INCOMPLETE: nothing was written under these symlinked directories:"
+  for d in $SCAFFOLD_SYMLINK_DIRS; do echo "  - $d"; done
+  echo "Replace each with a real directory (or move the link aside) and re-run install.sh."
+  return 1
 }
 
 # _cp_replace SRC DST — the actual write. `[ -e ]` alone is false for a DANGLING
@@ -73,7 +118,11 @@ _mkdir_safe() {
 # THROUGH a link.
 _cp_replace() {
   local src=$1 dst=$2
-  _mkdir_safe "$(dirname "$dst")"
+  # _mkdir_safe refuses a symlinked parent rather than deleting it, so this can
+  # legitimately fail; propagate that so every cp_* caller skips the one file
+  # (and does not print an "installed:"/"updated:" line for a write that never
+  # happened) instead of aborting the whole run under errexit.
+  _mkdir_safe "$(dirname "$dst")" || return 1
   rm -f "$dst"
   cp "$src" "$dst"
 }
@@ -151,7 +200,7 @@ cp_safe() {
     fi
     _backup "$dst" || return 0
   fi
-  _cp_replace "$src" "$dst"
+  _cp_replace "$src" "$dst" || return 0
   echo "installed:    $dst"
 }
 
@@ -178,11 +227,11 @@ cp_scaffold() {
       return
     fi
     _backup "$dst" || return 0
-    _cp_replace "$src" "$dst"
+    _cp_replace "$src" "$dst" || return 0
     echo "updated:      $dst (refreshed to the shipped version)"
     return
   fi
-  _cp_replace "$src" "$dst"
+  _cp_replace "$src" "$dst" || return 0
   echo "installed:    $dst"
 }
 
@@ -206,7 +255,7 @@ cp_pattern() {
     fi
     _backup "$dst" || return 0
   fi
-  _cp_replace "$src" "$dst"
+  _cp_replace "$src" "$dst" || return 0
   echo "installed:    $dst"
 }
 
@@ -233,7 +282,7 @@ cp_scaffold_preserve() {
     fi
     _backup "$dst" || return 0
   fi
-  _cp_replace "$src" "$dst"
+  _cp_replace "$src" "$dst" || return 0
   echo "installed:    $dst"
 }
 
