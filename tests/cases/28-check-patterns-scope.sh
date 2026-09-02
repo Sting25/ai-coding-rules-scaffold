@@ -100,6 +100,24 @@ cp_run() {
   fi
 }
 
+# cp_clean NAME FILE...: the negative counterpart of cp_run. Asserts the
+# POSITIVE outcome of a clean run (exit 0 AND no finding text), not merely that
+# one message is absent, so a crash to empty output cannot pass it.
+cp_clean() {
+  local name=$1; shift
+  local rc=0
+  printf '%s\0' "$@" | .githooks/lib/check-patterns >"$HOOK_OUT" 2>&1 || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "  ✗ $name: check-patterns exited $rc, expected 0"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  elif [ -s "$HOOK_OUT" ] && grep -qE 'structlog|console\.log|Use ' "$HOOK_OUT"; then
+    echo "  ✗ $name: exited 0 but reported a finding"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  else
+    echo "  ✓ $name"; PASS=$((PASS + 1))
+  fi
+}
+
 # 28g. CASE-INSENSITIVE EXTENSIONS. The extension match was case-SENSITIVE, so
 #      renaming a file to `src/BAD.PY` matched no arm of backend.txt, was dropped
 #      before the scan, and committed with zero findings at the hook AND at the
@@ -155,4 +173,34 @@ cp_run "header-less frontend.txt still scans .svelte (fallback parity)" "XSS" fa
 printf 'console.log("debug");\n' >fallback.ts
 git add fallback.ts
 cp_run "header-less frontend.txt still scans .ts (fallback control)" "console.log" fallback.ts
+reset_repo
+
+# 28m. THE NEGATIVE FOR 28g/28h, and the reason it is worth writing. 28g and 28h
+#      prove the fold makes BAD.PY and BAD.Py reachable. Neither proves the fold
+#      stopped there. Case-folding a suffix match is the kind of change that
+#      looks obviously safe and occasionally is not: a fold implemented as a
+#      case-insensitive substring or a stripped-anchor regex would start
+#      matching extensions no header declares, and every one of these files
+#      would silently come into scope. The content below WOULD be reported if
+#      the file were scanned (`print(` is a backend.txt rule, `console.log` a
+#      frontend.txt one), so each assertion fails loudly if the scope widened.
+#      Asserts exit 0 AND no finding, so a crash to empty output cannot pass it.
+mkdir -p src
+printf 'pri''nt("debug")\n'        >src/notes.md
+printf 'console.log("debug");\n'   >src/notes.MD
+printf 'pri''nt("debug")\n'        >src/data.pyc
+printf 'pri''nt("debug")\n'        >src/report.PYTHON
+printf 'console.log("debug");\n'   >src/vendor.jsonc
+git add src/notes.md src/notes.MD src/data.pyc src/report.PYTHON src/vendor.jsonc
+cp_clean "an undeclared extension stays out of scope in every case variant" \
+  src/notes.md src/notes.MD src/data.pyc src/report.PYTHON src/vendor.jsonc
+reset_repo
+
+# 28n. The control for 28m: the same content in a DECLARED extension is still
+#      reported. Without it, 28m would also pass against a check-patterns that
+#      had stopped scanning anything at all.
+mkdir -p src
+printf 'pri''nt("debug")\n' >src/real.PY
+git add src/real.PY
+cp_run "the same content in a declared extension is still reported (28m control)" "structlog" src/real.PY
 reset_repo
