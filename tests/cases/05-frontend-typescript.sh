@@ -303,3 +303,37 @@ else
 fi
 rm -rf node_modules "$PRB"
 reset_repo
+
+# 42i. tsc failure propagation. Case 42 above is the real thing but skips
+#      wherever TypeScript is not resolvable in the temp repo, which is every
+#      runner the suite has: test.yml provisions no node/typescript, so
+#      `npx --no-install tsc --noEmit || FAILED=1` was never once executed and
+#      could be deleted with the suite green. Plant a project-local
+#      node_modules/typescript so the hook's Node-resolution gate passes and
+#      stub npx so the type check fails, the same shape as 42b does for eslint.
+TSB=$(mktemp -d)
+cat >"$TSB/npx" <<'STUB'
+#!/bin/sh
+case "$*" in
+  *tsc*) echo "STUB TSC: typeerr.ts(1,7): error TS2322"; exit 1 ;;
+  *)     exit 0 ;;
+esac
+STUB
+chmod +x "$TSB/npx"
+mkdir -p node_modules/typescript
+echo '{"name":"typescript","version":"0.0.0-test"}' >node_modules/typescript/package.json
+echo '{"compilerOptions":{"strict":true,"noEmit":true}}' >tsconfig.json
+echo 'const n: number = 1;' >tscme.ts
+git add tsconfig.json tscme.ts
+if PATH="$TSB:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ tsc block: hook accepted despite a type error"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "STUB TSC" "$HOOK_OUT"; then
+  echo "  ✓ tsc findings fail the pre-commit hook (project-local install)"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ tsc block: rejected, but tsc never ran"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf node_modules "$TSB"
+reset_repo
