@@ -217,9 +217,23 @@ scan() {
 
   local file ext keep content cap_rc pat desc m base n
   # Word-split the `# scaffold-filenames:` header once, not once per file.
+  # `read -a`, NOT an unquoted `for n in $names`: unquoted expansion word-splits
+  # AND pathname-expands, so any header glob that happened to match something in
+  # the hook's CWD (the repo root) was REPLACED by that match before it was ever
+  # used as a pattern. A root-level `Dockerfile.prod` rewrote the header's
+  # `Dockerfile.*` into that one literal name and `docker/Dockerfile.dev` then
+  # went unscanned; a root-level `lib.mk` did the same to `*.mk`. Silent, and
+  # dependent on what files happen to sit in the root. `read` splits on IFS and
+  # expands nothing, so the globs reach the `case` arms below intact — that is
+  # the one place they are meant to be interpreted as patterns.
   local name_globs=()
-  # shellcheck disable=SC2086  # word-splitting the header's glob list is intentional
-  for n in $names; do name_globs+=("$n"); done
+  if [ -n "$names" ]; then read -r -a name_globs <<<"$names"; fi
+
+  # Restore the caller's `nocasematch` after the dispatch instead of forcing it
+  # off: this file is only ever executed today, but a `source` from a test must
+  # not have the option clobbered under it.
+  local nocase_was_set=0
+  if shopt -q nocasematch; then nocase_was_set=1; fi
 
   for file in "${FILES[@]}"; do
     keep=0
@@ -230,6 +244,17 @@ scan() {
     # severity in check-filenames (CHANGELOG A4, `.PEM`/`.ENV`/`ID_RSA`). The
     # PATTERN greps below stay case-sensitive (-anE), so `Console.log` is still
     # not a match for `console.log`; only the file selection folds case.
+    #
+    # ACCEPTED false positive from the fold: a committed `clip.TS` (MPEG
+    # transport stream) now matches frontend.txt's `ts` and gets scanned; its
+    # binary content is one over-long line, so the fail-closed cap guard below
+    # refuses the commit. Kept rather than special-cased — `.TS` is the only
+    # collision across the whole shipped extension set (py ts tsx js jsx mjs cjs
+    # mts cts vue svelte go java kt kts php phtml rb rake rs sh bash), a video
+    # is normally rejected by check-large-files first, and excluding it by name
+    # would also exclude the genuine `Player.TS` a case-insensitive checkout
+    # produces. Media does not belong in a source tree; if it must be there,
+    # raise MAX_LINE_LENGTH or commit it with --no-verify.
     shopt -s nocasematch
     if [ ${#exts[@]} -gt 0 ]; then
       for ext in "${exts[@]}"; do
@@ -241,10 +266,13 @@ scan() {
     # workflow YAML or a package.json script, and none of those carries a `.sh`
     # extension — an extensionless `bin/deploy` cannot be named by an extension
     # header at all. Each glob is tried against the BASENAME (so `Dockerfile`
-    # catches `docker/Dockerfile`) and against the full path (so a header can name
-    # a directory glob such as `bin/*` — only for directories known to hold TEXT,
-    # since a compiled binary is one over-long line and trips the cap guard below).
-    # The globs are unquoted on purpose — they are patterns, not values.
+    # catches `docker/Dockerfile`) and against the full path (so a header can
+    # scope a glob to one directory: `.github/workflows/*.yml` claims the CI
+    # files without claiming every YAML in the tree). A path glob over a
+    # directory of COMPILED files (`bin/*` in a repo where bin/ holds binaries)
+    # is a mistake, not a feature: a binary is one over-long line, which trips
+    # the fail-closed cap guard below and refuses the commit. The globs are
+    # unquoted in the `case` arms on purpose — there they are patterns.
     if [ "$keep" -eq 0 ] && [ ${#name_globs[@]} -gt 0 ]; then
       base=${file##*/}
       for n in "${name_globs[@]}"; do
@@ -254,7 +282,7 @@ scan() {
         case "$file" in $n) keep=1; break ;; esac
       done
     fi
-    shopt -u nocasematch
+    [ "$nocase_was_set" -eq 1 ] || shopt -u nocasematch
     [ "$keep" -eq 1 ] || continue
 
     # Scan the staged blob, not the working-tree path (see header). Strip NUL
@@ -309,9 +337,12 @@ scan() {
 # keeps working.
 exts_for() {
   local cfg=$1 hdr
-  # `|| true`: with `set -o pipefail`, grep's exit 1 on a header-less file would
-  # otherwise abort the whole script from inside the caller's `$(...)` — silently,
-  # before the no-header diagnostic below could ever be printed.
+  # `|| true`: grep exits 1 when the header is absent and `set -o pipefail`
+  # hands that status to the whole pipeline. Today's only call site is
+  # `cfg_exts=$(exts_for "$cfg")`, and bash suppresses errexit inside a function
+  # body running in that command substitution, so nothing aborts either way —
+  # this is hardening, not a fix for a live bug: it keeps the function safe to
+  # call as a bare statement, where `set -e` WOULD abort on the empty case.
   hdr=$(grep -m1 -E '^#[[:space:]]*scaffold-extensions:' "$cfg" 2>/dev/null \
           | sed -E 's/^#[[:space:]]*scaffold-extensions:[[:space:]]*//; s/[[:space:]]+$//') || true
   if [ -n "$hdr" ]; then printf '%s' "$hdr"; return; fi
@@ -331,8 +362,8 @@ exts_for() {
 # file changes behaviour when this script is upgraded.
 filenames_for() {
   local cfg=$1 hdr
-  # `|| true` for the same pipefail reason as exts_for — and here the header is
-  # absent in every shipped pattern file, so it is the normal case, not an edge.
+  # `|| true` for the same pipefail reason as exts_for — and here an absent
+  # header is the normal case (only shell.txt ships one), not an edge.
   hdr=$(grep -m1 -E '^#[[:space:]]*scaffold-filenames:' "$cfg" 2>/dev/null \
           | sed -E 's/^#[[:space:]]*scaffold-filenames:[[:space:]]*//; s/[[:space:]]+$//') || true
   printf '%s' "$hdr"
@@ -357,6 +388,15 @@ for cfg in .forbidden-patterns/*.txt; do
     continue
   fi
   case "$(basename "$cfg")" in secrets.txt) continue ;; esac
+  # Readability is tested BEFORE the headers are parsed. An unreadable or
+  # non-regular config yields two empty headers, and without this it would be
+  # reported by the guard below as "has no '# scaffold-extensions:' header" —
+  # a real failure, but naming the wrong cause. scan() repeats the test because
+  # it guards its own entry too; that is defence in depth, not redundancy.
+  if [ ! -f "$cfg" ] || [ ! -r "$cfg" ]; then
+    [ ${#FILES[@]} -eq 0 ] || fail_closed "$cfg is not a readable file — the forbidden-pattern rules it configures do not run. Restore it (use 'git commit --no-verify' if intended)."
+    continue
+  fi
   cfg_exts=$(exts_for "$cfg")
   cfg_names=$(filenames_for "$cfg")
   if [ -z "$cfg_exts" ] && [ -z "$cfg_names" ]; then

@@ -51,6 +51,12 @@ env:
   # exemption is allowed, but it has to be written down where a reviewer sees
   # it. Put the reason in a comment on the line you add.
   COVERAGE_UNMEASURED_OK_EXT: ""
+  # Individual PATHS this gate is not expected to measure, space-separated
+  # fnmatch globs or directory prefixes (e.g. "static/ tools/gen_*.py"). Prefer
+  # this over COVERAGE_UNMEASURED_OK_EXT: exempting "py" to excuse one
+  # unmeasurable script turns the gate off for the whole Python codebase. Same
+  # rule as above — put the reason in a comment on the line you add.
+  COVERAGE_UNMEASURED_OK_PATHS: ""
 
 jobs:
   patch-coverage:
@@ -214,7 +220,7 @@ jobs:
       - name: Report the gate's blind spots (unmeasured files, partial branches)
         run: |
           python3 - <<'PY'
-          import os, re, subprocess, sys, xml.etree.ElementTree as ET
+          import fnmatch, os, re, subprocess, sys, xml.etree.ElementTree as ET
 
           base = os.environ["GITHUB_BASE_REF"]
           rng = "origin/%s...HEAD" % base   # same range diff-cover compares
@@ -231,13 +237,36 @@ jobs:
           # be measured would fail every ordinary PR. Tests are excluded from
           # the denominator by .coveragerc's `omit` and vitest's `exclude`;
           # config/type-stub files are excluded by convention.
+          # static/, public/ and assets/ are here for the Django/Rails/Flask
+          # shape: a browser asset in a repo with no JS test runner is not
+          # measurable by anything this workflow runs, so failing on it would
+          # block the first PR that touches one, with no remedy the author can
+          # act on. A repo that DOES measure them with vitest reports them
+          # normally and never reaches this list.
           SKIP_DIR = ("node_modules/", "dist/", "build/", "vendor/", "coverage/",
                       ".venv/", "venv/", "migrations/", "__tests__/", "tests/",
-                      "test/", "spec/", "__mocks__/", "e2e/", "fixtures/")
+                      "test/", "spec/", "__mocks__/", "e2e/", "fixtures/",
+                      "static/", "public/", "assets/")
           SKIP_RE = re.compile(
               r"(^|/)(test_[^/]+\.py|conftest\.py|setup\.py|__init__\.py"
               r"|[^/]+_test\.[^/]+|[^/]+\.(test|spec)\.[^/]+"
               r"|[^/]+\.config\.[^/]+|[^/]+\.d\.ts)$")
+
+          # Per-PATH exemption. The extension escape hatch is the wrong grain
+          # for the common case: one unmeasurable `scripts/deploy.py` should not
+          # cost the gate every .py file in the repo.
+          OK_PATHS = [p for p in
+                      os.environ.get("COVERAGE_UNMEASURED_OK_PATHS", "").split()
+                      if p]
+
+          def path_exempt(f):
+              # fnmatch globs ("tools/gen_*.py"); a bare prefix ("static/")
+              # matches everything under it. fnmatch's * crosses "/", which is
+              # the lenient direction and the one that cannot fail a good PR.
+              for p in OK_PATHS:
+                  if fnmatch.fnmatch(f, p) or f.startswith(p.rstrip("/") + "/"):
+                      return True
+              return False
 
           def parts(p):
               return tuple(p.replace("\\", "/").strip("/").split("/"))
@@ -285,6 +314,16 @@ jobs:
               # `source = pkg` emits paths relative to pkg/, vitest emits them
               # relative to the repo root. Erring toward "measured" keeps this
               # step from failing a PR whose file really was in the report.
+              #
+              # KNOWN COST of that leniency: a report entry with ONE path
+              # component degrades to a basename match, so a measured
+              # root-level `utils.py` marks a changed `services/utils.py` as
+              # measured and this step stays quiet about it. That is a MISS
+              # (the file is still scored green by diff-cover), never a false
+              # failure — the deliberate trade, since the alternative fails
+              # PRs in every repo full of index.ts/__init__.py. If your layout
+              # emits one-component paths, set `source` to the package root so
+              # coverage.py emits qualified paths.
               cp = parts(path)
               for mp in measured:
                   n = min(len(cp), len(mp))
@@ -306,6 +345,8 @@ jobs:
               # Leading "/" on both sides so "tests/" matches a top-level
               # tests/ as well as a nested one, and never a "mytests/" prefix.
               if any(("/" + d) in ("/" + f) for d in SKIP_DIR):
+                  continue
+              if path_exempt(f):
                   continue
               if not is_measured(f):
                   unmeasured.append(f)
@@ -337,11 +378,25 @@ jobs:
                         "all. diff-cover scores it as COVERED by omission, so the "
                         "100%% gate cannot see it." % f)
               say("")
-              say("**FAILED**: the files above changed in a language this workflow "
-                  "does not measure (it runs pytest-cov and vitest only). Add a "
-                  "coverage step emitting Cobertura for that language, widen the "
-                  "runner's coverage scope (.coveragerc `source`/`omit`, "
-                  "vitest.config.ts `coverage.include`), or list the extension in "
+              say("**FAILED**: no coverage report mentions the files above. "
+                  "Three different causes look identical from here, so rule "
+                  "them out in this order:")
+              say("1. The file is in a language this workflow DOES measure, but "
+                  "the runner never walked it. For Python that is usually a "
+                  "directory that is not an importable package: coverage.py's "
+                  "`source = .` descends into packages, so `scripts/deploy.py` "
+                  "with no `scripts/__init__.py` is invisible. Add the "
+                  "`__init__.py`, or name the directory in .coveragerc's "
+                  "`source`. For JS/TS check vitest.config.ts's "
+                  "`coverage.include` and `coverage.exclude`.")
+              say("2. The file is not something this repo tests at all (a "
+                  "generated file, a one-off script). Name the PATH in "
+                  "COVERAGE_UNMEASURED_OK_PATHS — that exempts the path, not "
+                  "the language.")
+              say("3. The file is in a language this workflow does not measure "
+                  "(it runs pytest-cov and vitest only). Add a coverage step "
+                  "emitting Cobertura for it, or, if this repo has decided not "
+                  "to gate that language at all, list the extension in "
                   "COVERAGE_UNMEASURED_OK_EXT with a reason.")
               sys.exit(1)
           PY

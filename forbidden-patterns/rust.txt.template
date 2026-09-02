@@ -23,9 +23,11 @@
 # backend.txt bans as verify=False and frontend.txt as rejectUnauthorized: false.
 # The unchecked rule allows a turbofish (`mem::transmute::<u32, f32>(x)`) and a
 # method call (`arr.get_unchecked(i)`); `from_utf8(`, `.get(` and a method named
-# `get_unchecked_len(` do not match.
+# `get_unchecked_len(` do not match. The `(` must follow the name IMMEDIATELY (as
+# rustfmt writes every call), so prose that names the function with a space -
+# `// Never use transmute (see bytemuck)` - does not fire.
 danger_accept_invalid_(certs|hostnames)[[:space:]]*\([[:space:]]*true	reqwest danger_accept_invalid_certs/hostnames(true) disables TLS validation (MITM risk) - fix the cert/CA
-(^|[^A-Za-z_])(transmute|transmute_copy|from_utf8_unchecked|get_unchecked(_mut)?)[[:space:]]*(::<[^(]*>)?[[:space:]]*\(	Unchecked/transmute call - UB if the invariant is wrong; use the checked API (from_utf8, .get(), bytemuck)
+(^|[^A-Za-z_])(transmute|transmute_copy|from_utf8_unchecked|get_unchecked(_mut)?)(::<[^(]*>)?\(	Unchecked/transmute call - UB if the invariant is wrong; use the checked API (from_utf8, .get(), bytemuck)
 
 # Optional (opt-in) — uncomment a line to enable it:
 # (^|[^A-Za-z_])panic![[:space:]]*[([{]	panic!() aborts the thread - prefer returning a Result (opt-in: noisy)

@@ -3,7 +3,8 @@
 # Format: <regex><TAB><description>   (one per line; # comments ignored)
 # Separator is TAB - patterns can contain literal `|` for ERE alternation.
 # Case-sensitive ERE (grep -anE). Copy to your project as `.forbidden-patterns/go.txt`.
-# Active rules flag leftover debug output; panic/log.Fatal live in optional below.
+# Active rules flag leftover debug output plus two security sinks (TLS bypass,
+# a shell as argv[0]); panic/log.Fatal live in optional below.
 
 (^|[^A-Za-z_.])fmt\.Print(ln|f)?[[:space:]]*\(	Remove fmt.Print/Println/Printf debug output - use the project logger
 (^|[^A-Za-z_.])println[[:space:]]*\(	Remove the builtin println() before committing
@@ -13,11 +14,18 @@
 # `go vet` catches neither and the golangci-lint CI job ships commented out, so
 # nothing else in the scaffold sees these. The TLS rule is the Go twin of
 # backend.txt's `verify=False` and frontend.txt's `rejectUnauthorized: false`.
-# The exec rule is deliberately narrow - only a literal shell as argv[0], which is
-# never right - so exec.Command("git", ...), exec.Command("ssh", ...) and a
-# variable binary path do not fire.
+# The exec rule fires ONLY when a shell name is the FIRST argument, i.e. argv[0]:
+# exec.Command("sh"|"bash"|"zsh"|"ksh"|"dash", ...), optionally /bin/- or
+# /usr/bin/-prefixed, and the exec.CommandContext(ctx, "sh", ...) form. A shell
+# named in any LATER argument - exec.Command("which", "bash"),
+# exec.Command("docker", "run", "alpine", "sh"), exec.Command("apt-get",
+# "install", "dash") - and a variable program path - exec.Command(binPath, "-c",
+# script) - do NOT fire. What still fires is a constant script,
+# exec.Command("bash", "-c", "set -e; make"): that shape is one interpolation
+# away from injection, so it is flagged on purpose - scaffold-allow the line, or
+# call the program directly.
 InsecureSkipVerify[[:space:]]*:[[:space:]]*true	InsecureSkipVerify: true disables TLS cert validation (MITM risk) - fix the cert/CA, don't disable verification
-(^|[^A-Za-z_.])exec\.Command(Context)?[[:space:]]*\([^)]*"(/(usr/)?bin/)?(sh|bash|zsh|ksh|dash)"	Running a shell as argv[0] is a command-injection sink - pass the program and its args to exec.Command directly
+(^|[^A-Za-z_.])exec\.(Command\([[:space:]]*|CommandContext\([^,]*,[[:space:]]*)"(/(usr/)?bin/)?(sh|bash|zsh|ksh|dash)"	Running a shell as argv[0] is a command-injection sink - pass the program and its args to exec.Command directly
 
 # Optional (opt-in) — uncomment a line to enable it:
 # (^|[^A-Za-z_.])print[[:space:]]*\(	Remove the builtin print() before committing (off by default: 'print' is a plausible method/field name)

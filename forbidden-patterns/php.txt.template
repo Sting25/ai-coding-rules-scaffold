@@ -14,16 +14,24 @@
 
 # --- Security: RCE / command-injection / TLS sinks ---
 # php -l (the only PHP job the CI template runs) is a syntax check and flags none
-# of these, and no other layer of the scaffold sees them. Every anchor excludes a
-# preceding `.`, `>`, `:` and `$`, so `$pdo->exec($sql)`, `Cache::system()`,
-# `$zip->extractTo()` and a `$system` variable never fire - only the global
-# builtins do. A `Serializable::unserialize()` implementation is a declaration,
-# not a call: mark that one line `scaffold-allow`.
-(^|[^A-Za-z_.>:$])unserialize[[:space:]]*\(	unserialize() on untrusted input is PHP object injection (RCE via a POP chain) - use json_decode()
-(^|[^A-Za-z_.>:$])extract[[:space:]]*\(	extract() overwrites arbitrary locals from request data, auth flags included - index the array explicitly
-(^|[^A-Za-z_.>:$])(system|passthru|shell_exec|proc_open|popen)[[:space:]]*\(	Shell-execution sink - use a fixed argv and escapeshellarg() every interpolated value
-(^|[^A-Za-z_.>:$])exec[[:space:]]*\(	exec() is a command-injection sink - escapeshellarg() every interpolated value
-(^|[^A-Za-z_.>:$])eval[[:space:]]*\(	eval() executes arbitrary code - there is no safe way to build one from input
+# of these, and no other layer of the scaffold sees them. Each sink is matched in
+# CALL POSITION only: the name must start the statement, or follow an operator,
+# `(`, `,`, `=>`, or return/echo/print/throw/yield. So a METHOD DECLARATION
+# (`public function exec(string $sql)`, a `Serializable::unserialize()` impl, an
+# `Extractor::extract()`), a member call (`$pdo->exec($sql)`, `Cache::system()`,
+# `$zip->extractTo()`), a `$system` variable and docblock prose ("never call
+# extract() on request data") all stay quiet. The trade-off: a call preceded by a
+# bare word or `?:` (`$x = $ok ?: exec($c)`) is not seen - the common forms are.
+# Backticks (`` `$cmd` ``) are NOT covered: a regex cannot tell PHP's shell-exec
+# shorthand from a backtick in a comment or a Markdown docblock.
+# The hardened call `unserialize($blob, ['allowed_classes' => false])` still
+# fires - it is a real call, and the second argument may sit on another line:
+# scaffold-allow it once you have checked the argument is there.
+(^[[:space:]]*|=>[[:space:]]*|[^A-Za-z0-9_.>:$[:space:]][[:space:]]*|(return|echo|print|throw|yield)[[:space:]]+)unserialize[[:space:]]*\(	unserialize() on untrusted input is PHP object injection (RCE via a POP chain) - use json_decode()
+(^[[:space:]]*|=>[[:space:]]*|[^A-Za-z0-9_.>:$[:space:]][[:space:]]*|(return|echo|print|throw|yield)[[:space:]]+)extract[[:space:]]*\(	extract() overwrites arbitrary locals from request data, auth flags included - index the array explicitly
+(^[[:space:]]*|=>[[:space:]]*|[^A-Za-z0-9_.>:$[:space:]][[:space:]]*|(return|echo|print|throw|yield)[[:space:]]+)(system|passthru|shell_exec|proc_open|popen|pcntl_exec)[[:space:]]*\(	Shell-execution sink - use a fixed argv and escapeshellarg() every interpolated value
+(^[[:space:]]*|=>[[:space:]]*|[^A-Za-z0-9_.>:$[:space:]][[:space:]]*|(return|echo|print|throw|yield)[[:space:]]+)exec[[:space:]]*\(	exec() is a command-injection sink - escapeshellarg() every interpolated value
+(^[[:space:]]*|=>[[:space:]]*|[^A-Za-z0-9_.>:$[:space:]][[:space:]]*|(return|echo|print|throw|yield)[[:space:]]+)eval[[:space:]]*\(	eval() executes arbitrary code - there is no safe way to build one from input
 CURLOPT_SSL_VERIFY(PEER|HOST)[[:space:]]*(,|=>)[[:space:]]*(false|0)([^0-9]|$)	Disabling cURL TLS verification (MITM risk) - fix the cert/CA bundle instead
 
 # Optional (opt-in) — uncomment a line to enable it:

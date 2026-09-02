@@ -51,6 +51,11 @@ done
 # Used by the "paired artifacts" section below to reuse install.sh's own
 # detection logic instead of duplicating it.
 SCAFFOLD_DIR="$(cd "$(dirname "$0")" && pwd)"
+# If dirname(1) is NOT on PATH (the narrowed PATH tests/cases/18-doctor.sh runs
+# this script under), the substitution is empty, `cd ""` is a no-op, and this
+# lands on the PROJECT directory instead. Every template comparison below then
+# finds no template; the notes in sections 8 and 10 say so out loud rather than
+# skipping in silence, which is the part that matters.
 
 # The shipped checks read their config by BARE RELATIVE PATH
 # (".forbidden-patterns/secrets.txt", ".scaffold.toml"), which works because git
@@ -209,6 +214,13 @@ else
   # shipped rules lands here too, and correctly so: from this project's side
   # "rules the scaffold ships that this repo does not run" is one state with
   # one fix, whether it was reached by deleting them or by never merging them.
+  # A doctor copied out of the bundle on its own has nothing to compare against
+  # and would skip every file below in total silence — the same failure the
+  # paired-artifacts section already names out loud, and one this check must not
+  # inherit quietly: "no drift reported" would then mean "not looked at".
+  if [ -d .forbidden-patterns ] && [ ! -d "$SCAFFOLD_DIR/forbidden-patterns" ]; then
+    note "forbidden-patterns/ templates not found next to scaffold-doctor.sh ($SCAFFOLD_DIR): shipped-rule drift cannot be checked; re-fetch the full scaffold bundle, not just this one file"
+  fi
   for cfg in .forbidden-patterns/*.txt; do
     [ -e "$cfg" ] || continue
     base=$(basename "$cfg")
@@ -226,7 +238,7 @@ else
     [ -n "$missing" ] || continue
     nmiss=$(printf '%s\n' "$missing" | grep -c '' || true)
     gap "$base is missing $nmiss shipped rule(s) — those patterns are not enforced by the hook or by CI (both read this one file)" \
-        "diff $cfg against forbidden-patterns/$base.template and merge the missing rules back, or re-run install.sh --force (yours is backed up to .scaffold-bak)"
+        "diff $cfg against forbidden-patterns/$base.template and merge the missing rules back, or re-run install.sh --force (yours is backed up to .scaffold-bak). If nothing was deleted here, this project is simply behind the scaffold release you just ran the doctor from — same line, same fix, and it clears on upgrade"
     if [ "$QUIET" -eq 0 ]; then
       printf '%s\n' "$missing" | sed -n '1,8{s/^/        - /;p;}'
       [ "${nmiss:-0}" -le 8 ] || echo "        - ... and $((nmiss - 8)) more"
@@ -351,7 +363,11 @@ if [ ! -d .githooks/lib ]; then
 elif [ ! -f .github/workflows/lint.yml ]; then
   gap ".github/workflows/lint.yml is missing — the lib/check-* scripts run client-side only, and 'git commit --no-verify' bypasses every one of them with nothing behind it" \
       "re-run install.sh to restore .github/workflows/lint.yml"
-elif grep -q 'check-secrets' .github/workflows/lint.yml && grep -q 'check-patterns' .github/workflows/lint.yml; then
+# Anchored past any leading '#': lint.yml is YAML, and a job hollowed out to a
+# comment that still NAMES the scripts it no longer runs would otherwise read
+# as armed — the exact "present but not running" shape this script exists for.
+elif grep -qE '^[[:space:]]*[^#[:space:]].*check-secrets' .github/workflows/lint.yml &&
+     grep -qE '^[[:space:]]*[^#[:space:]].*check-patterns' .github/workflows/lint.yml; then
   ok "lint.yml re-runs the guardrail checks server-side"
 else
   gap ".github/workflows/lint.yml exists but its guardrails job no longer invokes lib/check-secrets and lib/check-patterns — CI is not mirroring the hook" \
@@ -364,24 +380,47 @@ fi
 # job green and the check name unchanged in branch protection; install.sh
 # preserves the drift by policy (cp_scaffold_preserve, #105/#110) and prints
 # at most a "note (drift):" on a re-run nobody performs. Widening .coveragerc's
-# `omit` is the same move one layer down: an omitted path never reaches
-# coverage.xml, and diff-cover scores a changed line it has no data for as
-# COVERED. Both are reported against the SHIPPED templates, so this tracks the
-# scaffold's own default rather than a number hardcoded here.
+# `omit` — or vitest's `coverage.exclude`, the same switch on the JS side — is
+# the same move one layer down: an excluded path never reaches coverage.xml /
+# cobertura-coverage.xml, and diff-cover scores a changed line it has no data
+# for as COVERED. All three are reported against the SHIPPED templates, so this
+# tracks the scaffold's own default rather than a number hardcoded here.
 section "patch-coverage gate"
 COV_TPL="$SCAFFOLD_DIR/.github/workflows/coverage.yml.template"
+COVRC_TPL="$SCAFFOLD_DIR/.coveragerc.template"
+VITEST_TPL="$SCAFFOLD_DIR/vitest.config.ts.template"
+# Every check in this section compares against a template that ships BESIDE
+# this script, and a doctor copied out of the bundle on its own would skip all
+# three in total silence — the failure mode this whole script exists to name.
+# Said once, here, in the same shape as the paired-artifacts note above.
+if [ ! -f "$COV_TPL" ] || [ ! -f "$COVRC_TPL" ] || [ ! -f "$VITEST_TPL" ]; then
+  note "coverage templates not found next to scaffold-doctor.sh ($SCAFFOLD_DIR): the .coveragerc omit and vitest coverage.exclude drift checks are skipped, and the threshold below is compared against a hardcoded 100 instead of the shipped default; re-fetch the full scaffold bundle, not just this one file"
+fi
 # awk, not `grep -o | head`: same narrowed-PATH reason as the drift check above.
+# ANCHORED ON THE KEY at the start of a line, and the value taken from after the
+# colon: an unanchored match reads `# DIFF_COVER_FAIL_UNDER: 100 is the default`
+# sitting above a real `DIFF_COVER_FAIL_UNDER: "0"` as the value and prints
+# "✓ patch coverage: 100%" over a dead gate — one comment line restoring the
+# exact false green this section exists to kill. The first digit run before any
+# inline `#` is the value, so "100", '80' and 100 (all valid YAML) read alike.
 _fail_under() {
-  awk 'match($0, /DIFF_COVER_FAIL_UNDER:[[:space:]]*"?[0-9]+/) {
-         v = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", v); print v; exit
-       }' "$1" 2>/dev/null || true
+  awk '
+    /^[[:space:]]*DIFF_COVER_FAIL_UNDER[[:space:]]*:/ {
+      rest = $0
+      sub(/^[[:space:]]*DIFF_COVER_FAIL_UNDER[[:space:]]*:/, "", rest)
+      h = index(rest, "#")
+      if (h > 0) rest = substr(rest, 1, h - 1)
+      if (match(rest, /[0-9]+/)) { print substr(rest, RSTART, RLENGTH); exit }
+    }' "$1" 2>/dev/null || true
 }
 if [ ! -f .github/workflows/coverage.yml ]; then
   note "no .github/workflows/coverage.yml — no patch-coverage gate (opt in with install.sh --coverage-gate)"
 else
   thr=$(_fail_under .github/workflows/coverage.yml)
   shipped=100
-  [ -f "$COV_TPL" ] && shipped=$(_fail_under "$COV_TPL")
+  if [ -f "$COV_TPL" ]; then
+    shipped=$(_fail_under "$COV_TPL")
+  fi
   shipped=${shipped:-100}
   # A gap, not a note, at ANY value below the shipped default: the doctor's own
   # definition of a gap is "installed but inert; a commit that should be blocked
@@ -404,15 +443,38 @@ else
 fi
 # .coveragerc `omit` drift. Only ADDED entries matter: a shorter list is
 # stricter. Read on the raw entry text so a reordered list is not drift.
+#
+# The continuation rules below are configparser's, not "indented lines until
+# anything else". A full-line comment or a blank line INSIDE the block does NOT
+# end the value — configparser strips the comment, keeps the option open and
+# reads on — so an awk that stopped at either would print
+# "✓ omit list matches the shipped template" over an added `*/payments/*` the
+# moment someone wrote `# legacy, see #99` above it. That is the LIKELY shape,
+# not a corner case: .coveragerc.template's own comment tells the reader to say
+# out loud why an entry is there, and house style is to comment the why. The
+# value ends only at a line starting in column 0 (the next key or section).
+# Entries are comma-separable too (coverage.py splits on commas AND newlines),
+# so `omit = a, b` is two entries, not one path named "a, b".
 _omit_entries() {
-  awk '/^[[:space:]]*omit[[:space:]]*=/ { inomit = 1; sub(/^[^=]*=[[:space:]]*/, ""); if ($0 != "") print; next }
-       inomit && /^[[:space:]]+[^[:space:]#]/ { gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print; next }
-       inomit { inomit = 0 }' "$1" 2>/dev/null || true
+  awk '
+    function emit(s,   n, i, a) {
+      n = split(s, a, ",")
+      for (i = 1; i <= n; i++) {
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", a[i])
+        if (a[i] != "") print a[i]
+      }
+    }
+    /^[[:space:]]*[#;]/ { next }
+    /^[[:space:]]*omit[[:space:]]*=/ { inomit = 1; v = $0; sub(/^[^=]*=/, "", v); emit(v); next }
+    inomit && /^[[:space:]]*$/ { next }
+    inomit && /^[[:space:]]/ { emit($0); next }
+    { inomit = 0 }
+  ' "$1" 2>/dev/null || true
 }
-if [ -f .coveragerc ] && [ -f "$SCAFFOLD_DIR/.coveragerc.template" ]; then
+if [ -f .coveragerc ] && [ -f "$COVRC_TPL" ]; then
   # -Fxq, not a regex match: omit entries are globs (`*/tests/*`), and comparing
   # them as patterns would call `*/test_*.py` a match for anything.
-  shipped_omit=$(_omit_entries "$SCAFFOLD_DIR/.coveragerc.template")
+  shipped_omit=$(_omit_entries "$COVRC_TPL")
   added=""
   while IFS= read -r _e; do
     if [ -n "$_e" ] && ! printf '%s\n' "$shipped_omit" | grep -Fxq -- "$_e"; then
@@ -429,6 +491,77 @@ EOF
     [ "$QUIET" -eq 1 ] || printf '%s' "$added" | sed 's/^/        - /'
   else
     ok ".coveragerc omit list matches the shipped template (nothing extra hidden from the gate)"
+  fi
+fi
+# vitest `coverage.exclude` drift — the JS half of the same off switch, and the
+# half nothing else in this scaffold looks at. An excluded path emits no entry
+# in cobertura-coverage.xml at all, which diff-cover reads as COVERED.
+#
+# Entries are pulled by scanning for QUOTED strings rather than splitting on
+# commas: `'**/.{git,cache}/**'` is one glob containing commas, and a comma
+# split would report three phantom paths. Only the first exclude array AFTER a
+# `coverage:` key is read, so a `test.exclude` (which selects TEST files, not
+# measured files) is not mistaken for this one.
+_vitest_cov_excludes() {
+  awk '
+    /coverage[[:space:]]*:/ { incov = 1 }
+    incov && !inx && /exclude[[:space:]]*:[[:space:]]*\[/ {
+      inx = 1; sub(/^.*exclude[[:space:]]*:[[:space:]]*\[/, "")
+    }
+    inx {
+      line = $0
+      sub(/\/\/.*$/, "", line)
+      while (match(line, "[\"\047\140][^\"\047\140]*[\"\047\140]")) {
+        pre = substr(line, 1, RSTART - 1)
+        # The array closed before this string: it belongs to whatever follows
+        # on the same line (an `include:` list, say), not to the excludes.
+        if (index(pre, "]") > 0) { line = pre; break }
+        e = substr(line, RSTART + 1, RLENGTH - 2)
+        if (e != "") print e
+        line = substr(line, RSTART + RLENGTH)
+      }
+      if (index(line, "]") > 0) exit
+    }
+  ' "$1" 2>/dev/null || true
+}
+# Excluding tests, build output, type stubs and tool config is what an exclude
+# list is FOR — every hand-written vitest config has some of it, and the
+# shipped template reached today's list by a different route (it now spreads
+# vitest's own `coverageConfigDefaults.exclude` instead of respelling them), so
+# a bare "not in the template" test would fire on every correctly-installed
+# repo one release behind. Reported entries are therefore only those that name
+# neither a test/build/tooling path nor a non-source file type — i.e. the move
+# F34 is actually about: taking a directory of YOUR OWN SOURCE out of the gate.
+# Directory words are matched with a non-word boundary on both sides so that
+# `app/routes/**` is not read as "contains out" and quietly excused.
+_BENIGN_EXCLUDE='(^|[^a-zA-Z0-9_])(node_modules|dist|build|out|coverage|target|vendor|bower_components|tests?|specs?|__tests__|__mocks__|__snapshots__|fixtures|mocks|stubs|cypress|playwright|e2e|storybook|stories|bench|benchmark|examples?|docs?|scripts?|generated|__generated__)([^a-zA-Z0-9_]|$)|\.d\.ts|\.config\.|\.setup\.|(eslint|prettier|babel|mocha|stylelint|npm)rc|/\.|^\.|virtual:|__x00__'
+# install.sh writes vitest.config.ts, but a project that renamed it (or that
+# keeps its vitest block in vite.config.ts, which is equally valid) would
+# otherwise have this check skip without a word. First one that exists wins.
+VITEST_CFG=""
+for _c in vitest.config.ts vitest.config.mts vitest.config.js vite.config.ts vite.config.js; do
+  if [ -f "$_c" ]; then VITEST_CFG=$_c; break; fi
+done
+if [ -n "$VITEST_CFG" ] && [ -f "$VITEST_TPL" ]; then
+  shipped_x=$(_vitest_cov_excludes "$VITEST_TPL")
+  xadded=""
+  while IFS= read -r _e; do
+    if [ -n "$_e" ] &&
+       ! printf '%s\n' "$shipped_x" | grep -Fxq -- "$_e" &&
+       ! printf '%s\n' "$_e" | grep -qEi -- "$_BENIGN_EXCLUDE"; then
+      xadded="${xadded}${_e}
+"
+    fi
+  done <<EOF
+$(_vitest_cov_excludes "$VITEST_CFG")
+EOF
+  if [ -n "$xadded" ]; then
+    nx=$(printf '%s' "$xadded" | grep -c '' || true)
+    gap "$VITEST_CFG excludes $nx source path(s) from coverage that the shipped template does not — vitest emits no data for them, and diff-cover scores a changed line it has no data for as COVERED, so the gate passes on untested code there" \
+        "remove the added coverage.exclude entries, or keep them and say in the PR which code is no longer gated"
+    [ "$QUIET" -eq 1 ] || printf '%s' "$xadded" | sed 's/^/        - /'
+  else
+    ok "$VITEST_CFG: coverage.exclude hides no source path the shipped template measures"
   fi
 fi
 

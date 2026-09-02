@@ -23,12 +23,18 @@
 (^|[^A-Za-z_])git[[:space:]]+commit[[:space:]]([^|;&"']*[[:space:]])?-[a-zA-Z]*n[a-zA-Z]*([[:space:]]|[;&]|$)	git commit -n is --no-verify in short form — fix the failing check, don't skip the gate (mark a genuine uninstall with scaffold-allow)
 
 # --no-verify skips the hook for ONE commit; core.hooksPath disarms every hook in
-# the clone permanently, with no output, no diff and no committed artifact to
-# review. Matches a re-point to any path that is not dot-relative (`/dev/null`,
-# `/tmp/x`, `~/none`, `git -c core.hooksPath=...`) plus any --unset, so the
-# installer's own `git config core.hooksPath .githooks`, an absolute
-# `"$PWD/.githooks"`, and a read-only `git config --get core.hooksPath` stay clean.
-(^|[^A-Za-z_])git[[:space:]][^|;&]*(core\.hooksPath[[:space:]=]+["']?(\.?/)*[^.$[:space:]"'|;&)>]|--unset[[:space:]]+core\.hooksPath)	Re-pointing or unsetting core.hooksPath disarms every scaffold hook for this clone — fix the failing check instead (mark a genuine uninstall with scaffold-allow)
+# the clone permanently, with no output and no committed artifact to review.
+# Deliberately matches ONLY the two values that can never be a real hooks
+# directory — `/dev/null` and the empty string — i.e. `git -c
+# core.hooksPath=/dev/null commit`, the documented one-liner bypass.
+# NOT matched, because each has a legitimate everyday use that no regex can tell
+# apart from a bypass: `git config --unset core.hooksPath` (what an uninstaller
+# does — this scaffold's own uninstall.sh line 213), a re-point to another
+# directory (`.husky`, `githooks`, `hooks` are all real conventions; this repo
+# ships a `githooks/` dir), and `git -c core.hooksPath=<tmpdir>` (what a hook test
+# harness does — tests/cases/14,15,18 here). An earlier draft of this rule matched
+# all three and put four errors into this repo's own self-lint run.
+(^|[^A-Za-z_])git[[:space:]][^|;&]*core\.hooksPath[[:space:]=]+(["']?/dev/null|""|'')	core.hooksPath=/dev/null (or empty) disarms every hook in this clone — fix the failing check instead (mark a genuine uninstall with scaffold-allow)
 
 # Git discipline (AGENTS.md > Git discipline). agent-precheck feeds this file to
 # Claude PreToolUse / Cursor beforeShellExecution, which is the only point at
@@ -38,17 +44,46 @@
 # `git checkout -f`, which are benign.
 (^|[^A-Za-z_])git[[:space:]]+push[[:space:]]([^|;&]*[[:space:]])?(--force(-with-lease)?([=[:space:]]|[;&]|$)|-f([[:space:]]|[;&]|$))	git push --force/-f/--force-with-lease rewrites published history — needs explicit instruction for this push, and on main/master ask first even then
 (^|[^A-Za-z_])git[[:space:]]+commit[[:space:]]([^|;&"']*[[:space:]])?--amend([[:space:]]|[;&]|$)	git commit --amend rewrites history — never on a pushed commit; scaffold-allow a vetted local amend
-(^|[^A-Za-z_])git[[:space:]]+reset[[:space:]]([^|;&]*[[:space:]])?--hard([[:space:]]|[;&]|$)	git reset --hard destroys uncommitted work silently — confirm first and tag a restore point (claude-code#34327 lost 12 unpushed commits this way)
 (^|[^A-Za-z_])git[[:space:]]+checkout[[:space:]]+(--[[:space:]]+)?\.([[:space:]]|[;&]|$)	git checkout . discards every uncommitted change in the tree — confirm, and name the specific paths instead
-(^|[^A-Za-z_])git[[:space:]]+clean[[:space:]]([^|;&]*[[:space:]])?(-[a-zA-Z]*[dfx][a-zA-Z]*|--force)([[:space:]]|[;&]|$)	git clean -fd deletes untracked files irreversibly — dry-run it with `git clean -n` and confirm the exact paths first
+
+# Optional: the two tree-destroying commands (AGENTS.md > Git discipline names
+# `reset --hard` and `clean -fd` alongside `checkout .`). OFF by default, because
+# unlike `checkout .` both are also the standard body of a FIXTURE-RESET helper —
+# a test harness or CI script that hard-resets and cleans a throwaway clone
+# between cases. This scaffold's own tests/lib/common.sh:17-18 is exactly that,
+# and a line-oriented grep cannot tell a scratch clone from the developer's
+# working tree: the target repo is chosen by a `cd` on some earlier line.
+# `git clean` is scoped to the FORCING forms only (`-f`/`--force`): `-d`/`-x`
+# alone are inert (git refuses to delete without `-f` or `-i`), so an earlier
+# `[dfx]` draft fired on `git clean -nd` — the exact dry-run this rule's own
+# message recommends — and on `--dry-run -d`.
+# Enable both in an application repo with no fixture-reset scripts; if you have
+# one, enable them and mark that helper `scaffold-allow`.
+# (^|[^A-Za-z_])git[[:space:]]+reset[[:space:]]([^|;&]*[[:space:]])?--hard([[:space:]]|[;&]|$)	git reset --hard destroys uncommitted work silently — confirm first and tag a restore point (claude-code#34327 lost 12 unpushed commits this way)
+# (^|[^A-Za-z_])git[[:space:]]+clean[[:space:]]([^|;&]*[[:space:]])?(-[a-zA-Z]*f[a-zA-Z]*|--force)([[:space:]]|[;&]|$)	git clean -f/-fd deletes untracked files irreversibly — dry-run it with `git clean -nd` and confirm the exact paths first
 
 # "Never print, cat, or echo secret files" (operational-rules.md). `cat .env`
 # mid-debug is the named agent habit: the values then live in the transcript, the
 # CI log and any pasted diff forever, and every one of them needs rotating.
 # Claude's `Read(**/.env)` deny does not cover the Bash route; this rule does.
-# Scoping: the segment before the path carries no `>` and no quote, so a WRITE
-# (`echo "FOO=bar" >.env`, `cat >id_rsa <<EOF`) and a quoted mention
-# (`echo "  ✓ ... on .env"`) do not fire, and `.env.example` / `.env.template` /
-# `.env.sample` / `id_rsa.pub` never match — only the real files do.
-(^|[^A-Za-z_])(cat|less|more|head|tail|echo|printf|strings|xxd|od)[[:space:]]+([^|;&>"']*[[:space:]])?["']?[^[:space:]"'>|;&]*\.env(\.(local|prod|production|staging|dev|development))?([[:space:]]|[;&|)"']|$)	Never cat/echo a .env — the values land in the transcript and CI log forever and all need rotating; check a length or a hash instead
-(^|[^A-Za-z_])(cat|less|more|head|tail|echo|printf|strings|xxd|od)[[:space:]]+([^|;&>"']*[[:space:]])?["']?[^[:space:]"'>|;&]*(\.(pem|p12|pfx)|id_(rsa|dsa|ecdsa|ed25519)|\.aws/credentials|\.netrc)([[:space:]]|[;&|)"']|$)	Never print a key/credential file (.pem, id_rsa, ~/.aws/credentials, ~/.netrc) — verify it by length or fingerprint, never by dumping it
+#
+# Scoping, all of it learned from false positives:
+#  * Only READERS. `echo`/`printf` were dropped from the command list: they print
+#    their ARGUMENT, never a file, so they can never leak a .env — while
+#    `echo .env >> .gitignore` and `printf %s .env` are stock setup-script lines.
+#    (`echo $(cat .env)` is still caught, by the `cat`.)
+#  * Arguments between the command and the path must look like an option, a
+#    number, or a path (contain `.` or `/`). That keeps `head -n 20 .env` and
+#    `cat cert.pem privkey.pem` matching while prose such as `# tail the .env`
+#    or `# read the tail of .env` cannot reach the path.
+#  * The rest of the line must contain no `>`. A redirect after the path is a
+#    COPY, not a print (`cat .env > /tmp/backup`, `cat "$SRC/.env" > "$DST/.env"`),
+#    and a redirect before it is a WRITE (`echo FOO=bar >.env`, `cat >id_rsa`).
+#  * The path must END at `.env` (or `.env.local`, `.env.prod`, …), so
+#    `.env.example`, `.env.template`, `.env.sample` and `id_rsa.pub` never match.
+#  * `.pem` alone is NOT a secret marker — `fullchain.pem`/`server.pem` are public
+#    certificates and bundling them is routine deploy work. Only a .pem whose
+#    name carries `key`/`priv`/`secret` matches; `.p12`/`.pfx`/`id_rsa`/
+#    `~/.aws/credentials`/`~/.netrc` are key material by definition.
+(^|[^A-Za-z_])(cat|less|more|head|tail|strings|xxd|od|base64)([[:space:]]+(-[^[:space:]|;&>"']+|[0-9]+|[^[:space:]|;&>"']*[./][^[:space:]|;&>"']*))*[[:space:]]+["']?[^[:space:]"'>|;&]*\.env(\.(local|prod|production|staging|dev|development))?(([[:space:]]|[;&|)"'])[^>]*)?$	Never print a .env — the values land in the transcript and CI log forever and all need rotating; check a length or a hash instead
+(^|[^A-Za-z_])(cat|less|more|head|tail|strings|xxd|od|base64)([[:space:]]+(-[^[:space:]|;&>"']+|[0-9]+|[^[:space:]|;&>"']*[./][^[:space:]|;&>"']*))*[[:space:]]+["']?[^[:space:]"'>|;&]*(id_(rsa|dsa|ecdsa|ed25519)|\.(p12|pfx)|\.aws/credentials|\.netrc|(key|priv|secret)[^[:space:]"'>|;&]*\.pem)(([[:space:]]|[;&|)"'])[^>]*)?$	Never print a key/credential file (privkey.pem, id_rsa, .p12, ~/.aws/credentials, ~/.netrc) — verify it by length or fingerprint, never by dumping it

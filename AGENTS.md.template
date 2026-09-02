@@ -37,10 +37,18 @@ config rather than narrowing the command**; a command everyone has learned to
 run with a hand-picked path is a gate that no longer gates.
 
 **If you turn a check down, say so out loud.** Adding a `scaffold-allow` marker,
-disabling or downgrading a check in `.scaffold.toml`, widening an ignore list, or
-skipping a test makes a red run green without fixing anything. Per
-`operational-rules.md` that is a last resort; when you do it, it goes in the
-plain-language change summary below, by name.
+disabling or downgrading a check in `.scaffold.toml`, widening an ignore list,
+skipping a test, or deleting a test file or the workflow that runs it makes a
+red run green without fixing anything — deletion most quietly, because nothing
+goes red and the diff reads as cleanup. Never delete a test in the same change
+as the code it covered. Per `operational-rules.md` that is a last resort; when
+you do it, it goes in the plain-language change summary below, by name.
+
+**A test you have never watched fail is not evidence.** Write it before the
+change or run it against the base commit — a test written against code that
+already exists passes by construction and constrains nothing. If a new test
+legitimately passes on base (characterization before a refactor, coverage
+backfill), say so and why. See `coding-rules.md` rule 8.
 
 In a monorepo, run `pytest` from the directory holding the pytest config, not
 from the repo root. pytest reads exactly one ini-file and the rootdir one wins,

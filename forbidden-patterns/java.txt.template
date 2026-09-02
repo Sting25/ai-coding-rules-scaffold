@@ -3,7 +3,8 @@
 # Format: <regex><TAB><description>   (one per line; # comments ignored)
 # Separator is TAB - patterns can contain literal `|` for ERE alternation.
 # Patterns are POSIX ERE, matched case-sensitively with `grep -anE`.
-# Bans console debug output; keeps logger.info/warn/error intact.
+# Bans console debug output (keeps logger.info/warn/error intact) plus a block
+# of JVM RCE/TLS sinks below.
 # printStackTrace ban is no-arg only; printStackTrace(writer) is allowed (logging idiom).
 # Copy to your project as `.forbidden-patterns/java.txt`.
 
@@ -15,15 +16,25 @@
 # Java ships no linter template, no hook lint and a placeholder CI job, so this
 # file is the only gate in front of these lines. readObject is matched in its
 # NO-ARG call form only, so a class's own `private void readObject(ObjectInputStream in)`
-# hook is not flagged. setAccessible(true) and checkServerTrusted have narrow
-# legitimate uses (framework glue, cert pinning): scaffold-allow those in review.
+# hook is not flagged.
+# checkServerTrusted is matched ONLY with an EMPTY BODY on the same line - the
+# `{}` / `{ }` of the copy-pasted trust-all TrustManager. A real implementation
+# (a pinning or delegating one, whose body is on the following lines) does not
+# fire, and neither does a call to `delegate.checkServerTrusted(...)`. The limit
+# is the line-at-a-time scan: an empty body split across two lines is not seen.
+# setAccessible(true) is NOT an active rule - see the opt-in block at the bottom.
 (^|[^A-Za-z_])new[[:space:]]+([A-Za-z_][A-Za-z0-9_]*\.)*ObjectInputStream[[:space:]]*\(	Java deserialization of untrusted bytes is RCE (CVE-2015-4852 class) - use JSON/protobuf with a schema
 \.readObject[[:space:]]*\([[:space:]]*\)	ObjectInputStream.readObject() on untrusted input is RCE - deserialize a schema-checked format instead
 (^|[^A-Za-z_])Runtime\.getRuntime[[:space:]]*\([[:space:]]*\)[[:space:]]*\.exec	Runtime.exec() is a command-injection sink - use ProcessBuilder with a fixed argv
-\.setAccessible[[:space:]]*\([[:space:]]*true[[:space:]]*\)	setAccessible(true) defeats access control and final-field safety - drop the reflection, or scaffold-allow it
-(^|[^A-Za-z_])checkServerTrusted[[:space:]]*\(	A hand-written checkServerTrusted TrustManager is how TLS validation gets switched off (MITM risk) - trust the real CA; scaffold-allow one that actually validates
+(^|[^A-Za-z_])checkServerTrusted[[:space:]]*\([^)]*\)[^{]*\{[[:space:]]*\}	An EMPTY checkServerTrusted() accepts every certificate - that is TLS validation switched off (MITM risk); validate the chain or keep the platform TrustManager
 ALLOW_ALL_HOSTNAME_VERIFIER	ALLOW_ALL_HOSTNAME_VERIFIER disables TLS hostname checking (MITM risk) - keep the default verifier
 
 # Optional (opt-in) — uncomment a line to enable it:
 # (^|[^A-Za-z_])(TODO|FIXME|XXX)($|[^A-Za-z0-9_])	TODO/FIXME/XXX not allowed - open a ticket instead
 # (^|[^A-Za-z_])System\.out\.printf[[:space:]]*\(	Use a logger, not System.out.printf (FP-prone in CLI tools)
+# setAccessible(true) ships OFF: it is a design smell, not a sink, and it is
+# ordinary in Jackson/Spring/Hibernate glue, JUnit ReflectionTestUtils-style test
+# helpers and any DI container - an always-on rule blocks correct commits in
+# every one of those. Enable it in an application module that should contain no
+# reflection of its own.
+# \.setAccessible[[:space:]]*\([[:space:]]*true[[:space:]]*\)	setAccessible(true) defeats access control and final-field safety - drop the reflection (off by default: routine in framework glue and tests)

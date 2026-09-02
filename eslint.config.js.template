@@ -59,10 +59,12 @@ import tseslint from 'typescript-eslint';
 // already-tracked file, so that code keeps being committed and shipped with
 // every rule below — no-floating-promises, no-explicit-any, the lot — silently
 // off. Treat .gitignore as a guarded file: review an addition to it exactly as
-// you would an edit to this file, and expect scaffold-doctor to flag a source
-// path (src/, app/, lib/, packages/) appearing in it. Do NOT "fix" this by
-// deleting includeIgnoreFile — a hardcoded ignore list re-opens #76 above and
-// is editable in precisely the same one-line way.
+// you would an edit to this file. Nothing in the scaffold catches this for you
+// today: no hook, no CI job and no scaffold-doctor check flags a source path
+// (src/, app/, lib/, packages/) appearing in .gitignore, so human review of that
+// one file is the whole guard. Do NOT "fix" this by deleting includeIgnoreFile —
+// a hardcoded ignore list re-opens #76 above and is editable in precisely the
+// same one-line way.
 const gitignorePath = path.resolve(import.meta.dirname, '.gitignore');
 const gitignore = fs.existsSync(gitignorePath) ? [includeIgnoreFile(gitignorePath)] : [];
 

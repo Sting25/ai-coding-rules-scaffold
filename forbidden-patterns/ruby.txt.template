@@ -4,7 +4,8 @@
 # Separator is TAB - patterns can contain literal `|` for ERE alternation.
 # Patterns are case-SENSITIVE, scanned against the staged blob. Copy to your
 # project as `.forbidden-patterns/ruby.txt`.
-# Targets debugger breakpoints (binding.pry/irb, byebug, debugger) and pp.
+# Debug rules target breakpoints (binding.pry/irb, byebug, debugger) and pp; a
+# second block below targets code-execution and XSS sinks.
 # Rails.logger and raise are intentionally NOT banned. puts/p are FP-prone
 # for CLI tools and ship commented below.
 # The `debugger` pattern excludes a trailing `:` so the `debugger:` keyword/hash
@@ -21,16 +22,34 @@
 # --- Security: code-execution and XSS sinks ---
 # install.sh ships this file to any repo with a Gemfile, i.e. every Rails app,
 # where .html_safe/raw() are ERB's twins of the dangerouslySetInnerHTML, v-html and
-# {@html} sinks frontend.txt already bans. instance_eval/class_eval are matched
-# only with a STRING argument: the block forms (`config.instance_eval do ... end`,
-# `klass.class_eval { ... }`) are ordinary DSL code and must not fire.
-(^|[^A-Za-z_.])eval[[:space:]]*[( ]	eval() executes arbitrary code - never build one from input
-(^|[^A-Za-z_])(instance_eval|class_eval|module_eval|instance_exec|class_exec|module_exec)[[:space:]]*\(?[[:space:]]*["']	instance_eval/class_eval on a STRING executes arbitrary code - define the method literally or allowlist the name
+# {@html} sinks frontend.txt already bans.
+# eval()/raw() are matched in CALL POSITION only - the name must start the
+# statement or follow an operator/`(`/`,` - so the declarations `def eval(expr)`
+# and `def raw(value)` do not fire. `Kernel.eval`/`obj.raw` are excluded with
+# them (the `.` anchor): a deliberate trade for silence on every method of those
+# two names. What is left is irreducible - a class that defines its OWN `eval` or
+# `raw` and calls it unqualified (`sum { |c| eval(c) }`) looks exactly like the
+# Kernel#eval sink to a regex: scaffold-allow those call sites.
+# instance_eval/class_eval/module_eval fire on a STRING or a HEREDOC argument
+# (`class_eval <<~RUBY` and `class_eval(<<~RUBY, __FILE__, __LINE__)`, the
+# dominant codegen forms). The block forms
+# (`config.instance_eval do ... end`, `klass.class_eval { ... }`) are ordinary
+# DSL code and stay quiet. instance_exec/class_exec/module_exec are NOT listed:
+# they take a block and forward their args, so they never evaluate a string.
+# YAML: only the explicitly unsafe entry points are banned. Plain `YAML.load` /
+# `YAML.load_file` are SAFE on psych >= 4 (Ruby 3.1+), where load is safe_load -
+# banning them would fire on ordinary config code in every modern app. Pinned to
+# psych 3.x? Enable the opt-in load rule at the bottom of this file.
+# send()/public_send() fire only on a params/request LOOKUP (`params[:m]`,
+# `request.params[...]`), not on a bare `send(request, 0)` - Socket#send and
+# client wrappers pass a variable named `request` all the time.
+(^[[:space:]]*|[^A-Za-z0-9_.@:[:space:]][[:space:]]*|(return|yield|then|else|and|or|not)[[:space:]]+)eval[[:space:]]*[("' ]	eval() executes arbitrary code - never build one from input
+(^|[^A-Za-z_])(instance_eval|class_eval|module_eval)[[:space:]]*\(?[[:space:]]*(["']|<<[-~]?["']?[A-Z_])	instance_eval/class_eval on a STRING or heredoc executes arbitrary code - define the method literally or allowlist the name
 (^|[^A-Za-z_.])Marshal\.load[[:space:]]*\(	Marshal.load on untrusted bytes instantiates arbitrary objects (RCE) - use JSON
-(^|[^A-Za-z_.])YAML\.(load|unsafe_load)[[:space:]]*\(	YAML.load/unsafe_load instantiates arbitrary objects (RCE) - use YAML.safe_load (scaffold-allow where psych >= 4 already aliases load to safe_load)
-(^|[^A-Za-z_])(send|public_send)[[:space:]]*\([[:space:]]*(params|request)	send() with request-derived input invokes any method on the receiver - allowlist the name
+(^|[^A-Za-z_.])(YAML|Psych)\.unsafe_load(_file)?[[:space:]]*\(	YAML.unsafe_load bypasses psych 4 safe loading and instantiates arbitrary objects (RCE) - use YAML.safe_load with permitted_classes
+(^|[^A-Za-z_])(send|public_send)[[:space:]]*\([[:space:]]*(params|request)(\[|\.)	send() with a request-derived method name invokes any method on the receiver - allowlist the name
 \.html_safe($|[^A-Za-z0-9_?])	.html_safe marks a string as trusted HTML - a stored-XSS sink; sanitize instead (the .html_safe? predicate is allowed)
-(^|[^A-Za-z_.])raw[[:space:]]*\(	Rails raw() bypasses HTML escaping (XSS) - sanitize it, or render it escaped
+(^[[:space:]]*|[^A-Za-z0-9_.@:[:space:]][[:space:]]*|(return|yield|then|else|and|or|not)[[:space:]]+)raw[[:space:]]*\(	Rails raw() bypasses HTML escaping (XSS) - sanitize it, or render it escaped
 OpenSSL::SSL::VERIFY_NONE	VERIFY_NONE disables TLS cert validation (MITM risk) - fix the cert/CA instead
 
 # Optional (opt-in) — uncomment a line to enable it:
@@ -38,3 +57,7 @@ OpenSSL::SSL::VERIFY_NONE	VERIFY_NONE disables TLS cert validation (MITM risk) -
 # (^|[^A-Za-z_.])p[[:space:]]+[^[:space:]=]	p is FP-prone (single-letter, also a common local var) - opt in with care
 # (^|[^A-Za-z_])(TODO|FIXME|XXX)($|[^A-Za-z0-9_])	TODO/FIXME/XXX not allowed - open a ticket instead
 # (^|[^A-Za-z_])(binding\.remote_pry|PryRemote)($|[^A-Za-z0-9_])	Remove remote-pry breakpoint before committing
+# Enable the next line ONLY on psych 3.x / Ruby <= 3.0, where YAML.load really is
+# the unsafe loader. On psych >= 4 (Ruby 3.1+) load IS safe_load and this fires
+# on every ordinary YAML.load(File.read(config)) in the app.
+# (^|[^A-Za-z_.])(YAML|Psych)\.load(_file)?[[:space:]]*\(	YAML.load/load_file instantiates arbitrary objects on psych < 4 - use YAML.safe_load (off by default: safe, and very common, on psych >= 4)

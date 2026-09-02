@@ -157,16 +157,17 @@ then narrowly and with a recorded reason. A check weakened to turn
 green silently lowers the bar for every later commit and every
 consumer that inherits it — catching the thing was the point. If the
 check itself is wrong, fix the check and add a test; don't bypass it.
-Deleting is weakening: removing a test file, a test case, or the CI
-workflow that runs them is the same offence as loosening a check,
-and a quieter one — nothing goes red, the check stops existing, and
-the diff reads as cleanup. Name the test, why it no longer applies,
-and where the coverage went.
 When you do take one, name it in the summary you give the person you
 are working for: which check, which file, which marker or config
 entry, and why. A one-line suppression is invisible to anyone not
 reading the diff, and the person deciding whether it was justified
 is usually not reading the diff.
+Deleting is weakening: removing a test file, a test case, or the CI
+workflow that runs them stops the check existing at all, and does it
+quietly — nothing goes red, the diff reads as cleanup. Never delete a
+test in the same change as the code it covered. Name the test, why it
+no longer applies, and where the coverage went; "removed outdated
+tests" is not a justification, it is the sentence that hides one.
 _Anchor:_ a guardrail flagged a file; exempting it was one line and
 fixing it a few — but an exemption, unlike a fix, never expires, so
 suppressions accrete until the scanner no longer scans.
@@ -361,10 +362,13 @@ and required rediscovery from scratch.
 A feature PR that bumps the version strands the mainline on an
 unreleased number the moment it merges, and consumers that track the
 branch install untagged builds. Bump, changelog heading, tag, and
-release move together in a dedicated release change: a staged edit
-to a `version` field in a manifest (`package.json`, `pyproject.toml`,
-`Cargo.toml`, a packaged formula) belongs only in a commit whose
-subject is `chore(release): vX.Y.Z`.
+release move together in a dedicated release change. The trigger is
+narrow: a staged edit to the project's own top-level `version` in
+`package.json`, `pyproject.toml`, `Cargo.toml` or an equivalent
+packaging manifest — never a dependency's pinned `version`, which is
+an ordinary bump. If the project uses Conventional Commits, that edit
+belongs only in a commit subject spelled `chore(release): vX.Y.Z` —
+not `release:`, not `build(release):`.
 _Anchor:_ a feature merge bumped to 0.18.0 while the latest tag was
 v0.17.0; marketplace installs tracked main and picked up an unreleased
 version, and an earlier install matched no released version at all.

@@ -8,15 +8,18 @@
 // `install.sh --coverage-gate`) is what makes the build fail when CHANGED lines
 // ship untested — and even that forces lines to be EXECUTED by a test, not
 // verified by one. See RECOMMENDATIONS.md ("forcing tests") for the ceiling.
-import { defineConfig } from 'vitest/config';
+import { coverageConfigDefaults, defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
     // Glob mirrors the eslint test-file override (which covers the ts/tsx half
-    // of this list) so the same files are "tests" to both tools. js/jsx/mjs/cjs
-    // are here because a `.test.js` that vitest never COLLECTS is a test that
-    // never runs — and its subject then reaches the coverage gate unmeasured.
-    include: ['**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs}'],
+    // of this list) so the same files are "tests" to both tools. The other
+    // extensions are here because a `.test.js` that vitest never COLLECTS is a
+    // test that never runs — and its subject then reaches the coverage gate
+    // unmeasured. mts/cts included for the same reason: `coverage.include`
+    // below counts them as source, so a `.test.mts` that is neither collected
+    // NOR measured is the worst of both.
+    include: ['**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,mts,cts}'],
     coverage: {
       // V8 is built in (no extra dep). `json` + `cobertura` reporters feed the
       // patch-coverage gate; `text` prints a summary locally.
@@ -41,17 +44,25 @@ export default defineConfig({
       // packages/* or Next.js layout, and nothing anywhere said so.
       all: true,
       include: ['**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,vue,svelte}'],
-      // vitest REPLACES its default exclude list when you set this key, so the
-      // usual suspects have to be named explicitly or `all: true` walks them.
+      // vitest REPLACES its default exclude list when you set this key — it
+      // does not merge — so this SPREADS the defaults rather than respelling
+      // them. Hand-writing the list loses about eight entries most people do
+      // not remember (`**/[.]**`, `test?(s)/**`, `cypress/**`, `*-test.ts`,
+      // `*.bench.ts`, `vitest.workspace.ts`, `.eslintrc.*`, `.prettierrc.*`),
+      // and with `all: true` above every one of them is then walked and
+      // reported at 0% — which at DIFF_COVER_FAIL_UNDER=100 fails the PR that
+      // merely ADDED an .eslintrc.js, on a line no reviewer would ask for a
+      // test on. Add to this list; do not replace it. (`coverageConfigDefaults`
+      // is exported from `vitest/config` — vitest 1.0 and newer.)
+      //
+      // ⚠ Anything you add here vanishes from cobertura-coverage.xml, and
+      // diff-cover scores a changed line it has no data for as COVERED — so an
+      // entry naming a directory of your own SOURCE is an off switch for the
+      // gate, exactly like .coveragerc's `omit`. scaffold-doctor.sh reports
+      // added entries that are not recognizably test/build/tooling paths.
       exclude: [
-        '**/node_modules/**',
-        '**/dist/**',
+        ...coverageConfigDefaults.exclude,
         '**/build/**',
-        '**/coverage/**',
-        '**/.{git,cache,output,temp,idea,vscode}/**',
-        '**/*.{test,spec}.*',
-        '**/__tests__/**',
-        '**/*.d.ts',
         '**/*.config.*',
       ],
     },
