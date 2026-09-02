@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# cases/20-paired-artifacts.sh: install-lib.sh's check_paired_artifacts must
+# cases/20-paired-artifacts.sh: install-wiring.sh's check_paired_artifacts must
 # report every half-installed pair issue #96 named (a config half without its
 # CI-enforcement half, a local hook half without the CI half it defers to,
 # or the tests.yml/coverage.yml selection state from #97) and stay silent on
@@ -179,7 +179,7 @@ rm -rf "$IT"
 
 # (E) scaffold-doctor.sh is sometimes copied on its own, separately from the
 # rest of the bundle (README warns against it, but nothing stops it). Run it
-# from a directory that has ONLY scaffold-doctor.sh, no install-lib.sh beside
+# from a directory that has ONLY scaffold-doctor.sh, no install-wiring.sh beside
 # it, against an otherwise-healthy project: the fallback note must fire, the
 # run must not crash under set -euo pipefail, and a healthy project's exit
 # status must stay 0 (this branch alone must never turn a clean project red).
@@ -189,11 +189,11 @@ chmod +x "$DOCLESS/scaffold-doctor.sh"
 PT=$(pa_shell_project)
 doc_rc=0
 ( cd "$PT" && "$DOCLESS/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
-if [ "$doc_rc" -eq 0 ] && grep -qF "install-lib.sh not found next to scaffold-doctor.sh" "$HOOK_OUT"; then
-  echo "  ✓ scaffold-doctor.sh copied without install-lib.sh reports a note, not a crash"
+if [ "$doc_rc" -eq 0 ] && grep -qF "install-wiring.sh not found next to scaffold-doctor.sh" "$HOOK_OUT"; then
+  echo "  ✓ scaffold-doctor.sh copied without install-wiring.sh reports a note, not a crash"
   PASS=$((PASS + 1))
 else
-  echo "  ✗ the missing-install-lib fallback misbehaved (exit $doc_rc)"
+  echo "  ✗ the missing-install-wiring fallback misbehaved (exit $doc_rc)"
   sed 's/^/      /' "$HOOK_OUT"
   FAIL=$((FAIL + 1))
 fi
