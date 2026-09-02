@@ -101,7 +101,7 @@ CASE_FLOORS=(
   "27-test-guard.sh:9"
   "28-check-patterns-scope.sh:26"
   "29-install-symlink-dirs.sh:4"
-  "30-install-manifest.sh:14"
+  "30-install-manifest.sh:15"
   "31-install-verify-offer.sh:5"
   "32-uninstall-report.sh:6"
   "33-harness-self-checks.sh:12"

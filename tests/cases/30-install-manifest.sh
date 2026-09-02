@@ -334,14 +334,11 @@ rm -rf "$MF9"
 #       driver's floor counts PASS + SKIP), never a silent pass and never a red.
 #
 #       WHY IT IS NOT SUBSTITUTED. The root-proof trigger MF6 uses (a directory
-#       where a regular file is expected) reaches a DIFFERENT branch here: an
-#       unwritable .gitignore is refused up front, named, and summarised, but a
-#       .gitignore that is a directory passes install.sh's `-w` test for root,
-#       the block redirection then fails, and under `set -e` install.sh exits 1
-#       with no output at all (its stderr is already going to /dev/null).
-#       Asserting that would assert less, under messages these greps do not
-#       match, so root gets an honest skip and non-root still runs the real
-#       thing.
+#       where a regular file is expected) reaches a DIFFERENT branch here: this
+#       one is the mode bit, refused up front by name; the directory is the
+#       generic can-I-append branch. MF12 below covers that one on every
+#       machine, so what a skip here costs is this branch specifically, not the
+#       loud-failure behaviour as a whole.
 MFRO=$(mktemp -d)
 ( cd "$MFRO" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
   && printf 'node_modules/\n' >.gitignore ) >/dev/null 2>&1
@@ -394,6 +391,55 @@ else
   sed 's/^/      /' "$MFRO/.gitignore" 2>/dev/null; FAIL=$((FAIL + 1))
 fi
 rm -rf "$MFRO"
+
+# MF12. The same guarantee as MF10 for the case a mode bit cannot express, and
+#       the regression test for a real silent failure: `.gitignore` is a
+#       DIRECTORY. Reproduced as `git init; mkdir .gitignore; install.sh
+#       --shell` -> rc=1 and ZERO bytes on stdout AND stderr. No error line, no
+#       "INSTALL INCOMPLETE", nothing — a failed install with nothing to read,
+#       which is precisely the shape operational-rules.md's "No silent
+#       failures" forbids, and the worst one, since there is not even a wrong
+#       answer to argue with.
+#
+#       THE MECHANISM, confirmed under `bash -x`: the guard was
+#       `[ -f "$gi" ] && [ ! -w "$gi" ]`, and `-f` is FALSE for a directory, so
+#       the not-writable branch never fired. Execution reached the rule-block
+#       append, written as `{ ...; } 2>/dev/null >>"$gi"`. Opening a directory
+#       for append fails, the shell's own "Is a directory" went to the
+#       /dev/null the redirection had already installed, and because a failed
+#       redirection on a COMPOUND command is fatal under install.sh's `set -e`,
+#       the run died right there — before print_refused_writes_summary could
+#       report anything. The fix asks the question the stat tests could not:
+#       it TRIES the append and keeps the shell's diagnostic as the reason.
+#
+#       WHY IT RUNS EVERYWHERE. Unlike MF10 this needs no mode bit to hold, so
+#       there is no probe and no skip: uid 0 cannot append to a directory
+#       either. It is therefore the assertion that keeps a floor under this
+#       behaviour on the container this suite most often runs in.
+#
+#       WHAT IT ASSERTS. Not the exit code — a bare non-zero exit is exactly
+#       what the bug already produced. The output is the whole point: the
+#       error must name .gitignore, the end-of-run summary must carry it, and
+#       the run must never claim it updated the file.
+MFDIR=$(mktemp -d)
+( cd "$MFDIR" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
+  && mkdir .gitignore ) >/dev/null 2>&1
+# `|| dir_rc=$?` for the same reason MF10 uses it (issue #148): a bare subshell
+# exiting non-zero under `set -euo pipefail` would abort this whole case file.
+dir_rc=0
+( cd "$MFDIR" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1 || dir_rc=$?
+if [ "$dir_rc" -ne 0 ] \
+   && [ -s "$HOOK_OUT" ] \
+   && grep -qF 'could not write .gitignore' "$HOOK_OUT" \
+   && grep -qF 'INSTALL INCOMPLETE: the ignore rules were not added' "$HOOK_OUT" \
+   && ! grep -qF 'updated:      .gitignore' "$HOOK_OUT"; then
+  echo "  ✓ a directory at .gitignore fails the install with a named reason, not in silence"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ a directory at .gitignore must exit non-zero AND say why (rc=$dir_rc, $(wc -c <"$HOOK_OUT") bytes of output)"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$MFDIR"
 
 rm -rf "$(dirname "$MFNEXT")"
 reset_repo
