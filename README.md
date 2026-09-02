@@ -124,6 +124,14 @@ Tests run in CI by default: a plain install also drops `.github/workflows/tests.
 ./install.sh --help         # show usage
 ```
 
+Before it copies anything else, every run (including the first) adds
+`*.scaffold-bak` / `*.scaffold-bak.*` to your `.gitignore`, creating the file
+if you don't already have one, so an upgrade's backup copies never end up
+tracked. That happens before the symlink checks that can make the rest of
+the run refuse to write and exit non-zero, so a failed install still leaves
+this `.gitignore` change behind. See [What lands in your project](./TECHNICAL.md#what-lands-in-your-project)
+in TECHNICAL.md.
+
 **Re-running is the upgrade path.** Running `install.sh` again refreshes
 scaffold-owned code: the pre-commit hook, the `.githooks/lib/*` scanners, and
 the `commit-msg` hook, whenever it differs from the shipped version, with no
@@ -151,11 +159,14 @@ deps.** At the end, `install.sh` runs a **detect → offer** pass: it checks for
 each tool its configs assume (`ruff`, `pytest`+coverage / `eslint`, `tsc`,
 `prettier`, `vitest`) and, for anything missing, offers to install it. The
 auto-install only runs when it's **safe** — an interactive terminal, not
-`--no-verify`, not inside CI (`$CI`), and not `--no-install`. In any
-non-interactive context it falls back to just printing the command, so CI and
-piped/scripted runs never mutate your `package.json` or environment. The
-package manager is detected from your lockfiles (`npm`/`pnpm`/`yarn`,
-`pip`/`uv`).
+`--no-verify`, not inside CI (`$CI`), and not `--no-install`. In any other
+non-interactive context it falls back to just printing the command, so CI
+and piped/scripted runs never mutate your `package.json` or environment.
+Outside CI, point `SCAFFOLD_VERIFY_TTY` at a file of canned replies (one
+per prompt, in prompt order, e.g. `y`/`n` lines) to answer those prompts
+without a real terminal, for a scripted install that still wants a per-tool
+yes/no; `$CI` being set overrides it back to print-only. The package
+manager is detected from your lockfiles (`npm`/`pnpm`/`yarn`, `pip`/`uv`).
 
 To install the linters by hand instead:
 
