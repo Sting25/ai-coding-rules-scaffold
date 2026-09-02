@@ -100,7 +100,7 @@ scan() {
   local config=$1
   shift
   local exts=("$@")
-  [ -f "$config" ] || return 0
+  # config_usable() has already proven this is a readable regular file.
   [ ${#FILES[@]} -eq 0 ] && return 0
 
   # Fold the declared extensions to lowercase ONCE. The extension match below
@@ -279,13 +279,38 @@ exts_for() {
   esac
 }
 
+# A discovered config that EXISTS but is not a readable REGULAR file is a
+# disarm, not an uninstalled tier. Measured: `rm backend.txt;
+# ln -s /nonexistent backend.txt` made every `[ -f ]`/`-e` test false (test(1)
+# follows the link), so the tier was skipped in silence with exit 0, while the
+# orchestrator's deletion guard saw only a diff-filter T, not a D. Returns 1
+# and prints, so the caller fails CLOSED. `-h` is checked first: a symlink to a
+# real file is equally a disarm, since it points the scanner at content the
+# repo does not track. Same guard and wording as check-secrets.
+config_usable() {
+  local c=$1 why=""
+  if [ -h "$c" ]; then why="is a symlink, not a regular file"
+  elif [ ! -f "$c" ]; then why="is not a regular file"
+  elif [ ! -r "$c" ]; then why="is not readable"
+  fi
+  if [ -n "$why" ]; then
+    local m="$c $why — the forbidden-pattern scan cannot read its patterns and is disabled. Restore it as a regular readable file (use 'git commit --no-verify' if intended)."
+    if [ "$CI_MODE" -eq 1 ]; then echo "::error::$m"; else echo "✗ $m" >&2; fi
+    return 1
+  fi
+  return 0
+}
+
 FAILED=0
 INCLUDED=0
 # Auto-discover every pattern file. secrets.txt is check-secrets' domain (it
 # scans all files, not by extension), so skip it here. Then apply the optional
 # INCLUDE/EXCLUDE basename filter documented in the header.
 for cfg in .forbidden-patterns/*.txt; do
-  [ -e "$cfg" ] || continue   # no glob match → literal string; skip
+  # `-e` alone is not enough: a DANGLING symlink is not -e, so a config swapped
+  # for one would be skipped here and never reach the config_usable() guard.
+  # Both false still means "no glob match → literal string", which is skipped.
+  if [ ! -e "$cfg" ] && [ ! -h "$cfg" ]; then continue; fi
   base=$(basename "$cfg")
   case "$base" in secrets.txt) continue ;; esac
   if [ -n "${CHECK_PATTERNS_INCLUDE:-}" ]; then
@@ -295,6 +320,13 @@ for cfg in .forbidden-patterns/*.txt; do
     case " $CHECK_PATTERNS_EXCLUDE " in *" $base "*) continue ;; esac
   fi
   INCLUDED=$((INCLUDED + 1))
+  # Before exts_for(), which greps the file: on an unreadable config that grep
+  # yields nothing, and a header-less-looking config falls through to the
+  # "skipped" warning and exit 0 — the fail-OPEN path this guard replaces.
+  if ! config_usable "$cfg"; then
+    FAILED=1
+    continue
+  fi
   cfg_exts=$(exts_for "$cfg")
   if [ -z "$cfg_exts" ]; then
     echo "warning: $cfg: no '# scaffold-extensions:' header and no built-in mapping — skipped" >&2
