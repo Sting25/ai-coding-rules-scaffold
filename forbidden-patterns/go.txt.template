@@ -4,7 +4,7 @@
 # Separator is TAB - patterns can contain literal `|` for ERE alternation.
 # Case-sensitive ERE (grep -anE). Copy to your project as `.forbidden-patterns/go.txt`.
 # Active rules flag leftover debug output plus two security sinks (TLS bypass,
-# a shell as argv[0]); panic/log.Fatal live in optional below.
+# a dynamic shell command); panic/log.Fatal live in optional below.
 
 (^|[^A-Za-z_.])fmt\.Print(ln|f)?[[:space:]]*\(	Remove fmt.Print/Println/Printf debug output - use the project logger
 (^|[^A-Za-z_.])println[[:space:]]*\(	Remove the builtin println() before committing
@@ -12,27 +12,42 @@
 
 # --- Security: TLS bypass / command injection ---
 # `go vet` catches neither and the golangci-lint CI job ships commented out, so
-# nothing else in the scaffold sees these. The TLS rule is the Go twin of
-# backend.txt's `verify=False` and frontend.txt's `rejectUnauthorized: false`.
-# The exec rule fires ONLY when a shell name is the FIRST argument, i.e. argv[0]:
-# exec.Command("sh"|"bash"|"zsh"|"ksh"|"dash", ...), optionally /bin/- or
-# /usr/bin/-prefixed, and the exec.CommandContext(ctx, "sh", ...) form. A shell
-# named in any LATER argument - exec.Command("which", "bash"),
-# exec.Command("docker", "run", "alpine", "sh"), exec.Command("apt-get",
-# "install", "dash") - and a variable program path - exec.Command(binPath, "-c",
-# script) - do NOT fire. What still fires is a constant script,
-# exec.Command("bash", "-c", "set -e; make"): that shape is one interpolation
-# away from injection, so it is flagged on purpose - scaffold-allow the line, or
-# call the program directly.
+# nothing else in the scaffold sees these.
+#
+# TLS: the Go twin of backend.txt's `verify=False` and frontend.txt's
+# `rejectUnauthorized: false`, and it inherits their one known cost - a test
+# dialing a self-signed httptest server trips it. That is a true positive the
+# team may choose to accept, so mark those lines `// scaffold-allow`; most can
+# instead drop the field and use httptest.NewTLSServer(h).Client(). Only `: true`
+# fires: `InsecureSkipVerify: false`, `c.InsecureSkipVerify = insecure`, `if
+# c.InsecureSkipVerify {` and prose mentioning the field stay silent (144 lines
+# name the field across two Go distributions; 40 match, all of them real bypasses).
+#
+# exec: deliberately narrow - it needs ALL THREE of a literal shell as argv[0]
+# (sh/bash/zsh/ksh/dash, optionally /bin/- or /usr/bin/-prefixed, in the
+# exec.Command("sh", ...) or exec.CommandContext(ctx, "sh", ...) form), a `-c`
+# flag, and a script argument that is NOT one plain string literal. The third
+# clause is what keeps it honest: exec.Command("bash", "-c", "set -e; make") is a
+# fixed script with nothing to interpolate into and does NOT fire, while
+# exec.Command("sh", "-c", userInput), fmt.Sprintf(...) and "echo "+name do.
+# Also silent: a shell in a later argument (exec.Command("which", "bash"),
+# exec.Command("docker", "run", "alpine", "sh")), a variable program path
+# (exec.Command(binPath, "-c", script)), a shell running a script FILE
+# (exec.Command("bash", "./deploy.sh")), and a bare exec.Command("sh").
+# Over the 21,008 .go files of two Go distributions it matched 2 lines, both the
+# fmt.Sprintf-built-shell-script shape, and nothing else.
 InsecureSkipVerify[[:space:]]*:[[:space:]]*true	InsecureSkipVerify: true disables TLS cert validation (MITM risk) - fix the cert/CA, don't disable verification
-(^|[^A-Za-z_.])exec\.(Command\([[:space:]]*|CommandContext\([^,]*,[[:space:]]*)"(/(usr/)?bin/)?(sh|bash|zsh|ksh|dash)"	Running a shell as argv[0] is a command-injection sink - pass the program and its args to exec.Command directly
+(^|[^A-Za-z_.])exec\.(Command\(|CommandContext\([^,]*,)[[:space:]]*"(/(usr/)?bin/)?(sh|bash|zsh|ksh|dash)"[[:space:]]*,[[:space:]]*"-[a-z]*c"[[:space:]]*,[[:space:]]*("[^"]*"[[:space:]]*\+|[^"[:space:]])	Shell -c with a built-up script string is a command-injection sink - pass the program and its args to exec.Command directly
 
 # Optional (opt-in) — uncomment a line to enable it:
 # (^|[^A-Za-z_.])print[[:space:]]*\(	Remove the builtin print() before committing (off by default: 'print' is a plausible method/field name)
 # (^|[^A-Za-z_])panic[[:space:]]*\(	Avoid panic() in library code - return an error (off by default: legitimate in main/init and tests)
 # (^|[^A-Za-z_])log\.(Fatal|Panic)(f|ln)?[[:space:]]*\(	Avoid log.Fatal/log.Panic in library code - return an error (off by default: legitimate in main)
-# An error dropped with `_` is invisible to every gate the scaffold installs, but
-# `_ = f.Close()` in a defer and `x, _ := strconv.Atoi(s)` are idiomatic Go, so an
-# always-on rule fires on ordinary correct code. Enable it only where no
-# errcheck/golangci-lint runs and every discard should be reviewed.
-# (^|[[:space:]])_,?[[:space:]]*(_[[:space:]]*)?:?=[[:space:]]*[A-Za-z_][A-Za-z0-9_.]*\(	Error discarded with `_` - handle or wrap it (off by default: also fires on the idiomatic defer `_ = f.Close()`)
+
+# No ignored-error rule ships here, not even commented out. Go's `_` discards
+# ordinary values as well as errors, and a line-oriented regex cannot tell
+# `r0, _, _ := syscall.Syscall(...)`, `req, _ := http.NewRequest(...)` or the
+# package-level `var _ = flag.Bool(...)` from a dropped error. The obvious
+# pattern matched 11,217 lines in 2,694 of the 21,008 .go files of two Go
+# distributions - 13% of every file - so even as an opt-in it is a trap. Use
+# errcheck / golangci-lint, which decide this on the AST.
