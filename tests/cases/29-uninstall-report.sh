@@ -74,4 +74,23 @@ else
 fi
 rm -rf "$UDT" "$UDTO"
 
+# (C) --help printed its usage header through a hardcoded sed line range that
+# was one line short, so the last line of the header, the --help flag itself,
+# never appeared. The header is now printed by its shape (comment lines after
+# the shebang, stopping at the first non-comment line), so it cannot drift
+# again. Asserted from both ends: every flag is listed, and the print still
+# stops at the header instead of spilling code into the usage text.
+UHLP=$(mktemp -d)
+( "$SCAFFOLD_DIR/uninstall.sh" --help ) >"$UHLP/help.txt" 2>&1
+if grep -qF -- "uninstall.sh --help" "$UHLP/help.txt" \
+   && grep -qF -- "uninstall.sh --all" "$UHLP/help.txt" \
+   && grep -qF -- "uninstall.sh --dry-run" "$UHLP/help.txt" \
+   && ! grep -qF "set -euo pipefail" "$UHLP/help.txt"; then
+  echo "  ✓ --help lists every flag it accepts, including --help"; PASS=$((PASS + 1))
+else
+  echo "  ✗ --help output is truncated or overruns the header"
+  sed 's/^/      /' "$UHLP/help.txt"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$UHLP"
+
 reset_repo

@@ -25,7 +25,12 @@ for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
     --all)     REMOVE_ALL=1 ;;
-    --help|-h) sed -n '2,15p' "$0"; exit 0 ;;
+    # Print the header by its SHAPE, not by line number: every comment line
+    # after the shebang, stopping at the first line that is not one. The old
+    # hardcoded `sed -n '2,15p'` was one line short of the header, so the only
+    # flag it never listed was --help itself, and any edit to the header would
+    # have silently moved the truncation point again.
+    --help|-h) awk 'NR > 1 && /^#/ { print; next } NR > 1 { exit }' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
