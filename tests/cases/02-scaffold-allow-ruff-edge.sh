@@ -275,3 +275,101 @@ else
 fi
 rm -rf cdp
 reset_repo
+
+# --- stash safety (the hook's most destructive moment) ----------------------
+# The hook stashes unstaged changes so the optional ruff/eslint pass lints what
+# is actually being committed. Two guards protect that, and neither had a test:
+# the merge/rebase skip (stashing mid-merge destroys the merge state) and the
+# fail-CLOSED arm when the stash itself fails. Both could be deleted with the
+# suite green.
+
+# 18d. During a conflicted merge the hook must NOT stash, and must still run its
+#      scanners. Asserts the POSITIVE outcomes: the staged secret is refused,
+#      the merge is still in progress afterwards (a stash would have discarded
+#      MERGE_HEAD), and the unstaged edit is still in the working tree.
+STASH_BR=$(git rev-parse --abbrev-ref HEAD)
+printf 'base\n' >conflict.txt
+git add conflict.txt
+git commit --quiet -m "fixture: conflict base" --no-verify  # scaffold-allow: test fixture
+git checkout -q -b stash-side
+printf 'side\n' >conflict.txt
+git add conflict.txt
+git commit --quiet -m "fixture: side edit" --no-verify  # scaffold-allow: test fixture
+git checkout -q "$STASH_BR"
+printf 'ours\n' >conflict.txt
+git add conflict.txt
+git commit --quiet -m "fixture: our edit" --no-verify  # scaffold-allow: test fixture
+git merge --quiet stash-side >/dev/null 2>&1 || true
+printf 'resolved\n' >conflict.txt
+git add conflict.txt
+echo "AWS=AKIA""IOSFODNN7EXAMPLE" >mergesecret.txt
+git add mergesecret.txt
+printf 'unstaged edit\n' >>conflict.txt
+GITDIR=$(git rev-parse --git-dir)
+if .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ merge stash skip — hook accepted a staged secret mid-merge"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+elif grep -qF "AWS access key" "$HOOK_OUT" && [ -e "$GITDIR/MERGE_HEAD" ] \
+     && [ -z "$(git stash list)" ] && grep -qF "unstaged edit" conflict.txt; then
+  echo "  ✓ mid-merge the hook scans without stashing, merge state intact"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ merge stash skip — expected a secret reject with MERGE_HEAD and the"
+  echo "    unstaged edit still in place and no stash entry"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+git merge --abort >/dev/null 2>&1 || true
+git branch -q -D stash-side
+reset_repo
+
+# 18e. A FAILING stash must fail CLOSED. If the hook cannot make the working
+#      tree match the index it has no idea what it is about to check, so it
+#      refuses rather than scanning the wrong content. Stub git so `git stash
+#      push` fails and everything else is the real thing. mktemp is stubbed too,
+#      so the staged-list temp file lands in a directory this case owns and the
+#      same run proves it is cleaned up on this early-exit path, which happens
+#      before the EXIT trap is installed. (A plain TMPDIR would not do it:
+#      macOS mktemp ignores TMPDIR when called with no template.)
+echo 'base' >stashdirty.txt
+git add stashdirty.txt
+git commit --quiet -m "fixture: stash dirty file" --no-verify  # scaffold-allow: test fixture
+GITSTUB=$(mktemp -d)
+STASHTMP=$(mktemp -d)
+REALGIT=$(command -v git)
+REALMKTEMP=$(command -v mktemp)
+cat >"$GITSTUB/git" <<'STUB'
+#!/bin/sh
+if [ "$1" = stash ] && [ "$2" = push ]; then
+  exit 1
+fi
+exec "$REAL_GIT" "$@"
+STUB
+chmod +x "$GITSTUB/git"
+cat >"$GITSTUB/mktemp" <<'STUB'
+#!/bin/sh
+exec "$REAL_MKTEMP" "$STASH_TMP_DIR/staged.XXXXXX"
+STUB
+chmod +x "$GITSTUB/mktemp"
+echo 'ok = True' >stashfail.py
+git add stashfail.py
+printf 'dirty\n' >>stashdirty.txt
+if REAL_GIT="$REALGIT" REAL_MKTEMP="$REALMKTEMP" STASH_TMP_DIR="$STASHTMP" \
+   PATH="$GITSTUB:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ stash failure — hook proceeded, expected a refusal"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+elif grep -qF "could not stash" "$HOOK_OUT" && [ -z "$(find "$STASHTMP" -mindepth 1)" ]; then
+  echo "  ✓ a failed stash refuses the commit and leaves no temp file behind"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ stash failure — expected the 'could not stash' refusal and no temp file left"
+  sed 's/^/      /' "$HOOK_OUT"
+  find "$STASHTMP" -mindepth 1 | sed 's/^/      leftover: /'
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$GITSTUB" "$STASHTMP"
+reset_repo
+git rm -q conflict.txt stashdirty.txt
+git commit --quiet -m "fixture: drop stash-safety fixtures" --no-verify  # scaffold-allow: test fixture
