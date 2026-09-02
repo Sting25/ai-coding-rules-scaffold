@@ -107,3 +107,52 @@ else
   echo "  ✗ uninstall.sh should remove both checks + workflow and keep coding-rules.md"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$U"
+
+# (T) --force must not leave the docs and the gate disagreeing (audit
+# code-install-policy-3). coding-rules.md is cp_safe (user-owned), so --force
+# replaces it with the shipped copy, which carries no test-guard section. The
+# append used to be gated on THIS run's --test-guard flag, and a plain re-run
+# passes TEST_GUARD=0 even for a project that installed the gate long ago:
+# measured, `install.sh --test-guard` then `install.sh --force` took the marker
+# count from 1 to 0 while test-guard.yml and check-red-green stayed on disk and
+# scaffold-doctor.sh still said "0 gaps". CI went on failing PRs over a
+# characterization-marker contract that had vanished from the document the
+# agents read. The append is now gated on the gate being PRESENT, so the same
+# run that removes the section puts it back.
+TGF=$(_tg_fixture --test-guard)
+( cd "$TGF" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --force ) >"$HOOK_OUT" 2>&1
+if [ "$(grep -c 'ai-coding-rules-scaffold:test-guard:begin' "$TGF/coding-rules.md")" -eq 1 ] \
+   && grep -q 'characterization' "$TGF/coding-rules.md" \
+   && [ -f "$TGF/.github/workflows/test-guard.yml" ] \
+   && [ -x "$TGF/.githooks/lib/check-red-green" ] \
+   && grep -q 'merged:.*test-guard (red-green) section' "$HOOK_OUT"; then
+  echo "  ✓ --force without --test-guard keeps the rules section the armed gate depends on"; PASS=$((PASS + 1))
+else
+  echo "  ✗ --force should re-append the test-guard rules section while the gate is installed"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$TGF"
+
+# (T) a plain re-run of a test-guard project (no flag, no --force) also restores
+# the section if it was removed by hand: presence, not the flag, is the gate.
+TGR=$(_tg_fixture --test-guard)
+grep -v 'ai-coding-rules-scaffold:test-guard' "$TGR/coding-rules.md" >"$TGR/cr.tmp" && mv "$TGR/cr.tmp" "$TGR/coding-rules.md"
+( cd "$TGR" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
+if [ "$(grep -c 'ai-coding-rules-scaffold:test-guard:begin' "$TGR/coding-rules.md")" -eq 1 ]; then
+  echo "  ✓ a plain re-run restores the test-guard section whenever the gate is on disk"; PASS=$((PASS + 1))
+else
+  echo "  ✗ a plain re-run should restore the test-guard section while the gate is on disk"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$TGR"
+
+# (T) the control: presence-gating must not turn the section on for a project
+# that never installed the gate. --force on a plain install leaves coding-rules.md
+# exactly as shipped, with no test-guard section.
+TGN=$(_tg_fixture)
+( cd "$TGN" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --force ) >"$HOOK_OUT" 2>&1
+if ! grep -q 'ai-coding-rules-scaffold:test-guard:begin' "$TGN/coding-rules.md" \
+   && cmp -s "$SCAFFOLD_DIR/coding-rules.md" "$TGN/coding-rules.md"; then
+  echo "  ✓ a project without the gate still gets no test-guard section on --force"; PASS=$((PASS + 1))
+else
+  echo "  ✗ a project without the gate should not gain a test-guard section"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$TGN"

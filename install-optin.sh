@@ -86,16 +86,45 @@ install_opt_in_test_guard() {
     cp_scaffold "$SCAFFOLD_DIR/githooks/lib/check-mutation-diff.template" ".githooks/lib/check-mutation-diff"
     mkx ".githooks/lib/check-mutation-diff"
     cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/test-guard.yml.template" ".github/workflows/test-guard.yml"
-    if [ -f "coding-rules.md" ] && ! grep -q 'ai-coding-rules-scaffold:test-guard:begin' "coding-rules.md" 2>/dev/null; then
-      cat "$SCAFFOLD_DIR/coding-rules-test-guard.md" >>"coding-rules.md"
-      echo "merged:       appended the test-guard (red-green) section to coding-rules.md (your content kept)"
-    fi
     echo "note: test-guard.yml runs check-red-green on every PR: each NEW test is run against the base commit and must FAIL there. Register the exemption marker in pytest.ini under [pytest]:"
     echo "          markers ="
     echo "              characterization: passes against the base branch by design; give a reason"
     echo "      It also runs check-mutation-diff, an advisory mutation-testing layer scoped to the PR's changed lines: surviving mutants print a warning but never fail the job (advisory-first, issue #145). CI installs mutmut==3.7.0 itself, nothing to add locally."
     echo "      and make test-guard a REQUIRED status check on the default branch: an advisory check on a repo where the agent can also merge is a check the agent can route around."
   fi
+  # Deliberately OUTSIDE the flag check: see ensure_test_guard_rules_section.
+  ensure_test_guard_rules_section
+}
+
+# ensure_test_guard_rules_section — the red-green rules section belongs in
+# coding-rules.md whenever the gate is ON DISK, whether or not THIS run passed
+# --test-guard.
+#
+# coding-rules.md is cp_safe (user-owned), so --force replaces it wholesale with
+# the shipped copy, which does not carry the section. Measured (audit
+# code-install-policy-3): `install.sh --python --test-guard` left the marker
+# count at 1, then a plain `install.sh --python --force` took it to 0 while
+# .github/workflows/test-guard.yml and .githooks/lib/check-red-green stayed on
+# disk and scaffold-doctor.sh still reported "0 gaps". The CI gate went on
+# failing PRs over a contract (@pytest.mark.characterization) that had vanished
+# from the document the agents actually read. Docs and gate disagreeing, with
+# nothing saying so.
+#
+# Gating on presence rather than on the flag matches print_not_enabled_summary's
+# own convention for exactly this reason: a plain re-run of a test-guard project
+# passes TEST_GUARD=0 even though the gate is installed. So a --force run
+# re-appends the section it just removed, in the same run.
+ensure_test_guard_rules_section() {
+  [ -f "coding-rules.md" ] || return 0
+  { [ -f ".github/workflows/test-guard.yml" ] || [ -f ".githooks/lib/check-red-green" ]; } || return 0
+  if grep -q 'ai-coding-rules-scaffold:test-guard:begin' "coding-rules.md" 2>/dev/null; then
+    return 0
+  fi
+  cat "$SCAFFOLD_DIR/coding-rules-test-guard.md" >>"coding-rules.md"
+  echo "merged:       appended the test-guard (red-green) section to coding-rules.md (your content kept)"
+  # Keep the manifest honest: the file on disk is no longer the bytes cp_safe
+  # recorded a moment ago.
+  manifest_record "coding-rules.md"
 }
 
 # install_test_workflow_ci, the test-execution CI workflow (#97): DEFAULT-ON,
