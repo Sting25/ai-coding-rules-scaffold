@@ -24,3 +24,29 @@
 # explicit absolute date overrides a relative window within one source). This
 # template does not set `before`.
 min-release-age=7
+
+# ignore-scripts closes the OTHER half of the same problem. min-release-age
+# only buys time; it does not stop code from running. A package's
+# preinstall/postinstall executes with the developer's full environment — SSH
+# keys, ~/.aws, the ~/.npmrc auth token, git credentials — the moment
+# `npm install <pkg>` resolves it: the exact vector the Shai-Hulud 2.0 worm
+# used, and the reason every CI workflow this scaffold ships already runs
+# `npm ci --ignore-scripts`. A rolling timing window is no defence when the
+# malicious version is older than 7 days, or when a typosquat name has no
+# older version to resolve back to. Being repo-local, this line covers every
+# npm/npx invocation in the project and so puts the laptop, where the agent
+# actually runs, on CI's footing.
+#
+# The cost is real: native modules (node-gyp builds such as better-sqlite3,
+# binary downloaders such as esbuild or puppeteer) and the project's own
+# `prepare` script do their work in exactly these hooks, so an install that
+# used to Just Work can leave a package unbuilt and fail later at require()
+# time with a missing `.node` rather than loudly at install time. Escape
+# hatches, smallest blast radius first: `npm rebuild <pkg>` re-runs build
+# scripts for one already-installed package; `npm install --ignore-scripts=false
+# --foreground-scripts` opts one deliberate install back in with its output
+# visible; a per-package allowlist (`@lavamoat/allow-scripts`, or pnpm's
+# `onlyBuiltDependencies`) keeps the default closed while naming the few
+# packages that genuinely need a hook. Do not flip this key back to false to
+# make one native module build — that re-arms every other dependency too.
+ignore-scripts=true

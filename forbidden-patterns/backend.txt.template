@@ -17,6 +17,42 @@ os\.path\.join	Use pathlib.Path(), not os.path.join
 \.utcfromtimestamp[[:space:]]*\(	datetime.utcfromtimestamp() is deprecated (3.12+) — use datetime.fromtimestamp(ts, tz=datetime.UTC)
 (^|[^A-Za-z_])verify[[:space:]]*=[[:space:]]*False($|[^A-Za-z0-9_])	requests/httpx verify=False disables TLS cert validation (MITM risk) — fix the cert/CA, don't disable verification
 
+# --- Linter / type-checker escape hatches (the Python twin of frontend.txt's
+# @ts-ignore / @ts-nocheck rules) ---
+# A CODED suppression stays legal and is the intended escape valve:
+# `# type: ignore[arg-type]` and `# noqa: E501` name what they silence and are
+# reviewable. Only the blanket forms are banned. A file-level `# ruff: noqa`
+# silences every group ruff.toml selects — including the curated S-codes
+# (shell=True, eval, hardcoded password) — for the whole file at a green exit;
+# `# mypy: ignore-errors` is @ts-nocheck by another name; a bare `# type: ignore`
+# hides every error on the line forever, including ones a later refactor
+# introduces. Each pattern starts with `(^|[[:space:]])` because check-patterns
+# drops any rule line whose FIRST character is `#` as a file comment.
+(^|[[:space:]])#[[:space:]]*type:[[:space:]]*ignore($|[^[])	Bare `# type: ignore` hides every error on the line — use the coded form, e.g. `# type: ignore[arg-type]`
+(^|[[:space:]])#[[:space:]]*mypy:[[:space:]]*ignore-errors	File-level `# mypy: ignore-errors` turns type-checking off for the whole module — fix the types or ignore the specific error code
+(^|[[:space:]])#[[:space:]]*ruff:[[:space:]]*noqa($|[^:])	File-level `# ruff: noqa` disables every selected rule for the file — suppress one code on one line instead, e.g. `# noqa: S602`
+
+# --- Coverage escape hatch ---
+# .coveragerc leaves coverage.py's default exclude_lines active, so this pragma
+# deletes the line from the XML report entirely and diff-cover, which has no data
+# for it, scores --coverage-gate at 100% on code that never ran. Eleven characters
+# on a `def` line, cheaper than the assertion-free test, and invisible in the CI
+# log (unlike a lowered threshold). Genuinely unexecutable code — a platform
+# branch this runner can never take — takes `scaffold-allow` and is named in the
+# handoff summary like any other suppression.
+(^|[[:space:]])#[[:space:]]*pragma:[[:space:]]*no[[:space:]]*cover	Coverage pragma removes the line from the patch-coverage gate — write the test, or scaffold-allow a genuinely unexecutable branch
+
+# Optional: unfinished stub — the Python twin of rust.txt's todo!()/unimplemented!()
+# and kotlin.txt's TODO() rules. `raise NotImplementedError` inhabits any return
+# type, so a stub type-checks, lints, and is fully covered by a test that asserts
+# only the raise: every mechanical signal reads as complete while nothing is
+# implemented. OFF by default because it is also the canonical body of an
+# @abstractmethod, and the decorator sits on a PREVIOUS line where a line-oriented
+# grep cannot see it — an always-on rule would fire on correct ABCs. Enable it in
+# app code with no abstract base classes; mark real abstract methods
+# `# scaffold-allow: abstract`.
+# (^|[^A-Za-z_])raise[[:space:]]+NotImplementedError	Unfinished stub left in — implement it, or scaffold-allow an abstract-method placeholder
+
 # Optional: asyncio.get_event_loop() raises RuntimeError on 3.14+ when called with
 # no running loop. OFF by default: inside a coroutine/callback it correctly returns
 # the running loop and is legitimate, and library code targeting 3.9–3.13 uses it

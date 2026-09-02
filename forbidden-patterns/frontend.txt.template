@@ -1,5 +1,5 @@
 # Forbidden patterns for TS/JS/Vue files. Applied by .githooks/pre-commit.
-# scaffold-extensions: ts tsx js jsx vue svelte
+# scaffold-extensions: ts tsx js jsx mjs cjs mts cts vue svelte
 # Format: <regex><TAB><description>   (one per line; # comments ignored)
 # Separator is TAB — patterns can contain literal `|` for ERE alternation.
 # Patterns are case-SENSITIVE, scanned against the staged blob. Copy to your
@@ -18,6 +18,32 @@
 # --- Type-checker escape hatches ---
 @ts-ignore	Use @ts-expect-error with a justification, not @ts-ignore
 @ts-nocheck	Do not disable type-checking for a whole file (@ts-nocheck)
+
+# --- Linter escape hatches ---
+# The lint twin of @ts-nocheck: one blanket `/* eslint-disable */` at the top of
+# a file silences every rule eslint.config.js ships (no-floating-promises,
+# no-explicit-any, the complexity caps, the import-hygiene rules) and both the
+# hook and CI still exit 0 — the same "green because almost nothing ran" shape
+# as a focused test. Only the FILE-WIDE, rule-less form is banned:
+# `// eslint-disable-next-line <rule>` is the reviewable escape valve and stays
+# legal, as does a named file-wide disable (`/* eslint-disable no-console */`).
+/\*[[:space:]]*eslint-disable[[:space:]]*\*/	Blanket /* eslint-disable */ turns off every rule for the file — disable one named rule on one line instead
+
+# --- Coverage escape hatches ---
+# vitest.config.ts sets coverage provider `v8`, and --coverage-gate fails a PR on
+# untested CHANGED lines. An ignore comment deletes the line from the gate's
+# denominator instead of testing it, so the report reads 100% on code that never
+# ran — cheaper than the assertion-free test, and invisible in the CI log (unlike
+# a lowered threshold). Genuinely unexecutable code takes `scaffold-allow` and is
+# named in the handoff summary like any other suppression.
+(/\*|//)[[:space:]]*(istanbul|[cv]8)[[:space:]]+ignore	Coverage ignore comment removes the line from the patch-coverage gate — write the test, or scaffold-allow a genuinely unexecutable branch
+
+# --- Unfinished stubs ---
+# The TS twin of rust.txt's todo!()/unimplemented!() rules. A `throw` inhabits any
+# return type and satisfies noImplicitReturns, so a stub type-checks, lints, and
+# is fully covered by a test that asserts only the throw — every mechanical signal
+# reads as complete while nothing is implemented.
+throw[[:space:]]+new[[:space:]]+Error\([[:space:]]*["'`]([Uu]n|[Nn]ot[[:space:]_-]*)[Ii]mplemented	Unfinished stub left in — implement it or open a ticket
 
 # --- Security ---
 dangerouslySetInnerHTML	dangerouslySetInnerHTML is an XSS vector — sanitize or render as text

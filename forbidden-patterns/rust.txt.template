@@ -18,9 +18,23 @@
 (^|[^A-Za-z_])unimplemented![[:space:]]*[([{]	Unfinished code: unimplemented!() left in - implement before committing
 (^|[^A-Za-z_])unreachable![[:space:]]*[([{]	unreachable!() panics in prod if hit - prove it or return a Result
 
+# --- Security: TLS bypass and unchecked/UB calls ---
+# danger_accept_invalid_certs is reqwest's TLS off-switch - the same bypass
+# backend.txt bans as verify=False and frontend.txt as rejectUnauthorized: false.
+# The unchecked rule allows a turbofish (`mem::transmute::<u32, f32>(x)`) and a
+# method call (`arr.get_unchecked(i)`); `from_utf8(`, `.get(` and a method named
+# `get_unchecked_len(` do not match.
+danger_accept_invalid_(certs|hostnames)[[:space:]]*\([[:space:]]*true	reqwest danger_accept_invalid_certs/hostnames(true) disables TLS validation (MITM risk) - fix the cert/CA
+(^|[^A-Za-z_])(transmute|transmute_copy|from_utf8_unchecked|get_unchecked(_mut)?)[[:space:]]*(::<[^(]*>)?[[:space:]]*\(	Unchecked/transmute call - UB if the invariant is wrong; use the checked API (from_utf8, .get(), bytemuck)
+
 # Optional (opt-in) — uncomment a line to enable it:
 # (^|[^A-Za-z_])panic![[:space:]]*[([{]	panic!() aborts the thread - prefer returning a Result (opt-in: noisy)
 # \.unwrap[[:space:]]*\(	.unwrap() panics on None/Err - prefer ? or expect() (opt-in: very FP-heavy)
 # \.expect[[:space:]]*\(	.expect() panics on None/Err - prefer ? or proper handling (opt-in: very FP-heavy)
 # (^|[^A-Za-z_])(TODO|FIXME|XXX)($|[^A-Za-z0-9_])	TODO/FIXME/XXX not allowed - open a ticket instead (opt-in)
 # #\[allow\(	An #[allow(...)] suppresses a lint - justify in review, not silently (opt-in: common)
+# `unsafe` is correct and unavoidable in an FFI/systems crate, where an always-on
+# rule would fire on every line of the code that needs it. Enable it in an
+# application crate that should contain none - or better, put
+# `#![forbid(unsafe_code)]` in lib.rs, which the compiler enforces and a grep cannot.
+# (^|[^A-Za-z_])unsafe[[:space:]]*(\{|fn[[:space:]]|impl[[:space:]])	unsafe block/fn/impl - memory safety is yours now; justify it in review (opt-in: normal in FFI/systems crates)

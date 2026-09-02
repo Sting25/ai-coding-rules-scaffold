@@ -14,6 +14,19 @@ System\.(out|err)\.print(ln)?[[:space:]]*\(	Use the project's logger, not System
 (^|[^A-Za-z0-9_])printStackTrace[[:space:]]*\(	Log the exception via the project's logger, not printStackTrace()
 (^|[^A-Za-z0-9_.])TODO[[:space:]]*\(	kotlin.TODO() throws NotImplementedError at runtime - finish the impl or open a ticket
 
+# --- Security: JVM RCE / reflection / TLS sinks (java.txt's rules, Kotlin syntax) ---
+# Kotlin reaches the same JVM sinks and has no linter, hook lint or real CI job
+# here either. There is no `new` keyword, so the constructor rule anchors on the
+# bare call; readObject is matched in its NO-ARG form only. setAccessible/
+# isAccessible and checkServerTrusted have narrow legitimate uses (framework glue,
+# cert pinning): scaffold-allow those in review.
+(^|[^A-Za-z0-9_])ObjectInputStream[[:space:]]*\(	Java deserialization of untrusted bytes is RCE (CVE-2015-4852 class) - use JSON/protobuf with a schema
+\.readObject[[:space:]]*\([[:space:]]*\)	ObjectInputStream.readObject() on untrusted input is RCE - deserialize a schema-checked format instead
+(^|[^A-Za-z0-9_])Runtime\.getRuntime[[:space:]]*\([[:space:]]*\)[[:space:]]*\.exec	Runtime.exec() is a command-injection sink - use ProcessBuilder with a fixed argv
+(\.setAccessible[[:space:]]*\([[:space:]]*true[[:space:]]*\)|isAccessible[[:space:]]*=[[:space:]]*true)	setAccessible/isAccessible = true defeats access control and final-field safety - drop the reflection, or scaffold-allow it
+(^|[^A-Za-z0-9_])checkServerTrusted[[:space:]]*\(	A hand-written checkServerTrusted TrustManager is how TLS validation gets switched off (MITM risk) - trust the real CA; scaffold-allow one that actually validates
+ALLOW_ALL_HOSTNAME_VERIFIER	ALLOW_ALL_HOSTNAME_VERIFIER disables TLS hostname checking (MITM risk) - keep the default verifier
+
 # Optional (opt-in) — uncomment a line to enable it:
 # (^|[^A-Za-z_])(TODO|FIXME|XXX)($|[^A-Za-z0-9_])	TODO/FIXME/XXX comment not allowed - open a ticket instead (FP-prone in comments/strings)
 # @Disabled($|[^A-Za-z0-9_])	Disabled JUnit5 test committed - re-enable or delete (may be intentional)

@@ -11,6 +11,19 @@
 (^|[^A-Za-z_])System\.err\.print(ln|f)?[[:space:]]*\(	Use logger.error(), not System.err.print/println/printf
 \.printStackTrace[[:space:]]*\([[:space:]]*\)	Log the exception via the logger, not e.printStackTrace(); pass a PrintWriter to capture it instead
 
+# --- Security: JVM RCE / reflection / TLS sinks ---
+# Java ships no linter template, no hook lint and a placeholder CI job, so this
+# file is the only gate in front of these lines. readObject is matched in its
+# NO-ARG call form only, so a class's own `private void readObject(ObjectInputStream in)`
+# hook is not flagged. setAccessible(true) and checkServerTrusted have narrow
+# legitimate uses (framework glue, cert pinning): scaffold-allow those in review.
+(^|[^A-Za-z_])new[[:space:]]+([A-Za-z_][A-Za-z0-9_]*\.)*ObjectInputStream[[:space:]]*\(	Java deserialization of untrusted bytes is RCE (CVE-2015-4852 class) - use JSON/protobuf with a schema
+\.readObject[[:space:]]*\([[:space:]]*\)	ObjectInputStream.readObject() on untrusted input is RCE - deserialize a schema-checked format instead
+(^|[^A-Za-z_])Runtime\.getRuntime[[:space:]]*\([[:space:]]*\)[[:space:]]*\.exec	Runtime.exec() is a command-injection sink - use ProcessBuilder with a fixed argv
+\.setAccessible[[:space:]]*\([[:space:]]*true[[:space:]]*\)	setAccessible(true) defeats access control and final-field safety - drop the reflection, or scaffold-allow it
+(^|[^A-Za-z_])checkServerTrusted[[:space:]]*\(	A hand-written checkServerTrusted TrustManager is how TLS validation gets switched off (MITM risk) - trust the real CA; scaffold-allow one that actually validates
+ALLOW_ALL_HOSTNAME_VERIFIER	ALLOW_ALL_HOSTNAME_VERIFIER disables TLS hostname checking (MITM risk) - keep the default verifier
+
 # Optional (opt-in) — uncomment a line to enable it:
 # (^|[^A-Za-z_])(TODO|FIXME|XXX)($|[^A-Za-z0-9_])	TODO/FIXME/XXX not allowed - open a ticket instead
 # (^|[^A-Za-z_])System\.out\.printf[[:space:]]*\(	Use a logger, not System.out.printf (FP-prone in CLI tools)

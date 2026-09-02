@@ -157,6 +157,11 @@ then narrowly and with a recorded reason. A check weakened to turn
 green silently lowers the bar for every later commit and every
 consumer that inherits it — catching the thing was the point. If the
 check itself is wrong, fix the check and add a test; don't bypass it.
+Deleting is weakening: removing a test file, a test case, or the CI
+workflow that runs them is the same offence as loosening a check,
+and a quieter one — nothing goes red, the check stops existing, and
+the diff reads as cleanup. Name the test, why it no longer applies,
+and where the coverage went.
 When you do take one, name it in the summary you give the person you
 are working for: which check, which file, which marker or config
 entry, and why. A one-line suppression is invisible to anyone not
@@ -226,13 +231,16 @@ the tool's rewind had never seen the files.
 
 ### Back up and confirm before destructive work on live data
 
-A `DROP`, a `TRUNCATE`, an unbounded `DELETE` or `UPDATE`, or a
-migration against anything but a local throwaway store is a
-two-step action: confirm a current backup exists, then get an
-explicit yes that names the target and what will be lost.
-Automatic backups are the cheap half; the confirmation is the
-half that catches the wrong connection string. Quote the blast
-radius in table names and row counts, not as a pasted command.
+A `DROP`, a `TRUNCATE`, an unbounded `DELETE` or `UPDATE`, a
+migration, or a wipe of a bucket, document collection, or search
+index — a "reset the data and start clean" counts — against
+anything but a local throwaway store is a two-step action: confirm
+a current backup exists, then get an explicit yes that names the
+target and what will be lost. Automatic backups are the cheap
+half; the confirmation is the half that catches the wrong
+connection string. Quote the blast radius in the store's own units
+— table rows, bucket objects, collection documents — not as a
+pasted command.
 _Anchor:_ an agent ran a destructive operation against a
 production database it believed was a test instance and emptied
 it in seconds; there was no staging tier and no recent backup.
@@ -353,7 +361,10 @@ and required rediscovery from scratch.
 A feature PR that bumps the version strands the mainline on an
 unreleased number the moment it merges, and consumers that track the
 branch install untagged builds. Bump, changelog heading, tag, and
-release move together in a dedicated release change.
+release move together in a dedicated release change: a staged edit
+to a `version` field in a manifest (`package.json`, `pyproject.toml`,
+`Cargo.toml`, a packaged formula) belongs only in a commit whose
+subject is `chore(release): vX.Y.Z`.
 _Anchor:_ a feature merge bumped to 0.18.0 while the latest tag was
 v0.17.0; marketplace installs tracked main and picked up an unreleased
 version, and an earlier install matched no released version at all.

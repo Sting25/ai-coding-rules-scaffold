@@ -19,4 +19,45 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - run: shellcheck -S info install.sh install-lib.sh install-optin.sh install-interactive.sh install-claude.sh install-verify.sh scaffold-doctor.sh uninstall.sh scripts/dev-setup.sh tests/run.sh tests/lib/common.sh tests/lib/eslint-syntax-check.sh tests/cases/*.sh githooks/pre-commit.template githooks/lib/check-size.template githooks/lib/check-large-files.template githooks/lib/check-patterns.template githooks/lib/check-filenames.template githooks/lib/check-secrets.template githooks/lib/check-hygiene.template githooks/lib/ci-changed-files.template githooks/lib/agent-precheck.template githooks/commit-msg.template
+      - name: shellcheck every shipped shell file
+        # The linted set used to be a literal argument list on the shellcheck
+        # command. It stayed hand-maintained across 19 revisions of this file and
+        # never once named githooks/lib/scaffold-config.template (the rule-state
+        # resolver EVERY other check consults), scaffold-audit.template or
+        # check-gitleaks.template — three shipped bash libraries that therefore
+        # had no static analysis at all, while eight lower-leverage siblings did.
+        # A hardcoded list is what caused that gap, so the set is DISCOVERED from
+        # the tracked tree instead: adding a shell file anywhere in the repo now
+        # puts it under shellcheck with no edit here.
+        #
+        # Discovery is by FIRST LINE, which every shell file in this repo has in
+        # one of two shapes: a `#!...sh` shebang (the executables and the
+        # *.template hook artifacts), or a `# shellcheck shell=bash` directive on
+        # the fragments that are SOURCED and so carry no shebang (install-lib.sh
+        # and friends, tests/lib/common.sh, tests/cases/*.sh). The two python
+        # templates (check-red-green, check-mutation-diff) fall out of the set
+        # because `#!/usr/bin/env python3` matches neither — excluded by what
+        # they are, not by a name someone must remember to keep off a list.
+        run: |
+          set -euo pipefail
+          files="$RUNNER_TEMP/shellcheck-files.txt"
+          git ls-files -z | while IFS= read -r -d '' f; do
+            head -n 1 -- "$f" 2>/dev/null \
+              | grep -qE '^#!.*[/ ](ba|da|k|z)?sh([[:space:]]|$)|^#[[:space:]]*shellcheck[[:space:]]+shell=' \
+              && printf '%s\n' "$f"
+          done >"$files"
+          n=$(wc -l <"$files")
+          echo "shellcheck will lint $n file(s):"
+          sed 's/^/  /' "$files"
+          # Discovery finding (almost) nothing must not degrade into a green
+          # `shellcheck` with no arguments — that reads stdin and exits 0, which
+          # is the same silent-no-op failure this step exists to remove, one
+          # level up. The floor is a smoke value, not a target: the tree holds
+          # ~55 such files, so anything under 40 means the first-line match above
+          # broke and a whole class (every sourced fragment, say) dropped out
+          # unnoticed behind a green log.
+          if [ "$n" -lt 40 ]; then
+            echo "::error::shell-file discovery found only $n file(s) — the first-line match in this step is broken, so shipped shell files are going unlinted."
+            exit 1
+          fi
+          tr '\n' '\0' <"$files" | xargs -0 shellcheck -S info --

@@ -86,8 +86,8 @@ See [`operational-rules.md`](./operational-rules.md) for process, collaboration,
 
 ## Destructive actions and live data
 
-- **Stop, confirm, and verify a backup (note when it was taken) before `DROP`, `TRUNCATE`, an unbounded `DELETE`/`UPDATE`, or a migration** against anything that isn't a local throwaway store. No backups at all? Say so plainly and treat the action as unrecoverable.
-- **State the blast radius in plain language** (tables and row counts, e.g. "deletes all 4,182 rows in `orders`, no undo"), not a pasted command.
+- **Stop, confirm, and verify a backup (note when it was taken) before `DROP`, `TRUNCATE`, an unbounded `DELETE`/`UPDATE`, a migration, or a wipe of a bucket, document collection, or search index** against anything that isn't a local throwaway store — a "reset the data and start clean" counts. No backups at all? Say so plainly and treat the action as unrecoverable.
+- **State the blast radius in plain language, in the store's own units** (table rows, bucket objects, collection documents, an index that must be rebuilt — e.g. "deletes all 4,182 rows in `orders`, no undo"), not a pasted command.
 
 ## Before you call it ready to ship
 

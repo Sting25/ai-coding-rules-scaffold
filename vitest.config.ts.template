@@ -12,19 +12,48 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    // Glob mirrors the eslint test-file override so the same files are "tests"
-    // to both tools.
-    include: ['**/*.{test,spec}.{ts,tsx}'],
+    // Glob mirrors the eslint test-file override (which covers the ts/tsx half
+    // of this list) so the same files are "tests" to both tools. js/jsx/mjs/cjs
+    // are here because a `.test.js` that vitest never COLLECTS is a test that
+    // never runs — and its subject then reaches the coverage gate unmeasured.
+    include: ['**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs}'],
     coverage: {
       // V8 is built in (no extra dep). `json` + `cobertura` reporters feed the
       // patch-coverage gate; `text` prints a summary locally.
       provider: 'v8',
       reporter: ['text', 'json', 'cobertura'],
       reportsDirectory: 'coverage',
-      // Source under test — adjust `src` to your layout. Excludes keep config
-      // and the tests themselves out of the denominator.
-      include: ['src/**/*.{ts,tsx}'],
-      exclude: ['**/*.{test,spec}.{ts,tsx}', '**/*.d.ts'],
+      // ⚠ A WRONG `include` HERE IS A SILENT PASS, NOT AN ERROR. diff-cover (the
+      // patch-coverage gate in .github/workflows/coverage.yml) scores a changed
+      // line it has NO coverage data for as COVERED, so a file this glob misses
+      // does not show up at 0% — it vanishes from the report and the gate goes
+      // green on wholly untested code. The symptom to look for: a green
+      // "patch-coverage" check whose log says "No lines with coverage
+      // information in this diff", or a `text` reporter summary that lists far
+      // fewer files than your repo has. `coverage.yml`'s blind-spot step fails
+      // the job on exactly this, but only for files it can see are missing.
+      //
+      // Hence whole-tree + `all: true`, deliberately mirroring .coveragerc's
+      // `source = .` (the Python half of the same gate): a source file that no
+      // test ever imports MUST appear at 0%, not disappear. Narrow this only to
+      // exclude things, never to pick a single root — the previous default,
+      // 'src/**/*.{ts,tsx}', measured nothing at all on an app/, lib/,
+      // packages/* or Next.js layout, and nothing anywhere said so.
+      all: true,
+      include: ['**/*.{ts,tsx,js,jsx,mjs,cjs,mts,cts,vue,svelte}'],
+      // vitest REPLACES its default exclude list when you set this key, so the
+      // usual suspects have to be named explicitly or `all: true` walks them.
+      exclude: [
+        '**/node_modules/**',
+        '**/dist/**',
+        '**/build/**',
+        '**/coverage/**',
+        '**/.{git,cache,output,temp,idea,vscode}/**',
+        '**/*.{test,spec}.*',
+        '**/__tests__/**',
+        '**/*.d.ts',
+        '**/*.config.*',
+      ],
     },
   },
 });

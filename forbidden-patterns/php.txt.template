@@ -12,9 +12,23 @@
 (^|[^A-Za-z_>])dump[[:space:]]*\(	Remove dump() (var-dumper/Laravel/Symfony) before committing
 (^|[^A-Za-z_])xdebug_break[[:space:]]*\(	Remove xdebug_break() before committing
 
+# --- Security: RCE / command-injection / TLS sinks ---
+# php -l (the only PHP job the CI template runs) is a syntax check and flags none
+# of these, and no other layer of the scaffold sees them. Every anchor excludes a
+# preceding `.`, `>`, `:` and `$`, so `$pdo->exec($sql)`, `Cache::system()`,
+# `$zip->extractTo()` and a `$system` variable never fire - only the global
+# builtins do. A `Serializable::unserialize()` implementation is a declaration,
+# not a call: mark that one line `scaffold-allow`.
+(^|[^A-Za-z_.>:$])unserialize[[:space:]]*\(	unserialize() on untrusted input is PHP object injection (RCE via a POP chain) - use json_decode()
+(^|[^A-Za-z_.>:$])extract[[:space:]]*\(	extract() overwrites arbitrary locals from request data, auth flags included - index the array explicitly
+(^|[^A-Za-z_.>:$])(system|passthru|shell_exec|proc_open|popen)[[:space:]]*\(	Shell-execution sink - use a fixed argv and escapeshellarg() every interpolated value
+(^|[^A-Za-z_.>:$])exec[[:space:]]*\(	exec() is a command-injection sink - escapeshellarg() every interpolated value
+(^|[^A-Za-z_.>:$])eval[[:space:]]*\(	eval() executes arbitrary code - there is no safe way to build one from input
+CURLOPT_SSL_VERIFY(PEER|HOST)[[:space:]]*(,|=>)[[:space:]]*(false|0)([^0-9]|$)	Disabling cURL TLS verification (MITM risk) - fix the cert/CA bundle instead
+
 # Optional (opt-in) — uncomment a line to enable it:
 # (^|[^A-Za-z_])print_r[[:space:]]*\(	print_r() leaks to stdout unless 2nd arg is true - opt in if your app never returns its output
 # (^|[^A-Za-z_])var_export[[:space:]]*\(	var_export() leaks to stdout unless 2nd arg is true - opt in if your app never returns its output
 # (^|[^A-Za-z_])(die|exit)[[:space:]]*\(	die()/exit() - often legitimate control flow; opt in if your codebase forbids it
 # (^|[^A-Za-z_])(TODO|FIXME|XXX)($|[^A-Za-z0-9_])	TODO/FIXME/XXX not allowed - open a ticket instead
-# (^|[^A-Za-z_.>:])(eval|assert)[[:space:]]*\(	Avoid eval()/assert(string) - arbitrary-code-execution risk; excludes ->assert and ::assert test calls
+# (^|[^A-Za-z_.>:$])assert[[:space:]]*\(	assert(string) evaluates its argument as code on PHP 7 - off by default: assert($x instanceof Foo) is the PHPStan/Psalm type-narrowing idiom (eval() is an active rule above)

@@ -29,44 +29,78 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/common.sh disable=SC1091
 . "$HERE/lib/common.sh"
 
+# A third outcome alongside PASS/FAIL, for an assertion that could not run
+# because an OPTIONAL external tool is absent (actionlint, pytest). Those arms
+# used to print a lone "- skipped ..." line that vanished into 500 lines of ✓,
+# leaving a run where a whole guard never executed indistinguishable from a run
+# where it passed. Counting them surfaces the fact in the one line everyone
+# reads. Cases that never skip anything simply leave it at 0.
+SKIP=0
+
 # Bootstrap left us in $WORK; make sure every case file runs from there (some
 # cases cd into their own temp dirs and cd back to "$WORK").
 cd "$WORK"
 
-# Source each test-area file in order. Order is preserved from the original
-# single-file harness — some cases are order-sensitive (shared temp repo state).
-for case_file in \
-  "$HERE/cases/01-size-patterns.sh" \
-  "$HERE/cases/02-scaffold-allow-ruff-edge.sh" \
-  "$HERE/cases/03-binary-defense.sh" \
-  "$HERE/cases/04-shell-config-rename.sh" \
-  "$HERE/cases/05-frontend-typescript.sh" \
-  "$HERE/cases/06-hygiene-multilang.sh" \
-  "$HERE/cases/07-agent-commit.sh" \
-  "$HERE/cases/08-overrides-gitleaks.sh" \
-  "$HERE/cases/09-toolchain-clobber.sh" \
-  "$HERE/cases/10-ci-diff-scope.sh" \
-  "$HERE/cases/11-npm-bundle.sh" \
-  "$HERE/cases/12-install-backup-cap.sh" \
-  "$HERE/cases/13-devsetup-guards.sh" \
-  "$HERE/cases/14-shell-install-mode.sh" \
-  "$HERE/cases/15-local-checks.sh" \
-  "$HERE/cases/16-coverage-gate.sh" \
-  "$HERE/cases/17-whole-tree-configs.sh" \
-  "$HERE/cases/18-doctor.sh" \
-  "$HERE/cases/19-test-workflow.sh" \
-  "$HERE/cases/20-paired-artifacts.sh" \
-  "$HERE/cases/21-ci-workflow-drift.sh" \
-  "$HERE/cases/22-large-file-guard.sh" \
-  "$HERE/cases/23-npm-cooldown.sh" \
-  "$HERE/cases/24-claude-skill.sh" \
-  "$HERE/cases/25-interactive-install.sh" \
-  "$HERE/cases/26-repo-adaptation-warn.sh" \
-  "$HERE/cases/27-test-guard.sh"; do
+# The test-area files, in order. Order is preserved from the original
+# single-file harness — some cases are order-sensitive (shared temp repo state)
+# — so this stays an explicit ordered list rather than a `cases/*.sh` glob.
+CASE_FILES=(
+  01-size-patterns.sh
+  02-scaffold-allow-ruff-edge.sh
+  03-binary-defense.sh
+  04-shell-config-rename.sh
+  05-frontend-typescript.sh
+  06-hygiene-multilang.sh
+  07-agent-commit.sh
+  08-overrides-gitleaks.sh
+  09-toolchain-clobber.sh
+  10-ci-diff-scope.sh
+  11-npm-bundle.sh
+  12-install-backup-cap.sh
+  13-devsetup-guards.sh
+  14-shell-install-mode.sh
+  15-local-checks.sh
+  16-coverage-gate.sh
+  17-whole-tree-configs.sh
+  18-doctor.sh
+  19-test-workflow.sh
+  20-paired-artifacts.sh
+  21-ci-workflow-drift.sh
+  22-large-file-guard.sh
+  23-npm-cooldown.sh
+  24-claude-skill.sh
+  25-interactive-install.sh
+  26-repo-adaptation-warn.sh
+  27-test-guard.sh
+  28-shipped-pattern-files.sh
+  29-workflow-template-validity.sh
+  30-red-green-verdict.sh
+)
+
+# REGISTRATION GUARD. The list above is hand-ordered, and nothing used to
+# reconcile it with the directory — so a new cases/28-*.sh was a SILENT no-op:
+# the shellcheck workflow lints `tests/cases/*.sh` by GLOB, so a new file went
+# green as valid bash and looked wired up while not one of its assertions ever
+# ran. The same silence hides a line lost from this list in a merge conflict: a
+# whole case file dropping out only lowers PASS while FAIL stays 0, which is
+# indistinguishable from a clean run. Reconcile in BOTH directions and abort
+# before any case executes.
+registered=$(printf '%s\n' "${CASE_FILES[@]}" | sort)
+ondisk=$(cd "$HERE/cases" && printf '%s\n' *.sh | sort)
+if [ "$registered" != "$ondisk" ]; then
+  echo "tests/run.sh: cases/ and CASE_FILES disagree — every tests/cases/*.sh must be registered above." >&2
+  comm -23 <(printf '%s\n' "$ondisk") <(printf '%s\n' "$registered") \
+    | sed 's|^|  on disk but NOT registered, so it never runs: cases/|' >&2
+  comm -13 <(printf '%s\n' "$ondisk") <(printf '%s\n' "$registered") \
+    | sed 's|^|  registered but missing from cases/: |' >&2
+  exit 1
+fi
+
+for case_file in "${CASE_FILES[@]}"; do
   # shellcheck source=/dev/null
-  . "$case_file"
+  . "$HERE/cases/$case_file"
 done
 
 echo ""
-echo "Result: $PASS passed, $FAIL failed"
+echo "Result: $PASS passed, $FAIL failed, $SKIP skipped"
 exit "$FAIL"

@@ -18,6 +18,21 @@
 (^|[^A-Za-z_])save_and_open_(page|screenshot)($|[^A-Za-z0-9_])	Remove Capybara save_and_open_page/screenshot debug call before committing
 (^|[^A-Za-z_.])pp([[:space:]]+[^[:space:]=]|[[:space:]]*\()	Remove pp() pretty-print debug call; use the logger instead
 
+# --- Security: code-execution and XSS sinks ---
+# install.sh ships this file to any repo with a Gemfile, i.e. every Rails app,
+# where .html_safe/raw() are ERB's twins of the dangerouslySetInnerHTML, v-html and
+# {@html} sinks frontend.txt already bans. instance_eval/class_eval are matched
+# only with a STRING argument: the block forms (`config.instance_eval do ... end`,
+# `klass.class_eval { ... }`) are ordinary DSL code and must not fire.
+(^|[^A-Za-z_.])eval[[:space:]]*[( ]	eval() executes arbitrary code - never build one from input
+(^|[^A-Za-z_])(instance_eval|class_eval|module_eval|instance_exec|class_exec|module_exec)[[:space:]]*\(?[[:space:]]*["']	instance_eval/class_eval on a STRING executes arbitrary code - define the method literally or allowlist the name
+(^|[^A-Za-z_.])Marshal\.load[[:space:]]*\(	Marshal.load on untrusted bytes instantiates arbitrary objects (RCE) - use JSON
+(^|[^A-Za-z_.])YAML\.(load|unsafe_load)[[:space:]]*\(	YAML.load/unsafe_load instantiates arbitrary objects (RCE) - use YAML.safe_load (scaffold-allow where psych >= 4 already aliases load to safe_load)
+(^|[^A-Za-z_])(send|public_send)[[:space:]]*\([[:space:]]*(params|request)	send() with request-derived input invokes any method on the receiver - allowlist the name
+\.html_safe($|[^A-Za-z0-9_?])	.html_safe marks a string as trusted HTML - a stored-XSS sink; sanitize instead (the .html_safe? predicate is allowed)
+(^|[^A-Za-z_.])raw[[:space:]]*\(	Rails raw() bypasses HTML escaping (XSS) - sanitize it, or render it escaped
+OpenSSL::SSL::VERIFY_NONE	VERIFY_NONE disables TLS cert validation (MITM risk) - fix the cert/CA instead
+
 # Optional (opt-in) — uncomment a line to enable it:
 # (^|[^A-Za-z_.])puts[[:space:]]*[\( ]	puts is common legitimate CLI output - enable only if your app uses a logger exclusively
 # (^|[^A-Za-z_.])p[[:space:]]+[^[:space:]=]	p is FP-prone (single-letter, also a common local var) - opt in with care

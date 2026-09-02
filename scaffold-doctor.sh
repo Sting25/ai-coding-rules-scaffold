@@ -196,6 +196,42 @@ else
       fi
     fi
   done
+  # Baseline drift. Counting active patterns (above) only catches the file
+  # gutted to ZERO — the one state no realistic hand-edit produces. Deleting
+  # all but one of secrets.txt's rules leaves "armed (1 active patterns)" on
+  # screen while the AWS-key, JWT, PEM and hardcoded-credential rules are gone,
+  # and every other layer agrees: check-secrets fails closed only at zero, and
+  # pre-commit's DELETED_CONFIG guard only fires on whole-file deletion. These
+  # files are cp_pattern — scaffold-shipped but user-EXTENDED — so extra local
+  # rules are expected and healthy; only rules that were SHIPPED and are now
+  # absent are reported. Compared on the pattern column (tab-separated field 1)
+  # so a reworded description is not drift. A scaffold UPGRADE that adds new
+  # shipped rules lands here too, and correctly so: from this project's side
+  # "rules the scaffold ships that this repo does not run" is one state with
+  # one fix, whether it was reached by deleting them or by never merging them.
+  for cfg in .forbidden-patterns/*.txt; do
+    [ -e "$cfg" ] || continue
+    base=$(basename "$cfg")
+    tmpl="$SCAFFOLD_DIR/forbidden-patterns/$base.template"
+    # No template = a project-local pattern file (or a doctor copied without
+    # the bundle): nothing to compare against, and not a defect.
+    [ -f "$tmpl" ] || continue
+    # One awk pass, and only tools case 18's narrowed-PATH runs provide (awk,
+    # grep, sed): a doctor that dies on a missing coreutil would be its own bug.
+    missing=$(awk -F'\t' '
+      FNR == NR { if ($0 !~ /^[[:space:]]*(#|$)/) have[$1] = 1; next }
+      $0 ~ /^[[:space:]]*(#|$)/ { next }
+      !($1 in have) { print $1 }
+    ' "$cfg" "$tmpl" 2>/dev/null || true)
+    [ -n "$missing" ] || continue
+    nmiss=$(printf '%s\n' "$missing" | grep -c '' || true)
+    gap "$base is missing $nmiss shipped rule(s) — those patterns are not enforced by the hook or by CI (both read this one file)" \
+        "diff $cfg against forbidden-patterns/$base.template and merge the missing rules back, or re-run install.sh --force (yours is backed up to .scaffold-bak)"
+    if [ "$QUIET" -eq 0 ]; then
+      printf '%s\n' "$missing" | sed -n '1,8{s/^/        - /;p;}'
+      [ "${nmiss:-0}" -le 8 ] || echo "        - ... and $((nmiss - 8)) more"
+    fi
+  done
 fi
 
 # --- 5. opt-in surfaces -----------------------------------------------------
@@ -301,7 +337,102 @@ else
   note "install-lib.sh not found next to scaffold-doctor.sh ($SCAFFOLD_DIR): paired-artifact checks skipped; re-fetch the full scaffold bundle, not just this one file"
 fi
 
-# --- 9. protections not enabled ----------------------------------------------
+# --- 9. server-side backstop -------------------------------------------------
+# Every hook in this scaffold is client-side and `git commit --no-verify`
+# skips all of them — pre-commit.template says so out loud. .github/workflows/
+# lint.yml re-running the same lib/check-* scripts IS the answer to that, and
+# it is the only one. Nothing guarded its removal: the pre-commit deletion
+# guard matches `^\.forbidden-patterns/.+\.txt$` only, workflows run from the
+# PR head so the deleting PR's own checks no longer include the job, and this
+# script used to grade such a repo "armed, 0 gaps".
+section "server-side backstop"
+if [ ! -d .githooks/lib ]; then
+  note "no .githooks/lib/ — no local checks installed, so there is nothing for CI to mirror"
+elif [ ! -f .github/workflows/lint.yml ]; then
+  gap ".github/workflows/lint.yml is missing — the lib/check-* scripts run client-side only, and 'git commit --no-verify' bypasses every one of them with nothing behind it" \
+      "re-run install.sh to restore .github/workflows/lint.yml"
+elif grep -q 'check-secrets' .github/workflows/lint.yml && grep -q 'check-patterns' .github/workflows/lint.yml; then
+  ok "lint.yml re-runs the guardrail checks server-side"
+else
+  gap ".github/workflows/lint.yml exists but its guardrails job no longer invokes lib/check-secrets and lib/check-patterns — CI is not mirroring the hook" \
+      "re-run install.sh --force to restore the guardrails job"
+fi
+
+# --- 10. patch-coverage gate -------------------------------------------------
+# The opt-in gate has a CONTINUOUS off switch nothing else watches. Editing
+# DIFF_COVER_FAIL_UNDER from "100" to "0" leaves the workflow installed, the
+# job green and the check name unchanged in branch protection; install.sh
+# preserves the drift by policy (cp_scaffold_preserve, #105/#110) and prints
+# at most a "note (drift):" on a re-run nobody performs. Widening .coveragerc's
+# `omit` is the same move one layer down: an omitted path never reaches
+# coverage.xml, and diff-cover scores a changed line it has no data for as
+# COVERED. Both are reported against the SHIPPED templates, so this tracks the
+# scaffold's own default rather than a number hardcoded here.
+section "patch-coverage gate"
+COV_TPL="$SCAFFOLD_DIR/.github/workflows/coverage.yml.template"
+# awk, not `grep -o | head`: same narrowed-PATH reason as the drift check above.
+_fail_under() {
+  awk 'match($0, /DIFF_COVER_FAIL_UNDER:[[:space:]]*"?[0-9]+/) {
+         v = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", v); print v; exit
+       }' "$1" 2>/dev/null || true
+}
+if [ ! -f .github/workflows/coverage.yml ]; then
+  note "no .github/workflows/coverage.yml — no patch-coverage gate (opt in with install.sh --coverage-gate)"
+else
+  thr=$(_fail_under .github/workflows/coverage.yml)
+  shipped=100
+  [ -f "$COV_TPL" ] && shipped=$(_fail_under "$COV_TPL")
+  shipped=${shipped:-100}
+  # A gap, not a note, at ANY value below the shipped default: the doctor's own
+  # definition of a gap is "installed but inert; a commit that should be blocked
+  # isn't", and at 80 a PR whose changed lines are 85% covered merges where the
+  # shipped policy would have stopped it. Adopting an existing codebase at a
+  # lower number and ratcheting up is a legitimate choice — the doctor will
+  # keep naming it until you get back to the default, which is the point.
+  if [ -z "$thr" ]; then
+    gap "coverage.yml has no DIFF_COVER_FAIL_UNDER — diff-cover falls back to its own default instead of this project's threshold" \
+        "restore 'DIFF_COVER_FAIL_UNDER: \"$shipped\"' in the workflow's env: block"
+  elif [ "$thr" -eq 0 ]; then
+    gap "DIFF_COVER_FAIL_UNDER is 0 — the patch-coverage gate is installed, runs, and CANNOT FAIL; the green check it produces is indistinguishable from a real one" \
+        "raise it back to $shipped, or delete coverage.yml so the repo stops advertising a gate it does not have"
+  elif [ "$thr" -lt "$shipped" ]; then
+    gap "patch coverage is ${thr}% of changed lines, below the shipped ${shipped}% — changed lines between ${thr}% and ${shipped}% coverage now merge green" \
+        "raise DIFF_COVER_FAIL_UNDER back to $shipped; if ${thr} is a deliberate adoption ratchet, say so in the PR that set it and expect this line until it is back up"
+  else
+    ok "patch coverage: ${thr}% of changed lines"
+  fi
+fi
+# .coveragerc `omit` drift. Only ADDED entries matter: a shorter list is
+# stricter. Read on the raw entry text so a reordered list is not drift.
+_omit_entries() {
+  awk '/^[[:space:]]*omit[[:space:]]*=/ { inomit = 1; sub(/^[^=]*=[[:space:]]*/, ""); if ($0 != "") print; next }
+       inomit && /^[[:space:]]+[^[:space:]#]/ { gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print; next }
+       inomit { inomit = 0 }' "$1" 2>/dev/null || true
+}
+if [ -f .coveragerc ] && [ -f "$SCAFFOLD_DIR/.coveragerc.template" ]; then
+  # -Fxq, not a regex match: omit entries are globs (`*/tests/*`), and comparing
+  # them as patterns would call `*/test_*.py` a match for anything.
+  shipped_omit=$(_omit_entries "$SCAFFOLD_DIR/.coveragerc.template")
+  added=""
+  while IFS= read -r _e; do
+    if [ -n "$_e" ] && ! printf '%s\n' "$shipped_omit" | grep -Fxq -- "$_e"; then
+      added="${added}${_e}
+"
+    fi
+  done <<EOF
+$(_omit_entries .coveragerc)
+EOF
+  if [ -n "$added" ]; then
+    nadd=$(printf '%s' "$added" | grep -c '' || true)
+    gap ".coveragerc omits $nadd path(s) the shipped template does not — every changed line under them drops out of coverage.xml and diff-cover scores it as COVERED, so the gate passes on untested code there" \
+        "remove the added omit entries, or keep them and say in the PR which code is no longer gated"
+    [ "$QUIET" -eq 1 ] || printf '%s' "$added" | sed 's/^/        - /'
+  else
+    ok ".coveragerc omit list matches the shipped template (nothing extra hidden from the gate)"
+  fi
+fi
+
+# --- 11. protections not enabled ---------------------------------------------
 # P-19b: this scaffold's users typically do not read code and often ask their
 # agent "run scaffold-doctor and tell me what is off" rather than reading the
 # report themselves. Section 5 above already notes two of these (gitleaks
