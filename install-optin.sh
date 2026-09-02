@@ -97,7 +97,7 @@ install_opt_in_test_guard() {
   ensure_test_guard_rules_section
 }
 
-# ensure_test_guard_rules_section — the red-green rules section belongs in
+# ensure_test_guard_rules_section: the red-green rules section belongs in
 # coding-rules.md whenever the gate is ON DISK, whether or not THIS run passed
 # --test-guard.
 #
@@ -238,7 +238,7 @@ install_test_workflow_ci() {
 # "Protections not enabled" section uses (kept in sync with it by hand; there
 # is no shared list to source since this runs before scaffold-doctor.sh
 # exists in a fresh install).
-# _pne_wired FILE NEEDLE LABEL ENABLE_CMD FIX — one summary line for an opt-in
+# _pne_wired FILE NEEDLE LABEL ENABLE_CMD FIX: one summary line for an opt-in
 # whose config file can exist WITHOUT the protection wired into it. THREE
 # states, not two: absent (install it), present but not wired (merge it), wired
 # (say nothing). The two-state presence check reported a stub .claude/
@@ -260,7 +260,7 @@ _pne_wired() {
   return 0
 }
 
-# warn_unwired_optin FILE NEEDLE TEMPLATE — printed right after the cp_safe that
+# warn_unwired_optin FILE NEEDLE TEMPLATE: printed right after the cp_safe that
 # may have SKIPPED a pre-existing config. "skip (exists)" is accurate but
 # incomplete: the flag the user just passed did nothing, and the protection they
 # asked for is not armed. Say which, and how to fix it, at the moment it happens.

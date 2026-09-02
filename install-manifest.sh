@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# install-manifest.sh — the install manifest: how an upgrade tells "the scaffold
+# install-manifest.sh: the install manifest, how an upgrade tells "the scaffold
 # wrote this and nobody touched it" from "you edited this".
 #
 # SOURCED (not exec'd) by install.sh before install-lib.sh, so these run in that
@@ -65,7 +65,7 @@ SCAFFOLD_MANIFEST=".githooks/.scaffold-manifest"
 # writes ~35 files, and three extra processes each is a cost for nothing.
 _MANIFEST_PENDING=""
 
-# _sha256 FILE — portable content hash, printed bare. GNU coreutils sha256sum
+# _sha256 FILE: portable content hash, printed bare. GNU coreutils sha256sum
 # where it exists (Linux), otherwise the perl `shasum` that ships with macOS.
 # Returns non-zero when neither exists or the file cannot be read, and EVERY
 # caller treats that as "no manifest information available", so a host with
@@ -84,7 +84,7 @@ _sha256() {
   printf '%s' "$out"
 }
 
-# _scaffold_version — the version being installed, from the package metadata
+# _scaffold_version: the version being installed, from the package metadata
 # that ships in every distribution path (npm tarball, Homebrew libexec, git
 # clone). "unknown" when it cannot be read: an entry with an unknown version
 # still carries a usable hash, which is the load-bearing half.
@@ -101,7 +101,7 @@ SCAFFOLD_VERSION="$(_scaffold_version)"
 
 _manifest_header() {
   cat <<'MANIFEST_HEADER'
-# ai-coding-rules-scaffold install manifest — written by install.sh, do not edit.
+# ai-coding-rules-scaffold install manifest. Written by install.sh, do not edit.
 #
 # One line per file the installer wrote:  <sha256> <scaffold version> <path>
 #
@@ -117,7 +117,7 @@ _manifest_header() {
 MANIFEST_HEADER
 }
 
-# manifest_record PATH — remember exactly what was just written there. Silent
+# manifest_record PATH: remember exactly what was just written there. Silent
 # no-op when the file cannot be hashed; a missing entry only costs the old
 # behavior.
 manifest_record() {
@@ -127,7 +127,7 @@ manifest_record() {
 "
 }
 
-# _manifest_hash PATH — the hash recorded for PATH by an EARLIER run (this run's
+# _manifest_hash PATH: the hash recorded for PATH by an EARLIER run (this run's
 # records are still pending in memory), or non-zero when there is none.
 _manifest_hash() {
   [ -f "$SCAFFOLD_MANIFEST" ] || return 1
@@ -135,7 +135,7 @@ _manifest_hash() {
                  END { exit(found ? 0 : 1) }' "$SCAFFOLD_MANIFEST"
 }
 
-# manifest_says_ours PATH — true only when PATH is byte-identical to what this
+# manifest_says_ours PATH: true only when PATH is byte-identical to what this
 # scaffold last wrote there, i.e. nobody has edited it since. False (so: keep
 # the user's file) whenever there is any doubt at all: no manifest, no entry, no
 # hashing tool, an unreadable file.
@@ -150,7 +150,7 @@ manifest_says_ours() {
   return 1
 }
 
-# manifest_flush — write the run's records, merged with the entries an earlier
+# manifest_flush: write the run's records, merged with the entries an earlier
 # run made for files this run did not touch. Sorted by path so a re-run produces
 # a stable diff rather than a reshuffled file.
 manifest_flush() {
@@ -175,7 +175,7 @@ manifest_flush() {
   echo "recorded:     $SCAFFOLD_MANIFEST (scaffold version $SCAFFOLD_VERSION), commit it"
 }
 
-# ensure_backup_gitignore — the other half of the same problem: making the
+# ensure_backup_gitignore: the other half of the same problem. Making the
 # backups non-executable stops them being RUN, not being COMMITTED. Nothing in
 # the installer had ever touched .gitignore, so every upgrade left untracked
 # *.scaffold-bak files that the next `git add -A` swept into the repo (measured:

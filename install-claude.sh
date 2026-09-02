@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# install-claude.sh — the two agent-rules-file handlers, CLAUDE.md and
+# install-claude.sh: the two agent-rules-file handlers, CLAUDE.md and
 # AGENTS.md. Both are USER-OWNED prose with their own merge/skip rules rather
 # than a cp_* copy policy, so they live together here. Extracted to its own file
 # because install.sh and install-lib.sh are both already at the scaffold's own

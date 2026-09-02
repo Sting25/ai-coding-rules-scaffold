@@ -56,7 +56,7 @@ fi
 # The four policies share one write MECHANISM (_cp_replace) and one backup
 # routine (_backup), so the A7 symlink defenses live in exactly one place.
 
-# SCAFFOLD_SYMLINK_DIRS — the symlinked directories _mkdir_safe has already
+# SCAFFOLD_SYMLINK_DIRS: the symlinked directories _mkdir_safe has already
 # refused this run, so the explanation prints once per path rather than once per
 # file underneath it, and so install.sh can fail the run at the end instead of
 # exiting 0 over a half-written install. Space separated; scaffold paths never
@@ -107,7 +107,7 @@ _mkdir_safe() {
   return 0
 }
 
-# print_refused_writes_summary — end-of-run report for the refusals above.
+# print_refused_writes_summary: the end-of-run report for the refusals above.
 # A symlinked scaffold directory makes EVERY write under it a skip, so the
 # install is genuinely incomplete and must not exit 0 pretending otherwise
 # ("no silent failures"). Returns 1 so the caller can fail the run.
@@ -275,7 +275,7 @@ cp_scaffold() {
   manifest_record "$dst"
 }
 
-# _drift_note DST HINT — the "we are keeping your file" message, worded by what
+# _drift_note DST HINT: the "we are keeping your file" message, worded by what
 # the manifest actually knows. A file WITH a manifest entry whose hash no longer
 # matches really is a hand-edit, and saying so is accurate. A file with NO entry
 # predates the manifest (or the user created it), and the old wording asserted
@@ -386,7 +386,7 @@ mkx() { if [ -f "$1" ]; then chmod +x "$1"; fi; }
 # this file each time it reached the same cap. Copy-policy rationale per flag is
 # in that file's header.
 
-# _optin_wired FILE NEEDLE — is the protection actually WIRED INTO an existing
+# _optin_wired FILE NEEDLE: is the protection actually WIRED INTO an existing
 # config, or is the file merely present? cp_safe leaves a pre-existing
 # .claude/settings.json / .cursor/hooks.json / .npmrc alone, correctly, because
 # they are user-owned. So file presence answers "does a config exist here",

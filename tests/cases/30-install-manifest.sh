@@ -146,7 +146,7 @@ fi
 rm -rf "$MF3"
 
 # (T) the documented FALLBACK: a file that drifted while no manifest existed has
-#     no entry, so it is kept exactly as before — but the message no longer
+#     no entry, so it is kept exactly as before, but the message no longer
 #     claims it is the user's customization, because nothing on disk says that.
 #     This is the honest half of the pre-manifest upgrade path.
 MF4=$(_mf_project)

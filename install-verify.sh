@@ -24,7 +24,7 @@ CAN_AUTORUN=0
 # 3 (SCAFFOLD_TTY, below).
 VERIFY_ANSWER_FD=0
 
-# SCAFFOLD_VERIFY_TTY — the answer source for the prompts in `offer`: the same
+# SCAFFOLD_VERIFY_TTY: the answer source for the prompts in `offer`, the same
 # kind of seam install-interactive.sh gives the wizard through SCAFFOLD_TTY, but
 # a SEPARATE name, and empty by default.
 #
