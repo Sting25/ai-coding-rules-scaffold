@@ -136,12 +136,25 @@ jobs:
           # "Installed" means resolvable from the project's node_modules. The
           # gate is Node's resolver, not `npx --no-install --version`, which
           # also answers from npm's global _npx cache on self-hosted or cached
-          # runners (same gate as the pre-commit hook).
-          if [ -f eslint.config.js ]; then
-            if ! node -e "require.resolve('eslint/package.json')" >/dev/null 2>&1; then
+          # runners (same gate as the pre-commit hook). It runs FIRST, outside
+          # the config-presence branch, because it guards the `npx eslint` run
+          # at the bottom of this step as much as the config-load check: the
+          # detect step turns this job on for a bare package.json, and with no
+          # project-local eslint that run either borrows a cached copy (linting
+          # this project with a tool it never installed) or, on a cold runner
+          # cache, dies with "npx canceled due to missing packages".
+          if ! node -e "require.resolve('eslint/package.json')" >/dev/null 2>&1; then
+            if [ -f eslint.config.js ]; then
               echo "::error file=eslint.config.js::eslint is not installed. Run: npm i -D $PEERS  — then commit package-lock.json (CI installs from the lockfile)."
               exit 1
             fi
+            # No eslint config AND no eslint: this project does not lint JS.
+            # Skip with a reason, the same verdict the pre-commit hook reaches,
+            # so the two layers agree on what "installed" means.
+            echo "eslint not installed in this project's node_modules: skipping eslint"
+            exit 0
+          fi
+          if [ -f eslint.config.js ]; then
             # Confirm the flat config actually loads — catches a missing PLUGIN dep
             # (eslint --version passes even when a plugin import would fail).
             if ! npx --no-install eslint --print-config eslint.config.js >/dev/null 2>cfg.err; then
