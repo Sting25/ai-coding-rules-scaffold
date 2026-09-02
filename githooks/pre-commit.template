@@ -37,7 +37,7 @@ LIB="$HOOK_DIR/lib"
 # still on disk (`git rm --cached`) is a different thing and only warns; see the
 # untrack-vs-delete note below.
 # Checked BEFORE the empty-staged-list exit, since a delete-only commit has an
-# empty ACMR list. Use `git commit --no-verify` if a removal is intended (uninstall).
+# empty ACMRT list. Use `git commit --no-verify` if a removal is intended (uninstall).
 # `--no-renames` is load-bearing: git's default rename detection reports a
 # `git mv secrets.txt secrets.txt.disabled` as an R (rename), not a D, so the
 # guard's list would be empty and the neutered-config commit would pass. Treating
@@ -80,8 +80,13 @@ EOF_DELCFG
   echo "       CI has no copy of an untracked config, so a guardrails job fails closed there." >&2
 fi
 
+# The T in ACMRT is load-bearing: git reports a symlink replaced by a regular
+# file (or the reverse) as a TYPE CHANGE, not as M. Without T such a path was
+# absent from the list, so every scanner ran on nothing and the new content
+# committed unread. CI's ci-changed-files already uses --diff-filter=d, which
+# includes T, so this also puts the two layers back in step.
 STAGED_LIST=$(mktemp)
-git -c core.quotepath=off diff --cached -z --name-only --diff-filter=ACMR >"$STAGED_LIST"
+git -c core.quotepath=off diff --cached -z --name-only --diff-filter=ACMRT >"$STAGED_LIST"
 if [ ! -s "$STAGED_LIST" ]; then
   rm -f "$STAGED_LIST"
   exit 0

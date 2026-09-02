@@ -206,3 +206,29 @@ else
   PASS=$((PASS + 1))
 fi
 reset_repo
+
+# 22p. TYPE CHANGE (symlink -> regular file) must not hide a file from every
+#      scanner. git reports this as T, which the old --diff-filter=ACMR did not
+#      list: the staged-file list came back empty, all six checks ran on
+#      nothing, and the new content committed unread. Commit a symlink at
+#      typeflip.py, then replace it with a regular file carrying a secret and a
+#      forbidden pattern, and assert the hook still rejects.
+ln -s /nonexistent/target typeflip.py
+git add typeflip.py
+git commit --quiet -m "fixture: typeflip.py as a symlink" --no-verify  # scaffold-allow: test fixture
+rm typeflip.py
+{
+  echo "AWS=AKIA""IOSFODNN7EXAMPLE"
+  echo 'pri''nt("debug")'
+} >typeflip.py
+git add typeflip.py
+if [ "$(git diff --cached --name-only --diff-filter=T)" != "typeflip.py" ]; then
+  echo "  ✗ type-change fixture did not stage as a T (test setup problem)"
+  FAIL=$((FAIL + 1))
+  reset_repo
+else
+  assert_rejects "symlink replaced by a regular file is still scanned" "AWS access key"
+fi
+# Drop the fixture so later cases start from a tree without typeflip.py.
+git rm -q typeflip.py
+git commit --quiet -m "fixture: drop typeflip.py" --no-verify  # scaffold-allow: test fixture

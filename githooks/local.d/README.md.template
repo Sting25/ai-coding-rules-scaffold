@@ -34,7 +34,7 @@ Which files are in the list differs by caller, matching the shipped split:
 
 | Caller              | List                                                                           |
 | ------------------- | ------------------------------------------------------------------------------ |
-| pre-commit hook     | staged files (`--diff-filter=ACMR`)                                            |
+| pre-commit hook     | staged files (`--diff-filter=ACMRT`)                                           |
 | CI `guardrails` job | the PR/push **diff**, falling open to the whole tree when there's no diff base |
 
 The diff scope is deliberate: installing the scaffold onto an existing repo
