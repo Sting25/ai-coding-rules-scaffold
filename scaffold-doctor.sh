@@ -677,7 +677,106 @@ EOF
   fi
 fi
 
-# --- 11. protections not enabled ---------------------------------------------
+# --- 11. lint ignore derivation ----------------------------------------------
+# eslint.config.js.template calls `includeIgnoreFile(.gitignore)`, so ESLint's
+# ignore list IS .gitignore. That derivation is deliberate and stays (#76: a
+# hardcoded ignore list only covers the names someone thought of, and `npx
+# eslint .` walking a vendored toolchain or an agent worktree either drowns in
+# other people's code or dies with ERR_MODULE_NOT_FOUND). What was unguarded is
+# its cost, which the template states out loud and nothing enforced: appending
+# one line to .gitignore turns every rule off for a whole tree, in a diff nobody
+# reads as a lint change. It fails OPEN and it fails SILENTLY at BOTH gates —
+# .githooks/pre-commit and .github/workflows/lint.yml hand eslint explicit
+# staged/changed paths, so an ignored-but-modified file yields only the
+# non-fatal "File ignored because of a matching ignore pattern" warning and exit
+# 0 — and gitignore does not untrack anything, so that code keeps being
+# committed and shipped with no-floating-promises, no-explicit-any and the rest
+# silently off.
+#
+# WHAT IS REPORTED, and why it is exactly this narrow. A doctor that fired on a
+# normal node_modules/ dist/ coverage/ *.min.js .gitignore would be switched off
+# within a day, and then the hole above is open again with a green report over
+# it — so the bar here is silence on a correct project, not coverage:
+#
+#   * TRACKED files only (git's own index). Being ignored does not untrack
+#     anything, so a tracked-and-ignored source file is code that still ships
+#     unlinted — the whole hole, in one condition. Untracked-and-ignored is
+#     node_modules/ and dist/ BY CONSTRUCTION: thousands of files, every one of
+#     them correctly ignored, and none of them committable by accident anyway.
+#   * matched by GIT, not by a .gitignore parser written here. Negation lines,
+#     directory rules, `**`, anchoring and last-match-wins precedence are git's
+#     semantics; half an implementation of them is exactly how this check would
+#     start crying wolf. `--no-index` because the default check-ignore reports
+#     nothing for tracked paths, which is the only kind we care about, and `-v`
+#     so the report can name the rule to delete.
+#   * the ROOT .gitignore only. includeIgnoreFile reads that one file, so a
+#     match from .git/info/exclude, a global core.excludesFile or a nested
+#     subdirectory .gitignore is NOT an ESLint ignore and reporting it would be
+#     a false positive by construction. `-v` prints the source file, so this is
+#     a filter on fact rather than an assumption.
+#   * minus build output, vendored code and generated files, which legitimately
+#     contain .js and are SUPPOSED to be ignored. A committed dist/bundle.js, a
+#     vendored jquery.js, a checked-in .pnp.cjs and a *.d.ts stub are all real,
+#     all ignored, and none of them is a lint hole.
+#
+# Only when the project actually uses the derivation: no eslint.config.* naming
+# includeIgnoreFile, or no .gitignore, means nothing derives anything and this
+# section does not exist for that project.
+ESLINT_CFG=""
+for _c in eslint.config.js eslint.config.mjs eslint.config.cjs eslint.config.ts eslint.config.mts; do
+  if [ -f "$_c" ] && grep -q 'includeIgnoreFile' "$_c" 2>/dev/null; then ESLINT_CFG=$_c; break; fi
+done
+# Path COMPONENTS, not word boundaries: `app/routes/` must not read as "contains
+# out", and `distributed/` is not `dist/`. Kept to output/vendor/generated only —
+# test and config paths are lintable source and their absence from the linter is
+# a real hole, unlike their absence from a coverage number (section 10).
+_LINT_IGNORE_BENIGN='(^|/)(node_modules|bower_components|jspm_packages|dist|build|out|output|public|target|coverage|vendor|vendored|third_party|thirdparty|external|generated|__generated__|gen|\.nyc_output|\.next|\.nuxt|\.svelte-kit|\.astro|\.docusaurus|\.turbo|\.vercel|\.netlify|\.serverless|\.cache|\.output|\.yarn|\.pnpm|\.parcel-cache|storybook-static)(/|$)|\.(min|bundle|chunk|generated|gen|pb)\.[cm]?[jt]sx?$|\.d\.[cm]?ts$|\.scaffold-bak(\.[0-9]+)?$|(^|/)\.pnp\.[cm]?js$'
+if [ -n "$ESLINT_CFG" ] && [ -f .gitignore ]; then
+  section "lint ignore derivation"
+  # One pipeline, and only tools case 18's narrowed-PATH runs provide (git,
+  # grep, awk): a doctor that dies on a missing coreutil would be its own bug.
+  # `-v` output is `<source>:<line>:<pattern>\t<pathname>`; the pattern may
+  # itself contain colons, so it is taken as "everything after the second one".
+  # A NEGATION line is printed by check-ignore even though the path it names is
+  # NOT ignored (measured: `!src/ok.ts` appears in the output), so `!` patterns
+  # are dropped or every un-ignored exception would be reported as a hole.
+  ign_hits=$(git ls-files 2>/dev/null \
+    | grep -E '\.[cm]?[jt]sx?$' \
+    | git check-ignore --no-index -v --stdin 2>/dev/null \
+    | awk -F'\t' '
+        NF < 2 { next }
+        {
+          i = index($1, ":"); if (i == 0) next
+          if (substr($1, 1, i - 1) != ".gitignore") next
+          rest = substr($1, i + 1)
+          j = index(rest, ":"); if (j == 0) next
+          pat = substr(rest, j + 1)
+          if (substr(pat, 1, 1) == "!") next
+          print $2 "\t" pat
+        }' || true)
+  ign_bad=""
+  while IFS=$'\t' read -r _p _pat; do
+    [ -n "$_p" ] || continue
+    if printf '%s\n' "$_p" | grep -qE "$_LINT_IGNORE_BENIGN"; then continue; fi
+    ign_bad="${ign_bad}${_p}  (.gitignore: ${_pat})
+"
+  done <<IGN
+$ign_hits
+IGN
+  if [ -n "$ign_bad" ]; then
+    nign=$(printf '%s' "$ign_bad" | grep -c '' || true)
+    gap ".gitignore hides $nign tracked source file(s) from ESLint: $ESLINT_CFG derives its ignore list from .gitignore (includeIgnoreFile), so every lint rule is OFF for that code at pre-commit AND in CI, while the files stay tracked, committed and shipped" \
+        "delete the .gitignore rule named beside each file below, or if that code really is not yours to lint, keep the rule and say in the PR which files stopped being linted"
+    if [ "$QUIET" -eq 0 ]; then
+      printf '%s' "$ign_bad" | sed -n '1,8{s/^/        - /;p;}'
+      [ "${nign:-0}" -le 8 ] || echo "        - ... and $((nign - 8)) more"
+    fi
+  else
+    ok "$ESLINT_CFG derives ESLint's ignores from .gitignore, and .gitignore hides no tracked source from it"
+  fi
+fi
+
+# --- 12. protections not enabled ---------------------------------------------
 # P-19b: this scaffold's users typically do not read code and often ask their
 # agent "run scaffold-doctor and tell me what is off" rather than reading the
 # report themselves. Section 5 above already notes two of these (gitleaks

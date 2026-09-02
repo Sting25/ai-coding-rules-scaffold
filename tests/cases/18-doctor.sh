@@ -476,4 +476,94 @@ else
 fi
 rm -rf "$DOCT"
 
+# (L) ESLint's ignore list is DERIVED from .gitignore: eslint.config.js.template
+# calls includeIgnoreFile(.gitignore) (#76 — a hardcoded list only covers the
+# names someone thought of). The derivation stays; what was unguarded is its
+# cost. One appended .gitignore line un-lints a whole tree, at pre-commit AND in
+# CI, because both hand eslint explicit paths and an ignored-but-modified file
+# yields only a non-fatal warning and exit 0 — while gitignore untracks nothing,
+# so the code keeps shipping with every rule off. That is a diff nobody reads as
+# a lint change, and it was the one edit an agent could make to silence lint.
+doc_eslint_derived() {
+  cat >eslint.config.js <<'ESLINT_DERIVED'
+import fs from 'node:fs';
+import path from 'node:path';
+
+import { includeIgnoreFile } from '@eslint/compat';
+
+const gitignorePath = path.resolve(import.meta.dirname, '.gitignore');
+const gitignore = fs.existsSync(gitignorePath) ? [includeIgnoreFile(gitignorePath)] : [];
+
+export default [...gitignore];
+ESLINT_DERIVED
+}
+# A TRACKED source file put out of ESLint's reach by one .gitignore line. It has
+# to be tracked or it proves nothing: ignoring a file does not untrack it, and
+# "still committed, no longer linted" is the entire hole.
+doc_ignore_source() {
+  doc_eslint_derived
+  mkdir -p src
+  printf 'export const answer = 42;\n' >src/legacy.ts
+  git add -f src/legacy.ts
+  printf 'node_modules/\ndist/\nsrc/legacy.ts\n' >>.gitignore
+}
+# ...and the .gitignore of a normal, correct project: build output, a vendored
+# library, a minified bundle and a type stub, all tracked, all ignored, none of
+# them a lint hole. Named build/vendor/generated paths are exactly what a
+# .gitignore is FOR, so every one of these must stay silent.
+doc_ignore_build_output() {
+  doc_eslint_derived
+  mkdir -p src dist vendor
+  printf 'export const answer = 42;\n' >src/app.ts
+  printf 'var b = 1;\n' >dist/bundle.js
+  printf 'var v = 1;\n' >vendor/jquery.js
+  printf 'var m = 1;\n' >app.min.js
+  printf 'export declare const x: number;\n' >types.d.ts
+  git add -f src/app.ts dist/bundle.js vendor/jquery.js app.min.js types.d.ts
+  printf 'node_modules/\ndist/\nbuild/\ncoverage/\n*.min.js\nvendor/\n*.d.ts\n.next/\nout/\n' >>.gitignore
+}
+
+DOCT=$(doc_project)
+( cd "$DOCT" && doc_ignore_source ) >/dev/null 2>&1
+doc_rc=0
+( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+# The detail line is asserted in full: naming the count without naming the FILE
+# and the RULE that hides it leaves the reader with nothing to act on, and a
+# check that reported a bare number would pass a laxer assertion.
+if [ "$doc_rc" -eq 1 ] \
+   && grep -qF "hides 1 tracked source file(s) from ESLint" "$HOOK_OUT" \
+   && grep -qF "        - src/legacy.ts  (.gitignore: src/legacy.ts)" "$HOOK_OUT"; then
+  echo "  ✓ a tracked source file ignored by .gitignore is reported as unlinted"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ a .gitignore'd tracked source file was not reported (exit $doc_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCT"
+
+# ...and the narrowing companion, without which "report source hidden from the
+# linter" widens into "report any .gitignore entry" one edit later. Every real
+# .gitignore names node_modules/, dist/, coverage/ and *.min.js, and some of
+# those paths are tracked in real repos (a committed bundle, a vendored lib).
+# A doctor that went red there would be switched off within a day, and then the
+# hole above is open again with a green report over it. The armed line is
+# asserted too: without it, a check that had stopped running entirely would sail
+# through this case on exit 0 alone.
+DOCT=$(doc_project)
+( cd "$DOCT" && doc_ignore_build_output ) >/dev/null 2>&1
+doc_rc=0
+( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
+if [ "$doc_rc" -eq 0 ] && grep -qF "0 gaps" "$HOOK_OUT" \
+   && ! grep -qF "tracked source file(s) from ESLint" "$HOOK_OUT" \
+   && grep -qF "eslint.config.js derives ESLint's ignores from .gitignore" "$HOOK_OUT"; then
+  echo "  ✓ a normal .gitignore (node_modules, dist, coverage, *.min.js) stays silent"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ a normal .gitignore produced lint-ignore noise (exit $doc_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCT"
+
 reset_repo
