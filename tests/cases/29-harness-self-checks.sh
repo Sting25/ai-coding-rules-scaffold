@@ -101,3 +101,84 @@ fi
 
 rm -rf "$HEP"
 reset_repo
+
+# --- shellcheck CI covers every shell file in the tree, by discovery ---------
+# .github/workflows/shellcheck.yml used to name its targets by hand, and three
+# shipped scripts had never been added to that list: githooks/lib/check-gitleaks
+# (installed by --gitleaks-hook), scaffold-audit and scaffold-config (installed
+# into every consumer's .githooks/lib/). Adding a script did not add it to the
+# check, and nothing said so, so the next scanner would have shipped unlinted
+# too. These assertions run the workflow's REAL discovery loop with `shellcheck`
+# stubbed out, and read the argv it would have been handed.
+SCC=$(mktemp -d)
+awk -v step="      - name: Discover and check every shell file in the tree" '
+  $0 == step { found = 1 }
+  found && /run: \|/ { inrun = 1; next }
+  inrun {
+    if ($0 ~ /^[[:space:]]*$/) { print ""; next }
+    if ($0 !~ /^          /) exit
+    sub(/^          /, "")
+    print
+  }
+' "$SCAFFOLD_DIR/.github/workflows/shellcheck.yml" >"$SCC/discover.sh"
+# The stub records argv instead of linting: the question here is COVERAGE (which
+# files the job hands to shellcheck), not whether those files are clean, and it
+# keeps the case deterministic on a machine with no shellcheck installed.
+cat >"$SCC/shellcheck" <<'STUB'
+#!/bin/sh
+printf '%s\n' "$@" >"$SCC_ARGV"
+exit 0
+STUB
+chmod +x "$SCC/shellcheck"
+scc_rc=0
+( cd "$SCAFFOLD_DIR" && SCC_ARGV="$SCC/argv" PATH="$SCC:$PATH" bash -e "$SCC/discover.sh" ) \
+  >"$HOOK_OUT" 2>&1 || scc_rc=$?
+
+_scc_has() { grep -qxF "$1" "$SCC/argv" 2>/dev/null; }
+
+# (E) the three scripts the hand-written list had always missed.
+if [ "$scc_rc" -eq 0 ] \
+   && _scc_has githooks/lib/check-gitleaks.template \
+   && _scc_has githooks/lib/scaffold-audit.template \
+   && _scc_has githooks/lib/scaffold-config.template; then
+  echo "  ✓ shellcheck CI discovers the three scripts the hand list never had"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ shellcheck CI still misses check-gitleaks/scaffold-audit/scaffold-config (rc=$scc_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+
+# (F) NO REGRESSION: everything the hand list did cover is still covered,
+#     including the two shapes a naive "*.sh with a shebang" filter would drop
+#     (sourced case files carrying only a `# shellcheck shell=` directive, and
+#     extensionless *.template hooks).
+if _scc_has install.sh && _scc_has tests/run.sh && _scc_has tests/lib/common.sh \
+   && _scc_has tests/cases/01-size-patterns.sh \
+   && _scc_has githooks/pre-commit.template && _scc_has uninstall.sh; then
+  echo "  ✓ discovery still covers every file the hand-written list named"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ discovery dropped a file the old hand-written list covered"
+  sed 's/^/      /' "$SCC/argv" 2>/dev/null || true
+  FAIL=$((FAIL + 1))
+fi
+
+# (G) and it is a SHELL filter, not "every tracked file": the python3 hooks and
+#     the data template must not be handed to shellcheck, which would fail the
+#     job on files that are not shell at all.
+# `-s` first, so this cannot pass by discovering NOTHING: a negative-only
+#     assertion is also satisfied by a job that never ran.
+if [ -s "$SCC/argv" ] \
+   && ! _scc_has githooks/lib/check-red-green.template \
+   && ! _scc_has githooks/lib/check-mutation-diff.template \
+   && ! _scc_has githooks/lib/credential-read-patterns.txt.template; then
+  echo "  ✓ discovery excludes the python3 hooks and the data template"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ discovery handed a non-shell file to shellcheck"
+  sed 's/^/      /' "$SCC/argv" 2>/dev/null || true
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$SCC"
+reset_repo
