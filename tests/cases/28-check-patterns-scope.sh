@@ -138,3 +138,21 @@ git add .forbidden-patterns/backend.txt allbad.py
 cp_run "backend.txt with only invalid regexes fails closed" "has no valid patterns" allbad.py
 reset_repo
 
+# 28k. BUILT-IN FALLBACK PARITY. The `# scaffold-extensions:` header wins, but a
+#      pattern file without one falls back to a built-in map. frontend.txt gained
+#      `svelte` in its header while the fallback still read `ts tsx js jsx vue`,
+#      so on the fallback path every .svelte file (and the {@html} XSS rule with
+#      it) went unscanned. Strip the header to force that path and re-scan.
+grep -v '^#[[:space:]]*scaffold-extensions:' .forbidden-patterns/frontend.txt >fe-noheader.tmp
+mv fe-noheader.tmp .forbidden-patterns/frontend.txt
+printf '<p>{@html userInput}</p>\n' >fallback.svelte
+git add .forbidden-patterns/frontend.txt fallback.svelte
+cp_run "header-less frontend.txt still scans .svelte (fallback parity)" "XSS" fallback.svelte
+
+# 28l. CONTROL for 28k: with the header stripped, an extension the fallback DOES
+#      declare must still be scanned — otherwise 28k could pass because the
+#      fallback path is broken outright rather than because svelte was added.
+printf 'console.log("debug");\n' >fallback.ts
+git add fallback.ts
+cp_run "header-less frontend.txt still scans .ts (fallback control)" "console.log" fallback.ts
+reset_repo

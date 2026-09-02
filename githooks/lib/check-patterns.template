@@ -7,7 +7,7 @@
 # by backend.txt just like `src/bad.py`. A pattern file declares its extensions
 # with a header line:
 #   # scaffold-extensions: py
-#   # scaffold-extensions: ts tsx js jsx vue
+#   # scaffold-extensions: ts tsx js jsx vue svelte
 # so a new language is added by dropping `<lang>.txt` with that header — no edit
 # to this script. backend.txt / frontend.txt / shell.txt have a built-in
 # fallback mapping for backward compatibility.
@@ -266,6 +266,13 @@ scan() {
 # dropping a `<lang>.txt` with that header — no edit to this script. The three
 # original files have a built-in fallback so an older copy without the header
 # keeps working.
+#
+# The fallback must stay in sync with what the shipped pattern file declares.
+# It drifted once: frontend.txt gained `svelte` in its header while this arm
+# still read `ts tsx js jsx vue`, so a header-less frontend.txt left every
+# `.svelte` file (and with it the `{@html}` XSS rule) unscanned. backend.txt
+# (`py`) and shell.txt (`sh bash`) match their headers exactly. A test strips
+# the header and re-scans to keep the two definitions pinned together.
 exts_for() {
   local cfg=$1 hdr
   hdr=$(grep -m1 -E '^#[[:space:]]*scaffold-extensions:' "$cfg" 2>/dev/null \
@@ -273,7 +280,7 @@ exts_for() {
   if [ -n "$hdr" ]; then printf '%s' "$hdr"; return; fi
   case "$(basename "$cfg")" in
     backend.txt)  printf 'py' ;;
-    frontend.txt) printf 'ts tsx js jsx vue' ;;
+    frontend.txt) printf 'ts tsx js jsx vue svelte' ;;
     shell.txt)    printf 'sh bash' ;;
     *)            printf '' ;;
   esac
