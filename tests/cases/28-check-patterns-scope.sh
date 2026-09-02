@@ -204,3 +204,89 @@ printf 'pri''nt("debug")\n' >src/real.PY
 git add src/real.PY
 cp_run "the same content in a declared extension is still reported (28m control)" "structlog" src/real.PY
 reset_repo
+
+# --- a removed pattern file the manifest still records (#159) ---------------
+echo ""
+echo "check-patterns manifest-recorded config removal (#159):"
+
+# cp_ci_run NAME EXPECT FIXTURE...: cp_run in --ci mode. The removal below is
+# invisible precisely on the SERVER side (the file is still on disk for whoever
+# untracked it), so these run the same way lint.yml does.
+cp_ci_run() {
+  local name=$1 expect=$2; shift 2
+  local rc=0
+  printf '%s\0' "$@" | .githooks/lib/check-patterns --ci >"$HOOK_OUT" 2>&1 || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    echo "  ✗ $name: check-patterns --ci exited 0, expected a finding"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  elif ! grep -qF "$expect" "$HOOK_OUT"; then
+    echo "  ✗ $name: non-zero but missing: $expect"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  else
+    echo "  ✓ $name"; PASS=$((PASS + 1))
+  fi
+}
+
+# cp_ci_silent NAME FIXTURE...: the negative counterpart. Asserts exit 0 AND
+# that nothing was said about a missing config, so a guard that reports without
+# failing cannot pass as "silent" either.
+cp_ci_silent() {
+  local name=$1; shift
+  local rc=0
+  printf '%s\0' "$@" | .githooks/lib/check-patterns --ci >"$HOOK_OUT" 2>&1 || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "  ✗ $name: check-patterns --ci exited $rc, expected 0"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  elif grep -qF "is missing" "$HOOK_OUT"; then
+    echo "  ✗ $name: exited 0 but reported a missing config"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  else
+    echo "  ✓ $name"; PASS=$((PASS + 1))
+  fi
+}
+
+# 28o. REMOVED, not "never installed". `git rm --cached
+#      .forbidden-patterns/backend.txt` leaves the file on disk for whoever ran
+#      it, so their hook stays armed, while CI's checkout and every fresh clone
+#      have no backend.txt at all. Discovery can only iterate files that exist,
+#      so there every backend rule stopped running and check-patterns exited 0
+#      with no output anywhere (#159). The install manifest records that the
+#      installer wrote the file here, which is exactly what separates a removal
+#      from a language this project never had. Reproduce the CI side by deleting
+#      the file and scanning in --ci mode: the violation below WOULD be reported
+#      with backend.txt present, so a silent exit 0 here is the hole itself.
+rm -f .forbidden-patterns/backend.txt
+printf 'import os\npri''nt("debug")\n' >removed.py
+git add removed.py
+cp_ci_run "manifest-recorded backend.txt missing fails closed in CI" \
+  ".forbidden-patterns/backend.txt is missing" removed.py
+reset_repo
+
+# 28p. THE FALSE POSITIVE THAT WOULD MAKE 28o UNSHIPPABLE. A project that never
+#      installed a language has neither the pattern file nor a manifest entry
+#      for it, which is the state a --frontend-only install is in for
+#      backend.txt, and it must stay silent. Drop both to reach that state.
+rm -f .forbidden-patterns/backend.txt
+grep -vF '.forbidden-patterns/backend.txt' .githooks/.scaffold-manifest >mf-noentry.tmp
+mv mf-noentry.tmp .githooks/.scaffold-manifest
+printf 'import os\npri''nt("debug")\n' >never.py
+git add never.py
+cp_ci_silent "no manifest entry and no file stays silent" never.py
+
+# 28q. The control for 28p: with backend.txt absent AND unrecorded, the other
+#      tiers must still scan. Without it 28p would pass just as well against a
+#      check-patterns that had stopped reporting anything at all.
+printf 'console.log("debug");\n' >never.ts
+git add never.ts
+cp_ci_run "other tiers still scan while backend.txt is unrecorded" \
+  "console.log" never.ts
+reset_repo
+
+# 28r. Every install that predates the manifest has no manifest at all, and so
+#      does a repo that has run uninstall.sh (it removes the manifest in both
+#      modes). Those must fall back to today's behaviour, not start failing.
+rm -f .githooks/.scaffold-manifest .forbidden-patterns/backend.txt
+printf 'import os\npri''nt("debug")\n' >nomanifest.py
+git add nomanifest.py
+cp_ci_silent "no manifest at all stays silent" nomanifest.py
+reset_repo
