@@ -39,9 +39,11 @@
 #
 # What keeps the eval() and CURLOPT rules quiet is a "nothing that opens a
 # comment earlier on the line" guard: no `*`, `/` or `#` may precede the match,
-# so `// eval(...)`, `# system('reboot')`, ` * @see eval()` docblock prose and a
-# commented-out `// CURLOPT_SSL_VERIFYPEER => false` never fire. The CURLOPT
-# rule bars `'` and `"` before the match as well, so a security tool's own rule
+# so `// eval(...)`, `# CURLOPT_SSL_VERIFYHOST => 0`, ` * @see eval()` docblock
+# prose and a commented-out `// CURLOPT_SSL_VERIFYPEER => false` never fire.
+# (Both examples name rules that actually ship blocking; system() does not - it
+# is opt-in at the bottom of this file.) The CURLOPT rule bars `'` and `"`
+# before the match as well, so a security tool's own rule
 # table (`['CURLOPT_SSL_VERIFYPEER => false' => 'MITM risk']`) and
 # `$pattern = "CURLOPT_SSL_VERIFYHOST, 0"` stay silent; it accepts `false`,
 # `FALSE` and `False`. eval() additionally requires the character immediately
@@ -52,8 +54,15 @@
 # undecorated block comment, a heredoc sample or HTML copy - does not fire.
 # The cost is recall: a call on a line that already contains a `/`, `*` or `#`
 # earlier (`$r = 1/2; eval($c);`) is not seen, and neither is an `eval(` whose
-# argument starts on the next line. That trade is deliberate - a missed call
-# costs one finding, a false positive costs the gate.
+# argument starts on the next line. The CURLOPT rule's extra `'`/`"` bar costs
+# recall the same way, and this is its most likely miss in real code: an
+# option ARRAY that quotes any earlier key -
+# `curl_setopt_array($ch, ['timeout' => 5, CURLOPT_SSL_VERIFYPEER => false]);`
+# - is a genuine disabled-verification call that the rule does not see, because
+# the `'` around `timeout` trips the guard before the constant is reached.
+# Measured recall on the corpus went 4 -> 3 when that quote guard went in.
+# That trade is deliberate - a missed call costs one finding, a false positive
+# costs the gate.
 # Backticks (PHP's shell-exec shorthand) are NOT covered: a regex cannot tell
 # `$cmd` from a backtick in a comment or a Markdown docblock.
 (^[[:space:]]*|^[^*/#]*(=>|[^A-Za-z0-9_.>:$*/#'"[:space:]]|(return|echo|print|throw|yield|<\?php)[[:space:]])[[:space:]]*)eval[[:space:]]*\([[:space:]]*[^)[:space:]]	eval() executes arbitrary code - there is no safe way to build one from input
