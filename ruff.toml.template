@@ -16,9 +16,9 @@ select = [
     "SIM",   # flake8-simplify (collapsible ifs, ternaries, early returns)
     "PTH",   # enforce pathlib over os.path
     "ANN",   # type annotations
-    "ASYNC", # flake8-async (blocking HTTP/file/subprocess inside async def — ASYNC2xx; backs coding-rules.md rule 6)
-    "FAST",  # FastAPI (Annotated deps, unused path params) — no-ops on non-FastAPI code; backs rule 4
-    "G",     # flake8-logging-format (no f-string/%/format() in log calls — backs rules 10-11)
+    "ASYNC", # flake8-async (blocking HTTP/file/subprocess inside async def — ASYNC2xx; backs coding-rules.md rule 4)
+    "FAST",  # FastAPI (Annotated deps, unused path params) — no-ops on non-FastAPI code; backs the FastAPI entry under coding-rules.md "Project-specific additions"
+    "G",     # flake8-logging-format (no f-string/%/format() in log calls — backs rules 8-9)
     "LOG",   # flake8-logging (stdlib logging anti-patterns: .warn(), root logger, getLogger(__file__))
     "BLE",   # no blind except
     "C90",   # mccabe complexity
