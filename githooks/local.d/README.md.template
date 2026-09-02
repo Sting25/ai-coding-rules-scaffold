@@ -68,6 +68,13 @@ Then `chmod +x .githooks/local.d/20-check-import-boundaries` and commit it.
 
 ## Notes
 
+- If you must edit a scaffold-owned file directly instead of adding a check
+  here (rare, but sometimes unavoidable), mark the edit with a comment line
+  reading `# Repo adaptation: <why>`. If that file is later overwritten by
+  an upgrade, the installer prints a loud warning naming the line instead of
+  only its routine backup note, so the customization does not vanish
+  unnoticed. See TECHNICAL.md's Update & uninstall section for the full
+  contract.
 - Commit your checks. CI checks out the repo and runs whatever is here, so an
   uncommitted local check protects your machine only.
 - The executable bit is the switch. `chmod -x` disables a check without
