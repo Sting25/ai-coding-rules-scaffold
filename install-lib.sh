@@ -243,99 +243,12 @@ cp_scaffold_preserve() {
 # flip the mode of a skipped, user-owned file.
 mkx() { if [ -f "$1" ]; then chmod +x "$1"; fi; }
 
-# install_test_workflow_ci, the test-execution CI workflow (#97): DEFAULT-ON,
-# exactly one of two shapes, plus a recorded opt-out. Extracted here (like
-# install-verify.sh's run_toolchain_verify) once install.sh neared its own
-# 500-line cap; reads the caller's globals (NO_TEST_WORKFLOW, COVERAGE_GATE,
-# SCAFFOLD_DIR) and sets TEST_CI_STATE for the caller's end-of-run summary.
-# A default install used to produce lint-only CI (green checks, zero tests
-# ever executing), the bug this closes. Three end states, decided in order:
-# (1) --no-test-workflow installs NEITHER workflow, the one way a repo ends
-# up with no test execution in CI, and it must say so loudly per
-# operational-rules.md's "record every skip" (unless a workflow from a prior
-# run is already on disk, which keeps running either way); (2) --coverage-gate
-# (or coverage.yml already on disk) installs coverage.yml, which already runs
-# the tests AND gates patch coverage of changed lines, not assertion quality,
-# see RECOMMENDATIONS.md; (3) default installs tests.yml: pytest/vitest run on
-# every PR/push, no coverage threshold. Never both: coverage.yml already runs
-# the tests, so tests.yml alongside it would double-run the suite; an upgrade
-# that adds --coverage-gate on top of a prior default retires an untouched
-# tests.yml rather than leaving it to double-run. Both files go through
-# cp_scaffold_preserve, not cp_scaffold (#110): a re-run finding either file
-# changed from the shipped version keeps it and prints "note (drift):"
-# instead of refreshing, same policy as lint.yml since #105.
-install_test_workflow_ci() {
-  if [ "$NO_TEST_WORKFLOW" -eq 1 ]; then
-    if [ "$COVERAGE_GATE" -eq 1 ]; then
-      echo "warning: --no-test-workflow overrides --coverage-gate: neither tests.yml nor coverage.yml will be installed."
-    fi
-    if [ -f ".github/workflows/tests.yml" ] || [ -f ".github/workflows/coverage.yml" ]; then
-      echo "note: an existing tests.yml/coverage.yml was left in place. --no-test-workflow only skips a NEW install, it does not remove one."
-      echo "note: this repo's CI still runs tests via that existing workflow; --no-test-workflow only affects what THIS run installs."
-    else
-      echo "SKIPPED: test-execution CI workflow (--no-test-workflow). This repo's CI will NOT run tests."
-      echo "         Recorded skip (operational-rules.md, 'no silent failures'): add tests.yml or coverage.yml"
-      echo "         by hand, or re-run without --no-test-workflow, before trusting this repo's CI as a real gate."
-    fi
-  elif [ "$COVERAGE_GATE" -eq 1 ] || { [ -f ".github/workflows/coverage.yml" ] && [ ! -f ".github/workflows/tests.yml" ]; }; then
-    cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/coverage.yml.template" ".github/workflows/coverage.yml"
-    echo "note: coverage.yml gates patch coverage (default 100% of changed lines)."
-    echo "      It forces changed lines to be RUN by a test, not verified — pair with review."
-    if [ -f ".github/workflows/tests.yml" ]; then
-      if cmp -s "$SCAFFOLD_DIR/.github/workflows/tests.yml.template" ".github/workflows/tests.yml"; then
-        # Only remove the stale file once it's actually backed up (mirrors
-        # cp_scaffold's own `_backup "$dst" || return 0` policy): never delete
-        # without a recoverable copy, even if that means leaving both
-        # workflows in place (with the warning above) on the rare
-        # backup-cap exhaustion.
-        if _backup ".github/workflows/tests.yml"; then
-          rm -f ".github/workflows/tests.yml"
-          echo "removed:      .github/workflows/tests.yml (superseded by coverage.yml: running both would run tests twice)"
-        fi
-      else
-        echo "warning: .github/workflows/tests.yml also exists and looks customized, left in place."
-        echo "         Remove it by hand so tests don't run twice; coverage.yml already runs them."
-      fi
-    fi
-  else
-    # `tests.yml` is a common consumer-authored filename, and this path is
-    # cp_scaffold_preserve (scaffold-owned but drift-preserving, #110): a
-    # FIRST install that finds a differing, already-existing tests.yml (hand
-    # written, or edited since a prior scaffold install) is kept as-is, with
-    # cp_scaffold_preserve's own "note (drift): ..." line explaining why and
-    # how to replace it. No separate warning is printed here: a second message
-    # saying the same thing in different words would just be noise, and (pre
-    # #110) it also went stale the moment the underlying policy changed, since
-    # this file used to claim the pre-existing version gets backed up and
-    # refreshed on every re-run, which is no longer true.
-    cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/tests.yml.template" ".github/workflows/tests.yml"
-    echo "note: tests.yml runs pytest/vitest on every PR/push with no coverage threshold."
-    echo "      Add --coverage-gate for the patch-coverage strictness layer on top."
-  fi
-
-  # Final state for the caller's summary line: read back from disk rather
-  # than the flags alone, so an upgrade that already had one file installed
-  # (independent of THIS run's flags) is reported accurately. TEST_CI_STATE is
-  # a deliberate global: install.sh (which sources this file) reads it after
-  # calling this function, but shellcheck lints install-lib.sh on its own and
-  # can't see that cross-file use.
-  # shellcheck disable=SC2034
-  if [ -f ".github/workflows/coverage.yml" ]; then
-    TEST_CI_STATE="tests + patch-coverage gate via coverage.yml"
-  elif [ -f ".github/workflows/tests.yml" ]; then
-    TEST_CI_STATE="tests run in CI via tests.yml"
-  elif [ "$NO_TEST_WORKFLOW" -eq 1 ]; then
-    TEST_CI_STATE="NO test execution in CI (--no-test-workflow given)"
-  else
-    TEST_CI_STATE="NO test execution in CI (no workflow installed)"
-  fi
-}
-
 # install_opt_in_* flag bodies (zizmor CI, Socket CI, npm cooldown #117,
-# Claude Skill #118, test-guard #140) live in install-optin.sh, sourced by
-# install.sh alongside this file: first extracted from install.sh at its
-# 500-line module cap (issue #84), then out of this file when it reached the
-# same cap. Copy-policy rationale per flag is in that file's header.
+# Claude Skill #118, test-guard #140) and install_test_workflow_ci (#97) live
+# in install-optin.sh, sourced by install.sh alongside this file: first
+# extracted from install.sh at its 500-line module cap (issue #84), then out of
+# this file each time it reached the same cap. Copy-policy rationale per flag is
+# in that file's header.
 
 # check_paired_artifacts GAP_FN NOTE_FN (#96): detect scaffold artifacts that
 # are meant to arrive in matched pairs (a config half plus the CI half that

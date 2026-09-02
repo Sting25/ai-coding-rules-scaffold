@@ -422,7 +422,7 @@ install_opt_in_npm_cooldown
 install_opt_in_claude_skill
 
 # Test-execution CI workflow (#97): DEFAULT-ON, exactly one of two shapes,
-# plus a recorded opt-out (--no-test-workflow). See install-lib.sh's
+# plus a recorded opt-out (--no-test-workflow). See install-optin.sh's
 # install_test_workflow_ci for the full decision order and rationale; it sets
 # TEST_CI_STATE for the summary near the end of this script.
 install_test_workflow_ci
