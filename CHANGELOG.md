@@ -28,7 +28,6 @@ gate bug fixed in v0.16.1, so there is no GitHub Release, npm version or
 Homebrew bottle for it. v0.16.1 is the first published build of the 0.16
 line and contains everything below.
 
-
 ### Added
 
 - **Install manifest: upgrades now deliver what an untouched file is
