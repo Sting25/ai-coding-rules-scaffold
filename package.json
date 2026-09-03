@@ -43,6 +43,7 @@
     ".coveragerc.template",
     ".scaffold.toml.template",
     ".github/dependabot.yml.template",
+    ".github/rulesets/main-protection.json.template",
     ".github/workflows/lint.yml.template",
     ".github/workflows/tests.yml.template",
     ".github/workflows/coverage.yml.template",
