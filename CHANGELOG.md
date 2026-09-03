@@ -21,6 +21,24 @@ versioning follows [SemVer](https://semver.org/).
   (both checked red-green). The README's note telling agents never to
   hand-copy files is replaced by this path; `install.sh` stays as the
   convenience that performs the same copies.
+- **`scaffold-assess.sh` and `npx ai-coding-rules-scaffold assess`: measure
+  what the scaffold would flag before adopting anything.** Read-only. Renders
+  the shipped scanners and pattern files into a temp directory and runs them
+  from the target's git root over its tracked files, the same list CI scans.
+  Reports per component: the five core scanners with counts and samples; each
+  language pattern file separately, as "not applicable" when no tracked file
+  has its extensions (zero findings on zero files is not clean); the
+  project-wide configs measured with the real tool and the shipped config
+  when the tool resolves (ruff findings, tsc errors, with the monorepo case
+  from #163 named instead of measured); and which tools this machine has.
+  Untracked files are counted as not scanned rather than left silent, since
+  the scanners read the index. Two scanners gained `SCAFFOLD_PATTERNS_DIR`
+  (default `.forbidden-patterns`) so the assessment can point them at the
+  shipped rules; the hook and CI never set it. Regression test: case 39,
+  which also runs under `LC_ALL=C` because the first draft counted findings
+  with a bracket expression around a multibyte glyph and reported every
+  scanner clean on a tree with a tracked `.env`, a 600 KB blob and a
+  `breakpoint()`.
 
 ## [v0.16.1] - 2026-09-03
 
