@@ -4,6 +4,24 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`COMPONENTS.md`: adopt any piece of the scaffold by hand, no installer
+  required.** One entry per component (19), each with what it blocks, its
+  blast radius (staged files only, or project-wide), the exact copy commands,
+  a verify command that proves the guard is armed rather than merely present,
+  and how to remove it. Written for a person or an AI agent choosing what to
+  take before touching an existing codebase; the project-wide entries
+  (tsconfig, ruff, eslint) carry a measurement command to run first, with
+  nothing copied. The catalog is executable documentation: test case 38
+  extracts every adopt and verify block and runs them in a throwaway repo, so
+  a wrong path or a verify step that stops proving anything turns CI red
+  (both checked red-green). The README's note telling agents never to
+  hand-copy files is replaced by this path; `install.sh` stays as the
+  convenience that performs the same copies.
+
 ## [v0.16.1] - 2026-09-03
 
 ### Fixed

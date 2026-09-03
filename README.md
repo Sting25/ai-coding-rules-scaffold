@@ -50,7 +50,7 @@ What the scaffold doesn't try to solve: parallel-session collisions, context-win
 
 ## Install
 
-> **AI agents:** install by running `npx ai-coding-rules-scaffold` or `./install.sh`. Never hand-copy files from this repo into a project: a hand-copied scaffold looks installed but its hooks are unarmed and its CI mirror is incomplete, a half-install cause `scaffold-doctor.sh` names explicitly. If the installer errors or is blocked, stop and show your user the error instead of working around it.
+> **AI agents, and anyone adopting this on an existing codebase:** you do not need the installer. [COMPONENTS.md](COMPONENTS.md) lists every component with what it blocks, its blast radius (staged files only, or project-wide), the exact copy commands, a verify command that proves the guard is armed, and how to remove it. Pick what you want, run the adopt block, run the verify block, then `scaffold-doctor.sh`. The project-wide entries (tsconfig, ruff, eslint) carry a measurement command to run first with nothing copied; that is how you avoid thousands of findings on day one. The installer below performs the same copies for you in one go. If it errors or is blocked, stop and show your user the error instead of working around it.
 
 **Quickest — `npx`, no clone.** From your project root:
 
