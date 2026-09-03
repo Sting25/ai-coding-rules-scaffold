@@ -306,7 +306,9 @@ if [ "$MODE" = "frontend" ] || [ "$MODE" = "both" ]; then
   cp_pattern "$SCAFFOLD_DIR/forbidden-patterns/frontend.txt.template" ".forbidden-patterns/frontend.txt"
   # TypeScript config the eslint type-aware rules + the tsc --noEmit hook/CI
   # step already assume (closes the gap where they silently degrade if absent).
-  cp_safe "$SCAFFOLD_DIR/tsconfig.json.template" "tsconfig.json"
+  # The root file is also the switch that turns on whole-tree type-checking,
+  # so it is placed by policy (skipped in monorepos, #163), not copied blindly.
+  cp_tsconfig_root "$SCAFFOLD_DIR/tsconfig.json.template"
   # Formatting: Prettier runs SEPARATELY from eslint by design (strictTypeChecked
   # ships no stylistic rules, so there is no eslint-config-prettier — see the
   # header of eslint.config.js).

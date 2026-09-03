@@ -112,6 +112,7 @@ CASE_FLOORS=(
   "38-components-catalog.sh:33"
   "39-scaffold-assess.sh:9"
   "40-doctor-required-checks.sh:6"
+  "41-tsconfig-monorepo.sh:6"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and

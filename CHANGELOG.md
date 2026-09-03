@@ -4,6 +4,25 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **install.sh no longer drops a root `tsconfig.json` into a monorepo
+  (#163).** The root file is the switch that makes the pre-commit hook and
+  lint.yml run `tsc --noEmit` over the whole tree, so in a workspaces repo it
+  type-checked every workspace with options written for none of them and
+  blocked every JS/TS commit (12,235 errors measured). The frontend install
+  now places the file by policy, the same logic as COMPONENTS.md entry 10's
+  adopt block: skipped, with the reason named, when `package.json` has a
+  `workspaces` key or `pnpm-workspace.yaml` exists, or when per-directory
+  `tsconfig.json` files already exist (node_modules, vendor and build output
+  are not counted); an existing root file is left alone as before; a plain
+  frontend repo still receives it, now followed by a note saying the hook will
+  type-check the tree and how to undo that, so the placement is never silent.
+  The catalog's adopt block gained the same per-directory check. Case 41
+  covers all six paths and was red before the fix.
+
 ## [v0.18.0] - 2026-09-03
 
 ### Changed
