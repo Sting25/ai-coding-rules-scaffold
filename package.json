@@ -27,6 +27,7 @@
     "RECOMMENDATIONS.md",
     "CHANGELOG.md",
     "TECHNICAL.md",
+    "COMPONENTS.md",
     "AGENTS.md.template",
     "CLAUDE.md.pointer",
     "claude-settings.json.template",
