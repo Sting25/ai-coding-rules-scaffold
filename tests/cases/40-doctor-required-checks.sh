@@ -17,7 +17,7 @@ echo "cases/40: scaffold-doctor reports what it could not measure about required
 _rc_fixture() {
   local t; t=$(mktemp -d)
   ( cd "$t" && git init -q && git config user.email t@test.local && git config user.name "Scaffold Test" \
-      && "$SCAFFOLD_DIR/install.sh" --shell --no-verify "$@" ) >/dev/null 2>&1
+      && "$SCAFFOLD_DIR/install.sh" --shell --no-verify ) >/dev/null 2>&1
   printf '%s' "$t"
 }
 
@@ -50,7 +50,11 @@ else
 fi
 
 # 3. gh present but not logged in: a stub gh whose `auth status` fails.
-printf '#!/bin/sh\n[ "$1" = auth ] && exit 1\nexit 1\n' > "$_rc_nogh/gh"; chmod +x "$_rc_nogh/gh"
+cat > "$_rc_nogh/gh" <<'GH'
+#!/bin/sh
+exit 1
+GH
+chmod +x "$_rc_nogh/gh"
 ( cd "$_rc_repo" && PATH="$_rc_nogh" "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || true
 if grep -q 'required status checks: not checked (gh is not logged in' "$HOOK_OUT"; then
   echo "  ✓ gh present, not logged in: reported as not checked, says how to fix"
@@ -74,7 +78,10 @@ fi
 # (exit 1); six is an ok. The stub answers the three gh api calls the section
 # makes, keyed on the endpoint, and nothing else.
 _rc_stub() {
-  printf '#!/bin/sh\ncase "$*" in *"auth status"*) exit 0 ;; *"/protection"*) echo %s ;; *"/rules/branches/"*) echo %s ;; *"repos/"*) echo main ;; esac\n' "$1" "$2" > "$_rc_nogh/gh"
+  {
+    echo '#!/bin/sh'
+    echo "case \"\$*\" in *\"auth status\"*) exit 0 ;; *\"/protection\"*) echo $1 ;; *\"/rules/branches/\"*) echo $2 ;; *\"repos/\"*) echo main ;; esac"
+  } > "$_rc_nogh/gh"
   chmod +x "$_rc_nogh/gh"
 }
 _rc_stub 0 0
