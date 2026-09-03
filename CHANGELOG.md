@@ -6,6 +6,26 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Each of the six core scanners is its own component; the hook and the CI
+  mirror run whatever is present.** `pre-commit` and `lint.yml` used to name
+  all six scanners and fail loudly on a missing one, so a project could not
+  take only `check-secrets`. Both now run every executable `lib/check-*`
+  through one discovery loop (Python tools driven by test-guard.yml are
+  excluded; gitleaks keeps its present-iff-adopted rule). COMPONENTS.md entry
+  1 is now the hook alone plus entries 1a to 1f, one per scanner, each with
+  its own adopt and verify block; case 38 also adopts each scanner alone with
+  only the hook and proves its verify, on top of the cumulative pass. The
+  hole this opens, a deleted scanner going quiet, is closed by the doctor:
+  a shipped scanner that the install manifest recorded and that is now
+  missing is a gap; one that was never adopted is a note. The doctor's
+  call-site checks recognize the discovery loop, and its server-side check
+  accepts either the loop or the older named lines. Installer behavior and
+  a fresh install's file set are unchanged.
+- **README leads with clone-and-copy.** The `npx` path is documented as one
+  installer alternative rather than the first thing a reader sees.
+
 ### Added
 
 - **Required status checks are shipped, measured and enforced (#172).** A

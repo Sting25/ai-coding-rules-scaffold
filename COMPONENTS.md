@@ -32,8 +32,9 @@ export SCAFFOLD="$PWD/package"
 ```
 
 The catalog is tested: `tests/cases/38-components-catalog.sh` extracts the
-fenced `adopt` and `verify` blocks below, runs them in a throwaway repository,
-and fails the suite if any verify step does not prove its guard. If a command
+fenced `adopt` and `verify` blocks below, runs them in a throwaway repository
+(cumulatively, and each scanner alone with only the hook), and fails the suite
+if any verify step does not prove its guard. If a command
 here is wrong, CI is red.
 
 Hand-copied files are yours. The installer's upgrade logic keys off a manifest
@@ -50,37 +51,28 @@ installed, and writes nothing. Its output names the entry numbers below.
 
 ---
 
-## 1. Commit guard core
+## 1. Commit guard: the hook and its scanners
 
-Six scanners plus the hook that runs them, the shared config reader, and the
-two pattern files every project wants. They are one component because the
-hook calls all six and fails loudly on a missing one, and because all six are
-cheap and staged-only.
+The pre-commit hook runs every scanner present in `.githooks/lib/`, and
+nothing else. Each scanner below is its own component: copy the hook once
+(1), then any scanner you want (1a to 1f), in any combination. A scanner you
+did not copy is simply not run. `scaffold-doctor.sh` tells "not adopted"
+from "removed after install" using the installer's manifest, so a hand-picked
+subset is never reported as broken.
 
-| Scanner           | Blocks                                                                                 |
-| ----------------- | -------------------------------------------------------------------------------------- |
-| check-secrets     | credential-shaped strings: 42 rules covering AWS, GitHub, Slack, private keys and more |
-| check-filenames   | committing `.env`, `id_rsa`, `*.pem`, keystores, by name                               |
-| check-patterns    | forbidden source patterns from `.forbidden-patterns/*.txt`, per language (see entry 2) |
-| check-hygiene     | invisible unicode, bidi controls, merge-conflict markers, other smuggling              |
-| check-large-files | files over 512,000 bytes (override in `.scaffold.toml`)                                |
-| check-size        | files over 500 lines (override in `.scaffold.toml`)                                    |
-
-**Blast radius:** staged files only. Safe on any existing codebase. Existing
-committed secrets are not touched; see README "Already have commit history?"
-for a one-time scan.
+All six scanners read the files staged in the commit being made and nothing
+else, so every one of them is safe on an existing codebase. They share one
+contract: NUL-separated staged paths on stdin, non-zero exit blocks the
+commit. `scaffold-config` is an optional sibling that reads `.scaffold.toml`
+overrides (entry 13); without it every rule runs at its default.
 
 **Prerequisites:** bash, git. No other tool.
 
-```sh adopt=core
-mkdir -p .githooks/lib .forbidden-patterns
+```sh adopt=hook
+mkdir -p .githooks/lib
 cp "$SCAFFOLD/githooks/pre-commit.template" .githooks/pre-commit
-for c in check-size check-large-files check-patterns check-filenames check-secrets check-hygiene scaffold-config; do
-  cp "$SCAFFOLD/githooks/lib/$c.template" ".githooks/lib/$c"
-done
-chmod +x .githooks/pre-commit .githooks/lib/*
-cp "$SCAFFOLD/forbidden-patterns/secrets.txt.template" .forbidden-patterns/secrets.txt
-cp "$SCAFFOLD/forbidden-patterns/shell.txt.template"   .forbidden-patterns/shell.txt
+cp "$SCAFFOLD/githooks/lib/scaffold-config.template" .githooks/lib/scaffold-config
+chmod +x .githooks/pre-commit .githooks/lib/scaffold-config
 git config core.hooksPath .githooks
 ```
 
@@ -89,26 +81,187 @@ lefthook, a company hook set), do not overwrite it: chain `.githooks/pre-commit`
 from your existing pre-commit instead. README "Pairing with Husky / lefthook"
 shows both.
 
-The verify step stages a file named `.env` and an oversize file, and asserts
-the commit is refused. It leaves your index as it found it.
-
-```sh verify=core
+```sh verify=hook
 set -e
-git stash list >/dev/null
-printf 'x=1\n' > .env.scaffold-verify && mv .env.scaffold-verify .env
-head -c 600000 /dev/zero > scaffold-verify.bin
-git add -f .env scaffold-verify.bin
-if git -c commit.gpgsign=false commit -q -m "scaffold verify" >/dev/null 2>&1; then
-  git reset -q --soft HEAD~1; git reset -q .env scaffold-verify.bin; rm -f .env scaffold-verify.bin
-  echo "NOT ARMED: the commit with .env and a 600 KB file went through"; exit 1
-fi
-git reset -q .env scaffold-verify.bin; rm -f .env scaffold-verify.bin
-echo "verified: commit guard core refused .env and a 600 KB file"
+[ "$(git config --get core.hooksPath)" = ".githooks" ] || { echo "NOT WIRED: core.hooksPath is not .githooks"; exit 1; }
+test -x .githooks/pre-commit
+printf 'ok\n' > scaffold-verify.txt && git add scaffold-verify.txt
+git -c commit.gpgsign=false commit -q -m "scaffold verify: hook runs" >/dev/null
+git reset -q --soft HEAD~1 && git reset -q scaffold-verify.txt && rm -f scaffold-verify.txt
+echo "verified: the hook is wired and runs on commit (no scanners adopted yet, so it blocks nothing)"
 ```
 
-```sh remove=core
+```sh remove=hook
 git config --unset core.hooksPath
-rm -rf .githooks .forbidden-patterns
+rm -rf .githooks
+```
+
+### 1a. check-secrets
+
+Blocks credential-shaped strings in staged content: 42 rules covering AWS,
+GitHub, Slack, Stripe, private keys, URL-embedded passwords and more. Reads
+its rules from `.forbidden-patterns/secrets.txt`, which ships with it and is
+scanned itself, so a secret parked in the pattern file is caught too.
+
+```sh adopt=scanner-secrets
+mkdir -p .githooks/lib .forbidden-patterns
+cp "$SCAFFOLD/githooks/lib/check-secrets.template" .githooks/lib/check-secrets
+cp "$SCAFFOLD/forbidden-patterns/secrets.txt.template" .forbidden-patterns/secrets.txt
+chmod +x .githooks/lib/check-secrets
+```
+
+The verify step assembles an AWS-shaped key at run time so that this
+document does not itself contain one.
+
+```sh verify=scanner-secrets
+set -e
+printf 'key = "AKIA%s"\n' 'IOSFODNN7EXAMPLE' > scaffold_verify.cfg && git add scaffold_verify.cfg
+if git -c commit.gpgsign=false commit -q -m "scaffold verify" >/dev/null 2>&1; then
+  git reset -q --soft HEAD~1; git reset -q scaffold_verify.cfg; rm -f scaffold_verify.cfg
+  echo "NOT ARMED: an AWS-shaped key was committed"; exit 1
+fi
+git reset -q scaffold_verify.cfg; rm -f scaffold_verify.cfg
+echo "verified: check-secrets refused an AWS-shaped key"
+```
+
+```sh remove=scanner-secrets
+rm -f .githooks/lib/check-secrets .forbidden-patterns/secrets.txt
+```
+
+### 1b. check-filenames
+
+Blocks files by name: `.env` and variants, `id_rsa` and other SSH private
+keys, `*.pem`, `*.key`, `.p12`, `.pfx`, `.jks`, `.ppk`. `.env.example` and
+`.env.template` are allowed.
+
+```sh adopt=scanner-filenames
+mkdir -p .githooks/lib
+cp "$SCAFFOLD/githooks/lib/check-filenames.template" .githooks/lib/check-filenames
+chmod +x .githooks/lib/check-filenames
+```
+
+```sh verify=scanner-filenames
+set -e
+printf 'x=1\n' > .env.scaffold-verify && mv .env.scaffold-verify .env && git add -f .env
+if git -c commit.gpgsign=false commit -q -m "scaffold verify" >/dev/null 2>&1; then
+  git reset -q --soft HEAD~1; git reset -q .env; rm -f .env
+  echo "NOT ARMED: a .env file was committed"; exit 1
+fi
+git reset -q .env; rm -f .env
+echo "verified: check-filenames refused .env"
+```
+
+```sh remove=scanner-filenames
+rm -f .githooks/lib/check-filenames
+```
+
+### 1c. check-patterns
+
+Blocks forbidden source patterns per language, read from
+`.forbidden-patterns/<lang>.txt` (entry 2 lists them). With no pattern files
+present it scans nothing; adopt at least one. The adopt block below takes
+`backend.txt` (Python); swap in the languages you write.
+
+```sh adopt=scanner-patterns
+mkdir -p .githooks/lib .forbidden-patterns
+cp "$SCAFFOLD/githooks/lib/check-patterns.template" .githooks/lib/check-patterns
+chmod +x .githooks/lib/check-patterns
+cp "$SCAFFOLD/forbidden-patterns/backend.txt.template" .forbidden-patterns/backend.txt
+```
+
+```sh verify=scanner-patterns
+set -e
+printf 'import os\nbreakpoint()\n' > scaffold_verify.py && git add scaffold_verify.py
+if git -c commit.gpgsign=false commit -q -m "scaffold verify" >/dev/null 2>&1; then
+  git reset -q --soft HEAD~1; git reset -q scaffold_verify.py; rm -f scaffold_verify.py
+  echo "NOT ARMED: a breakpoint() in a .py file was committed"; exit 1
+fi
+git reset -q scaffold_verify.py; rm -f scaffold_verify.py
+echo "verified: check-patterns refused breakpoint() in a staged .py file"
+```
+
+```sh remove=scanner-patterns
+rm -f .githooks/lib/check-patterns .forbidden-patterns/backend.txt
+```
+
+### 1d. check-hygiene
+
+Blocks invisible and direction-changing Unicode (Trojan Source), leftover
+merge-conflict markers, and case-only filename collisions.
+
+```sh adopt=scanner-hygiene
+mkdir -p .githooks/lib
+cp "$SCAFFOLD/githooks/lib/check-hygiene.template" .githooks/lib/check-hygiene
+chmod +x .githooks/lib/check-hygiene
+```
+
+The verify step writes a right-to-left override byte sequence at run time.
+
+```sh verify=scanner-hygiene
+set -e
+printf 'total = 1 \342\200\256// reversed\n' > scaffold_verify.txt && git add scaffold_verify.txt
+if git -c commit.gpgsign=false commit -q -m "scaffold verify" >/dev/null 2>&1; then
+  git reset -q --soft HEAD~1; git reset -q scaffold_verify.txt; rm -f scaffold_verify.txt
+  echo "NOT ARMED: a bidi override character was committed"; exit 1
+fi
+git reset -q scaffold_verify.txt; rm -f scaffold_verify.txt
+echo "verified: check-hygiene refused a bidi override character"
+```
+
+```sh remove=scanner-hygiene
+rm -f .githooks/lib/check-hygiene
+```
+
+### 1e. check-large-files
+
+Blocks any staged file over 512,000 bytes (raise or lower it per path in
+`.scaffold.toml`, entry 13). Large binaries bloat history permanently.
+
+```sh adopt=scanner-large-files
+mkdir -p .githooks/lib
+cp "$SCAFFOLD/githooks/lib/check-large-files.template" .githooks/lib/check-large-files
+chmod +x .githooks/lib/check-large-files
+```
+
+```sh verify=scanner-large-files
+set -e
+head -c 600000 /dev/zero > scaffold-verify.bin && git add scaffold-verify.bin
+if git -c commit.gpgsign=false commit -q -m "scaffold verify" >/dev/null 2>&1; then
+  git reset -q --soft HEAD~1; git reset -q scaffold-verify.bin; rm -f scaffold-verify.bin
+  echo "NOT ARMED: a 600 KB file was committed"; exit 1
+fi
+git reset -q scaffold-verify.bin; rm -f scaffold-verify.bin
+echo "verified: check-large-files refused a 600 KB file"
+```
+
+```sh remove=scanner-large-files
+rm -f .githooks/lib/check-large-files
+```
+
+### 1f. check-size
+
+Blocks any staged source file over 500 lines, the cap that keeps a file
+inside an agent's context window (override per path in `.scaffold.toml`).
+
+```sh adopt=scanner-size
+mkdir -p .githooks/lib
+cp "$SCAFFOLD/githooks/lib/check-size.template" .githooks/lib/check-size
+chmod +x .githooks/lib/check-size
+```
+
+```sh verify=scanner-size
+set -e
+awk 'BEGIN { for (i = 0; i < 501; i++) print "x = " i }' > scaffold_verify.py && git add scaffold_verify.py
+if git -c commit.gpgsign=false commit -q -m "scaffold verify" >/dev/null 2>&1; then
+  git reset -q --soft HEAD~1; git reset -q scaffold_verify.py; rm -f scaffold_verify.py
+  echo "NOT ARMED: a 501-line file was committed"; exit 1
+fi
+git reset -q scaffold_verify.py; rm -f scaffold_verify.py
+echo "verified: check-size refused a 501-line file"
+```
+
+```sh remove=scanner-size
+rm -f .githooks/lib/check-size
 ```
 
 ## 2. Language pattern files
@@ -138,7 +291,7 @@ fires only when you next touch that file. To see how often that would be,
 run the assess script, or disable a single rule in `.scaffold.toml` (entry 13)
 rather than deleting the file.
 
-**Prerequisites:** entry 1.
+**Prerequisites:** entry 1c (check-patterns).
 
 ```sh adopt=patterns
 cp "$SCAFFOLD/forbidden-patterns/backend.txt.template"  .forbidden-patterns/backend.txt
@@ -164,9 +317,9 @@ rm -f .forbidden-patterns/backend.txt .forbidden-patterns/frontend.txt
 
 ## 3. CI mirror of the commit guard
 
-`lint.yml` runs the same six scanners server-side on every pull request and
-push, using the same scripts in `.githooks/lib/`, so the hook and CI cannot
-drift. Secrets and filenames are scanned whole-tree; the quality gates run on
+`lint.yml` runs every scanner present in `.githooks/lib/` server-side on
+every pull request and push, the same discovery loop the hook runs, so the
+hook and CI cannot drift and a hand-picked subset is mirrored as-is. Secrets and filenames are scanned whole-tree; the quality gates run on
 changed files only. It also runs ruff, eslint, prettier, tsc and phpcs when
 their configs are present (entries 6 to 12 decide that).
 
@@ -174,7 +327,7 @@ their configs are present (entries 6 to 12 decide that).
 and filename scans (a leaked credential anywhere fails the job, which is the
 point). The linters follow their own configs' scope.
 
-**Prerequisites:** entry 1, GitHub Actions.
+**Prerequisites:** entry 1 plus at least one scanner, GitHub Actions.
 
 ```sh adopt=ci-lint
 mkdir -p .github/workflows
@@ -189,11 +342,9 @@ the hook calls, so hook and CI agree before the first push.
 
 ```sh verify=ci-lint
 set -e
-for c in check-size check-large-files check-patterns check-filenames check-secrets check-hygiene; do
-  grep -q "lib/$c" .github/workflows/lint.yml || { echo "NOT MIRRORED: lint.yml does not call $c"; exit 1; }
-done
+grep -q 'for check in .githooks/lib/check-\*' .github/workflows/lint.yml || { echo "NOT MIRRORED: lint.yml does not run the scanners present in lib/"; exit 1; }
 if command -v actionlint >/dev/null 2>&1; then actionlint -shellcheck= -pyflakes= .github/workflows/lint.yml; fi
-echo "verified: lint.yml calls all six scanners the hook calls"
+echo "verified: lint.yml runs every scanner present in .githooks/lib/, the same loop the hook runs"
 ```
 
 ```sh remove=ci-lint
@@ -521,8 +672,9 @@ credential file into context. `.claude/settings.json` wires it for Claude Code;
 **Blast radius:** the agent's tool calls in this repo. No effect on commits or
 files.
 
-**Prerequisites:** entry 1's `secrets.txt` and `shell.txt` (the hook reads
-them), `jq` on PATH (fails open without it, and says so).
+**Prerequisites:** `.forbidden-patterns/secrets.txt` (entry 1a) and
+`shell.txt` (copy it from `$SCAFFOLD/forbidden-patterns/shell.txt.template`),
+`jq` on PATH (fails open without it, and says so).
 
 ```sh adopt=agent-guard
 cp "$SCAFFOLD/githooks/lib/agent-precheck.template" .githooks/lib/agent-precheck
