@@ -109,3 +109,17 @@ else
   SKIP=$((SKIP + _wt_total))
 fi
 unset _wt_templates _wt_own _wt_total _wt_tpl _wt_name _wt_dir
+
+# The release gate must be the PR gate, not a copy of it. release.yml once
+# carried its own bare `./tests/run.sh` with none of test.yml's tool installs;
+# it passed while the runner counted only passes and went red on the v0.16.0
+# tag the first time floors counted attempted assertions (#161). Runs without
+# actionlint: it is a structural check on the file, not a lint.
+if grep -Eq '^\s+uses: \./\.github/workflows/test\.yml\s*$' "$SCAFFOLD_DIR/.github/workflows/release.yml" \
+   && grep -Eq '^\s+workflow_call:\s*$' "$SCAFFOLD_DIR/.github/workflows/test.yml"; then
+  echo "  ✓ release.yml gates the tag on the same test.yml job every PR runs (workflow_call)"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ release.yml does not call test.yml: the release gate is a private copy of the suite run and will drift from the PR gate again"
+  FAIL=$((FAIL + 1))
+fi

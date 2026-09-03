@@ -8,6 +8,12 @@ on:
   pull_request:
   push:
     branches: [main]
+  # release.yml gates a version tag on this exact job. It used to carry its own
+  # bare `./tests/run.sh` with none of the tool installs below, which passed by
+  # luck until the runner started counting attempted assertions (#161): the
+  # v0.16.0 tag then failed on actionlint being absent while every PR was green.
+  # One definition of "the suite passes", called from both places.
+  workflow_call:
 
 permissions:
   contents: read

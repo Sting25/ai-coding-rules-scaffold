@@ -49,7 +49,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # number for every case that does not touch SKIP, so the floors in the list
 # below are unchanged by this. It matters for a case whose whole body sits
 # behind an optional tool AND which says how many assertions that costs —
-# cases/35 (14 workflows, actionlint) and cases/36 (3 verdicts, pytest).
+# cases/35 (14 workflows, actionlint; plus 1 ungated structural check) and cases/36 (3 verdicts, pytest).
 # Counting only passes would force those floors to 0, the bare machine's
 # number, and a 0 floor guards nothing: the file could be emptied and the run
 # would still be green.
@@ -106,7 +106,7 @@ CASE_FLOORS=(
   "32-uninstall-report.sh:6"
   "33-harness-self-checks.sh:12"
   "34-shipped-pattern-files.sh:11"
-  "35-workflow-template-validity.sh:14"
+  "35-workflow-template-validity.sh:15"
   "36-red-green-verdict.sh:3"
   "37-doctor-content-drift.sh:4"
 )
