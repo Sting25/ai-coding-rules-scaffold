@@ -19,6 +19,7 @@
     "scaffold-doctor.sh",
     "scaffold-assess.sh",
     "scaffold-doctor-gates.sh",
+    "scaffold-doctor-checks.sh",
     "bin/",
     "githooks/",
     "forbidden-patterns/",

@@ -251,20 +251,27 @@ doc_case "an executable local.d check is reported armed" 0 \
 
 # (G) The shipped checks are called unguarded by the orchestrator, so a missing
 # one breaks every commit. Loud, not silent — but still worth naming precisely.
-doc_case "a missing shipped check is reported" 1 \
-  "lib/check-hygiene is missing" rm -f .githooks/lib/check-hygiene
+doc_case "a shipped check the manifest recorded but that is now missing is a gap" 1 \
+  "lib/check-hygiene was installed (recorded in .githooks/.scaffold-manifest) and is now missing" rm -f .githooks/lib/check-hygiene
+# Absent AND not in the manifest is a project that adopted a subset by hand
+# (COMPONENTS.md): the hook runs what is present, so this is a note, exit 0.
+doc_case "a shipped check that was never adopted is a note, not a gap" 0 \
+  "lib/check-hygiene not adopted" \
+  bash -c 'rm -f .githooks/lib/check-hygiene && grep -v "lib/check-hygiene\$" .githooks/.scaffold-manifest >m.tmp && mv m.tmp .githooks/.scaffold-manifest'
 
 # ...but on-disk-and-executable was the ONLY thing this section tested, which is
 # issue #72 restated: an upgrade preserved a customized lint.yml with no
 # check-large-files call site, the script sat on disk, and the report said
 # "lib/check-large-files armed ... 0 gaps" while an oversized file committed
 # clean. A check nothing calls is decoration, and the doctor has to say so.
+# The hook and lint.yml call every present scanner through one discovery
+# loop over lib/check-*, so "no call site" means that loop line is gone.
 doc_drop_ci_callsite() {
-  grep -v 'check-large-files' .github/workflows/lint.yml >lint.tmp && mv lint.tmp .github/workflows/lint.yml
+  grep -v 'lib/check-\*' .github/workflows/lint.yml >lint.tmp && mv lint.tmp .github/workflows/lint.yml
 }
 doc_drop_all_callsites() {
   doc_drop_ci_callsite
-  grep -v 'check-large-files' .githooks/pre-commit >pc.tmp && mv pc.tmp .githooks/pre-commit
+  grep -v -F "\"\$LIB\"/check-*" .githooks/pre-commit >pc.tmp && mv pc.tmp .githooks/pre-commit
   chmod +x .githooks/pre-commit
 }
 
@@ -293,13 +300,17 @@ DOCT=$(doc_project)
 ( cd "$DOCT" && doc_drop_ci_callsite ) >/dev/null 2>&1
 doc_rc=0
 ( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
-if [ "$doc_rc" -eq 0 ] && grep -qF "0 gaps" "$HOOK_OUT" \
-   && grep -qF "lib/check-large-files runs in the pre-commit hook but NO CI call site" "$HOOK_OUT"; then
-  echo "  ✓ a check with no CI call site is a --quiet-visible note, not a gap"
+# With one discovery loop there is no per-scanner CI call site to lose: losing
+# the loop loses the whole server-side mirror, which is a gap (a --no-verify
+# commit reaches main unchecked), and --quiet must still show it with its
+# section name so a one-line report is not a green one.
+if [ "$doc_rc" -eq 1 ] \
+   && grep -qF "[server-side backstop] .github/workflows/lint.yml exists but its guardrails job no longer invokes" "$HOOK_OUT"; then
+  echo "  ✓ a lint.yml that lost the scanner loop is a --quiet-visible gap, exit 1"
   PASS=$((PASS + 1))
 else
-  echo "  ✗ missing CI call site misreported under --quiet (exit $doc_rc)"
-  sed 's/^/      /' "$HOOK_OUT"
+  echo "  ✗ missing CI scanner loop misreported under --quiet (exit $doc_rc)"
+  sed 's/^/      /' "$HOOK_OUT" | head -6
   FAIL=$((FAIL + 1))
 fi
 rm -rf "$DOCT"

@@ -173,18 +173,20 @@ cleanup() {
 trap cleanup EXIT
 
 FAILED=0
-"$LIB/check-size"        <"$STAGED_LIST" || FAILED=1
-"$LIB/check-large-files" <"$STAGED_LIST" || FAILED=1
-"$LIB/check-patterns"    <"$STAGED_LIST" || FAILED=1
-"$LIB/check-filenames"   <"$STAGED_LIST" || FAILED=1
-"$LIB/check-secrets"     <"$STAGED_LIST" || FAILED=1
-"$LIB/check-hygiene"     <"$STAGED_LIST" || FAILED=1
-# Opt-in only: present iff installed with `install.sh --gitleaks-hook`. The
-# existence guard is the opt-in switch — a project that didn't opt in has no
-# such file and skips it entirely.
-if [ -x "$LIB/check-gitleaks" ]; then
-  "$LIB/check-gitleaks" <"$STAGED_LIST" || FAILED=1
-fi
+# Run every scanner that is PRESENT in lib/, not a fixed list. Each scanner is
+# a separate component (COMPONENTS.md entries 1a to 1f): a project that copied
+# only check-secrets gets exactly that check, and a missing scanner is "not
+# adopted", not an error. The trade-off is that a DELETED scanner also goes
+# quiet here; scaffold-doctor.sh closes that hole, reporting a scanner the
+# install manifest recorded but that is no longer on disk as a gap. The
+# gitleaks pass rides the same rule (present iff `--gitleaks-hook` or entry
+# 16 copied it). check-red-green and check-mutation-diff are Python tools
+# driven by test-guard.yml with their own arguments, never from here.
+for check in "$LIB"/check-*; do
+  [ -x "$check" ] || continue
+  case "${check##*/}" in check-red-green|check-mutation-diff) continue ;; esac
+  "$check" <"$STAGED_LIST" || FAILED=1
+done
 
 # Project-local checks — the supported extension point (issue #72). Every
 # executable in .githooks/local.d/ runs here under the SAME contract as the

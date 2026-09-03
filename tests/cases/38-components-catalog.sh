@@ -77,7 +77,7 @@ else
   done
   # The catalog's own count must match what this case exercised, so a new
   # entry without adopt/verify fences cannot hide behind the ones that have them.
-  _cc_headings=$(grep -cE '^## [0-9]+\. ' "$_cc_doc")
+  _cc_headings=$(grep -cE '^##+ [0-9]+[a-z]?\. ' "$_cc_doc")
   if [ "$_cc_headings" -eq "${#_cc_names[@]}" ]; then
     echo "  ✓ every numbered entry ($_cc_headings) has an adopt block"
     PASS=$((PASS + 1))
@@ -86,6 +86,28 @@ else
     FAIL=$((FAIL + 1))
   fi
   rm -rf "$_cc_repo"
+  # Each scanner alone: a fresh repo, the hook (entry 1) plus ONE scanner
+  # (1a to 1f), then that scanner's verify. This is the promise that a
+  # project may take a subset; the cumulative pass above cannot prove it,
+  # because there every earlier scanner is already present.
+  for _cc_name in "${_cc_names[@]}"; do
+    case "$_cc_name" in scanner-*) ;; *) continue ;; esac
+    _cc_repo=$(mktemp -d)
+    ( cd "$_cc_repo" && git init -q && git config user.email t@test.local && git config user.name "Scaffold Test" \
+        && git config commit.gpgsign false && printf '# solo fixture\n' > README.md && git add README.md && git commit -q -m "init" )
+    if ( cd "$_cc_repo" && SCAFFOLD="$SCAFFOLD_DIR" bash -e -c "$(_cc_block adopt hook)" && SCAFFOLD="$SCAFFOLD_DIR" bash -e -c "$(_cc_block adopt "$_cc_name")" ) >"$HOOK_OUT" 2>&1 \
+       && ( cd "$_cc_repo" && SCAFFOLD="$SCAFFOLD_DIR" bash -c "$(_cc_block verify "$_cc_name")" ) >"$HOOK_OUT" 2>&1 \
+       && grep -q '^verified:' "$HOOK_OUT" \
+       && [ "$(find "$_cc_repo/.githooks/lib" -name 'check-*' | wc -l | tr -d ' ')" -eq 1 ]; then
+      echo "  ✓ $_cc_name alone (hook + one scanner): $(grep -m1 '^verified:' "$HOOK_OUT" | cut -c11-)"
+      PASS=$((PASS + 1))
+    else
+      echo "  ✗ $_cc_name alone: adopt or verify failed with only the hook and this scanner present"
+      sed 's/^/      /' "$HOOK_OUT" | head -8
+      FAIL=$((FAIL + 1))
+    fi
+    rm -rf "$_cc_repo"
+  done
 fi
 unset _cc_doc _cc_names _cc_name _cc_adopt _cc_verify _cc_nv _cc_repo _cc_headings
 unset -f _cc_block

@@ -55,8 +55,11 @@ elif [ ! -f .github/workflows/lint.yml ]; then
 # Anchored past any leading '#': lint.yml is YAML, and a job hollowed out to a
 # comment that still NAMES the scripts it no longer runs would otherwise read
 # as armed — the exact "present but not running" shape this script exists for.
-elif grep -qE '^[[:space:]]*[^#[:space:]].*check-secrets' .github/workflows/lint.yml &&
-     grep -qE '^[[:space:]]*[^#[:space:]].*check-patterns' .github/workflows/lint.yml; then
+elif { grep -qE '^[[:space:]]*[^#[:space:]].*check-secrets' .github/workflows/lint.yml &&
+       grep -qE '^[[:space:]]*[^#[:space:]].*check-patterns' .github/workflows/lint.yml; } ||
+     grep -qE '^[[:space:]]*[^#[:space:]].*\.githooks/lib/check-\*' .github/workflows/lint.yml; then
+  # Either the older lint.yml that names the scanners, or the discovery loop
+  # over lib/check-* that runs whatever a project adopted (same loop as the hook).
   ok "lint.yml re-runs the guardrail checks server-side"
 else
   gap ".github/workflows/lint.yml exists but its guardrails job no longer invokes lib/check-secrets and lib/check-patterns — CI is not mirroring the hook" \

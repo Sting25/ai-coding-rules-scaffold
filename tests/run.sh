@@ -89,7 +89,7 @@ CASE_FLOORS=(
   "15-local-checks.sh:7"
   "16-coverage-gate.sh:6"
   "17-whole-tree-configs.sh:10"
-  "18-doctor.sh:30"
+  "18-doctor.sh:31"
   "19-test-workflow.sh:17"
   "20-paired-artifacts.sh:19"
   "21-ci-workflow-drift.sh:25"
@@ -109,7 +109,7 @@ CASE_FLOORS=(
   "35-workflow-template-validity.sh:15"
   "36-red-green-verdict.sh:3"
   "37-doctor-content-drift.sh:4"
-  "38-components-catalog.sh:20"
+  "38-components-catalog.sh:33"
   "39-scaffold-assess.sh:9"
   "40-doctor-required-checks.sh:6"
 )

@@ -52,7 +52,21 @@ What the scaffold doesn't try to solve: parallel-session collisions, context-win
 
 > **AI agents, and anyone adopting this on an existing codebase:** you do not need the installer. [COMPONENTS.md](COMPONENTS.md) lists every component with what it blocks, its blast radius (staged files only, or project-wide), the exact copy commands, a verify command that proves the guard is armed, and how to remove it. Start with `npx ai-coding-rules-scaffold assess`, which measures what each component would flag in this repo and writes nothing. Then pick what you want, run the adopt block, run the verify block, then `scaffold-doctor.sh`. The project-wide entries (tsconfig, ruff, eslint) carry a measurement command to run first with nothing copied; that is how you avoid thousands of findings on day one. The installer below performs the same copies for you in one go. If it errors or is blocked, stop and show your user the error instead of working around it.
 
-**Quickest — `npx`, no clone.** From your project root:
+**Recommended: clone it, then take what you want.** No package manager, no
+installer. Clone a pinned tag, read [COMPONENTS.md](COMPONENTS.md), and copy
+the components you want with the commands in each entry; every entry has a
+verify step, and `scaffold-assess.sh` measures what each would flag first.
+
+```sh
+git clone --branch v0.17.0 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
+export SCAFFOLD=~/src/ai-coding-rules-scaffold
+bash "$SCAFFOLD/scaffold-assess.sh"        # from your project root: what would each component flag?
+```
+
+The rest of this section is the installer, which does the same copies in one
+go. It is a convenience and the paths below are alternatives to each other.
+
+**`npx`, no clone.** From your project root:
 
 ```sh
 npx ai-coding-rules-scaffold                  # auto-detects Python / JS

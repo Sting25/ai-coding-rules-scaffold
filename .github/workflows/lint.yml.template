@@ -409,14 +409,20 @@ jobs:
           # is no diff base (so a brand-new repo still gets fully scanned).
           .githooks/lib/ci-changed-files >"$CHANGED_LIST"
           FAILED=0
-          # Whole-tree security boundary (not overridable by .scaffold.toml):
-          .githooks/lib/check-secrets   --ci <"$ALL_LIST"     || FAILED=1
-          .githooks/lib/check-filenames --ci <"$ALL_LIST"     || FAILED=1
-          # Changed-files-only quality gates:
-          .githooks/lib/check-size        --ci <"$CHANGED_LIST" || FAILED=1
-          .githooks/lib/check-large-files --ci <"$CHANGED_LIST" || FAILED=1
-          .githooks/lib/check-patterns    --ci <"$CHANGED_LIST" || FAILED=1
-          .githooks/lib/check-hygiene      --ci <"$CHANGED_LIST" || FAILED=1
+          # Every scanner PRESENT in lib/, mirroring the hook's own discovery
+          # loop, so a project that adopted a subset gets that subset here too.
+          # Secrets and filenames are the whole-tree security boundary (not
+          # overridable by .scaffold.toml); every other scanner is a
+          # changed-files quality gate. gitleaks, red-green and mutation-diff
+          # have their own workflows and are skipped here.
+          for check in .githooks/lib/check-*; do
+            [ -x "$check" ] || continue
+            case "${check##*/}" in
+              check-secrets|check-filenames) "$check" --ci <"$ALL_LIST" || FAILED=1 ;;
+              check-gitleaks|check-red-green|check-mutation-diff) ;;
+              *) "$check" --ci <"$CHANGED_LIST" || FAILED=1 ;;
+            esac
+          done
           # Project-local checks — the supported extension point (issue #72).
           # Every executable in .githooks/local.d/ runs with the same contract as
           # the shipped checks: --ci, the NUL-delimited list on stdin, non-zero
