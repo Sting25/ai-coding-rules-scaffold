@@ -18,16 +18,17 @@ permissions:
   contents: read
 
 jobs:
-  # Gate: never publish a tag whose tests don't pass. The cross-platform matrix
-  # runs on every PR; here a single fast ubuntu run guards a tag pushed directly.
+  # Gate: never publish a tag whose tests don't pass. This calls the SAME
+  # workflow every PR runs (tool installs, zizmor, pin-drift check, both
+  # runners) rather than a private copy of it. The private copy ran the suite
+  # bare, with no ruff, actionlint or pytest; it passed only while the runner
+  # counted passes alone, and the v0.16.0 tag failed on it the first time the
+  # floors counted attempted assertions (#161). Two definitions of "green"
+  # drift; one cannot.
   test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-      - run: chmod +x tests/run.sh install.sh githooks/pre-commit.template
-      - run: ./tests/run.sh
+    uses: ./.github/workflows/test.yml
+    permissions:
+      contents: read
 
   publish-npm:
     needs: test
