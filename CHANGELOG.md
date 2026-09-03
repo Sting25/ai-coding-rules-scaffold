@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [v0.16.0] - 2026-09-03
 
 ### Added
 
@@ -49,8 +49,88 @@ versioning follows [SemVer](https://semver.org/).
   It exists so the auto-install branch can be tested; `CI` being set
   still forces print-only behavior.
 
+- **Security rules in every per-language denylist (#161).** Only
+  `backend.txt` and `frontend.txt` carried security rules; the other
+  six pattern files held debug and print rules alone. PHP had no guard
+  for `unserialize`, Go none for `InsecureSkipVerify: true`, Java none
+  for deserialization or `Runtime.exec`, Ruby none for `eval` or
+  `Marshal.load`: the same TLS-bypass and remote-code-execution surfaces
+  the Python and TypeScript files already banned. These rules block
+  commits in consumers' trees, so every new rule was measured against a
+  real third-party corpus before shipping (20.4k PHP files, 34.3k Ruby,
+  37.9k Java, 33k Kotlin, 26 Go projects, rust-src plus 18 crates).
+  That measurement dropped three rules outright (PHP request-data sink,
+  Go `exec.Command("sh","-c")`, Ruby shell interpolation: 37 hits, zero
+  true positives) and narrowed the Java, Kotlin and Rust sets. Rules
+  that could not be made precise ship commented out with a note on when
+  to enable them. Expect commits to be refused that previously passed;
+  that is the point. Untouched pattern files refresh on upgrade through
+  the install manifest; hand-edited ones are preserved and notified.
+- **`uninstall.sh --drop-lang=<name>` (#161)** removes one optional
+  pattern file together with its manifest entry. It is the supported way
+  to stop scanning a language, and the fail-closed guard below names it.
+  It refuses `secrets.txt` and `shell.txt`, which every install writes.
+- **The doctor reports shipped-rule drift (#161).** An installed
+  `secrets.txt` could be trimmed from 42 rules to 1 with the hook, the
+  CI scan and the doctor all green; the only guard was total emptiness.
+  The doctor now names shipped rules missing from an installed pattern
+  file. Locally added rules stay silent, so "missing shipped rules"
+  cannot quietly become "any difference". Regression test: case 37.
+- **`.gitignore` is no longer an unguarded linter kill-switch (#161).**
+  `eslint.config.js` derives its ignore list from `.gitignore`, so
+  adding a source path there silently un-linted it at pre-commit and in
+  CI. Where that derivation is used, the hook now checks tracked source
+  files against the root `.gitignore` with `git check-ignore --no-index`
+  and refuses the commit. Build, vendor and generated paths are excused
+  by path component; test and config paths deliberately are not.
+
+### Changed
+
+- **The shipped rules files were pruned (#165, #166).**
+  `operational-rules.md` and `coding-rules.md` install into consumers'
+  repositories and load into every AI session there, and the operational
+  file had grown past this repo's own 500-line cap because its stated
+  retirement criteria had never once been applied. Measured on the
+  shipped file: 536 lines at v0.15.0, 373 now. Four rules were retired,
+  three rules specific to this scaffold's own shell tooling moved to
+  `TECHNICAL.md`, five pairs that stated one idea twice were merged, and
+  the FastAPI and SQLAlchemy rules moved into the "Project-specific
+  additions" section as worked examples. One retired rule, "choose the
+  strongest approach before starting", turned out not to be absorbed by
+  anything that survived and came back shortened, with the incident
+  anchor it never had (#166). Rule numbers changed; the pointers in
+  `ruff.toml.template`, `lint.yml.template` and `RECOMMENDATIONS.md`
+  were chased and verified. **Existing installs do not receive this
+  automatically:** both rules files are installed with the preserve-if-
+  present policy, so a re-run leaves your copies alone and only
+  `install.sh --force` (with a backup) replaces them. If you rely on a
+  retired rule, keep your copy or re-add it under project-specific
+  additions.
+- **One `--no-verify` rule instead of two that contradicted each other
+  (#165).** `coding-rules.md` said not to use it "unless explicitly
+  asked"; `AGENTS.md.template` said "never". Both were wrong: the
+  scaffold's own guards print `--no-verify` as the intended way through
+  a commit they are built to refuse, and "unless asked" lets an agent
+  bargain past a failing check. The single statement now lives in
+  `AGENTS.md`: never to get past a failing check, with the one exception
+  scoped to a commit the hook itself refused and whose own message
+  offered the bypass.
+
 ### Fixed
 
+- **Untracking an optional pattern file no longer disables its rules
+  silently (#159, #161).** `check-patterns` could not tell a removed
+  config from a language the project never installed, so
+  `git rm --cached .forbidden-patterns/backend.txt` left the local hook
+  armed while CI and every fresh clone had no `backend.txt` and exited
+  clean. Every backend rule stopped running with nothing reporting it.
+  The install manifest supplies the missing fact: a recorded entry with
+  the file absent is unambiguously "removed", and the hook now fails
+  closed and names `uninstall.sh --drop-lang` as the way out. No entry and no
+  file stays "never installed" and silent; a repo without a manifest
+  keeps today's behavior. The manifest is never pruned automatically,
+  because absence must not authorize itself. Mutation-verified both
+  ways.
 - **Scanning scope: a type change no longer hides a file from every
   check.** The staged-file list used `--diff-filter=ACMR`, which omits
   `T`. Replacing a symlink with a regular file (or the reverse) produced
@@ -156,6 +236,15 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Tests
 
+- **The runner counts skips (#161).** It reported only passed and
+  failed, so a case gated behind an absent tool was invisible: 14
+  assertions were silently not running. Skips are now a third column,
+  and assertion floors count attempted assertions (passed plus skipped)
+  rather than passes, so cases that sit entirely behind an optional
+  tool still guard something on a bare machine. The read-only
+  `.gitignore` check in the manifest case now probes whether the mode is
+  honored instead of assuming it, so the suite is no longer red under
+  root.
 - Coverage added for behavior that shipped untested and could have been
   deleted with the suite green: check-red-green's entire detection
   logic, the prettier, tsc and phpcs failure paths, the stash safety
