@@ -4,7 +4,30 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [v0.16.1] - 2026-09-03
+
+### Fixed
+
+- **The release workflow gates a tag on the same test job every PR
+  runs.** `release.yml` carried its own bare `./tests/run.sh` with none
+  of `test.yml`'s tool installs (ruff, actionlint, pytest). That copy
+  passed while the test runner counted only passes; once floors counted
+  attempted assertions (v0.16.0, #161) and the workflow-validity case
+  went red in CI without actionlint, the v0.16.0 tag failed its own gate
+  (case 35 ran 0 of 14, case 02 ran 14 of 15) while every PR run at the
+  same commit was green. `test.yml` now also answers `workflow_call` and
+  the release job calls it, so there is one definition of "the suite
+  passes": tool installs, zizmor, the pin-drift check, both runners. A
+  structural assertion in case 35 keeps the release gate pointed at the
+  PR gate.
+
 ## [v0.16.0] - 2026-09-03
+
+**This tag was never published.** Its release workflow failed on the
+gate bug fixed in v0.16.1, so there is no GitHub Release, npm version or
+Homebrew bottle for it. v0.16.1 is the first published build of the 0.16
+line and contains everything below.
+
 
 ### Added
 
