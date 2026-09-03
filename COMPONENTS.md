@@ -42,11 +42,11 @@ hand-edited and preserves them. To upgrade a hand-copied component, re-run its
 adopt block against a newer `$SCAFFOLD`.
 
 **Before adopting anything on an existing codebase**, measure what it would
-flag: `bash "$SCAFFOLD/scaffold-assess.sh"` runs every scanner read-only
-against your tracked files and reports findings per component, and says
-"not applicable" for a language you have no files in. (Ships in v0.17; until
-then, adopt the core and run `git ls-files -z | .githooks/lib/check-secrets --ci`
-for the same measurement on secrets.)
+flag. `bash "$SCAFFOLD/scaffold-assess.sh"` (or `npx ai-coding-rules-scaffold
+assess`, no clone) runs every scanner read-only against your tracked files and
+reports findings per component, says "not applicable" for a language you have
+no files in, measures the project-wide configs with the tool itself when it is
+installed, and writes nothing. Its output names the entry numbers below.
 
 ---
 

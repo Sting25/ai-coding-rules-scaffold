@@ -25,9 +25,13 @@ const pkgRoot = path.resolve(__dirname, '..');
 // install.sh is already pinned at its 500-line module cap (issue #84), so a
 // second script gets a second entry point instead of a bigger install.sh.
 const args = process.argv.slice(2);
-const isDoctor = args[0] === 'doctor';
-const script = isDoctor ? 'scaffold-doctor.sh' : 'install.sh';
-const scriptArgs = isDoctor ? args.slice(1) : args;
+// `assess` is the read-only measurement (scaffold-assess.sh): what each
+// component would flag in this repo, with nothing copied. Same shape as
+// `doctor`: dispatch on the first word, pass the rest through.
+const SUBCOMMANDS = { doctor: 'scaffold-doctor.sh', assess: 'scaffold-assess.sh' };
+const isSub = Object.prototype.hasOwnProperty.call(SUBCOMMANDS, args[0]);
+const script = isSub ? SUBCOMMANDS[args[0]] : 'install.sh';
+const scriptArgs = isSub ? args.slice(1) : args;
 const target = path.join(pkgRoot, script);
 
 if (!fs.existsSync(target)) {

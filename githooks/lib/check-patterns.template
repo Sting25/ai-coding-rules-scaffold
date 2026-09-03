@@ -327,7 +327,11 @@ INCLUDED=0
 # Auto-discover every pattern file. secrets.txt is check-secrets' domain (it
 # scans all files, not by extension), so skip it here. Then apply the optional
 # INCLUDE/EXCLUDE basename filter documented in the header.
-for cfg in .forbidden-patterns/*.txt; do
+# SCAFFOLD_PATTERNS_DIR (default .forbidden-patterns) lets scaffold-assess.sh
+# run this scanner against a tree that has not adopted the scaffold, reading
+# the shipped pattern files from wherever it rendered them. The hook and CI
+# never set it, so their behavior is unchanged.
+for cfg in "${SCAFFOLD_PATTERNS_DIR:-.forbidden-patterns}"/*.txt; do
   # `-e` alone is not enough: a DANGLING symlink is not -e, so a config swapped
   # for one would be skipped here and never reach the config_usable() guard.
   # Both false still means "no glob match → literal string", which is skipped.
