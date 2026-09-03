@@ -378,3 +378,38 @@ _pne() { note "$1"; PNE_ANY=1; }
 [ -f .npmrc ]                                   || _pne "npm install-layer cooldown (.npmrc min-release-age, delays freshly published versions): not installed. Enable with install.sh --npm-cooldown"
 [ -f .claude/skills/coding-rules/SKILL.md ]     || _pne "Claude Code Skill (on-demand rules loading): not installed. Enable with install.sh --claude-skill"
 [ "$PNE_ANY" -eq 1 ] || ok "every opt-in protection is enabled in this project"
+
+# --- 13. required status checks on the default branch -----------------------
+# Every check above is enforced locally by the hook and server-side by CI, but
+# CI only gates a merge if the branch requires it. Measured on this scaffold's
+# own repo (issue #172): a protection object existed and required zero checks,
+# so three release PRs merged on an agent's read of the check list, not on the
+# repo's say-so. This needs the network and the gh CLI, so it is a gap only
+# when it can be measured and is absent; everything else is a note that says
+# what was NOT checked, never silence.
+section "required status checks on the default branch"
+_rsc_remote=$(git config --get remote.origin.url 2>/dev/null || true)
+_rsc_repo=""
+case "$_rsc_remote" in
+  *github.com[:/]*) _rsc_repo=$(printf '%s' "$_rsc_remote" | sed -E 's#.*github\.com[:/]##; s#\.git$##') ;;
+esac
+if [ -z "$_rsc_repo" ]; then
+  note "required status checks: not checked (remote.origin is not a github.com URL)"
+elif ! command -v gh >/dev/null 2>&1; then
+  note "required status checks: not checked (gh CLI not installed; install it and re-run, or verify in Settings > Branches)"
+elif ! gh auth status >/dev/null 2>&1; then
+  note "required status checks: not checked (gh is not logged in: run 'gh auth login' and re-run)"
+else
+  _rsc_default=$(gh api "repos/$_rsc_repo" --jq .default_branch 2>/dev/null || true)
+  _rsc_ctx=$(gh api "repos/$_rsc_repo/branches/${_rsc_default:-main}/protection" --jq '.required_status_checks.contexts | length' 2>/dev/null || echo "")
+  _rsc_rules=$(gh api "repos/$_rsc_repo/rules/branches/${_rsc_default:-main}" --jq '[.[] | select(.type=="required_status_checks")] | length' 2>/dev/null || echo "0")
+  if [ -z "$_rsc_default" ]; then
+    note "required status checks: not checked (gh could not read $_rsc_repo; permissions or network)"
+  elif [ "${_rsc_ctx:-0}" -gt 0 ] 2>/dev/null || [ "${_rsc_rules:-0}" -gt 0 ] 2>/dev/null; then
+    ok "$_rsc_default requires status checks before merge (${_rsc_ctx:-0} via branch protection, ${_rsc_rules:-0} ruleset rule(s))"
+  else
+    gap "$_rsc_repo: '$_rsc_default' requires NO status checks, so a red or unfinished CI run does not block a merge; every gate above is advisory at merge time" \
+        "import .github/rulesets/main-protection.json (COMPONENTS.md entry 20), or Settings > Branches > require the guardrails check"
+  fi
+fi
+unset _rsc_remote _rsc_repo _rsc_default _rsc_ctx _rsc_rules

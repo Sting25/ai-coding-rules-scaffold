@@ -4,6 +4,24 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Required status checks are shipped, measured and enforced (#172).** A
+  merge gate that requires zero checks is convention, not enforcement: this
+  repository's own main had exactly that, and three release PRs merged on an
+  agent's reading of the check list. Now shipped: an importable ruleset
+  template (`.github/rulesets/main-protection.json.template`, COMPONENTS.md
+  entry 20) that blocks deletion and force-push, requires a pull request with
+  resolved threads, and requires the `guardrails` check on an up-to-date
+  branch; a doctor section that reads the live setting through the `gh` CLI
+  and reports a default branch with no required checks as a gap, and says
+  what it could not check (no GitHub remote, no gh, not logged in) rather
+  than staying silent; and a RELEASING.md note that `--merge` is safe because
+  the button is the gate. This repository's main now requires all six CI
+  contexts, strict and admin-enforced.
+
 ## [v0.17.0] - 2026-09-03
 
 ### Added

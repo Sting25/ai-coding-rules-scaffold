@@ -37,7 +37,7 @@ The version lives in these places — all must agree on `vX.Y.Z`:
    - Commit these changes with message `chore(release): vX.Y.Z` (the commit-msg
      hook requires conventional commit types; bare "release:" type is rejected).
    - Open the PR, wait for CI green on **both** runners, merge (`--merge`, never
-     `--auto` — this repo has no branch protection).
+     `--auto`). `--merge` is safe because main requires the six CI contexts, strict and admin-enforced (issue #172); the merge button, not the operator's read of the check list, is the gate.
 
 ## 2. Push the tag — CI publishes (npm + GitHub release)
 

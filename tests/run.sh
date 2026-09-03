@@ -111,6 +111,7 @@ CASE_FLOORS=(
   "37-doctor-content-drift.sh:4"
   "38-components-catalog.sh:20"
   "39-scaffold-assess.sh:9"
+  "40-doctor-required-checks.sh:6"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and

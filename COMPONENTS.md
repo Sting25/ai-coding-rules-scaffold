@@ -658,6 +658,47 @@ test -s .claude/skills/coding-rules/SKILL.md && echo "verified: coding-rules ski
 rm -rf .claude/skills/coding-rules
 ```
 
+## 20. Required status checks on the default branch
+
+Every CI gate above only blocks a merge if the branch requires it. Measured
+on this scaffold's own repository (issue #172): a protection object existed
+and required zero checks, so pull requests merged on an operator's reading of
+the check list rather than on the repository's say-so. `scaffold-doctor.sh`
+reports this as a gap when it can measure it (needs the `gh` CLI, logged in).
+
+The template is an importable GitHub ruleset: blocks deletion and force-push
+of the default branch, requires a pull request with every review thread
+resolved (zero approvals, so a solo maintainer is not locked out; raise it
+for a team), and requires the `guardrails` check from `lint.yml` to pass on
+an up-to-date branch. Add the other contexts you adopted (`pytest` or
+`vitest` from `tests.yml`, `gitleaks`, `dependency-review`, `test-guard`) to
+`required_status_checks`; a context named here that never reports blocks the
+merge forever, so name only jobs that run on every pull request.
+
+**Blast radius:** every merge into the default branch, from the moment the
+ruleset is active. Import it as `"evaluate"` first on a busy repo.
+
+**Prerequisites:** entry 3 (the `guardrails` job), a GitHub repository.
+
+```sh adopt=branch-protection
+mkdir -p .github/rulesets
+cp "$SCAFFOLD/.github/rulesets/main-protection.json.template" .github/rulesets/main-protection.json
+echo "import it: Settings > Rules > Rulesets > New ruleset > Import a ruleset, or:"
+echo "  gh api -X POST repos/OWNER/REPO/rulesets --input .github/rulesets/main-protection.json"
+```
+
+```sh verify=branch-protection
+set -e
+python3 -c 'import json,sys; d=json.load(open(".github/rulesets/main-protection.json")); assert any(r["type"]=="required_status_checks" for r in d["rules"]); assert d["bypass_actors"]==[]' \
+  || jq -e '.rules[] | select(.type=="required_status_checks")' .github/rulesets/main-protection.json >/dev/null
+echo "verified: ruleset file is valid, requires status checks, and has no bypass actors (import it to arm it; scaffold-doctor.sh measures the live setting)"
+```
+
+```sh remove=branch-protection
+rm -f .github/rulesets/main-protection.json
+# then delete the ruleset in Settings > Rules > Rulesets
+```
+
 ---
 
 ## After adopting: check what is armed
