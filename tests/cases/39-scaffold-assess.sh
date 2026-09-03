@@ -127,10 +127,19 @@ _sa_alt=$(mktemp -d)
 printf 'SCAFFOLDTESTTOKEN\ttest rule from an alternate pattern dir\n' > "$_sa_alt/secrets.txt"
 printf '# scaffold-extensions: py\nSCAFFOLDTESTTOKEN\ttest rule from an alternate pattern dir\n' > "$_sa_alt/backend.txt"
 ( cd "$_sa_repo" && printf 'SCAFFOLDTESTTOKEN = 1\n' > src/alt.py && git add src/alt.py )
-_sa_with=$(cd "$_sa_repo" && printf 'src/alt.py\0' | SCAFFOLD_PATTERNS_DIR="$_sa_alt" bash "$SCAFFOLD_DIR/githooks/lib/check-secrets.template" 2>&1 || true)
-_sa_without=$(cd "$_sa_repo" && printf 'src/alt.py\0' | bash "$SCAFFOLD_DIR/githooks/lib/check-secrets.template" 2>&1 || true)
-_sa_pwith=$(cd "$_sa_repo" && printf 'src/alt.py\0' | SCAFFOLD_PATTERNS_DIR="$_sa_alt" bash "$SCAFFOLD_DIR/githooks/lib/check-patterns.template" 2>&1 || true)
-_sa_pwithout=$(cd "$_sa_repo" && printf 'src/alt.py\0' | bash "$SCAFFOLD_DIR/githooks/lib/check-patterns.template" 2>&1 || true)
+# _sa_scan DIR SCANNER: run one scanner over src/alt.py from the fixture with
+# SCAFFOLD_PATTERNS_DIR set to DIR (unset when DIR is empty). Output only;
+# the scanner's exit status is the finding, not an error.
+_sa_scan() {
+  local dir=$1; shift
+  ( cd "$_sa_repo" || exit 1
+    if [ -n "$dir" ]; then export SCAFFOLD_PATTERNS_DIR="$dir"; fi
+    printf 'src/alt.py\0' | bash "$@" ) 2>&1 || true
+}
+_sa_with=$(_sa_scan "$_sa_alt" "$SCAFFOLD_DIR/githooks/lib/check-secrets.template")
+_sa_without=$(_sa_scan "" "$SCAFFOLD_DIR/githooks/lib/check-secrets.template")
+_sa_pwith=$(_sa_scan "$_sa_alt" "$SCAFFOLD_DIR/githooks/lib/check-patterns.template")
+_sa_pwithout=$(_sa_scan "" "$SCAFFOLD_DIR/githooks/lib/check-patterns.template")
 if grep -q 'alternate pattern dir' <<<"$_sa_with" && ! grep -q 'alternate pattern dir' <<<"$_sa_without" \
    && grep -q 'alternate pattern dir' <<<"$_sa_pwith" && ! grep -q 'alternate pattern dir' <<<"$_sa_pwithout"; then
   echo "  ✓ SCAFFOLD_PATTERNS_DIR redirects check-secrets and check-patterns; unset, both read the default path"
@@ -143,4 +152,4 @@ fi
 ( cd "$_sa_repo" && git reset -q src/alt.py && rm -f src/alt.py )
 rm -rf "$_sa_alt" "$_sa_repo"
 unset _sa_repo _sa_before _sa_after _sa_locale _sa_rc _sa_plain _sa_alt _sa_with _sa_without _sa_pwith _sa_pwithout
-unset -f _sa_fixture
+unset -f _sa_fixture _sa_scan
