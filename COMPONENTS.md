@@ -21,13 +21,13 @@ Commands assume `$SCAFFOLD` points at a copy of this repository. Pick one:
 
 ```sh
 # a pinned clone (no Node needed)
-git clone --branch v0.18.1 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
+git clone --branch v0.19.0 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
 export SCAFFOLD=~/src/ai-coding-rules-scaffold
 ```
 
 ```sh
 # or the published npm tarball, unpacked, no clone
-cd "$(mktemp -d)" && npm pack ai-coding-rules-scaffold@0.18.1 --silent && tar xzf ai-coding-rules-scaffold-*.tgz
+cd "$(mktemp -d)" && npm pack ai-coding-rules-scaffold@0.19.0 --silent && tar xzf ai-coding-rules-scaffold-*.tgz
 export SCAFFOLD="$PWD/package"
 ```
 
