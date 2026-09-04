@@ -152,11 +152,11 @@ fi
 # reads the rules is a separate wiring question with its own silent-gap shape.
 # AGENTS.md only LINKS coding-rules.md (a markdown link, kept deliberately
 # cross-tool), and a link is not loaded into context at session start — only
-# an `@coding-rules.md` import line in CLAUDE.md does that. install_claude_md
-# has appended that line since v0.17; installs from before then carry the gap
-# with nothing on disk to say so. Nothing to check when this project never had
-# coding-rules.md installed. `CLAUDE.md` may be a symlink to `CLAUDE.md.pointer`
-# in some setups — `[ -f ]` and `grep` both follow it, which is correct here.
+# an `@coding-rules.md` import line in CLAUDE.md does that. Since v0.17 the
+# installer writes it into a new or merged CLAUDE.md; an already-wired one only
+# gets a one-time note, so older installs carry the gap silently. Nothing to
+# check when coding-rules.md was never installed. `CLAUDE.md` may be a symlink
+# to `CLAUDE.md.pointer` in some setups — `[ -f ]` and `grep` both follow it.
 if [ -f coding-rules.md ]; then
   if [ ! -f CLAUDE.md ]; then
     gap "coding-rules.md exists but there is no CLAUDE.md to import it"

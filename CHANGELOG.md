@@ -11,9 +11,11 @@ versioning follows [SemVer](https://semver.org/).
 - **`scaffold-doctor.sh` reports coding-rules.md present but not imported by
   CLAUDE.md (#136).** AGENTS.md only links coding-rules.md, and a markdown
   link is not loaded into an agent's context at session start the way a
-  CLAUDE.md `@coding-rules.md` import is. `install_claude_md` has appended
-  that import line since v0.17, so any install from before then carried the
-  gap silently: the rules sat on disk, reachable but never actually loaded.
+  CLAUDE.md `@coding-rules.md` import is. Since v0.17 `install_claude_md`
+  writes that import into a new or newly merged CLAUDE.md, but a CLAUDE.md
+  that already imported AGENTS.md only gets a one-time note at install, so
+  older installs carried the gap silently: the rules sat on disk, reachable
+  but never actually loaded.
   The doctor now reports a gap when coding-rules.md exists and CLAUDE.md
   does not import it (missing CLAUDE.md entirely, or the import line
   absent), anchored to the whole line so prose that merely mentions the
