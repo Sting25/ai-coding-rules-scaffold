@@ -38,6 +38,25 @@ else
 fi
 rm -rf "$MONO"
 
+# (T) A pytest config under node_modules is a dependency's, not the repo's, so
+#     it must NOT count as a subdirectory config. The probe prunes node_modules,
+#     but `find -mindepth 2` never evaluates the prune on a depth-1 directory,
+#     so the prune was inert and a vendored pyproject.toml suppressed the root
+#     pytest.ini with a "pytest config in node_modules/x" skip (found while
+#     fixing the same construct for tsconfig.json, #163).
+VEND=$(mktemp -d)
+mkdir -p "$VEND/node_modules/x"
+( cd "$VEND" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && git config core.hooksPath .nohooks \
+  && printf '[project]\nname = "x"\n' >pyproject.toml \
+  && printf '[tool.pytest.ini_options]\n' >node_modules/x/pyproject.toml \
+  && "$SCAFFOLD_DIR/install.sh" --python ) >"$HOOK_OUT" 2>&1
+if [ -f "$VEND/pytest.ini" ] && ! grep -q "pytest config in node_modules" "$HOOK_OUT"; then
+  echo "  ✓ a pytest config under node_modules is pruned; the root pytest.ini is still installed"; PASS=$((PASS + 1))
+else
+  echo "  ✗ a vendored pyproject.toml under node_modules must not suppress the root pytest.ini"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$VEND"
+
 # (T) With no pytest config anywhere, the file still installs — the detection
 #     must not be so eager that the feature stops working. Without this, deleting
 #     the install line entirely would pass the assertion above.

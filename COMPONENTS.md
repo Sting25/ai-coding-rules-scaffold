@@ -544,6 +544,7 @@ Measure first, nothing copied:
 ```sh adopt=tsconfig
 if [ -f tsconfig.json ]; then echo "tsconfig.json exists, leave it";
 elif grep -q '"workspaces"' package.json 2>/dev/null || [ -f pnpm-workspace.yaml ]; then echo "workspaces monorepo: do not add a root tsconfig.json";
+elif [ -n "$(find . -maxdepth 3 \( -name .git -o -name node_modules -o -name vendor -o -name dist -o -name build \) -prune -o -type f -name tsconfig.json -print 2>/dev/null)" ]; then echo "per-directory tsconfig.json files exist: do not add a root one, it would type-check the whole tree";
 else cp "$SCAFFOLD/tsconfig.json.template" tsconfig.json; fi
 ```
 

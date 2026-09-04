@@ -88,7 +88,7 @@ CASE_FLOORS=(
   "14-shell-install-mode.sh:5"
   "15-local-checks.sh:7"
   "16-coverage-gate.sh:6"
-  "17-whole-tree-configs.sh:10"
+  "17-whole-tree-configs.sh:11"
   "18-doctor.sh:31"
   "19-test-workflow.sh:17"
   "20-paired-artifacts.sh:19"
@@ -110,8 +110,9 @@ CASE_FLOORS=(
   "36-red-green-verdict.sh:3"
   "37-doctor-content-drift.sh:4"
   "38-components-catalog.sh:33"
-  "39-scaffold-assess.sh:9"
+  "39-scaffold-assess.sh:10"
   "40-doctor-required-checks.sh:6"
+  "41-tsconfig-monorepo.sh:6"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and
