@@ -468,4 +468,10 @@ doc_case "a prose-only mention of @coding-rules.md does not count as importing i
 doc_case "coding-rules.md with no CLAUDE.md at all to import it is reported" 1 \
   "coding-rules.md exists but there is no CLAUDE.md to import it" rm -f CLAUDE.md
 
+# Template drift (AGENTS.md, coding-rules.md vs. the shipped template, #133)
+# is a CONTENT question, the same shape as the shipped-rule-drift and
+# .gitignore-derivation checks below in cases/37, and putting it here would
+# have pushed this file over coding-rules.md rule 1's 500-line cap (measured:
+# 554 lines with it inline). See cases/37 for those cases.
+
 reset_repo

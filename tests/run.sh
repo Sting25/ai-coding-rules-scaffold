@@ -108,7 +108,7 @@ CASE_FLOORS=(
   "34-shipped-pattern-files.sh:11"
   "35-workflow-template-validity.sh:15"
   "36-red-green-verdict.sh:3"
-  "37-doctor-content-drift.sh:4"
+  "37-doctor-content-drift.sh:8"
   "38-components-catalog.sh:33"
   "39-scaffold-assess.sh:10"
   "40-doctor-required-checks.sh:6"
