@@ -37,12 +37,11 @@ echo "cases/37: scaffold-doctor's content-drift checks (shipped rules, .gitignor
 # the hook chase a JS toolchain and go red on one runner only, and that failure
 # then gets misread as a verdict on whatever was actually under test.
 docd_project() {
-  local t
-  t=$(mktemp -d)
-  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" \
-    && echo '#!/usr/bin/env bash' >run.sh \
-    && "$SCAFFOLD_DIR/install.sh" --shell --no-verify ) >/dev/null 2>&1
-  printf '%s' "$t"
+  local __docd_var=$1 t
+  fixture_repo t
+  echo '#!/usr/bin/env bash' >"$t/run.sh"
+  fixture_install "$t" --shell --no-verify
+  printf -v "$__docd_var" '%s' "$t"
 }
 
 # (A) SHIPPED-RULE DRIFT. Counting active patterns only catches the file gutted
@@ -58,7 +57,7 @@ docd_trim_secrets() {
   grep -vE '^[[:space:]]*(#|$)' .forbidden-patterns/secrets.txt | head -1 >secrets.tmp \
     && mv secrets.tmp .forbidden-patterns/secrets.txt
 }
-DOCD=$(docd_project)
+docd_project DOCD
 ( cd "$DOCD" && docd_trim_secrets ) >/dev/null 2>&1
 docd_rc=0
 ( cd "$DOCD" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || docd_rc=$?
@@ -91,7 +90,7 @@ docd_extend_patterns() {
   printf '# a house rule of our own\n' >>.forbidden-patterns/shell.txt
   printf 'acme_deploy_prod\tno prod deploys from a shell script\n' >>.forbidden-patterns/shell.txt
 }
-DOCD=$(docd_project)
+docd_project DOCD
 ( cd "$DOCD" && docd_extend_patterns ) >/dev/null 2>&1
 docd_rc=0
 ( cd "$DOCD" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || docd_rc=$?
@@ -153,7 +152,7 @@ docd_ignore_build_output() {
   printf 'node_modules/\ndist/\nbuild/\ncoverage/\n*.min.js\nvendor/\n*.d.ts\n.next/\nout/\n' >>.gitignore
 }
 
-DOCD=$(docd_project)
+docd_project DOCD
 ( cd "$DOCD" && docd_ignore_source ) >/dev/null 2>&1
 docd_rc=0
 ( cd "$DOCD" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || docd_rc=$?
@@ -180,7 +179,7 @@ rm -rf "$DOCD"
 # hole above is open again with a green report over it. The armed line is
 # asserted too: without it, a check that had stopped running entirely would sail
 # through this case on exit 0 alone.
-DOCD=$(docd_project)
+docd_project DOCD
 ( cd "$DOCD" && docd_ignore_build_output ) >/dev/null 2>&1
 docd_rc=0
 ( cd "$DOCD" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || docd_rc=$?
@@ -217,7 +216,7 @@ docd_remove_coding_rules_heading() {
 # no "predates" note anywhere, and the exit code is unchanged from a clean
 # install's baseline (cases/18's case A) — a note-worthy doctor must not also
 # add a gap where install.sh already did the right thing.
-DOCD=$(docd_project)
+docd_project DOCD
 docd_rc=0
 ( cd "$DOCD" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || docd_rc=$?
 if [ "$docd_rc" -eq 0 ] \
@@ -236,7 +235,7 @@ rm -rf "$DOCD"
 # Deleting ONE section heading from the installed AGENTS.md: named in a note,
 # exit stays 0 (a note is not a gap), and coding-rules.md's own ok line is
 # unaffected by a file it does not share a check with.
-DOCD=$(docd_project)
+docd_project DOCD
 ( cd "$DOCD" && docd_remove_agents_heading ) >/dev/null 2>&1
 docd_rc=0
 ( cd "$DOCD" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || docd_rc=$?
@@ -254,7 +253,7 @@ rm -rf "$DOCD"
 
 # ...and the same shape, the other direction: coding-rules.md missing a
 # heading must not touch AGENTS.md's report.
-DOCD=$(docd_project)
+docd_project DOCD
 ( cd "$DOCD" && docd_remove_coding_rules_heading ) >/dev/null 2>&1
 docd_rc=0
 ( cd "$DOCD" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || docd_rc=$?
@@ -279,7 +278,7 @@ rm -rf "$DOCD"
 DRIFTLESS=$(mktemp -d)
 cp "$SCAFFOLD_DIR/scaffold-doctor.sh" "$DRIFTLESS/scaffold-doctor.sh"
 chmod +x "$DRIFTLESS/scaffold-doctor.sh"
-DOCD=$(docd_project)
+docd_project DOCD
 docd_rc=0
 ( cd "$DOCD" && "$DRIFTLESS/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || docd_rc=$?
 if [ "$docd_rc" -eq 0 ] \

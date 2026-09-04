@@ -19,16 +19,22 @@
 
 echo "cases/27: --test-guard opt-in red-green gate (#140)"
 
+# The inner directory var is __tg_dir, not "t": _rg_fixture below also
+# declares `local t`, and calling `_tg_fixture t ...` from inside it would
+# otherwise let bash's dynamic scoping shadow the caller's `t` with this
+# function's own (see cases/18-doctor.sh's doc_project for the measured
+# reproduction of that failure mode).
 _tg_fixture() {
-  local t; t=$(mktemp -d)
-  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
-    && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify "$@" ) >/dev/null 2>&1
-  printf '%s' "$t"
+  local __tg_var=$1 __tg_dir; shift
+  fixture_repo __tg_dir
+  echo '{"name":"x"}' >"$__tg_dir/package.json"
+  fixture_install "$__tg_dir" --frontend --no-verify "$@"
+  printf -v "$__tg_var" '%s' "$__tg_dir"
 }
 
 # (T) a default install (no flag) creates none of the four artifacts:
 # stays opt-in.
-D=$(_tg_fixture)
+_tg_fixture D
 if [ ! -e "$D/.githooks/lib/check-red-green" ] && [ ! -e "$D/.githooks/lib/check-mutation-diff" ] \
    && [ ! -e "$D/.github/workflows/test-guard.yml" ] \
    && ! grep -q 'ai-coding-rules-scaffold:test-guard:begin' "$D/coding-rules.md"; then
@@ -42,7 +48,7 @@ rm -rf "$D"
 # byte-identical to their shipped templates), the workflow (byte-identical),
 # and the rules section appended to coding-rules.md exactly once, with the
 # original coding-rules.md content still in place above it.
-T=$(_tg_fixture --test-guard)
+_tg_fixture T --test-guard
 if [ -x "$T/.githooks/lib/check-red-green" ] \
    && cmp -s "$SCAFFOLD_DIR/githooks/lib/check-red-green.template" "$T/.githooks/lib/check-red-green" \
    && [ -x "$T/.githooks/lib/check-mutation-diff" ] \
@@ -97,7 +103,7 @@ rm -rf "$T"
 
 # (T) uninstall.sh removes the unmodified checks and workflow, and leaves
 # coding-rules.md (user-owned) with the appended section intact.
-U=$(_tg_fixture --test-guard)
+_tg_fixture U --test-guard
 ( cd "$U" && "$SCAFFOLD_DIR/uninstall.sh" ) >"$HOOK_OUT" 2>&1
 if [ ! -e "$U/.githooks/lib/check-red-green" ] && [ ! -e "$U/.githooks/lib/check-mutation-diff" ] \
    && [ ! -e "$U/.github/workflows/test-guard.yml" ] \
@@ -130,7 +136,8 @@ else
   # Base commit: calc.add(), one existing test, and a pytest.ini registering the
   # characterization marker (the scaffold documents registering it there).
   _rg_fixture() {
-    local t; t=$(_tg_fixture --test-guard)
+    local __rg_var=$1 t
+    _tg_fixture t --test-guard
     (
       cd "$t" || exit 1
       git config user.email "test@test.local"
@@ -141,13 +148,13 @@ else
       printf 'import calc\n\n\ndef test_add_base():\n    assert calc.add(1, 1) == 2\n' >tests/test_base.py
       git add -A && git commit --quiet -m base --no-verify  # scaffold-allow: test fixture
     ) >/dev/null 2>&1
-    printf '%s' "$t"
+    printf -v "$__rg_var" '%s' "$t"
   }
 
   # (T) RED, the path a healthy PR takes: HEAD adds calc.mul() and a test for
   #     it. On base calc.mul does not exist, so the new test fails there and the
   #     gate passes, with the accounting line that proves it actually ran.
-  RG=$(_rg_fixture)
+  _rg_fixture RG
   (
     cd "$RG" || exit 1
     printf 'def add(a, b):\n    return a + b\n\n\ndef mul(a, b):\n    return a * b\n' >calc.py
@@ -180,7 +187,7 @@ else
   #     behaviour that already worked and changes no source. It passes against
   #     base, so it is not evidence for the change and must be REJECTED, naming
   #     the offending node ID.
-  GG=$(_rg_fixture)
+  _rg_fixture GG
   (
     cd "$GG" || exit 1
     printf 'import calc\n\n\ndef test_add_again():\n    assert calc.add(2, 2) == 4\n' >tests/test_green.py
@@ -200,7 +207,7 @@ else
   #     @pytest.mark.characterization(reason=...), is allowed and reported as
   #     exempt. Without this the previous case could be satisfied by a check that
   #     rejects every new test, which would make the gate unusable.
-  CG=$(_rg_fixture)
+  _rg_fixture CG
   (
     cd "$CG" || exit 1
     {
@@ -232,7 +239,7 @@ fi
 # characterization-marker contract that had vanished from the document the
 # agents read. The append is now gated on the gate being PRESENT, so the same
 # run that removes the section puts it back.
-TGF=$(_tg_fixture --test-guard)
+_tg_fixture TGF --test-guard
 ( cd "$TGF" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --force ) >"$HOOK_OUT" 2>&1
 if [ "$(grep -c 'ai-coding-rules-scaffold:test-guard:begin' "$TGF/coding-rules.md")" -eq 1 ] \
    && grep -q 'characterization' "$TGF/coding-rules.md" \
@@ -247,7 +254,7 @@ rm -rf "$TGF"
 
 # (T) a plain re-run of a test-guard project (no flag, no --force) also restores
 # the section if it was removed by hand: presence, not the flag, is the gate.
-TGR=$(_tg_fixture --test-guard)
+_tg_fixture TGR --test-guard
 grep -v 'ai-coding-rules-scaffold:test-guard' "$TGR/coding-rules.md" >"$TGR/cr.tmp" && mv "$TGR/cr.tmp" "$TGR/coding-rules.md"
 ( cd "$TGR" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
 if [ "$(grep -c 'ai-coding-rules-scaffold:test-guard:begin' "$TGR/coding-rules.md")" -eq 1 ]; then
@@ -260,7 +267,7 @@ rm -rf "$TGR"
 # (T) the control: presence-gating must not turn the section on for a project
 # that never installed the gate. --force on a plain install leaves coding-rules.md
 # exactly as shipped, with no test-guard section.
-TGN=$(_tg_fixture)
+_tg_fixture TGN
 ( cd "$TGN" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --force ) >"$HOOK_OUT" 2>&1
 if ! grep -q 'ai-coding-rules-scaffold:test-guard:begin' "$TGN/coding-rules.md" \
    && cmp -s "$SCAFFOLD_DIR/coding-rules.md" "$TGN/coding-rules.md"; then

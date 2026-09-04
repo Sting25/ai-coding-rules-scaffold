@@ -309,10 +309,9 @@ echo "uninstall.sh --drop-lang, the supported way to clear a #159 manifest entry
 # file and the entry TOGETHER — and these assert both halves of the bargain:
 # that the route works, and that NOTHING ELSE does it, which is the security
 # property the guard is made of.
-MFD=$(mktemp -d)
-( cd "$MFD" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" \
-  && echo '{"name":"x"}' >package.json \
-  && "$SCAFFOLD_DIR/install.sh" --frontend --all-langs --no-verify ) >/dev/null 2>&1
+fixture_repo MFD
+echo '{"name":"x"}' >"$MFD/package.json"
+fixture_install "$MFD" --frontend --all-langs --no-verify
 ( cd "$MFD" && printf 'package main\n' >drop.go && git add drop.go ) >/dev/null 2>&1
 
 # _mfd_cp: run the installed check-patterns in $MFD over the one staged file,

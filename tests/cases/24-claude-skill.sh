@@ -10,14 +10,16 @@
 echo "cases/24: --claude-skill opt-in flag (#118 pt 2)"
 
 _cskill_fixture() {
-  local t; t=$(mktemp -d)
-  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
-    && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify "$@" ) >/dev/null 2>&1
-  printf '%s' "$t"
+  local __cskill_fixture_var=$1 t
+  shift
+  fixture_repo t
+  echo '{"name":"x"}' >"$t/package.json"
+  fixture_install "$t" --frontend --no-verify "$@"
+  printf -v "$__cskill_fixture_var" '%s' "$t"
 }
 
 # (T) a default install (no flag) writes no Skill file: stays opt-in.
-D=$(_cskill_fixture)
+_cskill_fixture D
 if [ ! -e "$D/.claude/skills/coding-rules/SKILL.md" ]; then
   echo "  ✓ a default install creates no Claude Skill"; PASS=$((PASS + 1))
 else
@@ -27,7 +29,7 @@ rm -rf "$D"
 
 # (T) --claude-skill installs SKILL.md, byte-identical to the shipped
 # template, with valid frontmatter naming both installed rules files.
-K=$(_cskill_fixture --claude-skill)
+_cskill_fixture K --claude-skill
 SKILL_PATH="$K/.claude/skills/coding-rules/SKILL.md"
 if [ -f "$SKILL_PATH" ] \
    && cmp -s "$SCAFFOLD_DIR/claude-skill/coding-rules/SKILL.md.template" "$SKILL_PATH" \
@@ -45,7 +47,7 @@ rm -rf "$K"
 # (T) cp_safe semantics: a hand-edited SKILL.md is left alone on a plain
 # re-run (no drift note, no backup), and --force backs it up then replaces
 # it with the shipped version.
-S=$(_cskill_fixture --claude-skill)
+_cskill_fixture S --claude-skill
 SKILL_PATH="$S/.claude/skills/coding-rules/SKILL.md"
 printf '\nlocal note\n' >>"$SKILL_PATH"
 ( cd "$S" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --claude-skill ) >"$HOOK_OUT" 2>&1
@@ -66,7 +68,7 @@ rm -rf "$S"
 
 # (T) uninstall.sh removes an unmodified SKILL.md and sweeps the now-empty
 # .claude/skills/coding-rules + .claude/skills directories.
-U=$(_cskill_fixture --claude-skill)
+_cskill_fixture U --claude-skill
 ( cd "$U" && "$SCAFFOLD_DIR/uninstall.sh" ) >"$HOOK_OUT" 2>&1
 if [ ! -e "$U/.claude/skills/coding-rules/SKILL.md" ] && [ ! -d "$U/.claude/skills" ]; then
   echo "  ✓ uninstall.sh removes an unmodified SKILL.md and sweeps the emptied dirs"; PASS=$((PASS + 1))

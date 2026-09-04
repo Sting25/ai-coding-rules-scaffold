@@ -14,12 +14,14 @@ echo "cases/18 — scaffold-doctor (armed vs merely installed)"
 # the hook chase a JS toolchain and go red on one runner only, and that failure
 # then gets misread as a verdict on whatever was actually under test.
 doc_project() {
-  local t
-  t=$(mktemp -d)
-  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" \
-    && echo '#!/usr/bin/env bash' >run.sh \
-    && "$SCAFFOLD_DIR/install.sh" --shell --no-verify ) >/dev/null 2>&1
-  printf '%s' "$t"
+  # __doc_project_dir, not "t": doc_case below also has `local t`, and a
+  # same-named local here would shadow it (dynamic scoping), so `printf -v
+  # "$1"` would bind to this function's own shadow instead of the caller's.
+  local __doc_project_var=$1 __doc_project_dir
+  fixture_repo __doc_project_dir
+  echo '#!/usr/bin/env bash' >"$__doc_project_dir/run.sh"
+  fixture_install "$__doc_project_dir" --shell --no-verify
+  printf -v "$__doc_project_var" '%s' "$__doc_project_dir"
 }
 
 # Mutations that need a variable expanded at run time are shell FUNCTIONS, not
@@ -37,7 +39,7 @@ doc_case() {
   local name=$1 want=$2 expect=$3
   shift 3
   local t rc=0
-  t=$(doc_project)
+  doc_project t
   ( cd "$t" && "$@" ) >/dev/null 2>&1 || true
   ( cd "$t" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || rc=$?
   if [ "$rc" -eq "$want" ] && grep -qF "$expect" "$HOOK_OUT"; then
@@ -84,7 +86,7 @@ doc_case "a trailing-slash core.hooksPath is armed, not a gap" 0 \
 # spelling family was certified healthy in exactly the environment that works.
 doc_hookspath_relative() { git config core.hooksPath ./.githooks; }
 for doc_spell in doc_hookspath_absolute doc_hookspath_relative; do
-  DOCT=$(doc_project)
+  doc_project DOCT
   ( cd "$DOCT" && "$doc_spell" ) >/dev/null 2>&1
   doc_rc=0
   ( cd "$DOCT" && CDPATH=. "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
@@ -171,7 +173,7 @@ CAPS_TOML
 # not mistaken for "the report counts it".
 doc_note_count() { sed -n 's/.*, \([0-9][0-9]*\) note(s).*/\1/p' "$1" | tail -1; }
 
-DOCT=$(doc_project)
+doc_project DOCT
 doc_rc=0
 ( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
 doc_notes_before=$(doc_note_count "$HOOK_OUT")
@@ -208,7 +210,7 @@ rm -rf "$DOCT"
 # A raised cap disarms a guardrail exactly as a disable does, so it is reported
 # the same way, with the new value, because "500 KB" is the thing the reader
 # believes is in force.
-DOCT=$(doc_project)
+doc_project DOCT
 ( cd "$DOCT" && doc_raise_caps ) >/dev/null 2>&1
 doc_rc=0
 ( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
@@ -225,7 +227,7 @@ rm -rf "$DOCT"
 # ...and the shipped, override-free .scaffold.toml must stay silent: a doctor
 # that reported an off-switch on every clean project would train the reader to
 # skip the line that matters.
-DOCT=$(doc_project)
+doc_project DOCT
 doc_rc=0
 ( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
 if [ "$doc_rc" -eq 0 ] && grep -qF "0 gaps" "$HOOK_OUT" \
@@ -275,7 +277,7 @@ doc_drop_all_callsites() {
   chmod +x .githooks/pre-commit
 }
 
-DOCT=$(doc_project)
+doc_project DOCT
 ( cd "$DOCT" && doc_drop_all_callsites ) >/dev/null 2>&1
 doc_rc=0
 ( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
@@ -296,7 +298,7 @@ rm -rf "$DOCT"
 # inert: a note, not a gap. It must survive --quiet, because that is the mode a
 # CI step or a pre-flight script reads, and "armed, 0 gaps" over a check no CI
 # job runs is the misleading summary #72 was made of.
-DOCT=$(doc_project)
+doc_project DOCT
 ( cd "$DOCT" && doc_drop_ci_callsite ) >/dev/null 2>&1
 doc_rc=0
 ( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
@@ -334,7 +336,7 @@ doc_minbin() {
   printf '%s' "$d"
 }
 
-DOCT=$(doc_project)
+doc_project DOCT
 DOCBIN=$(doc_minbin)
 cp "$SCAFFOLD_DIR/githooks/lib/check-gitleaks.template" "$DOCT/.githooks/lib/check-gitleaks"
 chmod +x "$DOCT/.githooks/lib/check-gitleaks"
@@ -351,7 +353,7 @@ fi
 rm -rf "$DOCT"
 
 # agent-precheck with no jq says NOTHING, anywhere, ever — so it is a gap.
-DOCT=$(doc_project)
+doc_project DOCT
 cp "$SCAFFOLD_DIR/githooks/lib/agent-precheck.template" "$DOCT/.githooks/lib/agent-precheck"
 chmod +x "$DOCT/.githooks/lib/agent-precheck"
 doc_rc=0
@@ -372,7 +374,7 @@ rm -rf "$DOCT" "$DOCBIN"
 # agent runtimes block only on exit 2. Measured: the tool call proceeds, and
 # nothing is printed anywhere. The doctor reported "armed" for this until it
 # was caught in review.
-DOCT=$(doc_project)
+doc_project DOCT
 cp "$SCAFFOLD_DIR/githooks/lib/agent-precheck.template" "$DOCT/.githooks/lib/agent-precheck"
 chmod -x "$DOCT/.githooks/lib/agent-precheck"
 doc_rc=0
@@ -390,7 +392,7 @@ rm -rf "$DOCT"
 # (I) The shipped checks read their config by bare relative path, which works
 # only because git runs hooks from the top of the tree. A doctor run from a
 # subdirectory must reproduce that or it reports phantom gaps.
-DOCT=$(doc_project)
+doc_project DOCT
 mkdir -p "$DOCT/src/deep"
 doc_rc=0
 ( cd "$DOCT/src/deep" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
@@ -422,7 +424,7 @@ rm -rf "$DOCT"
 # (K) --quiet is what a CI step or a pre-flight script would call: gaps and the
 # summary only, with the section named inline since the headers are suppressed.
 doc_rc=0
-DOCT=$(doc_project)
+doc_project DOCT
 chmod -x "$DOCT/.githooks/pre-commit"
 ( cd "$DOCT" && "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
 if [ "$doc_rc" -eq 1 ] && grep -qF "[hook entry point]" "$HOOK_OUT" && ! grep -qF "✓" "$HOOK_OUT"; then
@@ -473,5 +475,26 @@ doc_case "coding-rules.md with no CLAUDE.md at all to import it is reported" 1 \
 # .gitignore-derivation checks below in cases/37, and putting it here would
 # have pushed this file over coding-rules.md rule 1's 500-line cap (measured:
 # 554 lines with it inline). See cases/37 for those cases.
+
+# (N) fixture_install itself must fail LOUD: the positive proof for the fix
+# behind tests/lib/common.sh's fixture_repo/fixture_install (CI run
+# 33922341907 died with exit 2 and no assertion printed — see that file's
+# comment for the mechanism). Wrapped in "( ... )": fixture_install's
+# failure path ends in `exit 1` on purpose, so calling it unwrapped here
+# would end this run, not just this one assertion.
+fixture_repo FI_D
+FI_OUT=$(mktemp)
+FI_RC=0
+( fixture_install "$FI_D" --no-such-flag ) >"$FI_OUT" 2>&1 || FI_RC=$?
+if [ "$FI_RC" -eq 1 ] && grep -qF "FIXTURE INSTALL FAILED" "$FI_OUT"; then
+  echo "  ✓ fixture_install fails the suite loudly when install.sh fails"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ fixture_install did not fail loudly (exit $FI_RC, or missing: FIXTURE INSTALL FAILED)"
+  sed 's/^/      /' "$FI_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$FI_D"
+rm -f "$FI_OUT"
 
 reset_repo
