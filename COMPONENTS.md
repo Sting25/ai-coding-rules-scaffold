@@ -858,7 +858,10 @@ rm -f .github/rulesets/main-protection.json
 
 `scaffold-doctor.sh` reports, per component, whether it is present, wired and
 actually called, and names every gap. It works on hand-copied installs; it
-does not need the installer's manifest.
+does not need the installer's manifest. It also notes when your installed
+AGENTS.md or coding-rules.md is missing a section the shipped template
+carries, so an install adopted before a later release does not fall behind
+without saying so.
 
 ```sh
 bash "$SCAFFOLD/scaffold-doctor.sh"      # or: npx ai-coding-rules-scaffold doctor

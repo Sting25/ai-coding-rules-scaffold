@@ -495,6 +495,31 @@ clone) to reuse this logic rather than duplicate it; if that file is ever
 missing next to it, the section reports a note instead of silently skipping
 it.
 
+### Template drift (installs that predate a release)
+
+`install.sh` never rewrites an existing `AGENTS.md`, and it replaces
+`coding-rules.md` only wholesale under `--force`. Both are the right policy
+once a file is user-owned: an installer that overwrote local edits on every
+run would be worse than one that leaves them alone. The side effect is that
+neither file carries a version marker, so a release that adds a section to
+either shipped file leaves every prior install silently behind, and the
+oldest installs fall furthest.
+
+`scaffold-doctor.sh`'s "template drift" section makes that visible: every
+`## ` and `### ` heading in the shipped template becomes the inventory, and
+any heading present in the shipped file but missing from the installed one
+is named. This is always a note, never a gap, because a section a project
+deliberately trimmed is legitimate and must not flip the exit code; the
+note names the missing headings and points at the shipped file to diff
+against. A doctor run from a copy that does not carry the rest of the
+bundle reports that the templates themselves are missing, the same shape as
+the pattern-data and paired-artifacts sections above.
+
+A related but stricter case is #136: `coding-rules.md` existing on disk
+with no `@coding-rules.md` import line in `CLAUDE.md` is a gap, not a note,
+because an unloaded rules file is an unarmed guardrail rather than a
+trimmed one.
+
 ## Customize per project
 
 - **`coding-rules.md`** — short by design. Add a "Project-specific" section at the bottom for stack rules (SQLAlchemy column quirks, import conventions, architectural constraints).

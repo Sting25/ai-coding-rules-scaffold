@@ -19,8 +19,10 @@ working tree):
 ruff check .                       # Python  (when ruff.toml / pyproject.toml present)
 npx eslint . && npx tsc --noEmit   # TS/JS   (tsc when tsconfig.json present)
 pytest                             # Python  (from the dir holding the pytest config)
-git hook run pre-commit            # size / pattern / secret / hygiene / filename guards
+git hook run pre-commit            # size / pattern / secret / hygiene / filename guards (see note)
 ```
+
+`git hook run pre-commit` exercises the scaffold guards only when `core.hooksPath` is `.githooks`. install.sh leaves `core.hooksPath` alone when it is already set to something else (Husky does this by default; managers that write into `.git/hooks/` do not); in that configuration run `.githooks/pre-commit` directly, and let the doctor (below) tell you which case you are in.
 
 These are whole-tree commands, and a whole-tree command sees everything **on
 disk**, not everything in git. A vendored toolchain, an agent worktree, or an

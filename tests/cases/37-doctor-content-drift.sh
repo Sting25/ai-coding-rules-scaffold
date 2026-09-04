@@ -1,21 +1,27 @@
 # shellcheck shell=bash
-# cases/37-doctor-content-drift.sh — the two scaffold-doctor checks that judge
+# cases/37-doctor-content-drift.sh — the scaffold-doctor checks that judge
 # CONTENT rather than arming: has the installed pattern data drifted from what
-# the scaffold shipped, and has .gitignore taken tracked source out of ESLint's
-# reach. Sourced into the driver's shell, so the globals
+# the scaffold shipped, has .gitignore taken tracked source out of ESLint's
+# reach, and has AGENTS.md / coding-rules.md drifted from the shipped template
+# (#133). Sourced into the driver's shell, so the globals
 # (PASS/FAIL/HOOK_OUT/SCAFFOLD_DIR) are already in scope.
 #
-# WHY THESE TWO LIVE TOGETHER, AND NOT IN cases/18. Every other doctor
-# assertion asks "is this mechanism armed": a bit, a path, a call site, a file's
-# presence. These two ask a harder question — the mechanism is armed and the
-# file is there, but its CONTENT no longer covers what it is supposed to cover.
-# Both derive their expectation from something else on disk instead of
+# WHY THESE LIVE TOGETHER, AND NOT IN cases/18. Every other doctor assertion
+# asks "is this mechanism armed": a bit, a path, a call site, a file's
+# presence. These ask a harder question — the mechanism is armed and the file
+# is there, but its CONTENT no longer covers what it is supposed to cover.
+# Each derives its expectation from something else on disk instead of
 # hardcoding it (the shipped forbidden-patterns template; the project's own
-# .gitignore), so both are one sloppy edit away from the same failure mode: a
-# check that widens into "report any difference", goes red on legitimate
-# customization, gets switched off, and leaves the real hole open under a green
-# report. That is why each of them is a PAIR here — the red half and the
-# narrowing half — and why the pairs are worth keeping side by side.
+# .gitignore; the shipped AGENTS.md.template / coding-rules.md), so each is one
+# sloppy edit away from the same failure mode: a check that widens into
+# "report any difference", goes red on legitimate customization, gets switched
+# off, and leaves the real hole open under a green report. That is why (A) and
+# (B) below are each a PAIR — the red half and the narrowing half — and why the
+# pairs are worth keeping side by side. (C), the AGENTS.md/coding-rules.md
+# check, is read-only (a NOTE, never a gap) precisely because both files are
+# user-owned once installed, so it does not need a narrowing half the same way:
+# an EXTRA local section was never mistaken for drift in the first place, only
+# a missing shipped one is.
 #
 # cases/18 keeps the arming checks and points here; splitting them was also what
 # kept both files under the 500-line cap in coding-rules.md rule 1.
@@ -25,7 +31,7 @@
 # borrowing a function defined by an earlier file would make the ORDER of the
 # case list load-bearing and would break this file when run on its own.
 
-echo "cases/37: scaffold-doctor's content-drift checks (shipped rules, .gitignore lint holes)"
+echo "cases/37: scaffold-doctor's content-drift checks (shipped rules, .gitignore lint holes, AGENTS.md/coding-rules.md drift)"
 
 # A fresh installed project. --shell deliberately: a package.json fixture makes
 # the hook chase a JS toolchain and go red on one runner only, and that failure
@@ -190,7 +196,107 @@ else
 fi
 rm -rf "$DOCD"
 
+# (C) TEMPLATE DRIFT: AGENTS.md and coding-rules.md vs. what the scaffold
+# ships today (#133). install_agents_md never rewrites an existing AGENTS.md
+# (even under --force: the Project section at its bottom is the user's own
+# text), and coding-rules.md is replaced wholesale only under --force. Both
+# policies are correct — these files are user-owned once installed — but a
+# scaffold release that adds a section to either shipped file then leaves
+# every existing install silently behind, with nothing on disk saying so.
+# Neither file carries a version marker, so section HEADINGS are the
+# inventory. Read-only: a NOTE, never a gap — a project may have deliberately
+# trimmed a section, and surfacing that is this check's job, not failing over it.
+docd_remove_agents_heading() {
+  sed -i.bak '/^## Plain-language change summary$/d' AGENTS.md && rm -f AGENTS.md.bak
+}
+docd_remove_coding_rules_heading() {
+  sed -i.bak '/^## Testing$/d' coding-rules.md && rm -f coding-rules.md.bak
+}
+
+# A fresh install carries every shipped section in both files: two ok lines,
+# no "predates" note anywhere, and the exit code is unchanged from a clean
+# install's baseline (cases/18's case A) — a note-worthy doctor must not also
+# add a gap where install.sh already did the right thing.
+DOCD=$(docd_project)
+docd_rc=0
+( cd "$DOCD" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || docd_rc=$?
+if [ "$docd_rc" -eq 0 ] \
+   && grep -qF "AGENTS.md carries every section of the shipped template" "$HOOK_OUT" \
+   && grep -qF "coding-rules.md carries every section of the shipped template" "$HOOK_OUT" \
+   && ! grep -qF "predates the shipped template" "$HOOK_OUT"; then
+  echo "  ✓ a fresh install carries every shipped section in both files (ok, not a note)"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ fresh install misreported template drift (exit $docd_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCD"
+
+# Deleting ONE section heading from the installed AGENTS.md: named in a note,
+# exit stays 0 (a note is not a gap), and coding-rules.md's own ok line is
+# unaffected by a file it does not share a check with.
+DOCD=$(docd_project)
+( cd "$DOCD" && docd_remove_agents_heading ) >/dev/null 2>&1
+docd_rc=0
+( cd "$DOCD" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || docd_rc=$?
+if [ "$docd_rc" -eq 0 ] \
+   && grep -qF 'AGENTS.md predates the shipped template: missing "## Plain-language change summary"' "$HOOK_OUT" \
+   && grep -qF "coding-rules.md carries every section of the shipped template" "$HOOK_OUT"; then
+  echo "  ✓ deleting one AGENTS.md section heading names it in a note, not a gap"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ a missing AGENTS.md heading was not reported as drift (exit $docd_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCD"
+
+# ...and the same shape, the other direction: coding-rules.md missing a
+# heading must not touch AGENTS.md's report.
+DOCD=$(docd_project)
+( cd "$DOCD" && docd_remove_coding_rules_heading ) >/dev/null 2>&1
+docd_rc=0
+( cd "$DOCD" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || docd_rc=$?
+if [ "$docd_rc" -eq 0 ] \
+   && grep -qF 'coding-rules.md predates the shipped template: missing "## Testing"' "$HOOK_OUT" \
+   && grep -qF "AGENTS.md carries every section of the shipped template" "$HOOK_OUT"; then
+  echo "  ✓ deleting one coding-rules.md section heading names it in a note, not a gap"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ a missing coding-rules.md heading was not reported as drift (exit $docd_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCD"
+
+# A doctor whose scaffold dir lacks the shipped templates (copied without the
+# rest of the bundle, or mid-upgrade) must say so — same "not found next to
+# scaffold-doctor.sh" fallback shape as sections 4 and 8 — rather than
+# silently reporting the false "ok" a missing template would otherwise produce
+# as an empty diff. DRIFTLESS carries only scaffold-doctor.sh itself (section
+# 9 is inline, same as cases/20's DOCLESS fixture for section 8's fallback).
+DRIFTLESS=$(mktemp -d)
+cp "$SCAFFOLD_DIR/scaffold-doctor.sh" "$DRIFTLESS/scaffold-doctor.sh"
+chmod +x "$DRIFTLESS/scaffold-doctor.sh"
+DOCD=$(docd_project)
+docd_rc=0
+( cd "$DOCD" && "$DRIFTLESS/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || docd_rc=$?
+if [ "$docd_rc" -eq 0 ] \
+   && grep -qF "AGENTS.md.template not found next to scaffold-doctor.sh ($DRIFTLESS): AGENTS.md drift cannot be checked" "$HOOK_OUT" \
+   && grep -qF "coding-rules.md not found next to scaffold-doctor.sh ($DRIFTLESS): coding-rules.md drift cannot be checked" "$HOOK_OUT" \
+   && ! grep -qF "carries every section of the shipped template" "$HOOK_OUT"; then
+  echo "  ✓ a scaffold dir missing the shipped templates reports the fallback note, not a false ok"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ the missing-shipped-template fallback misbehaved (exit $docd_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCD" "$DRIFTLESS"
+
 unset DOCD docd_rc docd_shipped docd_missing
 unset -f docd_project docd_trim_secrets docd_extend_patterns
 unset -f docd_eslint_derived docd_ignore_source docd_ignore_build_output
+unset -f docd_remove_agents_heading docd_remove_coding_rules_heading
 reset_repo

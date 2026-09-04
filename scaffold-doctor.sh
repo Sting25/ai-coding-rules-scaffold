@@ -148,6 +148,28 @@ else
       "git config core.hooksPath .githooks   (or wire the scaffold hook into '$HOOKS_PATH')"
 fi
 
+# core.hooksPath governs whether a COMMIT is checked; whether an AGENT ever
+# reads the rules is a separate wiring question with its own silent-gap shape.
+# AGENTS.md only LINKS coding-rules.md (a markdown link, kept deliberately
+# cross-tool), and a link is not loaded into context at session start — only
+# an `@coding-rules.md` import line in CLAUDE.md does that. Since v0.17 the
+# installer writes it into a new or merged CLAUDE.md; an already-wired one only
+# gets a one-time note, so older installs carry the gap silently. Nothing to
+# check when coding-rules.md was never installed. `CLAUDE.md` may be a symlink
+# to `CLAUDE.md.pointer` in some setups — `[ -f ]` and `grep` both follow it.
+if [ -f coding-rules.md ]; then
+  if [ ! -f CLAUDE.md ]; then
+    gap "coding-rules.md exists but there is no CLAUDE.md to import it"
+  # Anchored, not a substring match: an unanchored '@coding-rules.md' also
+  # matches prose like "we removed the @coding-rules.md import", which would
+  # report the exact opposite of the truth.
+  elif grep -q '^@coding-rules\.md$' CLAUDE.md 2>/dev/null; then
+    ok "CLAUDE.md imports coding-rules.md"
+  else
+    gap "coding-rules.md exists but is not imported by CLAUDE.md (add a line reading @coding-rules.md; AGENTS.md only links the file, so the rules are never loaded)"
+  fi
+fi
+
 # --- 2. hook entry point ----------------------------------------------------
 # git silently ignores a hook file without the executable bit. No error, no
 # warning, no commit blocked — the exact failure mode this script exists for.
@@ -427,6 +449,45 @@ if [ -f "$DOCTOR_DIR/scaffold-doctor-gates.sh" ]; then
 else
   note "scaffold-doctor-gates.sh not found next to scaffold-doctor.sh ($DOCTOR_DIR): the server-side backstop, patch-coverage, lint-ignore and protections-not-enabled checks are skipped; re-fetch the full scaffold bundle, not just this one file"
 fi
+
+# --- 9. template drift (AGENTS.md, coding-rules.md) --------------------------
+# AGENTS.md is never rewritten once it exists, and coding-rules.md is replaced
+# wholesale only under --force — correct, since both are user-owned once
+# installed. The flip side is silent: a scaffold release that adds a section
+# to either shipped file leaves an install behind with nothing on disk saying
+# so (#133). Neither file carries a version marker, so section HEADINGS
+# (every `## `/`### ` line) are the inventory, reported as a NOTE never a gap
+# since a project may have deliberately trimmed one.
+section "template drift"
+# doctor_heading_drift <installed> <shipped> <label> <policy-note>. One awk
+# pass mirrors section 4's forbidden-patterns-vs-template comparison: only
+# headings that were SHIPPED and are now absent are reported (an extra local
+# section is healthy, not drift). The regex skips a `{{...}}`/`<TOKEN>`
+# placeholder install.sh would substitute; neither shipped file has one today
+# (checked), so this guards a future heading rather than a live case.
+doctor_heading_drift() {
+  local td_inst=$1 td_shipped=$2 td_label=$3 td_policy=$4 td_quoted
+  [ -f "$td_inst" ] || return 0
+  if [ ! -f "$td_shipped" ]; then
+    note "$(basename "$td_shipped") not found next to scaffold-doctor.sh ($SCAFFOLD_DIR): $td_label drift cannot be checked; re-fetch the full scaffold bundle, not just this one file"
+    return 0
+  fi
+  td_quoted=$(awk '
+    FNR == NR { have[$0] = 1; next }
+    !/^(## |### )/ { next }
+    /\{\{/ || /<[A-Za-z_-]+>/ { next }
+    !($0 in have) { printf "%s\"%s\"", (n++ ? ", " : ""), $0 }
+  ' "$td_inst" "$td_shipped" 2>/dev/null || true)
+  if [ -z "$td_quoted" ]; then
+    ok "$td_label carries every section of the shipped template"
+    return 0
+  fi
+  note "$(basename "$td_inst") predates the shipped template: missing $td_quoted. diff it against $td_shipped and adopt what applies; $td_policy"
+}
+doctor_heading_drift "AGENTS.md" "$SCAFFOLD_DIR/AGENTS.md.template" "AGENTS.md" \
+  "install.sh never rewrites this file"
+doctor_heading_drift "coding-rules.md" "$SCAFFOLD_DIR/coding-rules.md" "coding-rules.md" \
+  "install.sh --force replaces it wholesale (backup in .scaffold-bak); merging by hand keeps local edits"
 
 # --- summary ----------------------------------------------------------------
 echo ""

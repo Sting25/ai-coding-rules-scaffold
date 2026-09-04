@@ -4,6 +4,44 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`scaffold-doctor.sh` reports coding-rules.md present but not imported by
+  CLAUDE.md (#136).** AGENTS.md only links coding-rules.md, and a markdown
+  link is not loaded into an agent's context at session start the way a
+  CLAUDE.md `@coding-rules.md` import is. Since v0.17 `install_claude_md`
+  writes that import into a new or newly merged CLAUDE.md, but a CLAUDE.md
+  that already imported AGENTS.md only gets a one-time note at install, so
+  older installs carried the gap silently: the rules sat on disk, reachable
+  but never actually loaded.
+  The doctor now reports a gap when coding-rules.md exists and CLAUDE.md
+  does not import it (missing CLAUDE.md entirely, or the import line
+  absent), anchored to the whole line so prose that merely mentions the
+  import is not misread as one.
+- **`scaffold-doctor.sh` notes when AGENTS.md or coding-rules.md predates
+  the shipped template (#133).** install.sh never rewrites an existing
+  AGENTS.md and replaces coding-rules.md only wholesale under `--force`,
+  the right policy for user-owned files, but the side effect was invisible:
+  a release that adds a section to either shipped file left every existing
+  install silently behind. Neither file carries a version marker, so
+  section headings are the inventory: every `## `/`### ` line in the
+  shipped file must appear verbatim in the installed one, with the missing
+  ones named. This is a note, never a gap, since a deliberately trimmed
+  section is legitimate.
+
+### Changed
+
+- **AGENTS.md.template no longer asserts `git hook run pre-commit`
+  unconditionally (#134).** install.sh deliberately leaves `core.hooksPath`
+  alone when another hooks manager (Husky, lefthook, pre-commit) already
+  owns it, so the template's instruction was false in exactly that
+  configuration: an agent could run the command against hooks that were
+  not the scaffold's and read a pass. The template now names the direct
+  fallback (`.githooks/pre-commit`) and points at the doctor, which already
+  reports the unwired-hooksPath state.
+
 ## [v0.18.1] - 2026-09-04
 
 ### Changed
