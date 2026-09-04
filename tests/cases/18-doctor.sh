@@ -441,4 +441,31 @@ rm -rf "$DOCT"
 # shipped-rule drift check: same content-vs-arming question, and it carries
 # its own eslint.config.js fixtures.
 
+# (M) coding-rules.md vs. CLAUDE.md (#136). AGENTS.md only LINKS
+# coding-rules.md, so unless CLAUDE.md carries an `@coding-rules.md` import
+# line, the rules are reachable but never loaded into context at session
+# start. install_claude_md has written that line since v0.17; installs from
+# before then carry the gap silently, with nothing on disk to say so.
+doc_remove_coding_rules_import() {
+  sed -i.bak '/^@coding-rules\.md$/d' CLAUDE.md && rm -f CLAUDE.md.bak
+}
+# The match must be ANCHORED to the whole line, not a substring search: prose
+# that merely mentions the import (e.g. explaining that it was removed) is not
+# an import, and an unanchored pattern would misreport it as one.
+doc_prose_coding_rules_import() {
+  sed -i.bak 's/^@coding-rules\.md$/We removed the @coding-rules.md import for now./' CLAUDE.md \
+    && rm -f CLAUDE.md.bak
+}
+
+doc_case "a fresh install imports coding-rules.md into CLAUDE.md (ok, not a gap)" 0 \
+  "CLAUDE.md imports coding-rules.md" true
+doc_case "CLAUDE.md missing the @coding-rules.md import line is reported" 1 \
+  "coding-rules.md exists but is not imported by CLAUDE.md" \
+  doc_remove_coding_rules_import
+doc_case "a prose-only mention of @coding-rules.md does not count as importing it (anchored match)" 1 \
+  "coding-rules.md exists but is not imported by CLAUDE.md" \
+  doc_prose_coding_rules_import
+doc_case "coding-rules.md with no CLAUDE.md at all to import it is reported" 1 \
+  "coding-rules.md exists but there is no CLAUDE.md to import it" rm -f CLAUDE.md
+
 reset_repo

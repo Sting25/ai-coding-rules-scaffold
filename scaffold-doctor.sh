@@ -148,6 +148,28 @@ else
       "git config core.hooksPath .githooks   (or wire the scaffold hook into '$HOOKS_PATH')"
 fi
 
+# core.hooksPath governs whether a COMMIT is checked; whether an AGENT ever
+# reads the rules is a separate wiring question with its own silent-gap shape.
+# AGENTS.md only LINKS coding-rules.md (a markdown link, kept deliberately
+# cross-tool), and a link is not loaded into context at session start — only
+# an `@coding-rules.md` import line in CLAUDE.md does that. install_claude_md
+# has appended that line since v0.17; installs from before then carry the gap
+# with nothing on disk to say so. Nothing to check when this project never had
+# coding-rules.md installed. `CLAUDE.md` may be a symlink to `CLAUDE.md.pointer`
+# in some setups — `[ -f ]` and `grep` both follow it, which is correct here.
+if [ -f coding-rules.md ]; then
+  if [ ! -f CLAUDE.md ]; then
+    gap "coding-rules.md exists but there is no CLAUDE.md to import it"
+  # Anchored, not a substring match: an unanchored '@coding-rules.md' also
+  # matches prose like "we removed the @coding-rules.md import", which would
+  # report the exact opposite of the truth.
+  elif grep -q '^@coding-rules\.md$' CLAUDE.md 2>/dev/null; then
+    ok "CLAUDE.md imports coding-rules.md"
+  else
+    gap "coding-rules.md exists but is not imported by CLAUDE.md (add a line reading @coding-rules.md; AGENTS.md only links the file, so the rules are never loaded)"
+  fi
+fi
+
 # --- 2. hook entry point ----------------------------------------------------
 # git silently ignores a hook file without the executable bit. No error, no
 # warning, no commit blocked — the exact failure mode this script exists for.
