@@ -42,8 +42,9 @@
 
 echo "cases/21: CI workflow drift-preserving install policy (lint.yml #105, tests/coverage/gitleaks.yml #110, dependency-review.yml #113, zizmor/socket-security P-19)"
 
-# _wd_fixture EXTRA_FLAG: a throwaway frontend-mode repo with the scaffold
-# installed. EXTRA_FLAG is the flag (if any) needed for this run to touch the
+# _wd_fixture VAR EXTRA_FLAG: a throwaway frontend-mode repo with the scaffold
+# installed, its path assigned to the variable named VAR. EXTRA_FLAG is the
+# flag (if any) needed for this run to touch the
 # workflow under test: coverage.yml only installs under --coverage-gate,
 # gitleaks.yml only installs under --gitleaks-ci (an opt-in workflow install.sh
 # only ever writes to when the flag is passed on THAT run, unlike coverage.yml
@@ -51,16 +52,15 @@ echo "cases/21: CI workflow drift-preserving install policy (lint.yml #105, test
 # need nothing extra. Branches on EXTRA_FLAG rather than an unquoted expansion
 # so an empty flag never turns into a stray empty-string argument.
 _wd_fixture() {
-  local extra=$1 t
-  t=$(mktemp -d)
+  local __wd_var=$1 extra=$2 t
+  fixture_repo t
+  echo '{"name":"x"}' >"$t/package.json"
   if [ -n "$extra" ]; then
-    ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
-      && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify "$extra" ) >/dev/null 2>&1
+    fixture_install "$t" --frontend --no-verify "$extra"
   else
-    ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
-      && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >/dev/null 2>&1
+    fixture_install "$t" --frontend --no-verify
   fi
-  printf '%s' "$t"
+  printf -v "$__wd_var" '%s' "$t"
 }
 
 # _wd_install DIR EXTRA_FLAG [MORE_FLAGS...]: re-run install.sh in DIR with
@@ -85,7 +85,7 @@ _wd_case() {
 
   # (T) a drifted FILE is PRESERVED and the drift note is printed, with no
   #     .scaffold-bak: cp_scaffold_preserve only backs up under --force.
-  T1=$(_wd_fixture "$extra")
+  _wd_fixture T1 "$extra"
   printf '\n# local CI customization: setup-node for a local.d check\n' >>"$T1/$rel"
   _wd_install "$T1" "$extra"
   if grep -qF "local CI customization" "$T1/$rel" \
@@ -100,7 +100,7 @@ _wd_case() {
 
   # (T) --force on a drifted FILE backs up the user's version, then installs
   #     the shipped one: the documented escape hatch from the drift note.
-  T2=$(_wd_fixture "$extra")
+  _wd_fixture T2 "$extra"
   printf '\n# local CI customization: setup-node for a local.d check\n' >>"$T2/$rel"
   _wd_install "$T2" "$extra" --force
   if [ -f "$T2/$rel.scaffold-bak" ] \
@@ -118,7 +118,7 @@ _wd_case() {
   #     filename appears nowhere in the output", since coverage.yml and
   #     gitleaks.yml both print an unconditional explanatory "note:" line on
   #     every run regardless of drift state.
-  T3=$(_wd_fixture "$extra")
+  _wd_fixture T3 "$extra"
   _wd_install "$T3" "$extra"
   if cmp -s "$tpl" "$T3/$rel" \
      && ! grep -q "note (drift):.*$base" "$HOOK_OUT" \
@@ -145,7 +145,7 @@ _wd_case "test-guard.yml" ".github/workflows/test-guard.yml" "$SCAFFOLD_DIR/.git
 # default-on would break consumer CI (#113). Same shape as the opt-in check
 # _wd_case already proves per-workflow above, but this asserts ABSENCE on the
 # plain, no-flag install path rather than presence behind its own flag.
-T4=$(_wd_fixture "")
+_wd_fixture T4 ""
 if [ ! -e "$T4/.github/workflows/dependency-review.yml" ]; then
   echo "  ✓ [dependency-review.yml] a default install does not create it"; PASS=$((PASS + 1))
 else

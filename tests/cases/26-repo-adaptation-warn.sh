@@ -14,16 +14,17 @@
 echo "cases/26: _backup warns on a dropped '# Repo adaptation:' marker (#127)"
 
 _radapt_fixture() {
-  local t; t=$(mktemp -d)
-  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
-    && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --coverage-gate ) >/dev/null 2>&1
-  printf '%s' "$t"
+  local __radapt_var=$1 t
+  fixture_repo t
+  echo '{"name":"x"}' >"$t/package.json"
+  fixture_install "$t" --frontend --no-verify --coverage-gate
+  printf -v "$__radapt_var" '%s' "$t"
 }
 
 # (T) cp_scaffold_preserve's --force path: a coverage.yml with a marked line
 # is overwritten (that's the point of --force), but now warns by name and
 # points at the backup, instead of a bare "backed up:"/"installed:" pair.
-F=$(_radapt_fixture)
+_radapt_fixture F
 sed -i.bak '1a\
       # Repo adaptation: gate frontend on vitest actually being declared
 ' "$F/.github/workflows/coverage.yml" && rm -f "$F/.github/workflows/coverage.yml.bak"
@@ -41,7 +42,7 @@ rm -rf "$F"
 # (T) cp_scaffold's unconditional-refresh path (.githooks/pre-commit): the
 # same warning fires even without --force, since cp_scaffold always
 # refreshes a drifted scaffold-owned file.
-P=$(_radapt_fixture)
+_radapt_fixture P
 sed -i.bak '2a\
 # Repo adaptation: local hook tweak
 ' "$P/.githooks/pre-commit" && rm -f "$P/.githooks/pre-commit.bak"
@@ -56,7 +57,7 @@ rm -rf "$P"
 
 # (T) no marker present: an ordinary drifted-file overwrite stays exactly as
 # before, no warning noise for the common case.
-N=$(_radapt_fixture)
+_radapt_fixture N
 printf '\n# ordinary local edit, no marker\n' >>"$N/.githooks/pre-commit"
 ( cd "$N" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --coverage-gate ) >"$HOOK_OUT" 2>&1
 if ! grep -q "Repo adaptation" "$HOOK_OUT" && grep -q "backed up:    .githooks/pre-commit" "$HOOK_OUT"; then
@@ -74,7 +75,7 @@ rm -rf "$N"
 # `// Repo adaptation:` line in eslint.config.js, `install.sh --frontend --force`
 # warned by name about the first and overwrote the second in total silence; the
 # marker was afterwards found only in eslint.config.js.scaffold-bak.
-JS=$(_radapt_fixture)
+_radapt_fixture JS
 printf '\n// Repo adaptation: relaxed no-console for the vendored worker\n' >>"$JS/eslint.config.js"
 ( cd "$JS" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --coverage-gate --force ) >"$HOOK_OUT" 2>&1
 if grep -q "warning: eslint.config.js carried 1 'Repo adaptation' line(s)" "$HOOK_OUT" \
@@ -91,7 +92,7 @@ rm -rf "$JS"
 # tsconfig.json / .prettierrc.json / the agent configs is a `//`-prefixed KEY,
 # which is valid JSON and must be matched by the same pattern. Inserted after
 # the opening brace, where the shipped tsconfig.json already carries `//` lines.
-JN=$(_radapt_fixture)
+_radapt_fixture JN
 awk 'NR == 1 { print; print "  \"// Repo adaptation: kept ES2019 for the vendored runtime\": true," ; next } { print }' \
   "$JN/tsconfig.json" >"$JN/tsconfig.next" && mv "$JN/tsconfig.next" "$JN/tsconfig.json"
 ( cd "$JN" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --coverage-gate --force ) >"$HOOK_OUT" 2>&1
@@ -106,7 +107,7 @@ rm -rf "$JN"
 # (T) the broadened pattern still requires the marker to FOLLOW the comment
 # leader: a line that merely mentions it mid-sentence, and a URL's '//', stay
 # quiet. Without this the warning would fire on prose and stop meaning anything.
-JQ=$(_radapt_fixture)
+_radapt_fixture JQ
 printf '\n# notes: Repo adaptation: this one is recorded elsewhere\n' >>"$JQ/.githooks/pre-commit"
 printf '# see https://example.invalid/docs for the convention\n' >>"$JQ/.githooks/pre-commit"
 ( cd "$JQ" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --coverage-gate ) >"$HOOK_OUT" 2>&1

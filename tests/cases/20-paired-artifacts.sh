@@ -17,31 +17,35 @@
 
 echo "cases/20: paired-artifact half-install detection (#96)"
 
+# Every project-fn below names its inner directory var __pa_dir, never "t":
+# pa_case/pa_case_absent below both declare `local t`, and bash's dynamic
+# scoping means a `local t` in one of these functions would shadow the
+# caller's `t` for the call's whole duration, so `printf -v "$1"` (called as
+# `"$projfn" t`) would bind to the shadow instead of the caller's variable,
+# silently leaving it empty (measured while writing this conversion — see
+# cases/18-doctor.sh's doc_project for the reproduction).
 pa_python_project() {
-  local t
-  t=$(mktemp -d)
-  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" \
-    && echo 'name = "test"' >pyproject.toml \
-    && "$SCAFFOLD_DIR/install.sh" --python --no-verify ) >/dev/null 2>&1
-  printf '%s' "$t"
+  local __pa_var=$1 __pa_dir
+  fixture_repo __pa_dir
+  echo 'name = "test"' >"$__pa_dir/pyproject.toml"
+  fixture_install "$__pa_dir" --python --no-verify
+  printf -v "$__pa_var" '%s' "$__pa_dir"
 }
 
 pa_shell_project() {
-  local t
-  t=$(mktemp -d)
-  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" \
-    && echo '#!/usr/bin/env bash' >run.sh \
-    && "$SCAFFOLD_DIR/install.sh" --shell --no-verify ) >/dev/null 2>&1
-  printf '%s' "$t"
+  local __pa_var=$1 __pa_dir
+  fixture_repo __pa_dir
+  echo '#!/usr/bin/env bash' >"$__pa_dir/run.sh"
+  fixture_install "$__pa_dir" --shell --no-verify
+  printf -v "$__pa_var" '%s' "$__pa_dir"
 }
 
 pa_frontend_coverage_project() {
-  local t
-  t=$(mktemp -d)
-  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" \
-    && echo '{"name":"t"}' >package.json \
-    && "$SCAFFOLD_DIR/install.sh" --frontend --coverage-gate --no-verify ) >/dev/null 2>&1
-  printf '%s' "$t"
+  local __pa_var=$1 __pa_dir
+  fixture_repo __pa_dir
+  echo '{"name":"t"}' >"$__pa_dir/package.json"
+  fixture_install "$__pa_dir" --frontend --coverage-gate --no-verify
+  printf -v "$__pa_var" '%s' "$__pa_dir"
 }
 
 # Mutations that need a variable expanded at run time are shell FUNCTIONS, not
@@ -65,7 +69,7 @@ pa_case() {
   local name=$1 projfn=$2 want=$3 expect=$4
   shift 4
   local t rc=0
-  t=$("$projfn")
+  "$projfn" t
   ( cd "$t" && "$@" ) >/dev/null 2>&1 || true
   ( cd "$t" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || rc=$?
   if [ "$rc" -eq "$want" ] && grep -qF "$expect" "$HOOK_OUT"; then
@@ -87,7 +91,7 @@ pa_case_absent() {
   local name=$1 projfn=$2 not_expect=$3
   shift 3
   local t rc=0
-  t=$("$projfn")
+  "$projfn" t
   ( cd "$t" && "$@" ) >/dev/null 2>&1 || true
   ( cd "$t" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || rc=$?
   if ! grep -qF "$not_expect" "$HOOK_OUT"; then
@@ -186,7 +190,7 @@ rm -rf "$IT"
 DOCLESS=$(mktemp -d)
 cp "$SCAFFOLD_DIR/scaffold-doctor.sh" "$DOCLESS/scaffold-doctor.sh"
 chmod +x "$DOCLESS/scaffold-doctor.sh"
-PT=$(pa_shell_project)
+pa_shell_project PT
 doc_rc=0
 ( cd "$PT" && "$DOCLESS/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
 if [ "$doc_rc" -eq 0 ] && grep -qF "install-wiring.sh not found next to scaffold-doctor.sh" "$HOOK_OUT"; then
@@ -210,24 +214,22 @@ reset_repo
 # `grep -rl agent-precheck .claude .cursor` found nothing while the doctor's
 # output was byte-identical to a correctly-wired install's.
 pa_stub_agent_project() {
-  local t
-  t=$(mktemp -d)
-  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" \
-    && echo '{"name":"t"}' >package.json \
-    && mkdir -p .claude .cursor \
-    && echo '{"permissions":{"allow":["Bash(ls:*)"]}}' >.claude/settings.json \
-    && echo '{"hooks":{}}' >.cursor/hooks.json \
-    && "$SCAFFOLD_DIR/install.sh" --frontend --claude --cursor --no-verify ) >/dev/null 2>&1
-  printf '%s' "$t"
+  local __pa_var=$1 __pa_dir
+  fixture_repo __pa_dir
+  echo '{"name":"t"}' >"$__pa_dir/package.json"
+  mkdir -p "$__pa_dir/.claude" "$__pa_dir/.cursor"
+  echo '{"permissions":{"allow":["Bash(ls:*)"]}}' >"$__pa_dir/.claude/settings.json"
+  echo '{"hooks":{}}' >"$__pa_dir/.cursor/hooks.json"
+  fixture_install "$__pa_dir" --frontend --claude --cursor --no-verify
+  printf -v "$__pa_var" '%s' "$__pa_dir"
 }
 
 pa_wired_agent_project() {
-  local t
-  t=$(mktemp -d)
-  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" \
-    && echo '{"name":"t"}' >package.json \
-    && "$SCAFFOLD_DIR/install.sh" --frontend --claude --no-verify ) >/dev/null 2>&1
-  printf '%s' "$t"
+  local __pa_var=$1 __pa_dir
+  fixture_repo __pa_dir
+  echo '{"name":"t"}' >"$__pa_dir/package.json"
+  fixture_install "$__pa_dir" --frontend --claude --no-verify
+  printf -v "$__pa_var" '%s' "$__pa_dir"
 }
 
 pa_case "agent-precheck installed with configs that never invoke it is a gap" \

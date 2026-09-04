@@ -10,14 +10,15 @@
 echo "cases/23: --npm-cooldown opt-in flag (#117)"
 
 _npmc_fixture() {
-  local t; t=$(mktemp -d)
-  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
-    && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify "$@" ) >/dev/null 2>&1
-  printf '%s' "$t"
+  local __npmc_var=$1 t; shift
+  fixture_repo t
+  echo '{"name":"x"}' >"$t/package.json"
+  fixture_install "$t" --frontend --no-verify "$@"
+  printf -v "$__npmc_var" '%s' "$t"
 }
 
 # (T) a default install (no flag) writes no .npmrc: stays opt-in.
-D=$(_npmc_fixture)
+_npmc_fixture D
 if [ ! -e "$D/.npmrc" ]; then
   echo "  ✓ a default install creates no .npmrc"; PASS=$((PASS + 1))
 else
@@ -27,7 +28,7 @@ rm -rf "$D"
 
 # (T) --npm-cooldown installs .npmrc with min-release-age=7, byte-identical
 # to the shipped template.
-N=$(_npmc_fixture --npm-cooldown)
+_npmc_fixture N --npm-cooldown
 if [ -f "$N/.npmrc" ] && grep -q '^min-release-age=7$' "$N/.npmrc" \
    && cmp -s "$SCAFFOLD_DIR/.npmrc.template" "$N/.npmrc"; then
   echo "  ✓ --npm-cooldown installs .npmrc with min-release-age=7"; PASS=$((PASS + 1))
@@ -39,7 +40,7 @@ rm -rf "$N"
 # (T) cp_safe semantics: a hand-edited .npmrc is left alone on a plain
 # re-run (no drift note, no backup), and --force backs it up then replaces
 # it with the shipped version.
-S=$(_npmc_fixture --npm-cooldown)
+_npmc_fixture S --npm-cooldown
 printf '\n# local override\nregistry=https://example.invalid/\n' >>"$S/.npmrc"
 ( cd "$S" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --npm-cooldown ) >"$HOOK_OUT" 2>&1
 if grep -qF "local override" "$S/.npmrc" && [ ! -e "$S/.npmrc.scaffold-bak" ] \
@@ -58,7 +59,7 @@ fi
 rm -rf "$S"
 
 # (T) uninstall.sh removes an unmodified .npmrc.
-U=$(_npmc_fixture --npm-cooldown)
+_npmc_fixture U --npm-cooldown
 ( cd "$U" && "$SCAFFOLD_DIR/uninstall.sh" ) >"$HOOK_OUT" 2>&1
 if [ ! -e "$U/.npmrc" ]; then
   echo "  ✓ uninstall.sh removes an unmodified .npmrc"; PASS=$((PASS + 1))
