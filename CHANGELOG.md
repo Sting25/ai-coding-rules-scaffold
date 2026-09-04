@@ -20,8 +20,17 @@ versioning follows [SemVer](https://semver.org/).
   are not counted); an existing root file is left alone as before; a plain
   frontend repo still receives it, now followed by a note saying the hook will
   type-check the tree and how to undo that, so the placement is never silent.
-  The catalog's adopt block gained the same per-directory check. Case 41
-  covers all six paths and was red before the fix.
+  The catalog's adopt block gained the same per-directory check, and
+  `scaffold-assess.sh` reports the per-directory case by name instead of
+  measuring the template project-wide. Case 41 covers all six installer paths
+  and was red before the fix; case 39 covers the assess line.
+- **The pytest-config probe's node_modules prune was inert.** `find -mindepth
+  2` never evaluates the prune on a depth-1 directory, so a vendored
+  `pyproject.toml` under `node_modules/` counted as the repo's pytest config
+  and suppressed the root `pytest.ini` with a "pytest config in
+  node_modules/x" skip. Found while writing the same probe for
+  `tsconfig.json`; the tsconfig probe was written without it. Case 17 gained
+  the assertion, red before the fix.
 
 ## [v0.18.0] - 2026-09-03
 
