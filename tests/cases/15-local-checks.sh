@@ -44,18 +44,21 @@ LC_EOF
 # that never ran npm install. Shell mode installs no ruff/eslint/prettier/tsc
 # config, so nothing but the guardrails and local.d can decide the exit status.
 _fixture() {
-  local d; d=$(mktemp -d)
-  ( cd "$d" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && git config core.hooksPath .nohooks \
-    && printf '#!/usr/bin/env bash\necho seed\n' >seed.sh && git add -A \
-    && git -c user.email=t@t -c user.name=t commit --quiet -m seed \
-    && "$SCAFFOLD_DIR/install.sh" --shell ) >/dev/null 2>&1
-  ( cd "$d" && git config --unset core.hooksPath && git config core.hooksPath .githooks )
-  printf '%s' "$d"
+  local __fixture_var=$1 d
+  fixture_repo d
+  git -C "$d" config core.hooksPath .nohooks
+  printf '#!/usr/bin/env bash\necho seed\n' >"$d/seed.sh"
+  git -C "$d" add -A
+  git -C "$d" -c user.email=t@t -c user.name=t commit --quiet -m seed
+  fixture_install "$d" --shell
+  git -C "$d" config --unset core.hooksPath
+  git -C "$d" config core.hooksPath .githooks
+  printf -v "$__fixture_var" '%s' "$d"
 }
 
 # (T) install.sh creates local.d with an INERT README — inert because the hook's
 #     -x guard skips it. A README that arrived executable would be RUN.
-LTMP=$(_fixture)
+_fixture LTMP
 if [ -f "$LTMP/.githooks/local.d/README.md" ] && [ ! -x "$LTMP/.githooks/local.d/README.md" ]; then
   echo "  ✓ install.sh creates .githooks/local.d/ with a non-executable README"; PASS=$((PASS + 1))
 else

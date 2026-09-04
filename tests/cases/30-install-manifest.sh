@@ -29,10 +29,11 @@ echo "cases/30: the install manifest refreshes untouched files on upgrade (audit
 
 # _mf_project: a fresh frontend repo with the scaffold installed from HEAD.
 _mf_project() {
-  local t; t=$(mktemp -d)
-  ( cd "$t" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
-    && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >/dev/null 2>&1
-  printf '%s' "$t"
+  local __mf_project_var=$1 t
+  fixture_repo t
+  echo '{"name":"x"}' >"$t/package.json"
+  fixture_install "$t" --frontend --no-verify
+  printf -v "$__mf_project_var" '%s' "$t"
 }
 
 # _mf_sha FILE: the same portable hash install-manifest.sh records, so these
@@ -62,7 +63,7 @@ MFNEXT=$(_mf_next_scaffold)
 # (T) a plain install writes the manifest, records the version, and records the
 #     files it wrote. This is enh-upgrade-1: before it, nothing on disk said
 #     which scaffold version a repo had.
-MF1=$(_mf_project)
+_mf_project MF1
 MFVER=$(awk -F'"' '/^[[:space:]]*"version"[[:space:]]*:/ { print $4; exit }' "$SCAFFOLD_DIR/package.json")
 if [ -f "$MF1/.githooks/.scaffold-manifest" ] \
    && grep -q " $MFVER .githooks/pre-commit\$" "$MF1/.githooks/.scaffold-manifest" \
@@ -138,7 +139,7 @@ rm -rf "$MF1"
 #     the manifest is telling the two apart, so this is the half that must not
 #     regress. The user's line survives, the shipped one does not arrive, and
 #     the note now says plainly that this is an edit.
-MF2=$(_mf_project)
+_mf_project MF2
 printf '\n(?-i)mf_my_own_rule_[0-9]{6}\ta rule this team added\n' >>"$MF2/.forbidden-patterns/secrets.txt"
 ( cd "$MF2" && "$MFNEXT/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
 if grep -q 'mf_my_own_rule_' "$MF2/.forbidden-patterns/secrets.txt" \
@@ -153,7 +154,7 @@ rm -rf "$MF2"
 
 # (T) --force still wins over the manifest: it backs the user's version up and
 #     installs the shipped one, unchanged from the documented escape hatch.
-MF3=$(_mf_project)
+_mf_project MF3
 printf '\n(?-i)mf_my_own_rule_[0-9]{6}\ta rule this team added\n' >>"$MF3/.forbidden-patterns/secrets.txt"
 ( cd "$MF3" && "$MFNEXT/install.sh" --frontend --no-verify --force ) >"$HOOK_OUT" 2>&1
 if grep -q 'mf_newdetector_' "$MF3/.forbidden-patterns/secrets.txt" \
@@ -168,7 +169,7 @@ rm -rf "$MF3"
 #     no entry, so it is kept exactly as before, but the message no longer
 #     claims it is the user's customization, because nothing on disk says that.
 #     This is the honest half of the pre-manifest upgrade path.
-MF4=$(_mf_project)
+_mf_project MF4
 printf '\n# an edit made before any manifest existed\n' >>"$MF4/.github/workflows/lint.yml"
 rm -f "$MF4/.githooks/.scaffold-manifest"
 ( cd "$MF4" && "$MFNEXT/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
@@ -186,7 +187,7 @@ rm -rf "$MF4"
 #     recording a drifted file would make the next run believe the scaffold
 #     produced those bytes and refresh straight over the user's edit. This is
 #     the assertion that stops the mechanism becoming a data-loss path.
-MF5=$(_mf_project)
+_mf_project MF5
 printf '\n# a local CI customization\n' >>"$MF5/.github/workflows/lint.yml"
 ( cd "$MF5" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
 MF5_REC=$(awk '$3 == ".github/workflows/lint.yml" { print $1 }' "$MF5/.githooks/.scaffold-manifest" 2>/dev/null || true)
@@ -207,7 +208,7 @@ rm -rf "$MF5"
 #     reverted to pre-manifest behavior on every later upgrade (audit verify-6).
 #     Trigger: something that is not a regular file at the manifest path, which
 #     no mode bit can make succeed, so this runs the same way for every user.
-MF6=$(_mf_project)
+_mf_project MF6
 rm -f "$MF6/.githooks/.scaffold-manifest"
 mkdir -p "$MF6/.githooks/.scaffold-manifest"
 MF6_RC=0
@@ -227,7 +228,7 @@ rm -rf "$MF6"
 #     .githooks, where the write itself fails rather than being refused up
 #     front. A mode bit means nothing to root, so the case asserts whichever
 #     outcome is honest for the user running it: the probe decides which.
-MF7=$(_mf_project)
+_mf_project MF7
 chmod 555 "$MF7/.githooks"
 MF7_RC=0
 # 2>/dev/null goes FIRST: redirections apply left to right, so with the probe
@@ -264,7 +265,7 @@ rm -rf "$MF7"
 #     it was reintroduced by the manifest itself (audit verify-7). Both halves
 #     are asserted, plus the positive outcome that the run still recorded the
 #     manifest it was cleaning up around.
-MF8=$(_mf_project)
+_mf_project MF8
 : >"$MF8/.githooks/.scaffold-manifest.new.999999"
 : >"$MF8/.githooks/.scaffold-manifest.tmp.999999"
 MF8_IGN=0
@@ -291,10 +292,10 @@ rm -rf "$MF8"
 #     reintroduced by the new file. The .gitignore block install.sh appends was
 #     never named or removed. Both are asserted here, together with the half
 #     that must not break: the project's own ignore rules survive.
-MF9=$(mktemp -d)
-( cd "$MF9" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json \
-  && printf 'node_modules/\n' >.gitignore \
-  && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >/dev/null 2>&1
+fixture_repo MF9
+echo '{"name":"x"}' >"$MF9/package.json"
+printf 'node_modules/\n' >"$MF9/.gitignore"
+fixture_install "$MF9" --frontend --no-verify
 ( cd "$MF9" && "$SCAFFOLD_DIR/uninstall.sh" --all ) >"$HOOK_OUT" 2>&1
 if [ ! -e "$MF9/.githooks" ] \
    && grep -q 'removed: *\.githooks/\.scaffold-manifest' "$HOOK_OUT" \
