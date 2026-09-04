@@ -15,15 +15,15 @@
 echo "cases/40: scaffold-doctor reports what it could not measure about required status checks"
 
 _rc_fixture() {
-  local t; t=$(mktemp -d)
-  ( cd "$t" && git init -q && git config user.email t@test.local && git config user.name "Scaffold Test" \
-      && "$SCAFFOLD_DIR/install.sh" --shell --no-verify ) >/dev/null 2>&1
-  printf '%s' "$t"
+  local __rc_fixture_var=$1 t
+  fixture_repo t
+  fixture_install "$t" --shell --no-verify
+  printf -v "$__rc_fixture_var" '%s' "$t"
 }
 
 # 1. No GitHub remote: a local-only repo, the common case in this suite.
-_rc_repo=$(_rc_fixture)
-( cd "$_rc_repo" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || true
+_rc_fixture _RC_REPO
+( cd "$_RC_REPO" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || true
 if grep -q 'required status checks: not checked (remote.origin is not a github.com URL)' "$HOOK_OUT"; then
   echo "  ✓ no GitHub remote: reported as not checked, with the reason"
   PASS=$((PASS + 1))
@@ -34,13 +34,13 @@ fi
 
 # 2. GitHub remote but no gh on PATH: a PATH with only the directories the
 # doctor's other checks need, minus wherever gh lives.
-( cd "$_rc_repo" && git remote add origin git@github.com:example/project.git )
+( cd "$_RC_REPO" && git remote add origin git@github.com:example/project.git )
 _rc_nogh=$(mktemp -d)
 for _rc_tool in bash git grep sed awk sort uniq cut tr wc head tail mktemp basename dirname cat cmp find xargs jq python3 ls test; do
   _rc_path=$(command -v "$_rc_tool" 2>/dev/null || true)
   [ -n "$_rc_path" ] && ln -s "$_rc_path" "$_rc_nogh/$_rc_tool" 2>/dev/null
 done
-( cd "$_rc_repo" && PATH="$_rc_nogh" "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || true
+( cd "$_RC_REPO" && PATH="$_rc_nogh" "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || true
 if grep -q 'required status checks: not checked (gh CLI not installed' "$HOOK_OUT"; then
   echo "  ✓ GitHub remote, no gh: reported as not checked, names the missing tool"
   PASS=$((PASS + 1))
@@ -55,7 +55,7 @@ cat > "$_rc_nogh/gh" <<'GH'
 exit 1
 GH
 chmod +x "$_rc_nogh/gh"
-( cd "$_rc_repo" && PATH="$_rc_nogh" "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || true
+( cd "$_RC_REPO" && PATH="$_rc_nogh" "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || true
 if grep -q 'required status checks: not checked (gh is not logged in' "$HOOK_OUT"; then
   echo "  ✓ gh present, not logged in: reported as not checked, says how to fix"
   PASS=$((PASS + 1))
@@ -85,7 +85,7 @@ _rc_stub() {
   chmod +x "$_rc_nogh/gh"
 }
 _rc_stub 0 0
-_rc_rc=0; ( cd "$_rc_repo" && PATH="$_rc_nogh" "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || _rc_rc=$?
+_rc_rc=0; ( cd "$_RC_REPO" && PATH="$_rc_nogh" "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || _rc_rc=$?
 if [ "$_rc_rc" -eq 1 ] && grep -q "requires NO status checks" "$HOOK_OUT" && grep -q 'fix: import .github/rulesets/main-protection.json' "$HOOK_OUT"; then
   echo "  ✓ measured zero required checks: a gap with the fix named, exit 1"
   PASS=$((PASS + 1))
@@ -94,7 +94,7 @@ else
   FAIL=$((FAIL + 1))
 fi
 _rc_stub 6 0
-( cd "$_rc_repo" && PATH="$_rc_nogh" "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || true
+( cd "$_RC_REPO" && PATH="$_rc_nogh" "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || true
 if grep -q '✓ main requires status checks before merge (6 via branch protection, 0 ruleset rule(s))' "$HOOK_OUT"; then
   echo "  ✓ measured six required checks: reported armed with the counts"
   PASS=$((PASS + 1))
@@ -103,6 +103,6 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-rm -rf "$_rc_repo" "$_rc_nogh"
-unset _rc_repo _rc_nogh _rc_tool _rc_path _rc_rc
+rm -rf "$_RC_REPO" "$_rc_nogh"
+unset _RC_REPO _rc_nogh _rc_tool _rc_path _rc_rc
 unset -f _rc_fixture _rc_stub
