@@ -2,8 +2,8 @@
 # scaffold-extensions: rb rake
 # Format: <regex><TAB><description>   (one per line; # comments ignored)
 # Separator is TAB - patterns can contain literal `|` for ERE alternation.
-# Patterns are case-SENSITIVE, scanned against the staged blob. Copy to your
-# project as `.forbidden-patterns/ruby.txt`.
+# Patterns are case-SENSITIVE, scanned against the staged blob. Installed as
+# `.forbidden-patterns/ruby.txt`.
 # Debug rules target breakpoints (binding.pry/irb, byebug, debugger) and pp; a
 # second block below targets code-execution and TLS-downgrade sinks. Command
 # injection is NOT covered - see the NOT COVERED note in that block.

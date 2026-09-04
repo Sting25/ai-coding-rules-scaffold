@@ -1,7 +1,7 @@
 name: tests
 
-# DEFAULT-ON test execution. Copy to your project as
-# `.github/workflows/tests.yml` (install.sh installs it automatically; opt out
+# DEFAULT-ON test execution, installed as
+# `.github/workflows/tests.yml` (install.sh does it automatically; opt out
 # with `--no-test-workflow`, or install `--coverage-gate` instead (see below).
 #
 # WHY THIS EXISTS (#97). A default install used to produce lint-only CI: green

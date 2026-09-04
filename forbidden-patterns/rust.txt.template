@@ -2,8 +2,8 @@
 # scaffold-extensions: rs
 # Format: <regex><TAB><description>   (one per line; # comments ignored)
 # Separator is TAB - patterns can contain literal `|` for ERE alternation.
-# Patterns are case-SENSITIVE, scanned against the staged blob. Copy to your
-# project as `.forbidden-patterns/rust.txt`.
+# Patterns are case-SENSITIVE, scanned against the staged blob. Installed as
+# `.forbidden-patterns/rust.txt`.
 # Each macro pattern requires an opening delimiter ( [ { after the `!` so it
 # only fires on a real invocation, not an identifier or a comment mention, and
 # to stay portable across GNU grep and ugrep.

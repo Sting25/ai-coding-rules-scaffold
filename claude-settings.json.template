@@ -1,5 +1,5 @@
 {
-  "//": "ai-coding-rules-scaffold — OPT-IN agent-runtime guardrails for Claude Code (the scaffold's deferred 'layer three'). Copy to your project as .claude/settings.json, or merge these keys into an existing one. Two parts: a permissions deny-list (the agent can't read credential files or run a few catastrophic commands) and a PreToolUse hook that scans content the agent is about to write against .forbidden-patterns/secrets.txt — the same patterns the commit-time scanner uses. Trim the deny-list to taste; paths use gitignore-style matching.",
+  "//": "ai-coding-rules-scaffold — OPT-IN agent-runtime guardrails for Claude Code (the scaffold's deferred 'layer three'). Installed as .claude/settings.json, or merge these keys into an existing one. Two parts: a permissions deny-list (the agent can't read credential files or run a few catastrophic commands) and a PreToolUse hook that scans content the agent is about to write against .forbidden-patterns/secrets.txt — the same patterns the commit-time scanner uses. Trim the deny-list to taste; paths use gitignore-style matching.",
 
   "permissions": {
     "deny": [

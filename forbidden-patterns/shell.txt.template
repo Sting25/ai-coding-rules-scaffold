@@ -4,7 +4,7 @@
 # The second header claims files with no .sh extension: the same RUN/recipe
 # lines (curl|bash, rm -rf /, chmod 777) live in Dockerfiles and Makefiles,
 # where an extension match never looks.
-# Copy to your project as `.forbidden-patterns/shell.txt`.
+# Installed as `.forbidden-patterns/shell.txt`.
 
 (^|[^A-Za-z_])(curl|wget)([[:space:]]+[^|]*)?\|[[:space:]]*(sudo[[:space:]]+)?(bash|sh|zsh)([[:space:]]|$)	Piping remote download to a shell — review the script and run it as a separate step
 (^|[^A-Za-z_])rm[[:space:]]+((-[a-zA-Z]+|--[a-z]+)[[:space:]]+)+["']?(/|/\*|~|~/\*|\$\{?HOME\}?(/\*)?)["']?([[:space:]]|[;&]|$)	`rm -rf /` (or /*, ~, $HOME) detected — refuse to ship; scope to a specific path

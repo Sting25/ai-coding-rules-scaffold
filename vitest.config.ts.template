@@ -1,4 +1,4 @@
-// Copy to project root as `vitest.config.ts` (install.sh does this for frontend
+// Project-root `vitest.config.ts` (install.sh installs it for frontend
 // stacks unless the project already uses Jest). Vitest is the default runner:
 // Vite-native, ESM-first, near-zero config. Swap for Jest if your stack already
 // standardized on it — the scaffold won't fight an existing choice.

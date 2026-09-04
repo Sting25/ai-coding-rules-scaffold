@@ -2,8 +2,8 @@
 # scaffold-extensions: php phtml php3 php4 php5 php7 php8
 # Format: <regex><TAB><description>   (one per line; # comments ignored)
 # Separator is TAB; patterns can contain literal | for ERE alternation.
-# Patterns are case-SENSITIVE, scanned against the staged blob. Copy to
-# your project as `.forbidden-patterns/php.txt`.
+# Patterns are case-SENSITIVE, scanned against the staged blob. Installed
+# as `.forbidden-patterns/php.txt`.
 # error_log() is intentionally NOT banned - it is legitimate logging.
 # die()/exit() are common control flow and live in optionalPatterns.
 

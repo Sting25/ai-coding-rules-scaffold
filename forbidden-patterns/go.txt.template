@@ -2,7 +2,7 @@
 # scaffold-extensions: go
 # Format: <regex><TAB><description>   (one per line; # comments ignored)
 # Separator is TAB - patterns can contain literal `|` for ERE alternation.
-# Case-sensitive ERE (grep -anE). Copy to your project as `.forbidden-patterns/go.txt`.
+# Case-sensitive ERE (grep -anE). Installed as `.forbidden-patterns/go.txt`.
 # Active rules flag leftover debug output plus one security sink (TLS bypass);
 # panic/log.Fatal live in optional below.
 

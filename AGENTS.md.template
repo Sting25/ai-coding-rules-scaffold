@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Instructions for AI coding agents working in this repo. `AGENTS.md` is an open cross-tool standard (see [agents.md](https://agents.md)) read natively by Cursor, Aider, Codex, and others; the standard specifies nested `AGENTS.md` files with closest-file-wins precedence. For Claude Code, a thin `CLAUDE.md` pointer is installed alongside this file. Copy to your project root as `AGENTS.md` and edit the **Project** section.
+Instructions for AI coding agents working in this repo. `AGENTS.md` is an open cross-tool standard (see [agents.md](https://agents.md)) read natively by Cursor, Aider, Codex, and others; the standard specifies nested `AGENTS.md` files with closest-file-wins precedence. For Claude Code, a thin `CLAUDE.md` pointer is installed alongside this file. This file lives at the project root as `AGENTS.md`; edit the **Project** section.
 
 ## Coding rules
 

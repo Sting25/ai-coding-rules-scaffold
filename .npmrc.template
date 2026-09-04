@@ -1,4 +1,4 @@
-# Copy to your project as `.npmrc` (install.sh --npm-cooldown, issue #117).
+# Project-root `.npmrc`, installed by `install.sh --npm-cooldown` (issue #117).
 #
 # min-release-age delays how soon a freshly published package version becomes
 # installable, counted in DAYS from its publish time: npm resolves to an

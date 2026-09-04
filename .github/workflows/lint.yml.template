@@ -1,6 +1,6 @@
 name: lint
 
-# Copy to your project as `.github/workflows/lint.yml`.
+# Installed as `.github/workflows/lint.yml`.
 # Mirrors the pre-commit hook server-side via the same lib/check-* scripts —
 # the hook and CI can never drift because they share one implementation.
 # Adjust Python / Node versions per project.

@@ -1,4 +1,4 @@
-// Copy to project root as `eslint.config.js` (flat config, ESLint 9+).
+// Project-root `eslint.config.js` (flat config, ESLint 9+).
 //
 // Install peers:
 //   npm i -D eslint @eslint/js @eslint/compat typescript-eslint \
