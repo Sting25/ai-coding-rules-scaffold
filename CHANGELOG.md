@@ -24,9 +24,9 @@ versioning follows [SemVer](https://semver.org/).
   `scaffold-assess.sh` reports the per-directory case by name instead of
   measuring the template project-wide. Case 41 covers all six installer paths
   and was red before the fix; case 39 covers the assess line.
-- **The pytest-config probe's node_modules prune was inert.** `find -mindepth
-  2` never evaluates the prune on a depth-1 directory, so a vendored
-  `pyproject.toml` under `node_modules/` counted as the repo's pytest config
+- **The pytest-config probe's node_modules prune was inert.** With
+  `-mindepth 2`, find never evaluates the prune on a depth-1 directory, so a
+  vendored `pyproject.toml` under `node_modules/` counted as the pytest config
   and suppressed the root `pytest.ini` with a "pytest config in
   node_modules/x" skip. Found while writing the same probe for
   `tsconfig.json`; the tsconfig probe was written without it. Case 17 gained
