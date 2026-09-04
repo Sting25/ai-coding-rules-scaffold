@@ -391,6 +391,45 @@ cp_scaffold_preserve() {
 # flip the mode of a skipped, user-owned file.
 mkx() { if [ -f "$1" ]; then chmod +x "$1"; fi; }
 
+# --- tsconfig.json placement (#163) -----------------------------------------
+# A root tsconfig.json is not just a config file: the pre-commit hook and
+# lint.yml run `tsc --noEmit` over the WHOLE tree whenever one exists. In a
+# workspaces monorepo that checks every workspace with compiler options written
+# for none of them and blocks every JS/TS commit (12,235 errors measured in
+# #163, and the natural reaction, --no-verify, switches off every other
+# guardrail too). So the file is placed by policy, mirroring COMPONENTS.md's
+# adopt=tsconfig block: an existing root file goes through cp_safe unchanged;
+# a workspaces repo or one with per-directory tsconfig files gets a skip that
+# names the reason; a plain repo gets the file plus a note saying what the hook
+# will now do and how to undo it, so the placement is never silent.
+cp_tsconfig_root() {
+  local src=$1 nested
+  if [ -e tsconfig.json ] || [ -L tsconfig.json ]; then
+    cp_safe "$src" "tsconfig.json"
+    return
+  fi
+  if grep -qs '"workspaces"' package.json || [ -f pnpm-workspace.yaml ]; then
+    echo "skip (workspaces monorepo): tsconfig.json  (not writing a root tsconfig.json: with one present the pre-commit hook and lint.yml run 'tsc --noEmit' over the whole tree with its options and ignore each workspace's own config (#163). Type-check per workspace; to layer the strictness on, merge tsconfig.json.template's compilerOptions into each workspace's tsconfig.)"
+    return
+  fi
+  # No -mindepth: with it, find never evaluates the expression for depth-1
+  # entries, so the prune would not fire on ./node_modules and a dependency's
+  # tsconfig.json would count as the repo's. The root file cannot match here:
+  # its existence was handled above.
+  nested=$(find . -maxdepth 3 \
+      \( -name .git -o -name node_modules -o -name .venv -o -name venv -o -name vendor \
+         -o -name dist -o -name build -o -name .claude \) -prune -o \
+      -type f -name tsconfig.json -print 2>/dev/null \
+    | sed -e 's#^\./##' -e 's#/tsconfig\.json$##' | sort | tr '\n' ' ' || true)
+  nested=${nested% }
+  if [ -n "$nested" ]; then
+    echo "skip (tsconfig.json in $nested): tsconfig.json  (not writing a root tsconfig.json: this repo type-checks per directory, and a root file would make the pre-commit hook and lint.yml run 'tsc --noEmit' over the whole tree instead, #163. Merge tsconfig.json.template's compilerOptions into those configs if you want the strictness.)"
+    return
+  fi
+  cp_safe "$src" "tsconfig.json"
+  echo "note:         tsconfig.json installed at the repo root. The pre-commit hook and lint.yml now run 'tsc --noEmit' over every tracked .ts/.tsx on JS/TS commits, with the strict options in that file. If that is not what this repo wants, delete tsconfig.json (or merge its compilerOptions into your own build config) and the type-check step goes back to skipping."
+}
+
 # install_opt_in_* flag bodies (zizmor CI, Socket CI, npm cooldown #117,
 # Claude Skill #118, test-guard #140) and install_test_workflow_ci (#97) live
 # in install-optin.sh, sourced by install.sh alongside this file: first

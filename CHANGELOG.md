@@ -4,6 +4,34 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **install.sh no longer drops a root `tsconfig.json` into a monorepo
+  (#163).** The root file is the switch that makes the pre-commit hook and
+  lint.yml run `tsc --noEmit` over the whole tree, so in a workspaces repo it
+  type-checked every workspace with options written for none of them and
+  blocked every JS/TS commit (12,235 errors measured). The frontend install
+  now places the file by policy, the same logic as COMPONENTS.md entry 10's
+  adopt block: skipped, with the reason named, when `package.json` has a
+  `workspaces` key or `pnpm-workspace.yaml` exists, or when per-directory
+  `tsconfig.json` files already exist (node_modules, vendor and build output
+  are not counted); an existing root file is left alone as before; a plain
+  frontend repo still receives it, now followed by a note saying the hook will
+  type-check the tree and how to undo that, so the placement is never silent.
+  The catalog's adopt block gained the same per-directory check, and
+  `scaffold-assess.sh` reports the per-directory case by name instead of
+  measuring the template project-wide. Case 41 covers all six installer paths
+  and was red before the fix; case 39 covers the assess line.
+- **The pytest-config probe's node_modules prune was inert.** With
+  `-mindepth 2`, find never evaluates the prune on a depth-1 directory, so a
+  vendored `pyproject.toml` under `node_modules/` counted as the pytest config
+  and suppressed the root `pytest.ini` with a "pytest config in
+  node_modules/x" skip. Found while writing the same probe for
+  `tsconfig.json`; the tsconfig probe was written without it. Case 17 gained
+  the assertion, red before the fix.
+
 ## [v0.18.0] - 2026-09-03
 
 ### Changed

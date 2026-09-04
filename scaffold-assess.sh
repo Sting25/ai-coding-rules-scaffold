@@ -154,6 +154,8 @@ elif [ -f tsconfig.json ]; then
   echo "  - tsconfig.json: this repo already has one; the scaffold's would not be copied over it"
 elif grep -q '"workspaces"' package.json 2>/dev/null || [ -f pnpm-workspace.yaml ]; then
   echo "  ! tsconfig.json: workspaces monorepo, do not add a root tsconfig.json (#163); per-package configs already type-check"
+elif nested=$(find . -maxdepth 3 \( -name .git -o -name node_modules -o -name vendor -o -name dist -o -name build \) -prune -o -type f -name tsconfig.json -print 2>/dev/null | sed -e 's#^\./##' -e 's#/tsconfig\.json$##' | sort | tr '\n' ' ') && [ -n "$nested" ]; then
+  echo "  ! tsconfig.json: per-directory tsconfig.json in ${nested% }; install.sh will not add a root one (#163), which would type-check the whole tree with these options instead"
 elif command -v node >/dev/null 2>&1 && node -e "require.resolve('typescript/package.json')" >/dev/null 2>&1; then
   n=$(npx --no-install tsc --noEmit -p "$SCAFFOLD_DIR/tsconfig.json.template" 2>&1 | grep -c 'error TS' || true)
   echo "  $([ "$n" -eq 0 ] && echo ✓ || echo ✗) tsconfig.json: $n type error(s) across $js_files JS/TS file(s); the hook runs tsc PROJECT-WIDE on every JS/TS commit, so this is a blocker until zero"

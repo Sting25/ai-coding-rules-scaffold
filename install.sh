@@ -261,7 +261,11 @@ if [ "$MODE" = "python" ] || [ "$MODE" = "both" ]; then
   # So look one level down as well, bounded: -maxdepth 2 covers backend/ and
   # services/x/ without walking a vendored tree, and prunes the usual suspects.
   # A `find` result is only used as a yes/no signal, so a weird filename cannot
-  # do anything but flip a boolean.
+  # do anything but flip a boolean. No -mindepth on the find: with one, find
+  # never evaluates the prune on a depth-1 directory, so ./node_modules was
+  # walked and a vendored pyproject.toml suppressed the root pytest.ini. A root
+  # config with a pytest section is caught by the grep above, and one without
+  # is filtered by the grep in the loop, so depth 1 adds no false match.
   PYTEST_CFG=""
   if grep -qs -e '\[tool.pytest.ini_options\]' -e '\[pytest\]' pyproject.toml tox.ini setup.cfg 2>/dev/null; then
     PYTEST_CFG="."
@@ -273,7 +277,7 @@ if [ "$MODE" = "python" ] || [ "$MODE" = "both" ]; then
         break
       fi
     done <<EOF_PYCFG
-$(find . -mindepth 2 -maxdepth 3 \
+$(find . -maxdepth 3 \
        \( -name .git -o -name node_modules -o -name .venv -o -name venv \
           -o -name .tox -o -name .claude -o -name vendor \) -prune -o \
        -type f \( -name pyproject.toml -o -name tox.ini -o -name setup.cfg -o -name pytest.ini \) \
@@ -306,7 +310,9 @@ if [ "$MODE" = "frontend" ] || [ "$MODE" = "both" ]; then
   cp_pattern "$SCAFFOLD_DIR/forbidden-patterns/frontend.txt.template" ".forbidden-patterns/frontend.txt"
   # TypeScript config the eslint type-aware rules + the tsc --noEmit hook/CI
   # step already assume (closes the gap where they silently degrade if absent).
-  cp_safe "$SCAFFOLD_DIR/tsconfig.json.template" "tsconfig.json"
+  # The root file is also the switch that turns on whole-tree type-checking,
+  # so it is placed by policy (skipped in monorepos, #163), not copied blindly.
+  cp_tsconfig_root "$SCAFFOLD_DIR/tsconfig.json.template"
   # Formatting: Prettier runs SEPARATELY from eslint by design (strictTypeChecked
   # ships no stylistic rules, so there is no eslint-config-prettier — see the
   # header of eslint.config.js).
