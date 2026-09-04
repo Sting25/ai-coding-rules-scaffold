@@ -58,7 +58,7 @@ the components you want with the commands in each entry; every entry has a
 verify step, and `scaffold-assess.sh` measures what each would flag first.
 
 ```sh
-git clone --branch v0.18.0 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
+git clone --branch v0.18.1 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
 export SCAFFOLD=~/src/ai-coding-rules-scaffold
 bash "$SCAFFOLD/scaffold-assess.sh"        # from your project root: what would each component flag?
 ```
@@ -95,7 +95,7 @@ somewhere stable:
 
 ```sh
 # Recommended: pin to a tagged release for reproducibility
-git clone --branch v0.18.0 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
+git clone --branch v0.18.1 https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
 # Or track main if you want the latest changes
 git clone https://github.com/Sting25/ai-coding-rules-scaffold ~/src/ai-coding-rules-scaffold
 ```
