@@ -1,5 +1,5 @@
 {
-  // Copy to project root as `tsconfig.json` (install.sh does this for frontend
+  // Project-root `tsconfig.json` (install.sh installs it for frontend
   // stacks). This is the type-checker config that `eslint.config.js`'s
   // type-aware rules (`strictTypeChecked`) AND the `tsc --noEmit` step in the
   // pre-commit hook + CI both rely on — without it, the highest-value async-

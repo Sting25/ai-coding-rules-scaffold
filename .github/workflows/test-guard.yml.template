@@ -1,6 +1,6 @@
 name: test-guard
 
-# Copy to your project as `.github/workflows/test-guard.yml`.
+# Installed as `.github/workflows/test-guard.yml`.
 # Installed by the scaffold's opt-in `--test-guard` flag.
 #
 # The anti-gaming layer. Every other gate in this scaffold assumes the test

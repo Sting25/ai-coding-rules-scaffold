@@ -1,4 +1,4 @@
-# Copy to project root as `.coveragerc` (install.sh does this for Python
+# Project-root `.coveragerc` (install.sh installs it for Python
 # stacks). Configures coverage.py for the patch-coverage gate; pair with
 # `pytest --cov --cov-report=xml` (the coverage.yml CI job runs exactly that).
 [run]

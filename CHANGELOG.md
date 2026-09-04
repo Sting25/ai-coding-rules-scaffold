@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Template headers describe the installed file instead of instructing the
+  installer (#163, second half).** Every shipped template opened with "Copy
+  to your project as ..." and the installed copy kept that line, so a target
+  repo ended up with files whose first line addressed the person installing
+  them. The 27 headers now say where the file lives and what puts it there
+  ("Installed as `.github/workflows/lint.yml`", "Project-root `ruff.toml`").
+  Wording only: no rule, option or path changed, and installed copies stay
+  byte-identical to their templates, which `cp_safe --force` and the doctor's
+  drift check rely on.
+
 ## [v0.18.0] - 2026-09-03
 
 ### Changed

@@ -6,7 +6,7 @@
 # Bans console debug output (keeps logger.info/warn/error intact) plus two
 # narrow command-execution / TLS sinks below.
 # printStackTrace ban is no-arg only; printStackTrace(writer) is allowed (logging idiom).
-# Copy to your project as `.forbidden-patterns/java.txt`.
+# Installed as `.forbidden-patterns/java.txt`.
 
 (^|[^A-Za-z_])System\.out\.print(ln)?[[:space:]]*\(	Use a logger (slf4j/Log4j), not System.out.print/println
 (^|[^A-Za-z_])System\.err\.print(ln|f)?[[:space:]]*\(	Use logger.error(), not System.err.print/println/printf

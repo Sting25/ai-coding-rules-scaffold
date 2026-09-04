@@ -2,8 +2,8 @@
 # scaffold-extensions: ts tsx js jsx mjs cjs mts cts vue svelte
 # Format: <regex><TAB><description>   (one per line; # comments ignored)
 # Separator is TAB — patterns can contain literal `|` for ERE alternation.
-# Patterns are case-SENSITIVE, scanned against the staged blob. Copy to your
-# project as `.forbidden-patterns/frontend.txt`.
+# Patterns are case-SENSITIVE, scanned against the staged blob. Installed as
+# `.forbidden-patterns/frontend.txt`.
 
 # --- Debug leaks ---
 (^|[^A-Za-z_])console\.log[[:space:]]*\(	Use the project logger, not console.log

@@ -2,7 +2,7 @@
 # scaffold-extensions: kt kts
 # Format: <regex><TAB><description>   (one per line; # comments ignored)
 # Separator is TAB - patterns can contain literal `|` for ERE alternation; no literal TAB.
-# Copy to your project as `.forbidden-patterns/kotlin.txt`.
+# Installed as `.forbidden-patterns/kotlin.txt`.
 # Note: *.kts are Gradle/script files where println() is idiomatic; flagging it there
 # still catches stray debug output, but expect to scaffold-allow legitimate cases.
 # print/println/TODO anchors exclude a preceding `.` so member calls like writer.println(),

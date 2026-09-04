@@ -1,4 +1,4 @@
-# Copy to project root as `ruff.toml`.
+# Project-root `ruff.toml`.
 # Python lint config enforcing the coding-rules scaffold.
 # Adjust target-version and line-length per project if needed.
 

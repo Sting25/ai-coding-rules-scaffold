@@ -1,4 +1,4 @@
-# Copy to project root as `pytest.ini` (install.sh does this for Python stacks
+# Project-root `pytest.ini` (install.sh installs it for Python stacks
 # when no pytest config already exists in pyproject.toml/pytest.ini/tox.ini —
 # including one in a subdirectory, see below).
 # Minimal, standalone — like ruff.toml, it does not edit your pyproject.toml.

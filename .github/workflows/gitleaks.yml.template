@@ -1,7 +1,7 @@
 name: gitleaks
 
-# OPT-IN secret-scanning backstop. Copy to your project as
-# `.github/workflows/gitleaks.yml`, or install it with
+# OPT-IN secret-scanning backstop, installed as
+# `.github/workflows/gitleaks.yml` by hand (COMPONENTS.md) or with
 # `install.sh --gitleaks-ci`. Not installed by default: it adds a third-party
 # action dependency, so opt in deliberately.
 #

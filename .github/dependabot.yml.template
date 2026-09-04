@@ -1,4 +1,4 @@
-# Copy to your project as `.github/dependabot.yml`. Keeps the SHA-pinned GitHub
+# `.github/dependabot.yml`, installed by the scaffold. Keeps the SHA-pinned GitHub
 # Actions in your workflows (lint.yml, gitleaks.yml) fresh — SHA pins are a
 # supply-chain best practice but don't auto-update, so without this they rot.
 # Dependabot reads a `uses: owner/action@<sha>  # vX.Y.Z` pin natively and bumps

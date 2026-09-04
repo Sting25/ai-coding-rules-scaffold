@@ -1,8 +1,8 @@
 name: coverage
 
 # OPT-IN patch-coverage gate: the strictness layer on top of the default-on
-# `tests.yml` (#97). Copy to your project as `.github/workflows/coverage.yml`
-# (or `install.sh --coverage-gate`, which installs this INSTEAD OF tests.yml:
+# `tests.yml` (#97). Installed as `.github/workflows/coverage.yml` by hand
+# (or by `install.sh --coverage-gate`, which installs this INSTEAD OF tests.yml:
 # this workflow already runs the tests, so installing both would run them
 # twice for the same push/PR).
 #
