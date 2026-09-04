@@ -153,3 +153,24 @@ fi
 rm -rf "$_sa_alt" "$_sa_repo"
 unset _sa_repo _sa_before _sa_after _sa_locale _sa_rc _sa_plain _sa_alt _sa_with _sa_without _sa_pwith _sa_pwithout
 unset -f _sa_fixture _sa_scan
+
+# (T) Per-directory tsconfig.json files (no workspaces key): the assessment
+#     must say install.sh will not add a root one, naming the directories, and
+#     must NOT measure the template project-wide. A tsconfig.json under
+#     node_modules is a dependency's and must not be named. Mirrors the
+#     installer's cp_tsconfig_root and COMPONENTS.md entry 10 (#163).
+_sa_nested=$(mktemp -d)
+( cd "$_sa_nested" && git init --quiet \
+    && printf '{"name":"fixture","version":"1.0.0","private":true}\n' >package.json \
+    && mkdir -p client server node_modules/dep \
+    && echo '{}' >client/tsconfig.json && echo '{}' >server/tsconfig.json && echo '{}' >node_modules/dep/tsconfig.json \
+    && echo 'export const a = 1;' >client/a.ts \
+    && git add package.json client server \
+    && bash "$SCAFFOLD_DIR/scaffold-assess.sh" ) >"$HOOK_OUT" 2>&1
+if grep -q '! tsconfig.json: per-directory tsconfig.json in client server; install.sh will not add a root one' "$HOOK_OUT" \
+   && ! grep -q 'node_modules' "$HOOK_OUT" && ! grep -q 'tsconfig.json: .* type error' "$HOOK_OUT"; then
+  echo "  ✓ assess names per-directory tsconfig.json files and does not measure the template project-wide"; PASS=$((PASS + 1))
+else
+  echo "  ✗ assess should report per-directory tsconfig.json files by name (#163)"; sed 's/^/      /' "$HOOK_OUT" | grep -i 'tsconfig' | head -4; FAIL=$((FAIL + 1))
+fi
+rm -rf "$_sa_nested"; unset _sa_nested
