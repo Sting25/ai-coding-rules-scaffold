@@ -14,12 +14,6 @@ drop it in your project root and add `@operational-rules.md` to your
 `CLAUDE.md` — that auto-loads it into context on session start. No
 `install.sh`, no hooks, no CI workflow needed.
 
-For Cursor, Cline, Aider, or other AI tools, add an equivalent
-reference to whatever config file the tool uses (an `alwaysApply: true`
-project rule under `.cursor/rules/`, `.clinerules`, `CONVENTIONS.md`,
-etc.). The goal is that the agent sees this document at the start of
-every session.
-
 If you're using this without an AI agent, the document still works
 as a reference for human engineers. Read it before writing code,
 revisit it when something goes wrong, add to it when you find a
@@ -39,25 +33,6 @@ didn't see.
 _Anchor:_ every per-record INSERT failed because the agent passed a
 descriptive string when the schema required a specific enum value
 defined elsewhere in the codebase.
-
-### Plan storage shape before scaling compute
-
-For any per-unit output (tile, record, document, embedding), multiply
-size by realistic scale before committing to a format. Tiered
-retention designed in from day 1, not retrofitted.
-_Anchor:_ per-unit output measured at multiple GB; full-scale
-projection ran into petabytes. Format and tiering decisions had to
-be redone after significant ingestion was already complete.
-
-### Heartbeats must not block on long synchronous I/O
-
-If a worker reports liveness via heartbeats, those heartbeats must
-tick from a daemon thread independent of work, OR async I/O must
-yield between operations. Synchronous I/O during work blocks the
-heartbeat and triggers false-positive reaping.
-_Anchor:_ reaper killed workers that were busy with large uploads,
-not actually dead, because the heartbeat thread was blocked on the
-same synchronous I/O the worker was performing.
 
 ### Validate inputs at component boundaries
 
@@ -128,23 +103,6 @@ fix. Once the fast path is built, sunk cost decides for you and the
 question becomes a postmortem. When speed or simplicity is the only
 reason to prefer a path, treat that as a reason to slow down, not a
 green light.
-_Anchor:_ denylist rules written quickly and checked only for syntax
-were then measured against real third-party code: three fired on
-legitimate code every time they fired, and had to be deleted after a
-full rework round. Measuring first was the same work, once.
-
-### Hold shared-resource locks for contiguous work, not per operation
-
-When multiple processes contend for a single shared resource (GPU,
-DB connection from a small pool, hardware port, file lock),
-acquire the lock once for the contiguous stretch of work and
-release after — never per individual operation. Per-operation
-locking causes thrash, partial-state failures under contention,
-and starvation when one worker can never acquire long enough to
-complete a unit of work.
-_Anchor:_ per-CUDA-call GPU lock acquisition caused worker thrash
-and out-of-memory failures because no single worker ever held the
-lock long enough to complete a contiguous compute unit.
 
 ### Never print, cat, or echo secret files
 
@@ -181,9 +139,6 @@ A test that only checks an error string is absent also passes when the
 code crashes to empty output. Pair every negative assertion with one
 that the wanted artifact was produced (marker emitted, exit 0, file
 present).
-_Anchor:_ a hook-killing crash sailed through a 1400-assertion suite
-because the new regression test asserted only that a warning string
-was absent; the crash made it absent too.
 
 ---
 
@@ -230,12 +185,10 @@ logical unit of work passes its own gate (tests, lint, the checks the
 repo already runs), commit it and move on — one commit per logical
 change, grouped only when tightly coupled (a fix plus the test that
 prevents its regression). Do not pause mid-task to ask permission for
-each commit. Pushing, merging into a protected branch, and
-force-pushing still need their own explicit approval every time.
+each commit. Pushing, merging, and any history rewrite follow
+`AGENTS.md` > "Git discipline".
 _Anchor:_ mixed commits become unrevertable when one fix turns out to
-be wrong; separately, an agent kept asking before each commit on a
-branch the user had already scoped and approved the work for, until
-told "always do atomic commits, do not wait for me".
+be wrong.
 
 ### Locked decisions are revisitable on new evidence
 
@@ -263,8 +216,6 @@ unreleased number the moment it merges, and consumers that track the
 branch install untagged builds. For a published package, the bump,
 changelog heading, tag, and release move together in a dedicated
 release change; a dependency's pinned version is an ordinary bump.
-_Anchor:_ a feature merge bumped to 0.18.0 while the latest tag was
-v0.17.0; installs tracking the branch picked up an unreleased version.
 
 ### A check that can pass by luck is failing
 
@@ -272,9 +223,6 @@ When a test turns out to be nondeterministic, stop and make it
 deterministic before merging anything through it; rerunning until
 green is papering over. Treat the first unexplained flake as a defect
 with a root cause, not weather.
-_Anchor:_ a flaky assertion passed one PR's required CI job and failed
-the next identical run minutes later; the two-line fix existed only
-because the failure was investigated instead of rerun.
 
 ---
 
@@ -329,9 +277,8 @@ durable AT THE MOMENT it happens — an issue, a tracked fix-list, a
 TODO with an owner — with why and what would unblock it; then the
 human decides fix-now vs. later. Chat is not durable, and a PR
 description counts only if the item also exists outside it.
-_Anchor:_ a harness printed "skipped (tool not installed)" on every
-runner for months; the check it guarded had never once executed,
-and nothing recorded that it wasn't running.
+_Anchor:_ a check reported "skipped" on every run for months and never
+once executed.
 
 ### One writer per repo at a time; check before merging
 
@@ -347,10 +294,6 @@ signal means stop and ask; true idleness is unprovable, so with no
 signals the bar is an explicit go-ahead naming the path, and prefer a
 rename over an immediate hard delete so a late writer fails loudly
 instead of by luck.
-_Anchor:_ a PR was merged by a concurrent session no one could later
-identify, minutes after another session's audit snapshot; separately, a
-duplicate repo checkout was deleted minutes after a concurrent session
-had filed an issue from inside it, with the PR-and-mainline check clean.
 
 ---
 

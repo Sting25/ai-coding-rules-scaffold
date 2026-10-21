@@ -38,7 +38,7 @@ Stack-specific deny patterns live in `.forbidden-patterns/*.txt` — one per lan
 
 8. **Structured logging library**, picked per stack. Output JSON, not plain text — downstream tools (alerting, dashboards, log search) all depend on parseable structure, so pass fields as arguments rather than formatting them into the message string. Defaults: Python — `structlog`. TypeScript — `pino` or `winston`. New stacks pick equivalents.
 
-9. **Event names are `snake_case_verbs`**, not prose. Example: `request_received`, `cog_written`, `gpu_lock_acquired`. They must be filterable strings — log handlers, alerting rules, and grep all depend on stable identifiers. Prose like "the request came in fine" is not a log event name.
+9. **Event names are `snake_case_verbs`**, not prose. Example: `request_received`, `job_completed`, `cache_miss`. They must be filterable strings — log handlers, alerting rules, and grep all depend on stable identifiers. Prose like "the request came in fine" is not a log event name.
 
 10. **Bind a request correlation ID to log context** when running multiple services. Prefer the W3C `traceparent` header (`X-Request-Id` is an acceptable lighter-weight fallback). Either way: echo incoming, generate if missing, bind to log context — every log line in the request then carries the same ID, so a single grep finds the full cross-service trace.
 
@@ -53,10 +53,6 @@ Stack-specific deny patterns live in `.forbidden-patterns/*.txt` — one per lan
 ## Git
 
 See `AGENTS.md` for commit format and Git discipline (no amend, no force-push, no push unless asked, no hook bypass).
-
-## What the tooling enforces
-
-See [TECHNICAL.md > "What the tooling enforces"](https://github.com/Sting25/ai-coding-rules-scaffold/blob/main/TECHNICAL.md#what-the-tooling-enforces) for the full matrix of build-breaking (`ruff` / `eslint`) and commit-breaking (pre-commit hook + CI) checks. Single source of truth: this doc stays focused on the human-readable rules above.
 
 ## Project-specific additions
 
