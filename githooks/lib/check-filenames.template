@@ -2,9 +2,12 @@
 # .githooks/lib/check-filenames — block committed credentials by filename.
 # Reads NUL-separated file paths on stdin (produced by `git ... -z`), so
 # filenames containing newlines, tabs, or quotes can't split the list and slip
-# past the check. Rejects .env and *.env (e.g. config.env/prod.env) — allowing
-# .env.example/.sample/.template — plus *.pem, binary key/keystore extensions
-# (*.key/.p12/.pfx/.jks/.ppk), and SSH private key names.
+# past the check. Rejects .env, .env.local, .env.*.local and *.env (e.g.
+# config.env/prod.env). Other .env.<name> files (.env.development/.test/
+# .production, committed by documented Next.js/Vite convention) pass here; the
+# secrets content scan still reads them. .env.example/.sample/.template pass
+# too. Also rejects *.pem, binary key/keystore extensions (*.key/.p12/.pfx/
+# .jks/.ppk), and SSH private key names.
 #
 # Output: human-readable on tty; ::error file=...:: when --ci is passed.
 # Exit:   0 if all OK, 1 if any violation.
@@ -65,11 +68,16 @@ while IFS= read -r -d '' file; do
   lname=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')
   case "$lname" in
     .env.example|.env.sample|.env.template) ;;
-    # `*.env` catches non-dotfile env files (config.env, prod.env, staging.env)
-    # that the `.env`/`.env.*` arms miss. `*.env.example`-style templates end in
-    # `.example`, so `*.env` never matches them — they keep passing via fall-through.
-    .env|.env.*|*.env)
-      emit "$file" "environment file — use .env.example for shared config, keep secrets in env vars"
+    # Only the files frameworks document as holding secrets are refused by NAME:
+    # `.env`, `.env.local` and `.env.<mode>.local`. Any other `.env.<name>`
+    # (`.env.development`, `.env.test`, `.env.production`) is committed on
+    # purpose and falls through; its CONTENT is still scanned by check-secrets,
+    # which skips no file. `*.env` catches non-dotfile env files (config.env,
+    # prod.env, staging.env) that the dotfile arms miss. `*.env.example`-style
+    # templates end in `.example`, so `*.env` never matches them; they keep
+    # passing via fall-through.
+    .env|.env.local|.env.*.local|*.env)
+      emit "$file" "environment file: use .env.example for shared config, keep secrets in env vars. Framework env files other than .env and *.local (.env.development, .env.test) are allowed and their content is scanned"
       FAILED=1
       ;;
     id_rsa|id_ed25519|id_ecdsa|id_dsa)

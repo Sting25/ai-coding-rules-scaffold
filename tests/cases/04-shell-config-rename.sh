@@ -373,3 +373,32 @@ assert_rejects "SERVER.KEY (keystore, uppercase) is blocked" "keystore"
 echo "placeholder" >authorized_keys
 git add -f authorized_keys
 assert_passes "authorized_keys (public keys) is not blocked"
+
+# 36k. Framework env files. Next.js and Vite commit `.env.development`,
+#      `.env.test` and `.env.production` by documented convention and keep
+#      secrets only in `.env` and `*.local`. The filename check therefore allows
+#      every `.env.<name>` except `.env.local` and `.env.*.local` (`.env` and
+#      `*.env` stay blocked by 01 / 36e). Allowing the NAME does not skip the
+#      CONTENT: the secrets scan reads every staged file regardless of name.
+#      Benign content isolates the filename rule in the first four fixtures.
+printf 'API_URL=http://localhost:3000\n' >.env.development
+git add -f .env.development
+assert_passes ".env.development (framework env file) is not blocked"
+
+printf 'API_URL=http://localhost:3000\n' >.env.test
+git add -f .env.test
+assert_passes ".env.test (framework env file) is not blocked"
+
+printf 'FOO=bar\n' >.env.local
+git add -f .env.local
+assert_rejects ".env.local is blocked" "environment file"
+
+printf 'FOO=bar\n' >.env.development.local
+git add -f .env.development.local
+assert_rejects ".env.development.local is blocked" "environment file"
+
+# A secret-shaped value in an ALLOWED name is still refused, by the secrets scan.
+# The key is split so this file carries no live secret.
+echo "AWS_KEY=AKIA""IOSFODNN7EXAMPLE" >.env.development
+git add -f .env.development
+assert_rejects ".env.development holding an AWS key is refused by the content scan" "AWS access key"

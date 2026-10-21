@@ -8,6 +8,12 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Fixed
 
+- **Framework env files such as `.env.development` no longer block a commit.**
+  The filename check refused every `.env.*` name, but Next.js and Vite commit
+  `.env.development`, `.env.test` and `.env.production` by convention. Only
+  `.env`, `.env.local`, `.env.*.local` and `*.env` are refused by name now, and
+  the secrets scan still reads the content of every other `.env.*` file.
+
 - **The agent PreToolUse hook no longer blocks an edit that removes a secret.**
   `agent-precheck` scanned every string in the tool payload, including an
   Edit's `old_string`, so replacing a hardcoded key with an environment read
