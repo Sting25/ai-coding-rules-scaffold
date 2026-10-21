@@ -643,10 +643,27 @@ though the fallback also runs.
 _Anchor:_ a BSD-first stat chain made a required Linux CI job a coin flip; it
 passed for weeks by luck, then failed an unrelated PR.
 
+### Adding rules to the shipped rule files
+
+`AGENTS.md.template`, `coding-rules.md`, and `operational-rules.md` load into
+every consumer session, so each rule has one home: `AGENTS.md` for repo
+mechanics and red lines (short imperatives, no rationale), `coding-rules.md`
+for rules about the code, `operational-rules.md` for judgment and
+collaboration. A rule earns its place when:
+
+- A real incident demonstrated the failure mode.
+- The fix generalizes beyond that incident.
+- Tool enforcement (lint, hooks) cannot catch it.
+- It fits in 1 to 3 lines, plus an anchor only where the anchor carries the why.
+
+Retire a rule when its anchor no longer applies to current tooling, a
+tool-enforced check absorbs it, or a better-worded rule supersedes it. Anchors
+name the type of incident, never a project, person, date, or version.
+
 ### End every session on this repo with a rules retrospective
 
 Before handoff, walk the session's incidents against the add-criteria in
-`operational-rules.md` and propose additions through this repo's issue flow; a
+"Adding rules to the shipped rule files" above and propose additions through this repo's issue flow; a
 lesson that lives only in a transcript or a repo-local issue is lost to every
 other project. This is a contributor practice for the scaffold itself, which is
 why it is not in `operational-rules.md`: that file ships into other people's

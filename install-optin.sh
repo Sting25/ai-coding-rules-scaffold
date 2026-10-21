@@ -159,7 +159,7 @@ install_test_workflow_ci() {
       echo "note: this repo's CI still runs tests via that existing workflow; --no-test-workflow only affects what THIS run installs."
     else
       echo "SKIPPED: test-execution CI workflow (--no-test-workflow). This repo's CI will NOT run tests."
-      echo "         Recorded skip (operational-rules.md, 'no silent failures'): add tests.yml or coverage.yml"
+      echo "         Recorded skip (operational-rules.md, 'capture what you defer'): add tests.yml or coverage.yml"
       echo "         by hand, or re-run without --no-test-workflow, before trusting this repo's CI as a real gate."
     fi
   elif [ "$COVERAGE_GATE" -eq 1 ] || { [ -f ".github/workflows/coverage.yml" ] && [ ! -f ".github/workflows/tests.yml" ]; }; then

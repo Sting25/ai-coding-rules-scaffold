@@ -1,97 +1,22 @@
 # Operational rules
 
-Process, collaboration, and judgment rules for working effectively
-with AI agents (and as a human engineer). These are durable patterns
-extracted from real failure modes — not code-level rules (those live
-in [`coding-rules.md`](./coding-rules.md)) but session-level
-discipline that no linter can enforce.
-
-For Claude Code with the full scaffold, this file is referenced
-from `AGENTS.md`, which is auto-loaded via `CLAUDE.md`.
-
-To use this file **standalone** (no linter / hook / CI scaffolding),
-drop it in your project root and add `@operational-rules.md` to your
-`CLAUDE.md` — that auto-loads it into context on session start. No
-`install.sh`, no hooks, no CI workflow needed.
-
-If you're using this without an AI agent, the document still works
-as a reference for human engineers. Read it before writing code,
-revisit it when something goes wrong, add to it when you find a
-new failure mode.
+Judgment and collaboration rules for working with AI agents. Rules
+about the code live in [`coding-rules.md`](./coding-rules.md); repo
+mechanics and red lines (checks, git, destructive actions, secrets,
+the change summary) live in [`AGENTS.md`](./AGENTS.md). This file
+never restates them.
 
 ---
 
 ## Engineering
 
-### Read schema constraints before composing writes
+### Fix the file, not the guardrail
 
-Enum-style columns and check constraints have allowed-value lists
-baked into the model. Open the model file and scan constraint blocks
-before writing any INSERT, UPDATE, or migration. AI tools frequently
-generate plausible-looking values that violate constraints they
-didn't see.
-_Anchor:_ every per-record INSERT failed because the agent passed a
-descriptive string when the schema required a specific enum value
-defined elsewhere in the codebase.
-
-### Validate inputs at component boundaries
-
-Each component in a federated or distributed system should validate
-its inputs at the boundary, not assume the upstream component honored
-the contract. AI-generated code often skips boundary validation
-because it trusts the type system or the upstream implementation it
-just wrote. Type annotations document structure, they don't enforce
-it: tests should both `assert isinstance(...)` AND touch named
-attributes — a duck-typed stand-in with wrong fields fails only the
-second check.
-_Anchor:_ a downstream component crashed on malformed input an
-upstream component should have rejected; separately, an orchestrator
-returned a 4-tuple where the worker expected a typed dataclass and the
-annotation lied. Neither side validated the contract between them.
-
-### Integration tests hit a real database, not mocks
-
-Mocked tests pass against the mock's behavior, not against the
-database's actual behavior. Schema constraints, migration drift,
-and dialect quirks only surface against a real instance. Spin up
-an ephemeral DB per test run if isolation matters — but don't
-substitute a mock object for the connection. Run the full pre-prod
-check in a throwaway environment built from the same provisioning
-script as production, not on a standing QA box that drifts from it.
-_Anchor:_ mocked tests passed for months while the production
-migration silently broke; the divergence was invisible until a
-deploy hit the real schema.
-
-### No silent failures
-
-When a unit of work fails — a request, a record, a cell, a job — log
-a WARN-or-higher event with the failure reason AND surface the failure
-in the response payload (a `partial` status, an explicit error field,
-a non-success HTTP code). Catching an exception and returning a
-"success" response without signaling the failure leaves downstream
-consumers acting on stale or wrong data, and surfaces hours later as
-a derived failure that is harder to trace back.
-_Anchor:_ a batch job swallowed per-record errors and reported
-"complete"; downstream pipelines built on the missing-rows-without-error
-state spent days untangling the resulting derived corruption.
-
-### Fix the file, not the guardrail — don't weaken a check to pass
-
-When a check goes red — a secret/pattern/size/hygiene scan, a lint or
-type error, a failing test — fix the offending FILE. Suppressions
-(`scaffold-allow`, a `.scaffold.toml` disable/downgrade, a loosened
-pattern, a skip-list entry, `--no-verify`) are a last resort: only for
-a genuine false positive, only when fixing the file truly isn't
-possible, and then narrowly, with a recorded reason, and named in the
-summary you give the person you are working for — which check, which
-file, which marker or config entry, and why. If the check itself is
-wrong, fix the check and add a test; don't bypass it. Deleting is
-weakening: removing a test file, a test case, or the CI workflow that
-runs them stops the check existing at all, and does it quietly —
-nothing goes red. Never delete a test in the same change as the code
-it covered; name the test, why it no longer applies, and where the
-coverage went. "Removed outdated tests" is not a justification, it is
-the sentence that hides one.
+`AGENTS.md` > "Checks" says when a suppression is allowed and that it
+gets named. The judgment behind it: if the check itself is wrong, fix
+the check and add a test. When a test is deleted, name it, why it no
+longer applies, and where its coverage went; "removed outdated tests"
+is the sentence that hides one.
 _Anchor:_ a guardrail flagged a file; exempting it was one line and
 fixing it a few — but an exemption, unlike a fix, never expires, so
 suppressions accrete until the scanner no longer scans.
@@ -103,42 +28,6 @@ fix. Once the fast path is built, sunk cost decides for you and the
 question becomes a postmortem. When speed or simplicity is the only
 reason to prefer a path, treat that as a reason to slow down, not a
 green light.
-
-### Never print, cat, or echo secret files
-
-Never `cat`, `print`, `echo`, or log `.env`, `credentials.json`, key
-files, or tokens — verify by length, hash, or line count instead;
-pattern scanning backs this up only for credential shapes on paths it
-already knows.
-_Anchor:_ AI-agent-driven `cat .env` to "verify the file is loaded"
-landed credentials into a permanent chat transcript; rotation across
-multiple services took hours.
-
-### Back up and confirm before destructive work on live data
-
-A `DROP`, a `TRUNCATE`, an unbounded `DELETE` or `UPDATE`, a
-migration, or a wipe of a bucket, document collection, or search
-index — a "reset the data and start clean" counts — against
-anything but a local throwaway store is a two-step action: confirm
-a current backup exists, then get an explicit yes that names the
-target and what will be lost. Quote the blast radius in the store's
-own units — table rows, bucket objects, collection documents — not
-as a pasted command. Before any sweeping or multi-step change, tag
-a known-good point and name it out loud, rather than committing
-whatever is on disk, which the commit gate will reject; an editor's
-rewind is not the restore point either, since it never sees what a
-shell command moved or deleted.
-_Anchor:_ an agent ran a destructive operation against a production
-database it believed was a test instance and emptied it in seconds;
-there was no staging tier and no recent backup. Another, told to tidy
-up branch history, hard-reset away a day of untagged work.
-
-### Assert the positive outcome, not the absence of the symptom
-
-A test that only checks an error string is absent also passes when the
-code crashes to empty output. Pair every negative assertion with one
-that the wanted artifact was produced (marker emitted, exit 0, file
-present).
 
 ---
 
@@ -176,19 +65,6 @@ hit every component that fails at scale.
 _Anchor:_ a 4-unit smoke caught contention between workers; a
 1-unit smoke proved the fix. Both were necessary. A test that
 skipped any component would have failed to catch the bug.
-
-### Commit each passing unit of work atomically, without waiting for approval
-
-This overrides the generic "never commit unless explicitly asked"
-default some tools ship with. On a feature branch or worktree, once a
-logical unit of work passes its own gate (tests, lint, the checks the
-repo already runs), commit it and move on — one commit per logical
-change, grouped only when tightly coupled (a fix plus the test that
-prevents its regression). Do not pause mid-task to ask permission for
-each commit. Pushing, merging, and any history rewrite follow
-`AGENTS.md` > "Git discipline".
-_Anchor:_ mixed commits become unrevertable when one fix turns out to
-be wrong.
 
 ### Locked decisions are revisitable on new evidence
 
@@ -232,16 +108,8 @@ with a root cause, not weather.
 
 Concrete numbers (test counts, throughput, byte sizes, gate pass
 rates, latency) come from the agent. Verdicts ("fixed", "done",
-"verified", "working") come from the user.
-
-### Close every handoff with a plain-language summary
-
-The artifact that makes the rule above usable. Before handing back a
-commit, a PR, or the session itself, state in plain language what
-changed and why, anything destructive or hard to reverse, every check
-you turned down by name, and what the user should verify before calling
-it done. See `AGENTS.md`, "Plain-language change summary", for the full
-form; it feeds the verdict, it never delivers it.
+"verified", "working") come from the user. The handoff carrying them
+is `AGENTS.md` > "Plain-language change summary".
 
 ### Plans default to PROPOSED; mark every assumption
 
@@ -294,23 +162,3 @@ signal means stop and ask; true idleness is unprovable, so with no
 signals the bar is an explicit go-ahead naming the path, and prefer a
 rename over an immediate hard delete so a late writer fails loudly
 instead of by luck.
-
----
-
-## Adding rules to this document
-
-A rule earns its place when:
-
-- A real incident demonstrated the failure mode
-- The fix is generalizable beyond the specific incident
-- Tool-enforcement (lint, hooks) can't catch it
-- The rule can be stated as an imperative + anchor in under 5 lines
-
-A rule should be retired when:
-
-- The original anchor no longer applies in current tooling
-- The pattern has been absorbed into a tool-enforceable rule
-- The rule has been superseded by a better-articulated version
-
-Anchors should reference the type of incident, not project-specific
-details, so the document remains useful across projects.
