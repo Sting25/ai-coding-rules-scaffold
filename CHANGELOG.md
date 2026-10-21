@@ -25,11 +25,14 @@ versioning follows [SemVer](https://semver.org/).
 
 - **One suppression is enough where a linter already enforces the rule.** The
   `console.log`, `debugger`, `@ts-ignore`, `@ts-nocheck`, `os.path.join` and bare
-  `# type: ignore` pattern rules are skipped when pre-commit will run the
-  matching linter (eslint or ruff) on the file, so `// eslint-disable-next-line`
-  no longer also needs `scaffold-allow`. Where the linter is not configured or
-  not installed the pattern still blocks; `linter-dedupe = false` in
-  `.scaffold.toml` keeps a rule on regardless.
+  `# type: ignore` pattern rules are skipped when the matching linter (eslint
+  or ruff) will lint the file and its config file names the rule (`no-console`,
+  `PTH` and so on), so `// eslint-disable-next-line` no longer also needs
+  `scaffold-allow`. Locally that means pre-commit will run the linter; in CI it
+  means the lint workflow's eslint or ruff step will. Where the linter is not
+  configured, runs on its defaults, or is not installed, the pattern still
+  blocks; `linter-dedupe = false` in `.scaffold.toml` keeps a rule on
+  regardless.
 
 - **Block messages no longer offer the bypass.** The pre-commit failure banner
   stops suggesting `git commit --no-verify`, and the agent-precheck block and the

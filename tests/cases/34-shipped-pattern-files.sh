@@ -81,7 +81,7 @@ _fp_check() {
     pattern=${line%%$'\t'*}
     rest=${line#*$'\t'}
     # Optional trailing fields `exclude=<glob>,<glob>` (per-rule path excludes)
-    # and `linter=eslint|ruff` (linter dedupe), either order, read by
+    # and `linter=<eslint|ruff>:<tokens>` (linter dedupe), either order, read by
     # check-patterns. Split exactly as the loader does: the description ends at
     # the first TAB that starts one of them, and any other TAB-separated text
     # after it is flagged here because the loader would ignore it.
@@ -119,10 +119,11 @@ _fp_check() {
       if [ "$base" = "secrets.txt" ]; then
         printf '%s: secrets.txt takes no linter= field, secret scanning is never linter-deduped: %s\n' "$base" "$line"
       fi
-      case "$lfield" in
-        eslint|ruff) ;;
-        *) printf '%s: malformed linter= field (want eslint or ruff, an unknown name never skips anything): %s\n' "$base" "$line" ;;
-      esac
+      # <eslint|ruff>:<token>[|<token>...]: a bare name would dedupe on a linter
+      # running its defaults, so the config token is required.
+      if ! printf '%s' "$lfield" | grep -qE '^(eslint|ruff):[^|[:space:]]+([|][^|[:space:]]+)*$'; then
+        printf '%s: malformed linter= field (want eslint:<token> or ruff:<token>, tokens split by |; an unknown name or a missing token never skips anything): %s\n' "$base" "$line"
+      fi
     fi
     # An empty pattern half is the quietest of the four faults: both loaders
     # `continue` on it with NO warning at all, so a line that begins with the
@@ -208,22 +209,27 @@ fi
 rm -rf "$_fp_dir"
 unset _fp_dir
 
-# (L) the format check accepts linter=eslint|ruff in either order beside
-# exclude=, and flags an unknown or empty linter name and a stray extra field.
+# (L) the format check accepts linter=<eslint|ruff>:<tokens> in either order
+# beside exclude=, and flags an unknown or empty linter name, a bare name with
+# no token, an empty token alternative and a stray extra field.
 _fp_dir=$(mktemp -d)
-printf '# scaffold-extensions: py\nfoo\tgood rule\tlinter=ruff\texclude=tests/*\nbar\tgood rule 2\texclude=tests/*\tlinter=eslint\n' >"$_fp_dir/good.txt.template"
-printf '# scaffold-extensions: py\nfoo\tbad rule\tlinter=pylint\n' >"$_fp_dir/bad.txt.template"
+printf '# scaffold-extensions: py\nfoo\tgood rule\tlinter=ruff:PTH\texclude=tests/*\nbar\tgood rule 2\texclude=tests/*\tlinter=eslint:no-debugger|recommended\n' >"$_fp_dir/good.txt.template"
+printf '# scaffold-extensions: py\nfoo\tbad rule\tlinter=pylint:x\n' >"$_fp_dir/bad.txt.template"
 printf '# scaffold-extensions: py\nfoo\tbad rule\tlinter=\n' >"$_fp_dir/empty.txt.template"
-printf '# scaffold-extensions: py\nfoo\tbad rule\tlinter=ruff\tjunk\n' >"$_fp_dir/junk.txt.template"
+printf '# scaffold-extensions: py\nfoo\tbad rule\tlinter=ruff\n' >"$_fp_dir/notoken.txt.template"
+printf '# scaffold-extensions: py\nfoo\tbad rule\tlinter=eslint:no-console|\n' >"$_fp_dir/emptyalt.txt.template"
+printf '# scaffold-extensions: py\nfoo\tbad rule\tlinter=ruff:PTH\tjunk\n' >"$_fp_dir/junk.txt.template"
 if [ -z "$(_fp_check "$_fp_dir/good.txt.template")" ] \
    && _fp_check "$_fp_dir/bad.txt.template" | grep -qF 'malformed linter= field' \
    && _fp_check "$_fp_dir/empty.txt.template" | grep -qF 'malformed linter= field' \
+   && _fp_check "$_fp_dir/notoken.txt.template" | grep -qF 'malformed linter= field' \
+   && _fp_check "$_fp_dir/emptyalt.txt.template" | grep -qF 'malformed linter= field' \
    && _fp_check "$_fp_dir/junk.txt.template" | grep -qF 'neither exclude= nor linter='; then
-  echo "  ✓ the format check accepts linter=eslint|ruff and flags an unknown name, an empty one and a stray field"
+  echo "  ✓ the format check accepts linter=<name>:<tokens> and flags an unknown name, an empty one, a missing token and a stray field"
   PASS=$((PASS + 1))
 else
-  echo "  ✗ the format check must accept linter=eslint|ruff in either order and flag the bad forms"
-  for _fp_n in good bad empty junk; do _fp_check "$_fp_dir/$_fp_n.txt.template" | sed "s/^/      $_fp_n: /"; done
+  echo "  ✗ the format check must accept linter=<name>:<tokens> in either order and flag the bad forms"
+  for _fp_n in good bad empty notoken emptyalt junk; do _fp_check "$_fp_dir/$_fp_n.txt.template" | sed "s/^/      $_fp_n: /"; done
   FAIL=$((FAIL + 1))
 fi
 rm -rf "$_fp_dir"
@@ -258,22 +264,30 @@ unset _fp_d_bad _fp_tail
 unset -f _fp_has
 
 # (P) the linter-dedupe pairs are actually shipped: exactly these six rules carry
-# a linter= field, each naming the linter whose shipped config enforces it
-# (eslint.config.js: no-console, no-debugger, ban-ts-comment; ruff.toml: PTH118,
-# PGH003). Counted per rule, and any OTHER rule carrying one fails here, so a
-# `linter=` cannot be added to a rule its linter does not actually cover.
+# a linter= field, each naming the linter and config token whose shipped config
+# enforces it (eslint.config.js: no-console, no-debugger via recommended,
+# ban-ts-comment via strictTypeChecked; ruff.toml: PTH, PGH). Counted per rule,
+# and any OTHER rule carrying one fails here, so a `linter=` cannot be added to a
+# rule its linter does not actually cover. Each shipped token list must also
+# match the shipped config template, or the scaffold's own install never dedupes.
 _fp_p_bad=""
 _fp_pair() {
   awk -F'\t' -v d="$2" -v e="linter=$3" 'index($2, d) == 1 && $3 == e { f = 1 } END { exit !f }' \
     "$SCAFFOLD_DIR/forbidden-patterns/$1.txt.template"
 }
-_fp_pair frontend 'Use the project logger, not console.log' eslint || _fp_p_bad="$_fp_p_bad frontend/console.log"
-_fp_pair frontend 'Remove debugger statement' eslint || _fp_p_bad="$_fp_p_bad frontend/debugger"
-_fp_pair frontend 'Use @ts-expect-error with a justification' eslint || _fp_p_bad="$_fp_p_bad frontend/@ts-ignore"
-_fp_pair frontend 'Do not disable type-checking for a whole file' eslint || _fp_p_bad="$_fp_p_bad frontend/@ts-nocheck"
-_fp_pair backend 'Use pathlib.Path(), not os.path.join' ruff || _fp_p_bad="$_fp_p_bad backend/os.path.join"
+_fp_pair frontend 'Use the project logger, not console.log' eslint:no-console || _fp_p_bad="$_fp_p_bad frontend/console.log"
+_fp_pair frontend 'Remove debugger statement' 'eslint:no-debugger|recommended' || _fp_p_bad="$_fp_p_bad frontend/debugger"
+_fp_pair frontend 'Use @ts-expect-error with a justification' 'eslint:ban-ts-comment|strictTypeChecked' || _fp_p_bad="$_fp_p_bad frontend/@ts-ignore"
+_fp_pair frontend 'Do not disable type-checking for a whole file' 'eslint:ban-ts-comment|strictTypeChecked' || _fp_p_bad="$_fp_p_bad frontend/@ts-nocheck"
+_fp_pair backend 'Use pathlib.Path(), not os.path.join' ruff:PTH || _fp_p_bad="$_fp_p_bad backend/os.path.join"
 # shellcheck disable=SC2016  # the backticks are literal text in the rule description
-_fp_pair backend 'Bare `# type: ignore`' ruff || _fp_p_bad="$_fp_p_bad backend/type-ignore"
+_fp_pair backend 'Bare `# type: ignore`' ruff:PGH || _fp_p_bad="$_fp_p_bad backend/type-ignore"
+for _fp_t in no-console recommended strictTypeChecked; do
+  grep -qF -- "$_fp_t" "$SCAFFOLD_DIR/eslint.config.js.template" || _fp_p_bad="$_fp_p_bad (eslint.config.js.template lacks $_fp_t)"
+done
+for _fp_t in '"PTH"' '"PGH"'; do
+  grep -qF -- "$_fp_t" "$SCAFFOLD_DIR/ruff.toml.template" || _fp_p_bad="$_fp_p_bad (ruff.toml.template lacks $_fp_t)"
+done
 _fp_p_n=$(cat "$SCAFFOLD_DIR"/forbidden-patterns/*.txt.template | grep -v '^#' | grep -cE $'\tlinter=' || true)
 [ "$_fp_p_n" -eq 6 ] || _fp_p_bad="$_fp_p_bad (${_fp_p_n} rules carry linter=, expected 6)"
 if [ -z "$_fp_p_bad" ]; then
@@ -283,7 +297,7 @@ else
   echo "  ✗ linter= missing or misplaced on:$_fp_p_bad"
   FAIL=$((FAIL + 1))
 fi
-unset _fp_p_bad _fp_p_n
+unset _fp_p_bad _fp_p_n _fp_t
 unset -f _fp_pair _fp_check
 
 # (T) end-to-end: the same files, INSTALLED, through the real hook. The static

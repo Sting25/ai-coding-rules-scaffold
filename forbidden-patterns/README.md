@@ -90,11 +90,12 @@ dedupe below, then the rule's `disabled` / `severity` setting.
 
 ### Linter dedupe
 
-A rule line may also carry `linter=eslint` or `linter=ruff`, in either order
-with `exclude=`:
+A rule line may also carry `linter=eslint:<token>` or `linter=ruff:<token>`, in
+either order with `exclude=`. `|` separates alternative tokens, any one of which
+suffices:
 
 ```
-<regex><TAB><description><TAB>linter=eslint
+<regex><TAB><description><TAB>linter=eslint:no-debugger|recommended
 ```
 
 It marks a rule that the scaffold's own linter config already enforces:
@@ -104,21 +105,31 @@ It marks a rule that the scaffold's own linter config already enforces:
 needed two suppressions (`// eslint-disable-next-line` plus `scaffold-allow`), and
 a linter per-file ignore never reached the regex.
 
-check-patterns skips such a rule for a file when pre-commit would run that linter
-on it: the config is present (`ruff.toml` or `pyproject.toml`; `eslint.config.js`
-or `package.json`), the binary is installed (a ruff in the active or project
-virtualenv, on `PATH`, or `python3 -m ruff`; an eslint that node resolves from
-this project's `node_modules`), and the file is one pre-commit hands that linter
-(`.py` for ruff; `.ts .tsx .js .jsx .cjs .mjs` for eslint, case-sensitive). When
-the linter would be skipped ("note: eslint not installed ...") the regex still
-blocks. A name other than `eslint` or `ruff` never skips anything.
+check-patterns skips such a rule for a file when that linter will lint it with
+the rule on. Three things must hold. The config is present (`ruff.toml` or
+`pyproject.toml`; `eslint.config.js` or `package.json`). A token is in the
+linter's config file (`ruff.toml`, `.ruff.toml` or `pyproject.toml`;
+`eslint.config.js`, `.cjs`, `.mjs` or `.eslintrc*`), found by a plain substring
+search; the shipped fields are `eslint:no-console`,
+`eslint:no-debugger|recommended`, `eslint:ban-ts-comment|strictTypeChecked`,
+`ruff:PTH` and `ruff:PGH`, so a bare `package.json` or `pyproject.toml` whose
+linter runs on its defaults keeps the regex. And the file is one the linter is
+handed (`.py` for ruff; `.ts .tsx .js .jsx .cjs .mjs` for eslint,
+case-sensitive). A name other than `eslint` or `ruff`, or a field with no token,
+never skips anything.
 
-The test is `scaffold-config linter-runs <name> <path>`, copied from
-pre-commit's own checks. Two caveats follow from mirroring them: a `package.json`
-or `pyproject.toml` counts as a config even if it carries no eslint or ruff
-rules, and the rule is dropped in CI only where that job has the linter
-installed. To keep the regex on for one rule regardless, add `linter-dedupe =
-false` to its table in `.scaffold.toml`:
+Locally the linter must also be installed (a ruff in the active or project
+virtualenv, on `PATH`, or `python3 -m ruff`; an eslint that node resolves from
+this project's `node_modules`), mirroring pre-commit, so where pre-commit would
+print "note: eslint not installed ..." the regex still blocks. Under `--ci` the
+binary test is the lint workflow's instead, because its eslint and ruff steps run
+in another job: ruff runs whenever its config is present, and eslint whenever
+`eslint.config.js` is present or `package.json` names `eslint`.
+
+The test is `scaffold-config linter-runs <name>:<tokens> <path> [--ci]`. The
+token search is a substring match, not a parse, so a config that names a rule
+only to switch it off still counts. To keep the regex on for one rule
+regardless, add `linter-dedupe = false` to its table in `.scaffold.toml`:
 
 ```toml
 [rules."frontend/Use the project logger, not console.log"]

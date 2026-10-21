@@ -11,11 +11,11 @@
 # so a new language is added by dropping `<lang>.txt` with that header — no edit
 # to this script. backend.txt / frontend.txt / shell.txt have a built-in
 # fallback mapping for backward compatibility.
-# Pattern format: <regex><TAB><description>[<TAB>exclude=<globs>][<TAB>linter=<name>]
+# Pattern format: <regex><TAB><description>[<TAB>exclude=<globs>][<TAB>linter=<name>:<tokens>]
 # (TAB is the field separator so regex can use literal `|` alternation.)
 # The optional trailing fields, in either order, each recognised by its `name=`
 # prefix: `exclude=` carries a rule's DEFAULT path excludes ("Per-rule path
-# excludes" below), `linter=eslint|ruff` marks a rule its linter already
+# excludes" below), `linter=eslint:no-console` marks a rule its linter already
 # enforces ("Linter dedupe" below). Other text after a TAB stays description.
 #
 # Scope by pattern FILE (opt-in, for callers that run more than one tier):
@@ -58,12 +58,13 @@
 #   4. per-rule `disabled = true` / `severity = "warn"` in `.scaffold.toml`
 # A rule with no exclude behaves exactly as before.
 #
-# Linter dedupe. A `linter=eslint|ruff` rule duplicates one that linter's shipped
-# config enforces, so a legitimate case would need two suppressions and a linter
-# per-file ignore would never reach the regex. It is SKIPPED when
-# `scaffold-config linter-runs` says pre-commit would run that linter on the file
-# (config and binary present), ENFORCED when the linter would be skipped, and
-# `linter-dedupe = false` in the rule's .scaffold.toml table keeps it on anyway.
+# Linter dedupe. A `linter=<eslint|ruff>:<token>[|<token>]` rule duplicates one
+# that linter enforces, so a legitimate case would need two suppressions. It is
+# SKIPPED when `scaffold-config linter-runs` says the linter will lint the file
+# AND a token is in its config file, ENFORCED otherwise; `linter-dedupe = false`
+# in the rule's .scaffold.toml table keeps it on. Locally "will lint" is
+# pre-commit's test (config and binary present). Under --ci it is lint.yml's
+# test (config present), because in CI the linter is installed in another job.
 #
 # A pattern file that the install manifest (.githooks/.scaffold-manifest)
 # records but that is no longer in the checkout fails CLOSED (#159). Auto-
@@ -80,8 +81,8 @@ set -euo pipefail
 # it landed in and the captured path holds two lines (tests/cases/02, 18b).
 unset CDPATH
 
-CI_MODE=0
-[ "${1:-}" = "--ci" ] && CI_MODE=1
+CI_MODE=0; LR_MODE=local
+[ "${1:-}" = "--ci" ] && CI_MODE=1 && LR_MODE=--ci
 
 # Escape a value for a GitHub workflow command (see check-secrets). `data` mode
 # escapes %, CR, LF; `prop` mode (file=) additionally escapes : and , so a
@@ -194,10 +195,9 @@ scan() {
     description=$rest
     excl=""
     lint=""
-    # Optional trailing fields `exclude=<glob>,<glob>` and `linter=<name>`, in
-    # either order. The description ends at the first TAB that starts one of
-    # them, so any other text after a second TAB stays part of the description,
-    # as it always has and an older pattern file keeps its rule ids.
+    # Optional trailing `exclude=<globs>` and `linter=<name>:<tokens>`, either
+    # order. The description ends at the first TAB that starts one, so other text
+    # after a second TAB stays description and older rule ids are unchanged.
     case "$rest" in
       *$'\t'exclude=*|*$'\t'linter=*)
         d1=${rest%%$'\t'exclude=*}; d2=${rest%%$'\t'linter=*}
@@ -326,7 +326,7 @@ scan() {
       if path_excluded "$file" "${excludes[$i]}" "$stem/$desc"; then continue; fi
       # Linter dedupe (see header): the paired linter will run on this file, so
       # it, not this regex, enforces the rule, unless the project opted back in.
-      if [ -n "${linters[$i]}" ] && [ "$(cfg linter-runs "${linters[$i]}" "$file")" = yes ] \
+      if [ -n "${linters[$i]}" ] && [ "$(cfg linter-runs "${linters[$i]}" "$file" "$LR_MODE")" = yes ] \
          && [ "$(cfg rule-linter-dedupe "$stem/$desc")" != off ]; then continue; fi
       # Per-rule override: `disabled` skips the rule, `warn` reports without
       # failing, anything else (incl. missing config) enforces as `error`.

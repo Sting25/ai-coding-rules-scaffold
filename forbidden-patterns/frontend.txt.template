@@ -4,16 +4,18 @@
 # Separator is TAB — patterns can contain literal `|` for ERE alternation.
 # Patterns are case-SENSITIVE, scanned against the staged blob. Installed as
 # `.forbidden-patterns/frontend.txt`.
-# A rule ending `<TAB>linter=eslint` duplicates a rule eslint.config.js ships
-# (console.log = no-console, debugger = no-debugger, @ts-ignore / @ts-nocheck =
-# ban-ts-comment). check-patterns skips it where pre-commit would run eslint, so
-# one `eslint-disable-next-line` is enough; where eslint would be skipped (no
-# config, or not installed) the regex still blocks. Force it on per rule with
+# A rule ending `<TAB>linter=eslint:<token>` duplicates a rule eslint.config.js
+# ships (console.log = no-console, debugger = no-debugger via `recommended`,
+# @ts-ignore / @ts-nocheck = ban-ts-comment via `strictTypeChecked`).
+# check-patterns skips it where eslint will run AND a token (`|` separates
+# alternatives) is in the eslint config, so one `eslint-disable-next-line` is
+# enough; otherwise (no config, eslint on its defaults, not installed) the regex
+# still blocks. Force it on per rule with
 # `linter-dedupe = false` in .scaffold.toml; see forbidden-patterns/README.md.
 
 # --- Debug leaks ---
-(^|[^A-Za-z_])console\.log[[:space:]]*\(	Use the project logger, not console.log	linter=eslint
-(^|[^A-Za-z_])debugger($|[^A-Za-z0-9_])	Remove debugger statement before committing	linter=eslint
+(^|[^A-Za-z_])console\.log[[:space:]]*\(	Use the project logger, not console.log	linter=eslint:no-console
+(^|[^A-Za-z_])debugger($|[^A-Za-z0-9_])	Remove debugger statement before committing	linter=eslint:no-debugger|recommended
 (^|[^A-Za-z_])alert[[:space:]]*\(	Don't ship alert() calls — use a proper UI dialog
 
 # --- Test discipline ---
@@ -22,8 +24,8 @@
 (^|[^A-Za-z_.])(describe|it|test|context)\.only[[:space:]]*\(	Focused test (.only) silently skips the suite — remove before committing
 
 # --- Type-checker escape hatches ---
-@ts-ignore	Use @ts-expect-error with a justification, not @ts-ignore	linter=eslint
-@ts-nocheck	Do not disable type-checking for a whole file (@ts-nocheck)	linter=eslint
+@ts-ignore	Use @ts-expect-error with a justification, not @ts-ignore	linter=eslint:ban-ts-comment|strictTypeChecked
+@ts-nocheck	Do not disable type-checking for a whole file (@ts-nocheck)	linter=eslint:ban-ts-comment|strictTypeChecked
 
 # --- Linter escape hatches ---
 # The lint twin of @ts-nocheck: one blanket `/* eslint-disable */` at the top of
