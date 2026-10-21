@@ -77,8 +77,12 @@
 
 set -euo pipefail
 
-# CDPATH must not reach the `$(cd ... && pwd)` below: cd then PRINTS the directory
-# it landed in and the captured path holds two lines (tests/cases/02, 18b).
+# CDPATH must not reach the `$(cd ... && pwd)` below. When cd resolves its
+# argument through CDPATH it PRINTS the directory it landed in, and that line
+# is captured ahead of pwd's, so the variable ends up holding two lines and
+# every path built from it is wrong. Hooks are invoked by relative path, so a
+# developer with CDPATH='.' in their shell profile hit this on every commit.
+# Unset rather than `CDPATH= cd` so any later cd in this file is safe too.
 unset CDPATH
 
 CI_MODE=0; LR_MODE=local
@@ -100,6 +104,9 @@ ghesc() {
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG_BIN="$SELF_DIR/scaffold-config"
 cfg() { [ -x "$CONFIG_BIN" ] || return 0; "$CONFIG_BIN" "$@" 2>/dev/null || true; }
+# path_excluded <rule-id> <file> <default-globs>: the shared matcher in
+# scaffold-config (check-hygiene calls the same one). No helper, not excluded.
+path_excluded() { [ -x "$CONFIG_BIN" ] && "$CONFIG_BIN" path-excluded "$@" 2>/dev/null; }
 
 # Emit one finding at the resolved severity. `warn` reports without failing the
 # build (a deliberate, audited downgrade); `error` fails. FAILED is the global
@@ -138,25 +145,6 @@ while IFS= read -r -d '' f; do
   [ -n "$f" ] && FILES+=("$f")
 done
 
-# path_excluded <file> <default-globs> <rule-id>: succeeds when <file> matches a
-# glob in the comma-separated shipped default list or in the rule's `exclude`
-# key in .scaffold.toml. Globs are `case` patterns (portable to bash 3.2), where
-# `*` also matches `/`. The list is walked line by line, never word-split into
-# an array, so a glob such as `tests/*` is only ever compared with the path and
-# cannot be pathname-expanded against the working tree.
-path_excluded() {
-  local file=$1 defaults=$2 id=$3 g nl=$'\n'
-  while IFS= read -r g; do
-    [ -n "$g" ] || continue
-    # shellcheck disable=SC2254  # intentional glob match of $file against $g
-    case "$file" in $g) return 0 ;; esac
-  done <<EOF_EXCL
-${defaults//,/$nl}
-$(cfg rule-excludes "$id")
-EOF_EXCL
-  return 1
-}
-
 scan() {
   local config=$1
   shift
@@ -164,10 +152,14 @@ scan() {
   # config_usable() has already proven this is a readable regular file.
   [ ${#FILES[@]} -eq 0 ] && return 0
 
-  # Fold the declared extensions to lowercase ONCE; the match below folds the
-  # path too, so `src/BAD.PY` is scanned like `src/bad.py`. Case-SENSITIVE
-  # matching was a fail-OPEN bypass (tests/cases/28), and check-filenames folds
-  # with tr for the same reason.
+  # Fold the declared extensions to lowercase ONCE. The extension match below
+  # folds the path too, so `src/BAD.PY` is scanned by backend.txt (`py`) exactly
+  # like `src/bad.py`. Matching case-SENSITIVELY was a fail-OPEN bypass: a file
+  # renamed to an upper- or mixed-case extension matched no arm, was dropped
+  # before the scan, and committed with zero findings at both the hook and the
+  # whole-tree CI gate. check-filenames already folds with tr for this reason;
+  # this is the same convention. (check-size's extension list is a SKIP list, so
+  # a case mismatch there fails CLOSED, more scanning, and is left alone.)
   local exts_lc=() ext
   for ext in "${exts[@]}"; do
     exts_lc+=("$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]')")
@@ -215,10 +207,15 @@ scan() {
     raw_lint+=("$lint")
   done <"$config"
 
-  # A present-but-EMPTY pattern file (every rule deleted or commented out) is the
-  # gutting analogue of deleting it and dodges the deletion guard, so it fails
-  # CLOSED like check-secrets (tests/cases/28). ABSENCE stays fine: a repo simply
-  # has no php.txt, which is the `[ -f ]` return above.
+  # A present-but-EMPTY pattern file (every rule line deleted or commented out)
+  # is the gutting analogue of deleting it: one commit disarms the whole tier
+  # while dodging the orchestrator's deletion guard, which only sees
+  # --diff-filter=D. check-secrets has failed CLOSED on this since 3ef4ad9;
+  # check-patterns silently returned 0, so `printf '# scaffold-extensions: py\n'
+  # > .forbidden-patterns/backend.txt` committed with no output at all and every
+  # backend rule gone. Same shape as check-secrets: a config that EXISTS yet
+  # yields zero patterns fails closed at both gates. (ABSENCE is different and
+  # still fine, a repo simply has no php.txt; that is the `[ -f ]` return above.)
   if [ ${#raw_patterns[@]} -eq 0 ]; then
     local emsg="$config has no patterns, the forbidden-pattern scan for $stem is disabled. Restore its patterns (use 'git commit --no-verify' or delete the file if intended)."
     if [ "$CI_MODE" -eq 1 ]; then echo "::error::$emsg"; else echo "✗ $emsg" >&2; fi
@@ -226,10 +223,11 @@ scan() {
     return 0
   fi
 
-  # Validate each pattern up-front: an invalid ERE would poison the combined
-  # regex (silently dropping every file). `printf '' | grep -E p` returns 1 for
-  # a valid pattern and writes to stderr for an invalid one, so empty stderr
-  # means valid.
+  # Validate each pattern up-front. An invalid ERE here would otherwise
+  # poison the combined regex (silently dropping every file) and produce
+  # cryptic per-file grep errors. `printf '' | grep -E p` returns 1
+  # (no match) for valid patterns and writes to stderr for invalid ones,
+  # so empty stderr means valid.
   local patterns=() descriptions=() excludes=() linters=()
   local i p_err
   for i in "${!raw_patterns[@]}"; do
@@ -323,7 +321,7 @@ scan() {
       # Per-rule path exclude (see header): shipped default plus .scaffold.toml.
       # Checked only once the rule has matched, so the config helper is not
       # spawned for every rule on every file.
-      if path_excluded "$file" "${excludes[$i]}" "$stem/$desc"; then continue; fi
+      if path_excluded "$stem/$desc" "$file" "${excludes[$i]}"; then continue; fi
       # Linter dedupe (see header): the paired linter will run on this file, so
       # it, not this regex, enforces the rule, unless the project opted back in.
       if [ -n "${linters[$i]}" ] && [ "$(cfg linter-runs "${linters[$i]}" "$file" "$LR_MODE")" = yes ] \

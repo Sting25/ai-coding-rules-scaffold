@@ -113,6 +113,20 @@ if [ "$px_got" = "$(printf 'app/cli/*\n*/mgmt/*')" ]; then
 else
   echo "  ✗ scaffold-config rule-excludes printed: $px_got"; FAIL=$((FAIL + 1))
 fi
+# path-excluded is the matcher check-patterns and check-hygiene share: exit 0
+# for a shipped-default or config glob, 1 otherwise, and the defaults still
+# apply with no .scaffold.toml at all. `px_rc` captures each exit status.
+px_rc() { local rc=0; .githooks/lib/scaffold-config path-excluded "$@" >/dev/null 2>&1 || rc=$?; printf '%s' "$rc"; }
+px_got="$(px_rc "$PX_PY_RULE" tests/t.py 'tests/*,scripts/*')$(px_rc "$PX_PY_RULE" app/cli/run.py 'tests/*')$(px_rc "$PX_PY_RULE" lib/x/mgmt/y.py '')$(px_rc "$PX_PY_RULE" src/app.py 'tests/*,scripts/*')$(px_rc other/rule app/cli/run.py '')"
+mv .scaffold.toml px-noconfig.tmp
+px_got="$px_got/$(px_rc "$PX_PY_RULE" app/cli/run.py 'tests/*')$(px_rc "$PX_PY_RULE" scripts/s.py 'tests/*,scripts/*')"
+mv px-noconfig.tmp .scaffold.toml
+if [ "$px_got" = "00011/10" ]; then
+  echo "  ✓ scaffold-config path-excluded matches shipped defaults and config globs, per rule"; PASS=$((PASS + 1))
+else
+  echo "  ✗ scaffold-config path-excluded exit codes: got $px_got, want 00011/10"; FAIL=$((FAIL + 1))
+fi
+unset -f px_rc
 if .githooks/lib/scaffold-audit >"$HOOK_OUT" 2>&1 && grep -qF 'exclude: ["app/cli/*", "*/mgmt/*"]' "$HOOK_OUT"; then
   echo "  ✓ scaffold-audit lists a rule's path excludes"; PASS=$((PASS + 1))
 else

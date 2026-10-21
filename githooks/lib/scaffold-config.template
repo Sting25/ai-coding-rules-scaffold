@@ -47,6 +47,13 @@
 #                     `*` also spans `/`, so `tests/*` covers every depth below
 #                     tests/. Repeated `exclude` keys in one table accumulate.
 #
+#   path-excluded <rule-id> <path> <default-globs>
+#                     Exit 0 when <path> matches a glob in the comma-separated
+#                     <default-globs> (a rule's shipped list; may be empty) or in
+#                     the rule's `exclude` key, else exit 1. Prints nothing.
+#                     check-patterns and check-hygiene both call it, so the two
+#                     share one matcher; a caller that cannot run it scans.
+#
 #   rule-linter-dedupe <id>
 #                     Print `off` when the rule's table sets `linter-dedupe =
 #                     false` (keep the regex even where its paired linter runs),
@@ -142,13 +149,77 @@ if [ "$cmd" = linter-runs ]; then
   exit 0
 fi
 
+# rule_excludes <id>: print the globs in that rule's `exclude` key, one per line.
+# Same table walk as rule-state. The value is read RAW (not unq'd) so the array
+# brackets survive: `[ "a", "b" ]` yields a and b, a bare "a" string yields a.
+# An array without its closing `]` on the same line is dropped whole (fail
+# safe: fewer excludes means more scanning, never less). Used by rule-excludes
+# and path-excluded; callers check that $CONFIG exists first.
+rule_excludes() {
+  local id=$1
+  awk -v target="$id" '
+    function trim(s){ sub(/^[ \t]+/,"",s); sub(/[ \t]+$/,"",s); return s }
+    function unq(s){ if (s ~ /^".*"$/) s=substr(s,2,length(s)-2); return s }
+    BEGIN { match_=0 }
+    {
+      line=$0; sub(/\r$/,"",line); t=trim(line)
+      if (t=="" || t ~ /^#/) next
+      if (t ~ /^\[/) {
+        sec=t; sub(/^\[/,"",sec); sub(/\]$/,"",sec)
+        if (sec ~ /^rules\./) { match_ = (unq(substr(sec,7))==target) }
+        else { match_=0 }
+        next
+      }
+      if (!match_) next
+      eq=index(t,"="); if (eq==0) next
+      key=unq(trim(substr(t,1,eq-1))); raw=trim(substr(t,eq+1))
+      if (key!="exclude") next
+      if (raw ~ /^\[.*\]$/) {
+        raw=substr(raw,2,length(raw)-2)
+        while (match(raw,/"[^"]*"/)) {
+          g=substr(raw,RSTART+1,RLENGTH-2)
+          if (g!="") print g
+          raw=substr(raw,RSTART+RLENGTH)
+        }
+      } else if (raw ~ /^".*"$/) {
+        g=substr(raw,2,length(raw)-2)
+        if (g!="") print g
+      }
+    }
+  ' "$CONFIG"
+}
+
+# path-excluded answers from the shipped defaults even with no .scaffold.toml,
+# so it runs before the no-config exit below. Defaults first, so a file the
+# shipped list already covers never pays for the config walk. Each glob is
+# compared with the path by `case`, never word-split or pathname-expanded, so
+# `tests/*` cannot match files in the working tree instead of the path.
+if [ "$cmd" = path-excluded ]; then
+  pe_id=${2:-}; pe_path=${3:-}; pe_defaults=${4:-}; nl=$'\n'
+  [ -n "$pe_path" ] || exit 1
+  pe_match() {
+    local g
+    while IFS= read -r g; do
+      [ -n "$g" ] || continue
+      # shellcheck disable=SC2254  # intentional glob match of the path against $g
+      case "$pe_path" in $g) return 0 ;; esac
+    done
+    return 1
+  }
+  pe_match <<<"${pe_defaults//,/$nl}" && exit 0
+  if [ -f "$CONFIG" ] && [ -n "$pe_id" ]; then
+    pe_match <<<"$(rule_excludes "$pe_id")" && exit 0
+  fi
+  exit 1
+fi
+
 # No config → defaults everywhere. size-cap prints nothing; rule-state is error.
 if [ ! -f "$CONFIG" ]; then
   case "$cmd" in
     size-cap)   exit 0 ;;
     rule-state) if [ "${3:-}" = warn ]; then echo "warn"; else echo "error"; fi; exit 0 ;;
     rule-excludes|rule-linter-dedupe) exit 0 ;;
-    *)          echo "usage: scaffold-config {size-cap <path>|rule-state <id> [<default>]|rule-excludes <id>|rule-linter-dedupe <id>|linter-runs <name>:<tokens> <path> [--ci]}" >&2; exit 2 ;;
+    *)          echo "usage: scaffold-config {size-cap <path>|rule-state <id> [<default>]|rule-excludes <id>|rule-linter-dedupe <id>|linter-runs <name>:<tokens> <path> [--ci]|path-excluded <id> <path> <globs>}" >&2; exit 2 ;;
   esac
 fi
 
@@ -230,40 +301,7 @@ case "$cmd" in
   rule-excludes)
     id=${2:-}
     [ -n "$id" ] || exit 0
-    # Same table walk as rule-state. The value is read RAW (not unq'd) so the
-    # array brackets survive: `[ "a", "b" ]` yields a and b, a bare "a" string
-    # yields a. An array without its closing `]` on the same line is dropped
-    # whole (fail safe: fewer excludes means more scanning, never less).
-    awk -v target="$id" '
-      function trim(s){ sub(/^[ \t]+/,"",s); sub(/[ \t]+$/,"",s); return s }
-      function unq(s){ if (s ~ /^".*"$/) s=substr(s,2,length(s)-2); return s }
-      BEGIN { match_=0 }
-      {
-        line=$0; sub(/\r$/,"",line); t=trim(line)
-        if (t=="" || t ~ /^#/) next
-        if (t ~ /^\[/) {
-          sec=t; sub(/^\[/,"",sec); sub(/\]$/,"",sec)
-          if (sec ~ /^rules\./) { match_ = (unq(substr(sec,7))==target) }
-          else { match_=0 }
-          next
-        }
-        if (!match_) next
-        eq=index(t,"="); if (eq==0) next
-        key=unq(trim(substr(t,1,eq-1))); raw=trim(substr(t,eq+1))
-        if (key!="exclude") next
-        if (raw ~ /^\[.*\]$/) {
-          raw=substr(raw,2,length(raw)-2)
-          while (match(raw,/"[^"]*"/)) {
-            g=substr(raw,RSTART+1,RLENGTH-2)
-            if (g!="") print g
-            raw=substr(raw,RSTART+RLENGTH)
-          }
-        } else if (raw ~ /^".*"$/) {
-          g=substr(raw,2,length(raw)-2)
-          if (g!="") print g
-        }
-      }
-    ' "$CONFIG"
+    rule_excludes "$id"
     ;;
 
   rule-linter-dedupe)
@@ -294,7 +332,7 @@ case "$cmd" in
     ;;
 
   *)
-    echo "usage: scaffold-config {size-cap <path>|rule-state <id> [<default>]|rule-excludes <id>|rule-linter-dedupe <id>|linter-runs <name>:<tokens> <path> [--ci]}" >&2
+    echo "usage: scaffold-config {size-cap <path>|rule-state <id> [<default>]|rule-excludes <id>|rule-linter-dedupe <id>|linter-runs <name>:<tokens> <path> [--ci]|path-excluded <id> <path> <globs>}" >&2
     exit 2
     ;;
 esac

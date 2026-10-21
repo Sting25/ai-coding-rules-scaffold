@@ -105,24 +105,9 @@ SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG_BIN="$SELF_DIR/scaffold-config"
 cfg() { [ -x "$CONFIG_BIN" ] || return 0; "$CONFIG_BIN" "$@" 2>/dev/null || true; }
 
-# path_excluded <file> <default-globs> <rule-id>: succeeds when <file> matches a
-# glob in the comma-separated shipped default list or in the rule's `exclude`
-# key in .scaffold.toml. Same helper and semantics as check-patterns (each check
-# script is standalone, so it is repeated rather than shared): globs are `case`
-# patterns, `*` also matches `/`, and the list is walked line by line so a glob
-# is only ever compared with the path, never expanded against the working tree.
-path_excluded() {
-  local file=$1 defaults=$2 id=$3 g nl=$'\n'
-  while IFS= read -r g; do
-    [ -n "$g" ] || continue
-    # shellcheck disable=SC2254  # intentional glob match of $file against $g
-    case "$file" in $g) return 0 ;; esac
-  done <<EOF_EXCL
-${defaults//,/$nl}
-$(cfg rule-excludes "$id")
-EOF_EXCL
-  return 1
-}
+# path_excluded <rule-id> <file> <default-globs>: the shared matcher in
+# scaffold-config (check-patterns calls the same one). No helper, not excluded.
+path_excluded() { [ -x "$CONFIG_BIN" ] && "$CONFIG_BIN" path-excluded "$@" 2>/dev/null; }
 
 # Emit a finding at the resolved severity. `warn` reports without failing the
 # build; `error` sets FAILED. (Callers skip the check entirely when `disabled`.)
@@ -300,7 +285,7 @@ if [ "$HIDDEN_STATE" != disabled ]; then
   for file in "${FILES[@]}"; do
     # Per-rule path exclude: a locale file skips this scan entirely, and says so
     # once (it is a deliberate weakening, so it is never silent).
-    if path_excluded "$file" "$HIDDEN_EXCLUDES" hidden-unicode; then
+    if path_excluded hidden-unicode "$file" "$HIDDEN_EXCLUDES"; then
       if [ "$CI_MODE" -eq 1 ]; then
         echo "::notice file=$(ghesc prop "$file")::$(ghesc data "hidden-unicode scan skipped (locale path or .scaffold.toml exclude)")"
       else
