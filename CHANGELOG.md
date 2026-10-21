@@ -35,6 +35,15 @@ versioning follows [SemVer](https://semver.org/).
   was refused for containing the key. It now scans only what the tool would
   write or run: `content`, `new_string`, `edits[].new_string` and `command`.
 
+### Changed
+
+- **The doctor no longer reports a tuned coverage threshold or an unavailable
+  branch protection as a gap.** A `DIFF_COVER_FAIL_UNDER` of 1 to 99 is now a
+  note naming the value; 0, a missing variable and a non-numeric value stay
+  gaps. A required-status-checks lookup that GitHub answers with HTTP 403 or
+  "upgrade" (a private repo on the Free plan) is a note instead of a gap that
+  could never be cleared; a 200 or 404 with no checks is still a gap.
+
 ## [v0.19.1] - 2026-10-21
 
 ### Fixed

@@ -114,12 +114,14 @@ else
     shipped=$(_fail_under "$COV_TPL")
   fi
   shipped=${shipped:-100}
-  # A gap, not a note, at ANY value below the shipped default: the doctor's own
-  # definition of a gap is "installed but inert; a commit that should be blocked
-  # isn't", and at 80 a PR whose changed lines are 85% covered merges where the
-  # shipped policy would have stopped it. Adopting an existing codebase at a
-  # lower number and ratcheting up is a legitimate choice — the doctor will
-  # keep naming it until you get back to the default, which is the point.
+  # Only a DEAD gate is a gap. The doctor's definition of a gap is "installed
+  # but inert", and a gate at 1-99 is not inert: it blocks every PR below that
+  # number. coverage.yml.template itself tells the reader to lower the value to
+  # adopt an existing codebase and ratchet up, so reporting that as a gap made a
+  # documented tuning choice a permanent exit 1 that AGENTS.md then makes every
+  # session report. It is a note instead, naming the value so the choice stays
+  # visible. 0, no variable, and no number in it are still gaps (the gate cannot
+  # fail, or runs on diff-cover's own default).
   if [ -z "$thr" ]; then
     gap "coverage.yml has no DIFF_COVER_FAIL_UNDER — diff-cover falls back to its own default instead of this project's threshold" \
         "restore 'DIFF_COVER_FAIL_UNDER: \"$shipped\"' in the workflow's env: block"
@@ -127,8 +129,7 @@ else
     gap "DIFF_COVER_FAIL_UNDER is 0 — the patch-coverage gate is installed, runs, and CANNOT FAIL; the green check it produces is indistinguishable from a real one" \
         "raise it back to $shipped, or delete coverage.yml so the repo stops advertising a gate it does not have"
   elif [ "$thr" -lt "$shipped" ]; then
-    gap "patch coverage is ${thr}% of changed lines, below the shipped ${shipped}% — changed lines between ${thr}% and ${shipped}% coverage now merge green" \
-        "raise DIFF_COVER_FAIL_UNDER back to $shipped; if ${thr} is a deliberate adoption ratchet, say so in the PR that set it and expect this line until it is back up"
+    note "coverage gate set to ${thr}, not ${shipped}: a deliberate tuning choice (changed lines covered between ${thr}% and ${shipped}% still merge); raise DIFF_COVER_FAIL_UNDER when the codebase is ready"
   else
     ok "patch coverage: ${thr}% of changed lines"
   fi
@@ -404,15 +405,34 @@ elif ! gh auth status >/dev/null 2>&1; then
   note "required status checks: not checked (gh is not logged in: run 'gh auth login' and re-run)"
 else
   _rsc_default=$(gh api "repos/$_rsc_repo" --jq .default_branch 2>/dev/null || true)
-  _rsc_ctx=$(gh api "repos/$_rsc_repo/branches/${_rsc_default:-main}/protection" --jq '.required_status_checks.contexts | length' 2>/dev/null || echo "")
+  # stderr is kept (2>&1) because the 403 that says "this plan cannot do this"
+  # arrives there as "gh: <message> (HTTP 403)", with the JSON body on stdout.
+  # A count is all digits; anything else is an error text to classify below.
+  _rsc_prot=$(gh api "repos/$_rsc_repo/branches/${_rsc_default:-main}/protection" --jq '.required_status_checks.contexts | length' 2>&1 || true)
+  _rsc_ctx=""
+  _rsc_noplan=0
+  case "$_rsc_prot" in
+    ''|*[!0-9]*) ;;
+    *) _rsc_ctx=$_rsc_prot ;;
+  esac
+  case "$_rsc_prot" in
+    *"HTTP 403"*|*[Uu]pgrade*) _rsc_noplan=1 ;;
+  esac
   _rsc_rules=$(gh api "repos/$_rsc_repo/rules/branches/${_rsc_default:-main}" --jq '[.[] | select(.type=="required_status_checks")] | length' 2>/dev/null || echo "0")
   if [ -z "$_rsc_default" ]; then
     note "required status checks: not checked (gh could not read $_rsc_repo; permissions or network)"
   elif [ "${_rsc_ctx:-0}" -gt 0 ] 2>/dev/null || [ "${_rsc_rules:-0}" -gt 0 ] 2>/dev/null; then
     ok "$_rsc_default requires status checks before merge (${_rsc_ctx:-0} via branch protection, ${_rsc_rules:-0} ruleset rule(s))"
+  elif [ "$_rsc_noplan" -eq 1 ]; then
+    # A private repo on the GitHub Free plan answers 403 "Upgrade to GitHub Pro
+    # or make this repository public": protection cannot be turned on there, so
+    # a gap would be a permanent exit 1 with no fix available. A note, naming
+    # what was not measured. Every other empty result (200 with no checks, 404
+    # on a repo that can have protection but has none) is still the gap below.
+    note "required status checks: not checked (branch protection is unavailable on this plan, or this login cannot read it; GitHub answered HTTP 403 / upgrade required for $_rsc_repo)"
   else
     gap "$_rsc_repo: '$_rsc_default' requires NO status checks, so a red or unfinished CI run does not block a merge; every gate above is advisory at merge time" \
         "import .github/rulesets/main-protection.json (COMPONENTS.md entry 20), or Settings > Branches > require the guardrails check"
   fi
 fi
-unset _rsc_remote _rsc_repo _rsc_default _rsc_ctx _rsc_rules
+unset _rsc_remote _rsc_repo _rsc_default _rsc_prot _rsc_noplan _rsc_ctx _rsc_rules
