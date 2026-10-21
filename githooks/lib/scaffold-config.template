@@ -55,6 +55,7 @@
 # Rule ids:
 #   "<patternfile-stem>/<description>"  forbidden-pattern rules (quote in TOML)
 #   conflict-marker | case-collision    hygiene rules
+#   hidden-unicode                       hygiene rule; also takes `exclude`
 #   size                                 the file-size cap (whole check)
 #
 # Exit: 0 always for the two queries (prints the answer to stdout); 2 on misuse.

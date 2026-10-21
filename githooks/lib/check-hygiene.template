@@ -31,6 +31,24 @@
 #      images legitimately contain these byte sequences and aren't read as
 #      instructions. A legitimate leading BOM is allowed; a mid-file one is not.
 #
+# Two things are NOT refused by the hidden-Unicode rule, because both are
+# routine in legitimate text:
+#   - U+200D ZERO WIDTH JOINER between two emoji codepoints. It is the glue in
+#     every multi-person, profession and skin-tone emoji (family, woman
+#     technologist, rainbow flag), so a README or UI string using one is fine.
+#     A ZWJ anywhere else (between letters, inside an identifier, at a line
+#     edge, doubled) is still refused: that is the Trojan-source shape.
+#   - Locale files. Paths matching `locales/*`, `locale/*`, `i18n/*`, their
+#     `*/` nested forms, `*.po` and `*.pot` skip the hidden-Unicode scan
+#     entirely (ZWNJ is mandatory in Persian and some Indic scripts, LRM/RLM are
+#     routine in RTL strings, soft hyphens in German), because JSON/YAML/PO
+#     cannot carry a per-line `scaffold-allow`. Add more paths with
+#     `exclude = ["src/strings.json"]` in `[rules.hidden-unicode]` in
+#     .scaffold.toml; they ADD to those defaults, are `case` globs on the
+#     repo-relative path (`*` spans `/`), and apply to THIS rule only: the
+#     conflict-marker and case-collision checks still scan the same paths.
+#     Each skipped file is announced once in the output.
+#
 # A `scaffold-allow` marker (after a comment leader) exempts a conflict-marker or
 # hidden-Unicode line, for the rare doc that shows one on purpose.
 #
@@ -84,6 +102,25 @@ ghesc() {
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG_BIN="$SELF_DIR/scaffold-config"
 cfg() { [ -x "$CONFIG_BIN" ] || return 0; "$CONFIG_BIN" "$@" 2>/dev/null || true; }
+
+# path_excluded <file> <default-globs> <rule-id>: succeeds when <file> matches a
+# glob in the comma-separated shipped default list or in the rule's `exclude`
+# key in .scaffold.toml. Same helper and semantics as check-patterns (each check
+# script is standalone, so it is repeated rather than shared): globs are `case`
+# patterns, `*` also matches `/`, and the list is walked line by line so a glob
+# is only ever compared with the path, never expanded against the working tree.
+path_excluded() {
+  local file=$1 defaults=$2 id=$3 g nl=$'\n'
+  while IFS= read -r g; do
+    [ -n "$g" ] || continue
+    # shellcheck disable=SC2254  # intentional glob match of $file against $g
+    case "$file" in $g) return 0 ;; esac
+  done <<EOF_EXCL
+${defaults//,/$nl}
+$(cfg rule-excludes "$id")
+EOF_EXCL
+  return 1
+}
 
 # Emit a finding at the resolved severity. `warn` reports without failing the
 # build; `error` sets FAILED. (Callers skip the check entirely when `disabled`.)
@@ -205,7 +242,8 @@ if [ "$HIDDEN_STATE" != disabled ]; then
   # / bash 3.2 safe) — matched under LC_ALL=C so each byte is one "character":
   #   C2 AD        U+00AD soft hyphen (invisible, splits a keyword mid-word)
   #   D8 9C        U+061C arabic letter mark (bidi, invisible)
-  #   E2 80 8B-8D  zero-width space / non-joiner / joiner
+  #   E2 80 8B-8C  zero-width space / non-joiner
+  #   E2 80 8D     zero-width JOINER: NOT in HIDDEN_RE; see ZWJ below
   #   E2 80 8E-8F  U+200E/U+200F left-to-right / right-to-left mark (bidi)
   #   E2 80 AA-AE  bidi embeddings & overrides (Trojan Source, CVE-2021-42574)
   #   E2 81 A0     word joiner;   E2 81 A6-A9  bidi isolates
@@ -221,8 +259,44 @@ if [ "$HIDDEN_STATE" != disabled ]; then
   # comment, a false negative costs an agent following smuggled instructions.
   # Deliberately NOT matched: EF B8 80-8F (U+FE00–FE0F, variation selectors 1-16),
   # which follow emoji legitimately all over ordinary prose.
-  HIDDEN_RE=$'\xc2\xad|\xd8\x9c|\xe2\x80[\x8b-\x8f\xaa-\xae]|\xe2\x81[\xa0\xa6-\xa9]|\xef\xbb\xbf|\xf3\xa0[\x80-\x87][\x80-\xbf]'
+  #
+  # ZWJ (U+200D, E2 80 8D) is allowed between two emoji codepoints and refused
+  # anywhere else. It is judged by rewriting, not by the regex above, because
+  # bash 3.2 / BSD grep have no lookbehind. For a line that holds a ZWJ:
+  #   1. remap any pre-existing 0x01 byte to 0x02 (so the marker is ours alone;
+  #      remapped, not deleted, so a stray byte can't make a ZWJ look adjacent),
+  #   2. turn a ZWJ that FOLLOWS an emoji into a 0x01 marker,
+  #   3. delete a marker that is FOLLOWED by an emoji (the ZWJ was inside a
+  #      sequence). What is left over is a ZWJ with no emoji on one side: either
+  #      a raw ZWJ (no emoji before it) or a marker (no emoji after it).
+  # ZWJ_RE = HIDDEN_RE plus the raw ZWJ bytes plus 0x01 matches both, so
+  # a lone, leading, trailing, doubled or letter-adjacent ZWJ is still caught
+  # (and a chain of joined emoji works because step 2 never consumes the emoji).
+  # "Emoji" is, as UTF-8 bytes:
+  #   F0 9F 8C-AB xx   U+1F300-U+1FAFF (pictographs, incl. the skin tones
+  #                    U+1F3FB-U+1F3FF = F0 9F 8F BB-BF)
+  #   E2 98-9E xx      U+2600-U+27BF (misc symbols, dingbats: U+2640, U+2764)
+  #   EF B8 8F         U+FE0F variation selector 16 (allowed BEFORE a ZWJ only)
+  EMOJI_NEXT=$'\xf0\x9f[\x8c-\xab][\x80-\xbf]|\xe2[\x98-\x9e][\x80-\xbf]'
+  EMOJI_PREV="$EMOJI_NEXT"$'|\xef\xb8\x8f'
+  ZWJ_BYTES=$'\xe2\x80\x8d'
+  ZWJ_MARK=$'\001'
+  HIDDEN_RE=$'\xc2\xad|\xd8\x9c|\xe2\x80[\x8b\x8c\x8e\x8f\xaa-\xae]|\xe2\x81[\xa0\xa6-\xa9]|\xef\xbb\xbf|\xf3\xa0[\x80-\x87][\x80-\xbf]'
+  ZWJ_RE="$HIDDEN_RE|$ZWJ_BYTES|$ZWJ_MARK"
+  # Locale paths skip this rule only (see the header). Shipped defaults here; a
+  # project adds more under [rules.hidden-unicode] `exclude`.
+  HIDDEN_EXCLUDES='locales/*,locale/*,i18n/*,*/locales/*,*/locale/*,*/i18n/*,*.po,*.pot'
   for file in "${FILES[@]}"; do
+    # Per-rule path exclude: a locale file skips this scan entirely, and says so
+    # once (it is a deliberate weakening, so it is never silent).
+    if path_excluded "$file" "$HIDDEN_EXCLUDES" hidden-unicode; then
+      if [ "$CI_MODE" -eq 1 ]; then
+        echo "::notice file=$(ghesc prop "$file")::$(ghesc data "hidden-unicode scan skipped (locale path or .scaffold.toml exclude)")"
+      else
+        echo "- $file: hidden-unicode scan skipped (locale path or .scaffold.toml exclude)"
+      fi
+      continue
+    fi
     # Skip only a genuine binary ASSET (binary content AND a binary extension) —
     # never a text/agent file whose "binary-ness" is one injected NUL (see above).
     if is_binary "$file" && is_binary_asset_name "$file"; then continue; fi
@@ -245,7 +319,15 @@ if [ "$HIDDEN_STATE" != disabled ]; then
     if [ "${content:0:3}" = $'\xef\xbb\xbf' ]; then
       content=${content:3}
     fi
-    m=$(LC_ALL=C grep -anE -- "$HIDDEN_RE" <<<"$content" \
+    # Emoji-ZWJ allowance (see ZWJ above). Only a file that holds a ZWJ pays for it.
+    hre=$HIDDEN_RE
+    if LC_ALL=C grep -aqF -- "$ZWJ_BYTES" <<<"$content"; then
+      hre=$ZWJ_RE
+      content=$(printf '%s\n' "$content" | LC_ALL=C tr "$ZWJ_MARK" '\002' \
+                  | LC_ALL=C sed -E "s/($EMOJI_PREV)$ZWJ_BYTES/\\1$ZWJ_MARK/g" \
+                  | LC_ALL=C sed -E "s/$ZWJ_MARK($EMOJI_NEXT)/\\1/g")
+    fi
+    m=$(LC_ALL=C grep -anE -- "$hre" <<<"$content" \
           | grep -ivE '(^[0-9]+:|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true)
     if [ -n "$m" ]; then
       emit "$HIDDEN_STATE" "$file" "hidden Unicode control char (bidi / zero-width / tag / variation selector), strip it; this is the 'Rules File Backdoor' / Trojan Source surface"

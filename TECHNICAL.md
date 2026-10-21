@@ -198,6 +198,17 @@ severity = "warn"
   `src/bin/*`, `examples/*`, plus `*_test.go` for Go) so a fresh install does
   not block CLI code, and config excludes are added to those defaults. The array
   must sit on one line with no trailing comment, or it is ignored whole.
+- **Hidden-Unicode allowances.** `hidden-unicode` ships two exemptions so
+  ordinary international text is not blocked. A zero-width joiner (U+200D) is
+  allowed when it sits between two emoji codepoints (family, profession,
+  skin-tone and flag sequences); anywhere else it is still refused. And locale
+  files skip the rule entirely: `locales/*`, `locale/*`, `i18n/*`, their `*/`
+  nested forms, `*.po` and `*.pot` (translations legitimately carry ZWNJ, LRM and
+  RLM marks and soft hyphens, and JSON/YAML/PO cannot hold a per-line
+  `scaffold-allow`). Add paths with `exclude = [...]` under
+  `[rules.hidden-unicode]`; they add to those defaults and affect only this rule,
+  so conflict-marker and case-collision still scan the same files. Each skipped
+  file is named once in the output.
   Order per finding: `scaffold-allow` on the line, then the path exclude, then
   `disabled` / `severity`.
 - **Modifying a pattern's regex/description** is just editing the

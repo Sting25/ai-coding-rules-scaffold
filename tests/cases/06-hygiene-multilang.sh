@@ -180,6 +180,113 @@ printf 'ship it \xe2\x9c\x85\xef\xb8\x8f today\n' >emoji.md
 git add emoji.md
 assert_passes "emoji variation selector (U+FE0F) is not flagged"
 
+# 45p. Emoji ZWJ sequences are allowed, a ZWJ anywhere else is not. U+200D
+#      (bytes E2 80 8D) is the mandatory joiner inside every multi-person,
+#      profession and skin-tone emoji, so refusing it blocked READMEs and UI
+#      strings. It is allowed only BETWEEN two emoji codepoints; between ASCII
+#      letters, at a line edge or doubled it is still the Trojan-source shape.
+#      Every byte is written with printf escapes so this file stays plain ASCII.
+ZWJ='\xe2\x80\x8d'
+hz_stage() { # <file> <printf-format>
+  mkdir -p "$(dirname "$1")"
+  # shellcheck disable=SC2059  # the caller's format carries the byte escapes
+  printf "$2" >"$1"
+  git add "$1"
+}
+# woman technologist U+1F469 ZWJ U+1F4BB
+hz_stage README.md "woman technologist \xf0\x9f\x91\xa9${ZWJ}\xf0\x9f\x92\xbb here\n"
+assert_passes "ZWJ between emoji (woman technologist) is allowed"
+# family U+1F468 ZWJ U+1F469 ZWJ U+1F467 (a chain: the middle emoji joins twice)
+hz_stage README.md "family \xf0\x9f\x91\xa8${ZWJ}\xf0\x9f\x91\xa9${ZWJ}\xf0\x9f\x91\xa7 here\n"
+assert_passes "chained ZWJ emoji family is allowed"
+# rainbow flag U+1F3F3 U+FE0F ZWJ U+1F308 (variation selector before the joiner)
+hz_stage README.md "pride \xf0\x9f\x8f\xb3\xef\xb8\x8f${ZWJ}\xf0\x9f\x8c\x88 flag\n"
+assert_passes "ZWJ after a variation selector (rainbow flag) is allowed"
+# skin tone: U+1F469 U+1F3FD (modifier) ZWJ U+1F4BB
+hz_stage README.md "dev \xf0\x9f\x91\xa9\xf0\x9f\x8f\xbd${ZWJ}\xf0\x9f\x92\xbb here\n"
+assert_passes "ZWJ after a skin-tone modifier is allowed"
+# U+1F3C3 ZWJ U+2640 (female sign, the U+2600 block) U+FE0F
+hz_stage README.md "run \xf0\x9f\x8f\x83${ZWJ}\xe2\x99\x80\xef\xb8\x8f now\n"
+assert_passes "ZWJ before a U+2600-block emoji component is allowed"
+
+hz_stage src/app.py "ab${ZWJ}cd = 1\n"
+assert_rejects "ZWJ inside an identifier is rejected" "hidden Unicode"
+hz_stage src/app.py "x = 1${ZWJ}\n"
+assert_rejects "ZWJ at the end of a line is rejected" "hidden Unicode"
+hz_stage README.md "${ZWJ}\xf0\x9f\x91\xa9 starts the line\n"
+assert_rejects "ZWJ at the start of a line is rejected" "hidden Unicode"
+hz_stage README.md "end \xf0\x9f\x91\xa9${ZWJ}\n"
+assert_rejects "ZWJ after an emoji but at end of line is rejected" "hidden Unicode"
+hz_stage README.md "bad \xf0\x9f\x91\xa9${ZWJ}x here\n"
+assert_rejects "ZWJ between an emoji and an ASCII letter is rejected" "hidden Unicode"
+hz_stage README.md "bad x${ZWJ}\xf0\x9f\x91\xa9 here\n"
+assert_rejects "ZWJ between an ASCII letter and an emoji is rejected" "hidden Unicode"
+hz_stage README.md "bad \xf0\x9f\x91\xa9${ZWJ}${ZWJ}\xf0\x9f\x92\xbb here\n"
+assert_rejects "a doubled ZWJ between emoji is rejected" "hidden Unicode"
+# a stray \x01 byte after the joiner must not let the ZWJ slip through
+hz_stage README.md "bad \xf0\x9f\x91\xa9${ZWJ}\x01\xf0\x9f\x92\xbb here\n"
+assert_rejects "ZWJ followed by a control byte then an emoji is rejected" "hidden Unicode"
+
+# 45q. Locale paths skip the hidden-Unicode scan (ZWNJ, LRM/RLM and soft hyphen
+#      are legitimate in translations, and JSON/YAML/PO cannot carry a per-line
+#      scaffold-allow). Per rule: every other hygiene rule still scans them.
+#      Config excludes (the hidden-unicode table's `exclude`) ADD to the defaults.
+ZWNJ='\xe2\x80\x8c'; RLM='\xe2\x80\x8f'; SHY='\xc2\xad'
+hz_stage locales/fa.json "{\"k\": \"mi${ZWNJ}khaham\"}\n"
+assert_passes "ZWNJ in locales/fa.json is allowed by default"
+hz_stage locales/ar.json "{\"k\": \"${RLM}text\"}\n"
+assert_passes "RLM in locales/ar.json is allowed by default"
+hz_stage app/i18n/de.json "{\"k\": \"Donau${SHY}dampf\"}\n"
+assert_passes "soft hyphen in app/i18n/de.json is allowed by default"
+hz_stage po/de.po "msgstr \"Donau${SHY}dampf\"\n"
+assert_passes "soft hyphen in a .po file is allowed by default"
+hz_stage src/strings.json "{\"k\": \"${RLM}text\"}\n"
+assert_rejects "the same RLM in src/strings.json is still rejected" "hidden Unicode"
+
+printf '[rules.hidden-unicode]\nexclude = ["src/strings.json"]\n' >.scaffold.toml
+git add .scaffold.toml
+hz_stage src/strings.json "{\"k\": \"${RLM}text\"}\n"
+assert_passes "config exclude lets src/strings.json carry an RLM"
+printf '[rules.hidden-unicode]\nexclude = ["src/strings.json"]\n' >.scaffold.toml
+git add .scaffold.toml
+hz_stage src/strings.json "{\"k\": \"${RLM}text\"}\n"
+hz_stage src/other.py "x = '${RLM}'\n"
+assert_rejects "config exclude does not cover src/other.py" "src/other.py"
+printf '[rules.hidden-unicode]\nexclude = ["src/strings.json"]\n' >.scaffold.toml
+git add .scaffold.toml
+hz_stage locales/fa.json "{\"k\": \"mi${ZWNJ}khaham\"}\n"
+assert_passes "a config exclude ADDS to the locale defaults"
+
+# The exclude is per rule: a conflict marker in a locale file is still refused.
+mkdir -p locales; printf '<<<<<<< HEAD\n{"k": "v"}\n' >locales/en.json
+git add locales/en.json
+assert_rejects "conflict marker in locales/en.json is still rejected" "merge-conflict marker"
+# ...and so is a case-only collision (fed as a path list, see case 45).
+if printf '%s\0' 'locales/Fa.json' 'locales/fa.json' | .githooks/lib/check-hygiene >"$HOOK_OUT" 2>&1; then
+  echo "  ✗ case collision under locales/ — accepted, expected reject"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+elif grep -qF "case-only filename collision" "$HOOK_OUT"; then
+  echo "  ✓ case-only collision under locales/ is still rejected"; PASS=$((PASS + 1))
+else
+  echo "  ✗ case collision under locales/ — rejected without expected message"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
+# The skip is announced once per file, and only for excluded files.
+hz_stage locales/fa.json "{\"k\": \"mi${ZWNJ}khaham\"}\n"
+hz_stage src/clean.json '{"k": "v"}\n'
+printf '%s\0' locales/fa.json src/clean.json | .githooks/lib/check-hygiene >"$HOOK_OUT" 2>&1 || true
+hz_n=$(grep -cF "locales/fa.json" "$HOOK_OUT" || true)
+hz_o=$(grep -cF "src/clean.json" "$HOOK_OUT" || true)
+if [ "$hz_n" -eq 1 ] && [ "$hz_o" -eq 0 ] && grep -qF "hidden-unicode scan skipped" "$HOOK_OUT"; then
+  echo "  ✓ locale skip is announced once for the excluded file only"; PASS=$((PASS + 1))
+else
+  echo "  ✗ locale skip announcement: excluded=$hz_n other=$hz_o"
+  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+reset_repo
+
 # 45n. diff3 common-ancestor conflict marker (|||||||) — CONFLICT_RE matches three
 #      shapes but only <<< / >>> had a fixture. A diff3 resolve can leave the base
 #      marker behind after the user removes the <<< / >>> lines.

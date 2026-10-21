@@ -54,8 +54,8 @@
 #   disabled = true            # turn the rule off entirely (still auditable)
 #   severity = "warn"          # error (default) -> warn: emit but don't fail
 #   exclude  = ["app/cli/*"]   # skip THIS rule for these paths (forbidden-pattern
-#                              # rules only); single line, added to the rule's
-#                              # shipped defaults. Globs are shell `case`
+#                              # rules and `hidden-unicode`); single line, added to
+#                              # the rule's shipped defaults. Globs are shell `case`
 #                              # patterns on the repo-relative path; `*` spans `/`
 #   linter-dedupe = false      # keep a `linter=` rule's regex even where its
 #                              # linter (eslint / ruff) runs; default drops it
@@ -91,3 +91,11 @@
 # severity = "warn"
 # reason   = "this repo legitimately ships RTL/bidi content in localized docs"
 # by       = "rî 2026-06-11"
+#
+# `hidden-unicode` already allows a zero-width joiner between emoji (family and
+# profession emoji) and skips locale paths (locales/*, locale/*, i18n/*, their
+# `*/` nested forms, *.po, *.pot) so translations can carry ZWNJ, LRM/RLM and
+# soft hyphens. Add more paths to skip for this rule only (conflict markers and
+# case collisions still scan them); config entries add to those defaults:
+# [rules.hidden-unicode]
+# exclude = ["src/strings.json", "resources/lang/*"]

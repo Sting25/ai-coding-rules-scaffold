@@ -26,6 +26,13 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Fixed
 
+- **Emoji and translation files no longer trip the hidden-Unicode check.** A
+  zero-width joiner between two emoji (family, profession and rainbow-flag
+  emoji) is now allowed in READMEs and UI strings, while one inside an
+  identifier or at a line edge is still refused. Locale files (`locales/`,
+  `i18n/`, `*.po`) skip the check, and `exclude = [...]` under
+  `[rules.hidden-unicode]` in `.scaffold.toml` adds paths.
+
 - **Local-development URLs no longer trip the secrets and frontend scans.** A
   credential URL whose host is `localhost`, `127.0.0.1`, `[::1]` or `0.0.0.0`
   (a CI service-container or test database) is no longer refused; any other host
