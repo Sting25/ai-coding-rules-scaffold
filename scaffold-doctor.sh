@@ -60,16 +60,15 @@ done
 # where install-wiring.sh and scaffold-doctor-gates.sh ship alongside it in all
 # three distribution paths: the first lets the "paired artifacts" section reuse
 # install.sh's own detection logic, the second carries sections 9-12.
-SCAFFOLD_DIR="$(cd "$(dirname "$0")" && pwd)"
-# If dirname(1) is NOT on PATH (the narrowed PATH tests/cases/18-doctor.sh runs
-# this script under), the substitution is empty, `cd ""` is a no-op, and this
-# lands on the PROJECT directory instead. Every template comparison below then
-# finds no template; the notes in sections 8 and 10 say so out loud rather than
-# skipping in silence, which is the part that matters.
-# Sections 9-12 are SOURCED from beside this script, and losing THEM is not that
-# same degrading: inline they still RAN. So the module lookup — only the module
-# lookup — falls back to $0's own directory, through one symlink hop (a doctor
-# linked onto PATH), computed here: a relative $0 is relative to the caller's cwd.
+# No dirname(1): cases/18 runs this under a PATH narrowed to bash git grep sed
+# awk basename, and bash 5.3 (ubuntu-26.04, 2026-10-21) made `cd ""` fail, so
+# `$(cd "$(dirname "$0")" && pwd)` died here under set -e instead of degrading.
+# Parameter expansion needs no external command: a/b -> a, /b -> /, b -> .
+case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
+SCAFFOLD_DIR="$(cd "$_sd" && pwd)"
+# Sections 9-12 are SOURCED from beside this script. A doctor symlinked onto
+# PATH has $0 in the link's directory, so the module lookup — only that — follows
+# one symlink hop, computed here: a relative $0 is relative to the caller's cwd.
 DOCTOR_DIR="$SCAFFOLD_DIR"; _d0=$0
 [ ! -L "$_d0" ] || { _t=$(readlink "$_d0"); case $_t in /*) _d0=$_t ;; *) _d0=${_d0%/*}/$_t ;; esac; }
 { [ -f "$DOCTOR_DIR/scaffold-doctor-gates.sh" ] && [ -f "$DOCTOR_DIR/scaffold-doctor-checks.sh" ]; } || [ "${_d0%/*}" = "$_d0" ] ||
