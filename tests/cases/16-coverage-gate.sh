@@ -137,11 +137,12 @@ fi
 # report every gap, so a gap that can never be cleared is a standing false alarm.
 echo "cases/16 — doctor classifies DIFF_COVER_FAIL_UNDER (note 1-99, gap otherwise)"
 
-# cov_doctor <value-or-"-"> : fresh project with the coverage gate installed, the
-# env value rewritten to $1 ("-" deletes the line), doctor run; sets COV_RC and
-# leaves its output in HOOK_OUT.
+# cov_doctor <value-or-"-"> [doctor-arg] : fresh project with the coverage gate
+# installed, the env value rewritten to $1 ("-" deletes the line), doctor run
+# (with $2, e.g. --quiet, when given); sets COV_RC and leaves its output in
+# HOOK_OUT.
 cov_doctor() {
-  local val=$1 t
+  local val=$1 darg=${2:-} t
   fixture_repo t
   echo '#!/usr/bin/env bash' >"$t/run.sh"
   fixture_install "$t" --shell --no-verify --coverage-gate
@@ -152,7 +153,8 @@ cov_doctor() {
   fi
   mv "$t/cov.tmp" "$t/.github/workflows/coverage.yml"
   COV_RC=0
-  ( cd "$t" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || COV_RC=$?
+  # shellcheck disable=SC2086  # darg is empty or one flag
+  ( cd "$t" && "$SCAFFOLD_DIR/scaffold-doctor.sh" $darg ) >"$HOOK_OUT" 2>&1 || COV_RC=$?
   rm -rf "$t"
 }
 
@@ -162,6 +164,15 @@ if [ "$COV_RC" -eq 0 ] && grep -qF "! coverage gate set to 90, not 100" "$HOOK_O
   echo "  ✓ threshold 90: a note naming the value, no gap, doctor exits 0"; PASS=$((PASS + 1))
 else
   echo "  ✗ threshold 90 should be a note and exit 0 (got exit $COV_RC)"; grep -i 'coverage\|✗' "$HOOK_OUT" | sed 's/^/      /'; FAIL=$((FAIL + 1))
+fi
+
+# A tuned gate is a guardrail set below its shipped strength, so --quiet (gaps
+# only, for CI and pre-flight callers) must still show it.
+cov_doctor 90 --quiet
+if [ "$COV_RC" -eq 0 ] && grep -qF "coverage gate set to 90, not 100" "$HOOK_OUT"; then
+  echo "  ✓ threshold 90 under --quiet: the note still prints, exit 0"; PASS=$((PASS + 1))
+else
+  echo "  ✗ threshold 90 under --quiet should still print the note, exit 0 (got exit $COV_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 
 for v in 1 99; do

@@ -129,7 +129,7 @@ else
     gap "DIFF_COVER_FAIL_UNDER is 0 — the patch-coverage gate is installed, runs, and CANNOT FAIL; the green check it produces is indistinguishable from a real one" \
         "raise it back to $shipped, or delete coverage.yml so the repo stops advertising a gate it does not have"
   elif [ "$thr" -lt "$shipped" ]; then
-    note "coverage gate set to ${thr}, not ${shipped}: a deliberate tuning choice (changed lines covered between ${thr}% and ${shipped}% still merge); raise DIFF_COVER_FAIL_UNDER when the codebase is ready"
+    note_always "coverage gate set to ${thr}, not ${shipped}: a deliberate tuning choice (changed lines covered between ${thr}% and ${shipped}% still merge); raise DIFF_COVER_FAIL_UNDER when the codebase is ready"
   else
     ok "patch coverage: ${thr}% of changed lines"
   fi
@@ -429,7 +429,7 @@ else
     # a gap would be a permanent exit 1 with no fix available. A note, naming
     # what was not measured. Every other empty result (200 with no checks, 404
     # on a repo that can have protection but has none) is still the gap below.
-    note "required status checks: not checked (branch protection is unavailable on this plan, or this login cannot read it; GitHub answered HTTP 403 / upgrade required for $_rsc_repo)"
+    note_always "required status checks: not checked (branch protection is unavailable on this plan, or this login cannot read it; GitHub answered HTTP 403 / upgrade required for $_rsc_repo)"
   else
     gap "$_rsc_repo: '$_rsc_default' requires NO status checks, so a red or unfinished CI run does not block a merge; every gate above is advisory at merge time" \
         "import .github/rulesets/main-protection.json (COMPONENTS.md entry 20), or Settings > Branches > require the guardrails check"

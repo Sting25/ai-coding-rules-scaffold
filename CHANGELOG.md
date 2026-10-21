@@ -81,7 +81,9 @@ versioning follows [SemVer](https://semver.org/).
   note naming the value; 0, a missing variable and a non-numeric value stay
   gaps. A required-status-checks lookup that GitHub answers with HTTP 403 or
   "upgrade" (a private repo on the Free plan) is a note instead of a gap that
-  could never be cleared; a 200 or 404 with no checks is still a gap.
+  could never be cleared; a 200 or 404 with no checks is still a gap. Both
+  notes still print under `--quiet`, since each names a guardrail that is
+  weaker than shipped or was not measured.
 
 ## [v0.19.1] - 2026-10-21
 
