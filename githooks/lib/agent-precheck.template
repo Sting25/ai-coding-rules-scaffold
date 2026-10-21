@@ -168,6 +168,13 @@ scan_bucket() {
 
 scan_against() {
   local pfile=$1 iflag=$2 advice=$3
+  # Only secrets.txt and shell.txt reach this function, and neither carries the
+  # optional third `exclude=<globs>` field that check-patterns reads (it is for
+  # per-language rules such as backend.txt's print() rule, which this hook does
+  # not scan). The pattern is cut at the first TAB below, so a third field on a
+  # line here would be ignored, not parsed into the regex. Path excludes are
+  # deliberately NOT applied: a Bash payload has no file path, and the commit
+  # scan applies them to the files that matter.
   [ -f "$pfile" ] || return 0
   # Two buckets: rules matched with this file's DEFAULT case flag, and rules
   # carrying the `(?-i)` marker, which are matched case-SENSITIVELY regardless.

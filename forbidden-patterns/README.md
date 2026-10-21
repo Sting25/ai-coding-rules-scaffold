@@ -56,6 +56,38 @@ nothing. The shipped pre-commit hook and CI workflow leave both unset.
 One pattern per line. Field separator is a literal TAB. Lines starting with
 `#` are comments and skipped.
 
+### Per-rule path excludes
+
+A rule line may carry an optional third TAB field of comma-separated path
+globs that the rule does not scan:
+
+```
+<regex><TAB><description><TAB>exclude=tests/*,scripts/*
+```
+
+The print-style rules (`backend.txt` `print()`, `go.txt` `fmt.Print*` and
+`println`, `rust.txt` `println!`/`print!`/`eprintln!`/`eprint!`) ship with
+`tests/*,test/*,scripts/*,bin/*,cmd/*,src/main.rs,src/bin/*,examples/*`, plus
+`*_test.go` for Go, so CLI programs, scripts and tests are not blocked. A glob
+is a shell `case` pattern on the repo-relative path, where `*` also matches `/`
+(`tests/*` is the top-level `tests/` at any depth below it; use `*/tests/*` for
+a nested one). Only a field starting `exclude=` is read as one, a glob cannot
+contain a comma or a TAB, and `secrets.txt` takes none (secret scanning is never
+path-exempt).
+
+A project adds its own paths in `.scaffold.toml`, in the rule's table, keyed
+`"<patternfile-stem>/<description>"` like `disabled` and `severity`. The array
+is single-line, and its entries are added to the shipped defaults:
+
+```toml
+[rules."backend/Use structlog (or the project's logger), not print()"]
+exclude = ["app/cli/*"]
+```
+
+An excluded path is skipped for that rule only. Order per finding: a
+`scaffold-allow` marker on the line, then the path exclude, then the rule's
+`disabled` / `severity` setting.
+
 ### Regex syntax
 
 **Extended Regular Expressions** (ERE) — the dialect that `grep -E`

@@ -175,6 +175,9 @@ by       = "alex 2026-06-11"
 [rules."frontend/Use the project logger, not console.log"]
 severity = "warn"          # error (default) → warn: still reported, doesn't fail
 
+[rules."backend/Use structlog (or the project's logger), not print()"]
+exclude = ["app/cli/*"]    # skip this rule (only) for these paths; single-line array
+
 [rules.case-collision]     # hygiene ids: conflict-marker, case-collision, hidden-unicode
 severity = "warn"
 ```
@@ -186,6 +189,17 @@ severity = "warn"
 - **Disable vs downgrade.** `disabled = true` turns the rule off; `severity =
 "warn"` keeps emitting the finding (a CI `::warning::`) without failing the
   build — a relaxed rule stays visible, never silent.
+- **Per-rule path excludes.** `exclude = ["glob", ...]` in a rule's table stops
+  that one rule scanning matching paths; every other rule still scans them. A
+  glob is a shell `case` pattern on the repo-relative path, where `*` also
+  matches `/` (`tests/*` covers every depth below the top-level `tests/`;
+  `*/tests/*` covers any depth). The print-style rules ship with defaults
+  (`tests/*`, `test/*`, `scripts/*`, `bin/*`, `cmd/*`, `src/main.rs`,
+  `src/bin/*`, `examples/*`, plus `*_test.go` for Go) so a fresh install does
+  not block CLI code, and config excludes are added to those defaults. The array
+  must sit on one line with no trailing comment, or it is ignored whole.
+  Order per finding: `scaffold-allow` on the line, then the path exclude, then
+  `disabled` / `severity`.
 - **Modifying a pattern's regex/description** is just editing the
   `.forbidden-patterns/<lang>.txt` you already own; git history is the audit
   trail. `.scaffold.toml` owns disable + severity, so a regex never lives in two

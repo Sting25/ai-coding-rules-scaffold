@@ -3,11 +3,14 @@
 # Format: <regex><TAB><description>   (one per line; # comments ignored)
 # Separator is TAB - patterns can contain literal `|` for ERE alternation.
 # Case-sensitive ERE (grep -anE). Installed as `.forbidden-patterns/go.txt`.
+# A rule may end with a third TAB field, `exclude=<glob>,<glob>`: paths the rule
+# does not scan (the print rules ship CLI/script/test defaults). Add more per
+# project in .scaffold.toml (`exclude = [...]`); see forbidden-patterns/README.md.
 # Active rules flag leftover debug output plus one security sink (TLS bypass);
 # panic/log.Fatal live in optional below.
 
-(^|[^A-Za-z_.])fmt\.Print(ln|f)?[[:space:]]*\(	Remove fmt.Print/Println/Printf debug output - use the project logger
-(^|[^A-Za-z_.])println[[:space:]]*\(	Remove the builtin println() before committing
+(^|[^A-Za-z_.])fmt\.Print(ln|f)?[[:space:]]*\(	Remove fmt.Print/Println/Printf debug output - use the project logger	exclude=*_test.go,tests/*,test/*,scripts/*,bin/*,cmd/*,src/main.rs,src/bin/*,examples/*
+(^|[^A-Za-z_.])println[[:space:]]*\(	Remove the builtin println() before committing	exclude=*_test.go,tests/*,test/*,scripts/*,bin/*,cmd/*,src/main.rs,src/bin/*,examples/*
 (^|[^A-Za-z_.])spew\.Dump[[:space:]]*\(	Remove spew.Dump() debug dump before committing
 
 # --- Security: TLS bypass ---

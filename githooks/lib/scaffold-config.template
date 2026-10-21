@@ -10,8 +10,12 @@
 #   - bare or "quoted" keys:  default = 800   "src/**" = 1200   disabled = true
 #   - values: integers, true/false, and "double-quoted strings"
 #   - `#` comments on their own line, and blank lines
-# Arrays, inline tables, multiline strings, and trailing comments are NOT
-# supported. Anything it cannot parse is simply ignored — so a malformed config
+#   - ONE array form, for the per-rule `exclude` key only: a single-line array
+#     of "double-quoted" strings, exclude = ["tests/*", "scripts/*"]
+# Other arrays, inline tables, multiline strings, and trailing comments are NOT
+# supported (an exclude array that is multiline or carries a trailing comment
+# has no closing `]` on its line and is ignored whole). Anything it cannot parse
+# is simply ignored, so a malformed config
 # FAILS SAFE: an entry only ever takes effect when it parses cleanly, and the
 # scanners stay fully enforced otherwise. A config can only make checks weaker
 # through an explicit, well-formed entry that a reviewer can see in the diff.
@@ -29,6 +33,13 @@
 #                     Globs use bash `[[ == ]]` semantics, where `*` also spans `/`.
 #   rule-state <id>   Print exactly one of: disabled | warn | error (default
 #                     error). `disabled` wins over `severity`.
+#   rule-excludes <id>
+#                     Print the path globs in that rule's `exclude` key, one per
+#                     line (nothing when it has none). A file whose repo-relative
+#                     path matches any glob is not scanned for THAT rule only.
+#                     The caller matches them with a bash `case` pattern, where
+#                     `*` also spans `/`, so `tests/*` covers every depth below
+#                     tests/. Repeated `exclude` keys in one table accumulate.
 #
 # Rule ids:
 #   "<patternfile-stem>/<description>"  forbidden-pattern rules (quote in TOML)
@@ -47,7 +58,8 @@ if [ ! -f "$CONFIG" ]; then
   case "$cmd" in
     size-cap)   exit 0 ;;
     rule-state) echo "error"; exit 0 ;;
-    *)          echo "usage: scaffold-config {size-cap <path>|rule-state <id>}" >&2; exit 2 ;;
+    rule-excludes) exit 0 ;;
+    *)          echo "usage: scaffold-config {size-cap <path>|rule-state <id>|rule-excludes <id>}" >&2; exit 2 ;;
   esac
 fi
 
@@ -124,8 +136,47 @@ case "$cmd" in
     ' "$CONFIG"
     ;;
 
+  rule-excludes)
+    id=${2:-}
+    [ -n "$id" ] || exit 0
+    # Same table walk as rule-state. The value is read RAW (not unq'd) so the
+    # array brackets survive: `[ "a", "b" ]` yields a and b, a bare "a" string
+    # yields a. An array without its closing `]` on the same line is dropped
+    # whole (fail safe: fewer excludes means more scanning, never less).
+    awk -v target="$id" '
+      function trim(s){ sub(/^[ \t]+/,"",s); sub(/[ \t]+$/,"",s); return s }
+      function unq(s){ if (s ~ /^".*"$/) s=substr(s,2,length(s)-2); return s }
+      BEGIN { match_=0 }
+      {
+        line=$0; sub(/\r$/,"",line); t=trim(line)
+        if (t=="" || t ~ /^#/) next
+        if (t ~ /^\[/) {
+          sec=t; sub(/^\[/,"",sec); sub(/\]$/,"",sec)
+          if (sec ~ /^rules\./) { match_ = (unq(substr(sec,7))==target) }
+          else { match_=0 }
+          next
+        }
+        if (!match_) next
+        eq=index(t,"="); if (eq==0) next
+        key=unq(trim(substr(t,1,eq-1))); raw=trim(substr(t,eq+1))
+        if (key!="exclude") next
+        if (raw ~ /^\[.*\]$/) {
+          raw=substr(raw,2,length(raw)-2)
+          while (match(raw,/"[^"]*"/)) {
+            g=substr(raw,RSTART+1,RLENGTH-2)
+            if (g!="") print g
+            raw=substr(raw,RSTART+RLENGTH)
+          }
+        } else if (raw ~ /^".*"$/) {
+          g=substr(raw,2,length(raw)-2)
+          if (g!="") print g
+        }
+      }
+    ' "$CONFIG"
+    ;;
+
   *)
-    echo "usage: scaffold-config {size-cap <path>|rule-state <id>}" >&2
+    echo "usage: scaffold-config {size-cap <path>|rule-state <id>|rule-excludes <id>}" >&2
     exit 2
     ;;
 esac

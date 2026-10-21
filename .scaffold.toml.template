@@ -9,7 +9,8 @@
 #
 # Format is a strict TOML subset (see .githooks/lib/scaffold-config for the
 # exact grammar): [section] headers, bare or "quoted" keys, and integer /
-# true,false / "string" values. No arrays, inline tables, or trailing comments.
+# true,false / "string" values. The one array form is a single-line list of
+# strings for a rule's `exclude` key. No inline tables or trailing comments.
 #
 # SECURITY BOUNDARY — what you CANNOT override here:
 #   The secret scanner (check-secrets) and the credential-filename check
@@ -52,6 +53,10 @@
 # Each [rules."..."] table accepts:
 #   disabled = true            # turn the rule off entirely (still auditable)
 #   severity = "warn"          # error (default) -> warn: emit but don't fail
+#   exclude  = ["app/cli/*"]   # skip THIS rule for these paths (forbidden-pattern
+#                              # rules only); single line, added to the rule's
+#                              # shipped defaults. Globs are shell `case`
+#                              # patterns on the repo-relative path; `*` spans `/`
 #   reason   = "..."           # why — surfaced by scaffold-audit
 #   by       = "name + date"   # who signed off
 #
@@ -69,6 +74,11 @@
 # severity = "warn"
 # reason   = "debug logging allowed in the spike branch"
 # by       = "sam 2026-06-11"
+#
+# [rules."backend/Use structlog (or the project's logger), not print()"]
+# exclude = ["app/cli/*", "*/management/commands/*"]
+# reason  = "CLI programs print to stdout by design"
+# by      = "sam 2026-10-21"
 #
 # [rules.case-collision]
 # severity = "warn"

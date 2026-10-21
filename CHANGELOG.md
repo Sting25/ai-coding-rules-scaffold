@@ -6,6 +6,14 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Rules can skip paths, and the print rules no longer block CLI code.** A rule
+  in `.scaffold.toml` takes `exclude = ["app/cli/*"]` to stop scanning matching
+  paths for that rule only. The `print()`, `fmt.Print`/`println` and
+  `println!`/`eprintln!` rules now ship excluding `tests/`, `scripts/`, `bin/`,
+  `cmd/`, `examples/`, `src/main.rs`, `src/bin/` and Go `*_test.go` files.
+
 ### Fixed
 
 - **Local-development URLs no longer trip the secrets and frontend scans.** A

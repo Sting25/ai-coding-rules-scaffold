@@ -239,6 +239,22 @@ if command -v jq >/dev/null 2>&1; then
     sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
   fi
   rm -f ".githooks/lib/credential-read-patterns.txt"
+  # (48l) a rule line carrying the optional third `exclude=<globs>` field (the
+  #       per-rule path excludes check-patterns reads) must not change what
+  #       agent-precheck blocks: the field is not part of the regex and the rule
+  #       still arms. A probe rule with the field is appended to the installed
+  #       shell.txt; the Bash payload it matches is still refused.
+  printf 'curl[[:space:]]+exclude-field-probe\tProbe rule with a path exclude\texclude=tests/*,scripts/*\n' >>.forbidden-patterns/shell.txt
+  pc='{"tool_name":"Bash","tool_input":{"command":"curl exclude-field-probe"}}'
+  rc=0
+  printf '%s' "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1 || rc=$?
+  if [ "$rc" -eq 2 ] && grep -qF "BLOCKED by agent-precheck" "$HOOK_OUT"; then
+    echo "  ✓ agent-precheck still blocks a rule that carries an exclude= field"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck: rule with an exclude= field exited $rc, expected block (exit 2)"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  git checkout --quiet -- .forbidden-patterns/shell.txt
 else
   echo "  - skipped agent-precheck tests (jq not installed)"
 fi

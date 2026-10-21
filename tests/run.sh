@@ -105,7 +105,7 @@ CASE_FLOORS=(
   "31-install-verify-offer.sh:5"
   "32-uninstall-report.sh:6"
   "33-harness-self-checks.sh:12"
-  "34-shipped-pattern-files.sh:11"
+  "34-shipped-pattern-files.sh:13"
   "35-workflow-template-validity.sh:15"
   "36-red-green-verdict.sh:3"
   "37-doctor-content-drift.sh:8"
@@ -114,6 +114,7 @@ CASE_FLOORS=(
   "40-doctor-required-checks.sh:6"
   "41-tsconfig-monorepo.sh:6"
   "42-doctor-narrow-path.sh:3"
+  "43-check-patterns-path-excludes.sh:18"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and

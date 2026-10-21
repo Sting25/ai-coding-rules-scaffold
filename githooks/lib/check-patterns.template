@@ -11,8 +11,10 @@
 # so a new language is added by dropping `<lang>.txt` with that header — no edit
 # to this script. backend.txt / frontend.txt / shell.txt have a built-in
 # fallback mapping for backward compatibility.
-# Pattern format: <regex><TAB><description>
+# Pattern format: <regex><TAB><description>[<TAB>exclude=<glob>[,<glob>...]]
 # (TAB is the field separator so regex can use literal `|` alternation.)
+# The optional third field carries a rule's DEFAULT path excludes; see
+# "Per-rule path excludes" below.
 #
 # Scope by pattern FILE (opt-in, for callers that run more than one tier):
 #   CHECK_PATTERNS_INCLUDE  space-separated basenames; ONLY these are scanned
@@ -33,6 +35,25 @@
 # (`#`, `//`, `/*`, `<!--`) at start-of-line or after whitespace — like `# noqa`.
 # Bare `--` was dropped as a leader (cross-language bypass); see check-secrets
 # for why inline suppression isn't a hostile-committer boundary. Use sparingly.
+#
+# Per-rule path excludes. A rule can opt out whole paths, for example so the
+# print-style rules do not block a CLI entry point, a script or a test:
+#   * Shipped defaults: the third TAB field, `exclude=tests/*,scripts/*`
+#     (comma-separated globs; a glob cannot contain a comma or a TAB).
+#   * Project additions: `.scaffold.toml`, in the rule's own table (same
+#     "<patternfile-stem>/<description>" id as disabled / severity):
+#       [rules."backend/Use structlog (or the project's logger), not print()"]
+#       exclude = ["app/cli/*"]
+#     Config excludes are ADDED to the shipped defaults, never a replacement.
+# A glob is a bash `case` pattern matched against the repo-relative path, so
+# `*` also matches `/`: `tests/*` covers every depth below tests/ but only the
+# top-level tests/ (use `*/tests/*` for any depth), and `*_test.go` matches in
+# any directory. A file matching any glob is skipped for THAT rule only; every
+# other rule still scans it. Precedence, first match wins, per finding:
+#   1. per-line `scaffold-allow` marker (the line is not a finding at all)
+#   2. per-rule path exclude (the file is not scanned for this rule)
+#   3. per-rule `disabled = true` / `severity = "warn"` in `.scaffold.toml`
+# A rule with no exclude behaves exactly as before.
 #
 # A pattern file that the install manifest (.githooks/.scaffold-manifest)
 # records but that is no longer in the checkout fails CLOSED (#159). Auto-
@@ -110,6 +131,25 @@ while IFS= read -r -d '' f; do
   [ -n "$f" ] && FILES+=("$f")
 done
 
+# path_excluded <file> <default-globs> <rule-id>: succeeds when <file> matches a
+# glob in the comma-separated shipped default list or in the rule's `exclude`
+# key in .scaffold.toml. Globs are `case` patterns (portable to bash 3.2), where
+# `*` also matches `/`. The list is walked line by line, never word-split into
+# an array, so a glob such as `tests/*` is only ever compared with the path and
+# cannot be pathname-expanded against the working tree.
+path_excluded() {
+  local file=$1 defaults=$2 id=$3 g nl=$'\n'
+  while IFS= read -r g; do
+    [ -n "$g" ] || continue
+    # shellcheck disable=SC2254  # intentional glob match of $file against $g
+    case "$file" in $g) return 0 ;; esac
+  done <<EOF_EXCL
+${defaults//,/$nl}
+$(cfg rule-excludes "$id")
+EOF_EXCL
+  return 1
+}
+
 scan() {
   local config=$1
   shift
@@ -135,8 +175,8 @@ scan() {
   local stem
   stem=$(basename "$config" .txt)
 
-  local raw_patterns=() raw_descs=()
-  local line pattern description
+  local raw_patterns=() raw_descs=() raw_excl=()
+  local line pattern description rest excl
   while IFS= read -r line || [ -n "$line" ]; do
     line=${line%$'\r'}
     [ -z "$line" ] && continue
@@ -148,10 +188,23 @@ scan() {
       *) echo "warning: $config: line has no TAB separator, skipped: $line" >&2; continue ;;
     esac
     pattern=${line%%$'\t'*}
-    description=${line#*$'\t'}
+    rest=${line#*$'\t'}
+    description=$rest
+    excl=""
+    # Optional third field `exclude=<glob>,<glob>`: the rule's default path
+    # excludes. Only a field starting `exclude=` is one; any other text after a
+    # second TAB stays part of the description, as it always has, so an older
+    # pattern file keeps its rule ids.
+    case "$rest" in
+      *$'\t'exclude=*)
+        description=${rest%%$'\t'exclude=*}
+        excl=${rest#*$'\t'exclude=}
+        ;;
+    esac
     [ -z "$pattern" ] && continue
     raw_patterns+=("$pattern")
     raw_descs+=("$description")
+    raw_excl+=("$excl")
   done <"$config"
 
   # A present-but-EMPTY pattern file (every rule line deleted or commented out)
@@ -175,7 +228,7 @@ scan() {
   # cryptic per-file grep errors. `printf '' | grep -E p` returns 1
   # (no match) for valid patterns and writes to stderr for invalid ones —
   # so empty stderr means valid.
-  local patterns=() descriptions=()
+  local patterns=() descriptions=() excludes=()
   local i p_err
   for i in "${!raw_patterns[@]}"; do
     p_err=$(printf '' | grep -E -- "${raw_patterns[$i]}" 2>&1 1>/dev/null || true)
@@ -185,6 +238,7 @@ scan() {
     fi
     patterns+=("${raw_patterns[$i]}")
     descriptions+=("${raw_descs[$i]}")
+    excludes+=("${raw_excl[$i]}")
   done
 
   # Every configured pattern was an invalid ERE and got dropped, the config is
@@ -264,6 +318,10 @@ scan() {
       # Exempt only a comment-anchored marker (see check-secrets).
       m=$(grep -anE -- "$pat" <<<"$content" | grep -ivE '(^[0-9]+:|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true)
       [ -n "$m" ] || continue
+      # Per-rule path exclude (see header): shipped default plus .scaffold.toml.
+      # Checked only once the rule has matched, so the config helper is not
+      # spawned for every rule on every file.
+      if path_excluded "$file" "${excludes[$i]}" "$stem/$desc"; then continue; fi
       # Per-rule override: `disabled` skips the rule, `warn` reports without
       # failing, anything else (incl. missing config) enforces as `error`.
       local state

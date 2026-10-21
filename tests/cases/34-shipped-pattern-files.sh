@@ -46,7 +46,7 @@ echo "cases/34: every shipped forbidden-patterns template loads with no dropped 
 # all if the file is clean. Runs in a subshell via $(...) so its locals and its
 # per-line loop cannot disturb the driver's state.
 _fp_check() {
-  local tpl=$1 base line pattern description hdr p_err n=0
+  local tpl=$1 base line pattern description rest xfield has_x hdr p_err n=0
   base=$(basename "$tpl" .template)
 
   # (1) The `# scaffold-extensions:` header. Without it (and without the
@@ -79,7 +79,31 @@ _fp_check() {
       *) printf '%s: line has no TAB separator, the loader would skip it: %s\n' "$base" "$line"; continue ;;
     esac
     pattern=${line%%$'\t'*}
-    description=${line#*$'\t'}
+    rest=${line#*$'\t'}
+    # Optional third field `exclude=<glob>,<glob>` (per-rule path excludes,
+    # read by check-patterns). Split exactly as the loader does: only a field
+    # starting `exclude=` after a second TAB is one.
+    description=$rest
+    xfield=""
+    has_x=0
+    case "$rest" in
+      *$'\t'exclude=*)
+        description=${rest%%$'\t'exclude=*}
+        xfield=${rest#*$'\t'exclude=}
+        has_x=1
+        ;;
+      *$'\t'*)
+        printf '%s: a second TAB after the description that is not an exclude= field would be read as part of the description: %s\n' "$base" "$line"
+        ;;
+    esac
+    if [ "$has_x" -eq 1 ]; then
+      if [ "$base" = "secrets.txt" ]; then
+        printf '%s: secrets.txt takes no exclude= field, secret scanning is never path-exempt: %s\n' "$base" "$line"
+      fi
+      if ! printf '%s' "$xfield" | grep -qE '^[^,[:space:]]+(,[^,[:space:]]+)*$'; then
+        printf '%s: malformed exclude= field (want comma-separated globs, no empty entry, no whitespace): %s\n' "$base" "$line"
+      fi
+    fi
     # An empty pattern half is the quietest of the four faults: both loaders
     # `continue` on it with NO warning at all, so a line that begins with the
     # TAB vanishes without a trace in any log.
@@ -144,7 +168,53 @@ for _fp_tpl in "$SCAFFOLD_DIR"/forbidden-patterns/*.txt.template; do
   fi
 done
 unset _fp_tpl _fp_faults
-unset -f _fp_check
+
+# (X) the format check above accepts the exclude= field and still rejects a
+# malformed one. Two throwaway templates, one per verdict, run through the same
+# _fp_check the shipped files use; a check that cannot fail is not a check.
+_fp_dir=$(mktemp -d)
+printf '# scaffold-extensions: py\nfoo\tgood rule\texclude=tests/*,scripts/*\n' >"$_fp_dir/good.txt.template"
+printf '# scaffold-extensions: py\nfoo\tbad rule\texclude=\n' >"$_fp_dir/bad.txt.template"
+if [ -z "$(_fp_check "$_fp_dir/good.txt.template")" ] \
+   && _fp_check "$_fp_dir/bad.txt.template" | grep -qF 'malformed exclude= field'; then
+  echo "  ✓ the format check accepts exclude=<globs> and flags an empty one"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ the format check must accept a valid exclude= field and flag an empty one"
+  _fp_check "$_fp_dir/good.txt.template" | sed 's/^/      good: /'
+  _fp_check "$_fp_dir/bad.txt.template" | sed 's/^/      bad:  /'
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$_fp_dir"
+unset _fp_dir
+
+# (D) the shipped defaults are actually shipped: every print-style rule carries
+# an exclude= list naming the CLI/script/test paths, and the Go ones add
+# *_test.go. Counted per file so dropping one field from a rule fails here.
+_fp_d_bad=""
+_fp_tail='tests/*,test/*,scripts/*,bin/*,cmd/*,src/main.rs,src/bin/*,examples/*'
+# _fp_has <stem> <description prefix> <expected globs>: some rule in the
+# template has that description and exactly that third field.
+_fp_has() {
+  awk -F'\t' -v d="$2" -v e="exclude=$3" 'index($2, d) == 1 && $3 == e { f = 1 } END { exit !f }' \
+    "$SCAFFOLD_DIR/forbidden-patterns/$1.txt.template"
+}
+_fp_has backend 'Use structlog (or the project' "$_fp_tail" || _fp_d_bad="$_fp_d_bad backend/print()"
+_fp_has go 'Remove fmt.Print/Println/Printf' "*_test.go,$_fp_tail" || _fp_d_bad="$_fp_d_bad go/fmt.Print"
+_fp_has go 'Remove the builtin println()' "*_test.go,$_fp_tail" || _fp_d_bad="$_fp_d_bad go/println"
+_fp_has rust 'Use the project logger (log/tracing), not println!()' "$_fp_tail" || _fp_d_bad="$_fp_d_bad rust/println!"
+_fp_has rust 'Use the project logger (log/tracing), not print!()' "$_fp_tail" || _fp_d_bad="$_fp_d_bad rust/print!"
+_fp_has rust 'Use the project logger (log/tracing), not eprintln!()' "$_fp_tail" || _fp_d_bad="$_fp_d_bad rust/eprintln!"
+_fp_has rust 'Use the project logger (log/tracing), not eprint!()' "$_fp_tail" || _fp_d_bad="$_fp_d_bad rust/eprint!"
+if [ -z "$_fp_d_bad" ]; then
+  echo "  ✓ the print-style rules in backend.txt, go.txt and rust.txt ship their default excludes"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ default exclude= missing or wrong on:$_fp_d_bad"
+  FAIL=$((FAIL + 1))
+fi
+unset _fp_d_bad _fp_tail
+unset -f _fp_has _fp_check
 
 # (T) end-to-end: the same files, INSTALLED, through the real hook. The static
 # pass above reads the templates; this proves the artifacts install.sh actually
