@@ -72,7 +72,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # assertions. Never lower a number to make a red run green: below a floor the
 # question is which case stopped running.
 CASE_FLOORS=(
-  "01-size-patterns.sh:26"
+  "01-size-patterns.sh:32"
   "02-scaffold-allow-ruff-edge.sh:15"
   "03-binary-defense.sh:37"
   "04-shell-config-rename.sh:55"
@@ -105,7 +105,7 @@ CASE_FLOORS=(
   "31-install-verify-offer.sh:5"
   "32-uninstall-report.sh:6"
   "33-harness-self-checks.sh:12"
-  "34-shipped-pattern-files.sh:15"
+  "34-shipped-pattern-files.sh:16"
   "35-workflow-template-validity.sh:15"
   "36-red-green-verdict.sh:3"
   "37-doctor-content-drift.sh:8"

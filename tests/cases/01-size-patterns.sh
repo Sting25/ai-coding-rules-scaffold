@@ -158,6 +158,22 @@ printf 'dsn: mysql://root:pw%s10.0.0.5/app\n' '@' >mysql-dsn.yml
 git add mysql-dsn.yml
 assert_rejects "credential URL on a private IP is still rejected" "URL with embedded credentials"
 
+# 10b4. Look-alikes of a local host are refused: a longer name, a longer IP, a
+#       different IPv6 loopback-shaped literal, and a second `@` straight after
+#       the local name. The two allowed controls carry a port.
+#       `{at}` stands for a second `@`, substituted at runtime.
+for _lh in 'localhost.evil.com/db' '127.0.0.10/db' '[::2]:5432/db' 'localhost{at}evil.com/db'; do
+  printf 'u = "postgresql://app:pw%s%s"\n' '@' "${_lh//\{at\}/@}" >lookalike.txt
+  git add lookalike.txt
+  assert_rejects "credential URL on look-alike host ${_lh%%/*} is rejected" "URL with embedded credentials"
+done
+for _lh in '[::1]:5432/db' '0.0.0.0:80/db'; do
+  printf 'u = "postgresql://app:pw%s%s"\n' '@' "$_lh" >localok.txt
+  git add localok.txt
+  assert_passes "credential URL on local host ${_lh%%/*} is allowed"
+done
+unset _lh
+
 # 10c. SendGrid key prefix.
 printf 'k = SG.%s.%s\n' 'abcdefghijklmnopqrstuv' 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHI' >sg.txt
 git add sg.txt

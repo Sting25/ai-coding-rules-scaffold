@@ -300,6 +300,22 @@ fi
 unset _fp_p_bad _fp_p_n _fp_t
 unset -f _fp_pair _fp_check
 
+# (G) the credential-URL rule's local-host complement is generated, not hand
+# edited: scripts/gen-local-host-complement.sh must print the shipped line byte
+# for byte (pattern, TAB, description). A hand edit that drops one prefix
+# alternative would let a look-alike host through or refuse a local one.
+_fp_gen=$(bash "$SCAFFOLD_DIR/scripts/gen-local-host-complement.sh" 2>&1 || true)
+_fp_ship=$(grep -F '[a-zA-Z]+://[^[:space:]:/@]*:' "$SCAFFOLD_DIR/forbidden-patterns/secrets.txt.template" || true)
+if [ -n "$_fp_gen" ] && [ "$_fp_gen" = "$_fp_ship" ]; then
+  echo "  ✓ gen-local-host-complement.sh reproduces the shipped credential-URL line byte for byte"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ gen-local-host-complement.sh output differs from the shipped credential-URL line"
+  printf '      gen:  %s\n      ship: %s\n' "$_fp_gen" "$_fp_ship"
+  FAIL=$((FAIL + 1))
+fi
+unset _fp_gen _fp_ship
+
 # (T) end-to-end: the same files, INSTALLED, through the real hook. The static
 # pass above reads the templates; this proves the artifacts install.sh actually
 # wrote into .forbidden-patterns/ load without either loader emitting one of its
