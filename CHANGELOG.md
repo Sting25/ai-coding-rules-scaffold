@@ -14,6 +14,16 @@ versioning follows [SemVer](https://semver.org/).
   `println!`/`eprintln!` rules now ship excluding `tests/`, `scripts/`, `bin/`,
   `cmd/`, `examples/`, `src/main.rs`, `src/bin/` and Go `*_test.go` files.
 
+### Changed
+
+- **One suppression is enough where a linter already enforces the rule.** The
+  `console.log`, `debugger`, `@ts-ignore`, `@ts-nocheck`, `os.path.join` and bare
+  `# type: ignore` pattern rules are skipped when pre-commit will run the
+  matching linter (eslint or ruff) on the file, so `// eslint-disable-next-line`
+  no longer also needs `scaffold-allow`. Where the linter is not configured or
+  not installed the pattern still blocks; `linter-dedupe = false` in
+  `.scaffold.toml` keeps a rule on regardless.
+
 ### Fixed
 
 - **Local-development URLs no longer trip the secrets and frontend scans.** A

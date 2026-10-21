@@ -10,9 +10,14 @@
 # A rule may end with a third TAB field, `exclude=<glob>,<glob>`: paths the rule
 # does not scan (the print rules ship CLI/script/test defaults). Add more per
 # project in .scaffold.toml (`exclude = [...]`); see forbidden-patterns/README.md.
+# A rule ending `<TAB>linter=ruff` duplicates a rule ruff.toml selects (os.path.join
+# = PTH118, bare `# type: ignore` = PGH003). check-patterns skips it where
+# pre-commit would run ruff, so one `# noqa: PTH118` is enough; where ruff would
+# be skipped (no config, or not installed) the regex still blocks. Force it on
+# per rule with `linter-dedupe = false` in .scaffold.toml.
 
 (^|[^A-Za-z_])print[[:space:]]*\(	Use structlog (or the project's logger), not print()	exclude=tests/*,test/*,scripts/*,bin/*,cmd/*,src/main.rs,src/bin/*,examples/*
-os\.path\.join	Use pathlib.Path(), not os.path.join
+os\.path\.join	Use pathlib.Path(), not os.path.join	linter=ruff
 (^|[^A-Za-z_])breakpoint[[:space:]]*\(	Remove breakpoint() before committing
 (^|[^A-Za-z_])pdb\.set_trace[[:space:]]*\(	Remove pdb.set_trace() before committing
 (^|[^A-Za-z_])ipdb\.set_trace[[:space:]]*\(	Remove ipdb.set_trace() before committing
@@ -31,7 +36,7 @@ os\.path\.join	Use pathlib.Path(), not os.path.join
 # hides every error on the line forever, including ones a later refactor
 # introduces. Each pattern starts with `(^|[[:space:]])` because check-patterns
 # drops any rule line whose FIRST character is `#` as a file comment.
-(^|[[:space:]])#[[:space:]]*type:[[:space:]]*ignore($|[^[])	Bare `# type: ignore` hides every error on the line — use the coded form, e.g. `# type: ignore[arg-type]`
+(^|[[:space:]])#[[:space:]]*type:[[:space:]]*ignore($|[^[])	Bare `# type: ignore` hides every error on the line — use the coded form, e.g. `# type: ignore[arg-type]`	linter=ruff
 (^|[[:space:]])#[[:space:]]*mypy:[[:space:]]*ignore-errors	File-level `# mypy: ignore-errors` turns type-checking off for the whole module — fix the types or ignore the specific error code
 (^|[[:space:]])#[[:space:]]*ruff:[[:space:]]*noqa($|[^:])	File-level `# ruff: noqa` disables every selected rule for the file — suppress one code on one line instead, e.g. `# noqa: S602`
 

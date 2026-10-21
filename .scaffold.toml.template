@@ -57,6 +57,8 @@
 #                              # rules only); single line, added to the rule's
 #                              # shipped defaults. Globs are shell `case`
 #                              # patterns on the repo-relative path; `*` spans `/`
+#   linter-dedupe = false      # keep a `linter=` rule's regex even where its
+#                              # linter (eslint / ruff) runs; default drops it
 #   reason   = "..."           # why — surfaced by scaffold-audit
 #   by       = "name + date"   # who signed off
 #

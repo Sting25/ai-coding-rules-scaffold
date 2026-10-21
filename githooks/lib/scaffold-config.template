@@ -41,6 +41,17 @@
 #                     `*` also spans `/`, so `tests/*` covers every depth below
 #                     tests/. Repeated `exclude` keys in one table accumulate.
 #
+#   rule-linter-dedupe <id>
+#                     Print `off` when the rule's table sets `linter-dedupe =
+#                     false` (keep the regex even where its paired linter runs),
+#                     else nothing. See `linter-runs`.
+#   linter-runs <ruff|eslint> <path>
+#                     Print `yes` when pre-commit would run that linter on <path>
+#                     in this repo (config present, binary present, extension it
+#                     lints), else nothing. Needs no .scaffold.toml. check-patterns
+#                     uses it to drop a rule marked `linter=<name>`; the two tests
+#                     below are copied from pre-commit.template and a test pins them.
+#
 # Rule ids:
 #   "<patternfile-stem>/<description>"  forbidden-pattern rules (quote in TOML)
 #   conflict-marker | case-collision    hygiene rules
@@ -53,13 +64,41 @@ set -euo pipefail
 CONFIG=".scaffold.toml"
 cmd=${1:-}
 
+# linter-runs answers from the working tree, not from .scaffold.toml, so it runs
+# before the no-config exit below. Mirrors pre-commit.template: a config-file
+# test, then the same tool lookup, and only for the extensions pre-commit hands
+# the linter that the shipped config actually lints (`*.vue` is handed to eslint
+# but the shipped config has no vue parser; `*.mts`/`*.cts` are never handed
+# over). Matching is case-sensitive like pre-commit's `case`, so `X.PY` is not
+# linted and keeps its regex rules.
+if [ "$cmd" = linter-runs ]; then
+  lname=${2:-}; lpath=${3:-}
+  case "$lname:$lpath" in
+    ruff:*.py)
+      { [ -f ruff.toml ] || [ -f pyproject.toml ]; } || exit 0
+      if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/ruff" ]; then echo yes; exit 0; fi
+      for cand in .venv venv; do
+        if [ -x "$cand/bin/ruff" ]; then echo yes; exit 0; fi
+      done
+      if command -v ruff >/dev/null 2>&1; then echo yes; exit 0; fi
+      if command -v python3 >/dev/null 2>&1 && python3 -m ruff --version >/dev/null 2>&1; then echo yes; fi
+      ;;
+    eslint:*.ts|eslint:*.tsx|eslint:*.js|eslint:*.jsx|eslint:*.cjs|eslint:*.mjs)
+      { [ -f eslint.config.js ] || [ -f package.json ]; } || exit 0
+      if command -v node >/dev/null 2>&1 && command -v npx >/dev/null 2>&1 \
+         && node -e "require.resolve('eslint/package.json')" >/dev/null 2>&1; then echo yes; fi
+      ;;
+  esac
+  exit 0
+fi
+
 # No config → defaults everywhere. size-cap prints nothing; rule-state is error.
 if [ ! -f "$CONFIG" ]; then
   case "$cmd" in
     size-cap)   exit 0 ;;
     rule-state) echo "error"; exit 0 ;;
-    rule-excludes) exit 0 ;;
-    *)          echo "usage: scaffold-config {size-cap <path>|rule-state <id>|rule-excludes <id>}" >&2; exit 2 ;;
+    rule-excludes|rule-linter-dedupe) exit 0 ;;
+    *)          echo "usage: scaffold-config {size-cap <path>|rule-state <id>|rule-excludes <id>|rule-linter-dedupe <id>|linter-runs <name> <path>}" >&2; exit 2 ;;
   esac
 fi
 
@@ -175,8 +214,35 @@ case "$cmd" in
     ' "$CONFIG"
     ;;
 
+  rule-linter-dedupe)
+    id=${2:-}
+    [ -n "$id" ] || exit 0
+    # Same table walk as rule-state. Only a well-formed `linter-dedupe = false`
+    # counts; anything else (true, a typo, a missing key) leaves the default,
+    # which is to drop the regex where the linter runs.
+    awk -v target="$id" '
+      function trim(s){ sub(/^[ \t]+/,"",s); sub(/[ \t]+$/,"",s); return s }
+      function unq(s){ if (s ~ /^".*"$/) s=substr(s,2,length(s)-2); return s }
+      BEGIN { match_=0; off=0 }
+      {
+        line=$0; sub(/\r$/,"",line); t=trim(line)
+        if (t=="" || t ~ /^#/) next
+        if (t ~ /^\[/) {
+          sec=t; sub(/^\[/,"",sec); sub(/\]$/,"",sec)
+          if (sec ~ /^rules\./) { match_ = (unq(substr(sec,7))==target) }
+          else { match_=0 }
+          next
+        }
+        if (!match_) next
+        eq=index(t,"="); if (eq==0) next
+        if (unq(trim(substr(t,1,eq-1)))=="linter-dedupe" && unq(trim(substr(t,eq+1)))=="false") off=1
+      }
+      END { if (off) print "off" }
+    ' "$CONFIG"
+    ;;
+
   *)
-    echo "usage: scaffold-config {size-cap <path>|rule-state <id>|rule-excludes <id>}" >&2
+    echo "usage: scaffold-config {size-cap <path>|rule-state <id>|rule-excludes <id>|rule-linter-dedupe <id>|linter-runs <name> <path>}" >&2
     exit 2
     ;;
 esac

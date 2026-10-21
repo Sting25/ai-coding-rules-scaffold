@@ -46,7 +46,7 @@ echo "cases/34: every shipped forbidden-patterns template loads with no dropped 
 # all if the file is clean. Runs in a subshell via $(...) so its locals and its
 # per-line loop cannot disturb the driver's state.
 _fp_check() {
-  local tpl=$1 base line pattern description rest xfield has_x hdr p_err n=0
+  local tpl=$1 base line pattern description rest xfield lfield has_x has_l hdr p_err n=0 d1 d2 _fp_flds _fp_f
   base=$(basename "$tpl" .template)
 
   # (1) The `# scaffold-extensions:` header. Without it (and without the
@@ -80,20 +80,31 @@ _fp_check() {
     esac
     pattern=${line%%$'\t'*}
     rest=${line#*$'\t'}
-    # Optional third field `exclude=<glob>,<glob>` (per-rule path excludes,
-    # read by check-patterns). Split exactly as the loader does: only a field
-    # starting `exclude=` after a second TAB is one.
+    # Optional trailing fields `exclude=<glob>,<glob>` (per-rule path excludes)
+    # and `linter=eslint|ruff` (linter dedupe), either order, read by
+    # check-patterns. Split exactly as the loader does: the description ends at
+    # the first TAB that starts one of them, and any other TAB-separated text
+    # after it is flagged here because the loader would ignore it.
     description=$rest
     xfield=""
+    lfield=""
     has_x=0
+    has_l=0
     case "$rest" in
-      *$'\t'exclude=*)
-        description=${rest%%$'\t'exclude=*}
-        xfield=${rest#*$'\t'exclude=}
-        has_x=1
+      *$'\t'exclude=*|*$'\t'linter=*)
+        d1=${rest%%$'\t'exclude=*}; d2=${rest%%$'\t'linter=*}
+        if [ "${#d1}" -le "${#d2}" ]; then description=$d1; else description=$d2; fi
+        IFS=$'\t' read -r -a _fp_flds <<<"${rest#"$description"}"
+        for _fp_f in "${_fp_flds[@]}"; do
+          case "$_fp_f" in
+            exclude=*) xfield=${_fp_f#exclude=}; has_x=1 ;;
+            linter=*) lfield=${_fp_f#linter=}; has_l=1 ;;
+            *) printf '%s: a TAB-separated field that is neither exclude= nor linter= would be ignored by the loader: %s\n' "$base" "$line" ;;
+          esac
+        done
         ;;
       *$'\t'*)
-        printf '%s: a second TAB after the description that is not an exclude= field would be read as part of the description: %s\n' "$base" "$line"
+        printf '%s: a second TAB after the description that is not an exclude= or linter= field would be read as part of the description: %s\n' "$base" "$line"
         ;;
     esac
     if [ "$has_x" -eq 1 ]; then
@@ -103,6 +114,15 @@ _fp_check() {
       if ! printf '%s' "$xfield" | grep -qE '^[^,[:space:]]+(,[^,[:space:]]+)*$'; then
         printf '%s: malformed exclude= field (want comma-separated globs, no empty entry, no whitespace): %s\n' "$base" "$line"
       fi
+    fi
+    if [ "$has_l" -eq 1 ]; then
+      if [ "$base" = "secrets.txt" ]; then
+        printf '%s: secrets.txt takes no linter= field, secret scanning is never linter-deduped: %s\n' "$base" "$line"
+      fi
+      case "$lfield" in
+        eslint|ruff) ;;
+        *) printf '%s: malformed linter= field (want eslint or ruff, an unknown name never skips anything): %s\n' "$base" "$line" ;;
+      esac
     fi
     # An empty pattern half is the quietest of the four faults: both loaders
     # `continue` on it with NO warning at all, so a line that begins with the
@@ -188,6 +208,27 @@ fi
 rm -rf "$_fp_dir"
 unset _fp_dir
 
+# (L) the format check accepts linter=eslint|ruff in either order beside
+# exclude=, and flags an unknown or empty linter name and a stray extra field.
+_fp_dir=$(mktemp -d)
+printf '# scaffold-extensions: py\nfoo\tgood rule\tlinter=ruff\texclude=tests/*\nbar\tgood rule 2\texclude=tests/*\tlinter=eslint\n' >"$_fp_dir/good.txt.template"
+printf '# scaffold-extensions: py\nfoo\tbad rule\tlinter=pylint\n' >"$_fp_dir/bad.txt.template"
+printf '# scaffold-extensions: py\nfoo\tbad rule\tlinter=\n' >"$_fp_dir/empty.txt.template"
+printf '# scaffold-extensions: py\nfoo\tbad rule\tlinter=ruff\tjunk\n' >"$_fp_dir/junk.txt.template"
+if [ -z "$(_fp_check "$_fp_dir/good.txt.template")" ] \
+   && _fp_check "$_fp_dir/bad.txt.template" | grep -qF 'malformed linter= field' \
+   && _fp_check "$_fp_dir/empty.txt.template" | grep -qF 'malformed linter= field' \
+   && _fp_check "$_fp_dir/junk.txt.template" | grep -qF 'neither exclude= nor linter='; then
+  echo "  ✓ the format check accepts linter=eslint|ruff and flags an unknown name, an empty one and a stray field"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ the format check must accept linter=eslint|ruff in either order and flag the bad forms"
+  for _fp_n in good bad empty junk; do _fp_check "$_fp_dir/$_fp_n.txt.template" | sed "s/^/      $_fp_n: /"; done
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$_fp_dir"
+unset _fp_dir _fp_n
+
 # (D) the shipped defaults are actually shipped: every print-style rule carries
 # an exclude= list naming the CLI/script/test paths, and the Go ones add
 # *_test.go. Counted per file so dropping one field from a rule fails here.
@@ -214,7 +255,36 @@ else
   FAIL=$((FAIL + 1))
 fi
 unset _fp_d_bad _fp_tail
-unset -f _fp_has _fp_check
+unset -f _fp_has
+
+# (P) the linter-dedupe pairs are actually shipped: exactly these six rules carry
+# a linter= field, each naming the linter whose shipped config enforces it
+# (eslint.config.js: no-console, no-debugger, ban-ts-comment; ruff.toml: PTH118,
+# PGH003). Counted per rule, and any OTHER rule carrying one fails here, so a
+# `linter=` cannot be added to a rule its linter does not actually cover.
+_fp_p_bad=""
+_fp_pair() {
+  awk -F'\t' -v d="$2" -v e="linter=$3" 'index($2, d) == 1 && $3 == e { f = 1 } END { exit !f }' \
+    "$SCAFFOLD_DIR/forbidden-patterns/$1.txt.template"
+}
+_fp_pair frontend 'Use the project logger, not console.log' eslint || _fp_p_bad="$_fp_p_bad frontend/console.log"
+_fp_pair frontend 'Remove debugger statement' eslint || _fp_p_bad="$_fp_p_bad frontend/debugger"
+_fp_pair frontend 'Use @ts-expect-error with a justification' eslint || _fp_p_bad="$_fp_p_bad frontend/@ts-ignore"
+_fp_pair frontend 'Do not disable type-checking for a whole file' eslint || _fp_p_bad="$_fp_p_bad frontend/@ts-nocheck"
+_fp_pair backend 'Use pathlib.Path(), not os.path.join' ruff || _fp_p_bad="$_fp_p_bad backend/os.path.join"
+# shellcheck disable=SC2016  # the backticks are literal text in the rule description
+_fp_pair backend 'Bare `# type: ignore`' ruff || _fp_p_bad="$_fp_p_bad backend/type-ignore"
+_fp_p_n=$(cat "$SCAFFOLD_DIR"/forbidden-patterns/*.txt.template | grep -v '^#' | grep -cE $'\tlinter=' || true)
+[ "$_fp_p_n" -eq 6 ] || _fp_p_bad="$_fp_p_bad (${_fp_p_n} rules carry linter=, expected 6)"
+if [ -z "$_fp_p_bad" ]; then
+  echo "  ✓ the six rules duplicated by eslint and ruff ship their linter= field, and no other rule does"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ linter= missing or misplaced on:$_fp_p_bad"
+  FAIL=$((FAIL + 1))
+fi
+unset _fp_p_bad _fp_p_n
+unset -f _fp_pair _fp_check
 
 # (T) end-to-end: the same files, INSTALLED, through the real hook. The static
 # pass above reads the templates; this proves the artifacts install.sh actually

@@ -33,6 +33,7 @@ out=$(awk '
     if (disabled) line=line "  — DISABLED"
     else if (sev!="") line=line "  — severity=" sev
     else if (excl!="") line=line "  - path excludes added"
+    else if (dedupe!="") line=line "  — linter-dedupe=" dedupe " (regex kept where its linter runs)"
     else line=line "  — (recorded, no enforcement change)"
     print line
     if (excl!="")   print "      exclude: " excl
@@ -40,13 +41,13 @@ out=$(awk '
     if (by!="")     print "      by:     " by
     count++
   }
-  BEGIN { cur=""; rid=""; disabled=0; sev=""; excl=""; reason=""; by=""; sizehdr=0; largehdr=0; count=0 }
+  BEGIN { cur=""; rid=""; disabled=0; sev=""; excl=""; dedupe=""; reason=""; by=""; sizehdr=0; largehdr=0; count=0 }
   {
     t=$0; sub(/\r$/,"",t); t=trim(t)
     if (t=="" || t ~ /^#/) next
     if (t ~ /^\[/) {
       flush()
-      disabled=0; sev=""; excl=""; reason=""; by=""
+      disabled=0; sev=""; excl=""; dedupe=""; reason=""; by=""
       sec=t; sub(/^\[/,"",sec); sub(/\]$/,"",sec)
       if (sec=="size") { cur="size"; rid="" }
       else if (sec=="large-files") { cur="large-files"; rid="" }
@@ -72,6 +73,7 @@ out=$(awk '
     if (key=="disabled" && val=="true") disabled=1
     else if (key=="severity") sev=val
     else if (key=="exclude") excl=(excl=="" ? val : excl " " val)
+    else if (key=="linter-dedupe" && val=="false") dedupe=val
     else if (key=="reason") reason=val
     else if (key=="by") by=val
   }
