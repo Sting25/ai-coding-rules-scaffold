@@ -86,6 +86,60 @@ if command -v jq >/dev/null 2>&1; then
     echo "  ✗ agent-precheck — Cursor secret block missing expected message"
     sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
   fi
+  # (48f2) REGRESSION (audit, false positive): only the text a tool WRITES or
+  #        RUNS is scanned (Write.content, Edit.new_string, MultiEdit
+  #        edits[].new_string, Bash.command). An Edit that REMOVES a hardcoded
+  #        secret carries it in old_string; the scan used to walk every string
+  #        in the payload and blocked the very edit that fixes the problem.
+  pc=$(jq -nc --arg o "AWS=$akia" --arg n 'AWS=os.environ["AWS_KEY"]' \
+    '{tool_name:"Edit",tool_input:{file_path:"x.py",old_string:$o,new_string:$n}}')
+  if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1; then
+    echo "  ✓ agent-precheck allows an Edit that removes a secret (bad value only in old_string)"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — blocked an Edit with the secret only in old_string, expected allow"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  # (48f3) same for MultiEdit: the secret only in edits[0].old_string
+  pc=$(jq -nc --arg o "AWS=$akia" --arg n 'AWS=os.environ["AWS_KEY"]' \
+    '{tool_name:"MultiEdit",tool_input:{file_path:"x.py",edits:[{old_string:$o,new_string:$n},{old_string:"a",new_string:"b"}]}}')
+  if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1; then
+    echo "  ✓ agent-precheck allows a MultiEdit that removes a secret (bad value only in edits[].old_string)"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — blocked a MultiEdit with the secret only in edits[].old_string, expected allow"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  # (48f4) over-loosening guard: the secret in Edit.new_string is still blocked
+  pc=$(jq -nc --arg n "AWS=$akia" '{tool_name:"Edit",tool_input:{file_path:"x.py",old_string:"AWS=None",new_string:$n}}')
+  if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1; then
+    echo "  ✗ agent-precheck — allowed a secret in Edit.new_string, expected block"; FAIL=$((FAIL + 1))
+  elif grep -qF "BLOCKED by agent-precheck" "$HOOK_OUT"; then
+    echo "  ✓ agent-precheck still blocks a secret in Edit.new_string"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — Edit.new_string block missing expected message"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  # (48f5) over-loosening guard: the secret in MultiEdit edits[].new_string is still blocked
+  pc=$(jq -nc --arg n "AWS=$akia" '{tool_name:"MultiEdit",tool_input:{file_path:"x.py",edits:[{old_string:"a",new_string:"b"},{old_string:"AWS=None",new_string:$n}]}}')
+  if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1; then
+    echo "  ✗ agent-precheck — allowed a secret in MultiEdit edits[1].new_string, expected block"; FAIL=$((FAIL + 1))
+  elif grep -qF "BLOCKED by agent-precheck" "$HOOK_OUT"; then
+    echo "  ✓ agent-precheck still blocks a secret in MultiEdit edits[].new_string"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — MultiEdit.new_string block missing expected message"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  # (48f6) over-loosening guard: a secret in a Claude Bash .command is still
+  #        blocked (the Cursor top-level .command shape is 48f; Claude Write
+  #        content is 46; Claude Bash shell patterns are 48b).
+  pc=$(jq -nc --arg c "export AWS=$akia" '{tool_name:"Bash",tool_input:{command:$c}}')
+  if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1; then
+    echo "  ✗ agent-precheck — allowed a secret in a Claude Bash command, expected block"; FAIL=$((FAIL + 1))
+  elif grep -qF "BLOCKED by agent-precheck" "$HOOK_OUT"; then
+    echo "  ✓ agent-precheck still blocks a secret in a Claude Bash .command"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — Bash secret block missing expected message"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
   # (48g) REGRESSION (SIGPIPE fail-OPEN): when a block fires on MANY matching
   #       lines, the block message's `printf '%s\n' "$hit" | head -3` took
   #       SIGPIPE under `set -euo pipefail` and the script aborted at exit 141 —

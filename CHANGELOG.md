@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **The agent PreToolUse hook no longer blocks an edit that removes a secret.**
+  `agent-precheck` scanned every string in the tool payload, including an
+  Edit's `old_string`, so replacing a hardcoded key with an environment read
+  was refused for containing the key. It now scans only what the tool would
+  write or run: `content`, `new_string`, `edits[].new_string` and `command`.
+
 ## [v0.19.1] - 2026-10-21
 
 ### Fixed

@@ -105,14 +105,18 @@ fi
 
 tool=$(jq -r '.tool_name // empty' <<<"$payload" 2>/dev/null || true)
 
-# Pull every string value out of the event regardless of the tool's field names
-# (Claude: Write.content, Edit.new_string, MultiEdit edits[].new_string,
-# Bash.command; Cursor: top-level .command). `(.tool_input // .)` walks
-# .tool_input when present (Claude) and otherwise the whole payload (Cursor,
-# which has no .tool_input) — so a Cursor command at the top level is still
-# scanned instead of silently failing open. `.. | strings` then walks the whole
-# subtree, staying correct even if a tool's schema changes.
-content=$(jq -r '[(.tool_input // .) | .. | strings] | join("\n")' <<<"$payload" 2>/dev/null || true)
+# Scan only the text the tool would WRITE or RUN: Write.content, Edit.new_string,
+# MultiEdit edits[].new_string, Bash.command (Cursor: top-level .command, and
+# .content for a file write). Walking every string in the payload also scanned
+# old_string, which is text the edit REMOVES: an Edit that replaces a hardcoded
+# secret with an env-var read carries the secret in old_string and was blocked
+# for fixing the very problem this hook exists to prevent. file_path and the
+# other metadata are not content either. `(.tool_input // .)` picks .tool_input
+# when present (Claude) and otherwise the whole payload (Cursor, which has no
+# .tool_input), so a Cursor command at the top level is still scanned instead
+# of silently failing open. The `?` and the string filter keep an absent or
+# non-string field from aborting the extraction.
+content=$(jq -r '[(.tool_input // .) | (.content?, .new_string?, (.edits[]? | .new_string?), .command?) | strings] | join("\n")' <<<"$payload" 2>/dev/null || true)
 [ -n "$content" ] || exit 0
 
 # Drop pathologically long lines (a minified bundle pasted into a Write) so the
