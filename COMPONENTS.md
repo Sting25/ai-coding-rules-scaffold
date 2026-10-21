@@ -397,7 +397,7 @@ cp "$SCAFFOLD/coding-rules.md"      coding-rules.md
 cp "$SCAFFOLD/operational-rules.md" operational-rules.md
 [ -f AGENTS.md ] || cp "$SCAFFOLD/AGENTS.md.template" AGENTS.md
 # Claude Code: make CLAUDE.md load them on session start
-[ -f CLAUDE.md ] && grep -q '@AGENTS.md' CLAUDE.md || printf '@AGENTS.md\n@coding-rules.md\n' >> CLAUDE.md
+[ -f CLAUDE.md ] && grep -q '@AGENTS.md' CLAUDE.md || printf '@AGENTS.md\n@coding-rules.md\n@operational-rules.md\n' >> CLAUDE.md
 ```
 
 ```sh verify=rules
@@ -409,7 +409,7 @@ echo "verified: rules documents present and CLAUDE.md imports AGENTS.md"
 
 ```sh remove=rules
 rm -f coding-rules.md operational-rules.md AGENTS.md
-# then delete the two @ lines from CLAUDE.md
+# then delete the three @ lines from CLAUDE.md
 ```
 
 ## 6. ruff config (Python lint)
