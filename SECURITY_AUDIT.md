@@ -168,6 +168,11 @@ package/.github/workflows/gitleaks.yml.template` → MISSING; `tests/cases/11` �
   glob turns exactly #36e/#36f red (3 cases) and leaves #36g green. Suite **187/0**, `shellcheck -S
 info` clean. The unquoted-value content-scanner gap (A5) remains deliberately deferred to the
   gitleaks layer; this closes the filename layer so the two no longer fail open together.
+- **Later change (2026-10, phase 3):** an exact-name arm ahead of the block arm now allows the two
+  framework files `.env.development` and `.env.test` (local URLs and fixtures; check-secrets still
+  scans their content). The block arm is unchanged, so `.env.production`, `.env.staging`, `.env.ci`,
+  `.env.local` and `.env.<mode>.local` stay refused by name: the A5 unquoted-value gap still applies
+  to them. Locked with `tests/cases/04` #36k, including an unquoted-secret `.env.production`.
 
 **B6 — `agent-precheck` over-long-line filter still FAILS OPEN (allow): the A1 fail-closed upgrade was never applied to the agent-write layer** — `githooks/lib/agent-precheck.template:58-59,127` · **already tracked** (`SECURITY_AUDIT.md:50`; A1 header listed `:57-59`, fix said "should fail closed on the Bash path") · ✅ **FIXED** (`fix/audit-b6-agent-precheck-fail-closed`)
 

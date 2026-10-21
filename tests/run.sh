@@ -75,7 +75,7 @@ CASE_FLOORS=(
   "01-size-patterns.sh:26"
   "02-scaffold-allow-ruff-edge.sh:15"
   "03-binary-defense.sh:37"
-  "04-shell-config-rename.sh:52"
+  "04-shell-config-rename.sh:55"
   "05-frontend-typescript.sh:26"
   "06-hygiene-multilang.sh:63"
   "07-agent-commit.sh:13"

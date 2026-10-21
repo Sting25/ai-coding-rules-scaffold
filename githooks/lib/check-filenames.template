@@ -2,12 +2,11 @@
 # .githooks/lib/check-filenames — block committed credentials by filename.
 # Reads NUL-separated file paths on stdin (produced by `git ... -z`), so
 # filenames containing newlines, tabs, or quotes can't split the list and slip
-# past the check. Rejects .env, .env.local, .env.*.local and *.env (e.g.
-# config.env/prod.env). Other .env.<name> files (.env.development/.test/
-# .production, committed by documented Next.js/Vite convention) pass here; the
-# secrets content scan still reads them. .env.example/.sample/.template pass
-# too. Also rejects *.pem, binary key/keystore extensions (*.key/.p12/.pfx/
-# .jks/.ppk), and SSH private key names.
+# past the check. Rejects .env, every .env.<name> and *.env (e.g.
+# config.env/prod.env), except .env.example/.sample/.template and the two
+# framework files .env.development and .env.test, which pass here and are still
+# read by the secrets content scan. Also rejects *.pem, binary key/keystore
+# extensions (*.key/.p12/.pfx/.jks/.ppk), and SSH private key names.
 #
 # Output: human-readable on tty; ::error file=...:: when --ci is passed.
 # Exit:   0 if all OK, 1 if any violation.
@@ -68,16 +67,20 @@ while IFS= read -r -d '' file; do
   lname=$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')
   case "$lname" in
     .env.example|.env.sample|.env.template) ;;
-    # Only the files frameworks document as holding secrets are refused by NAME:
-    # `.env`, `.env.local` and `.env.<mode>.local`. Any other `.env.<name>`
-    # (`.env.development`, `.env.test`, `.env.production`) is committed on
-    # purpose and falls through; its CONTENT is still scanned by check-secrets,
-    # which skips no file. `*.env` catches non-dotfile env files (config.env,
-    # prod.env, staging.env) that the dotfile arms miss. `*.env.example`-style
-    # templates end in `.example`, so `*.env` never matches them; they keep
-    # passing via fall-through.
-    .env|.env.local|.env.*.local|*.env)
-      emit "$file" "environment file: use .env.example for shared config, keep secrets in env vars. Framework env files other than .env and *.local (.env.development, .env.test) are allowed and their content is scanned"
+    # Next.js and Vite commit `.env.development` and `.env.test` by documented
+    # convention; their values are local URLs and fixtures, and check-secrets
+    # still scans their content. Exact names only: `.env.development.local`
+    # falls through to the refusal below. Every other `.env.<name>`
+    # (`.env.production`, `.env.staging`, `.env.ci`) stays refused by NAME,
+    # because its values are typically unquoted secrets and the content scan's
+    # credential rule only matches quoted values, so the name is the one signal.
+    .env.development|.env.test) ;;
+    # `*.env` catches non-dotfile env files (config.env, prod.env, staging.env)
+    # that the `.env`/`.env.*` arms miss. `*.env.example`-style templates end in
+    # `.example`, so `*.env` never matches them; they keep passing via
+    # fall-through.
+    .env|.env.*|*.env)
+      emit "$file" "environment file: use .env.example for shared config, keep secrets in env vars. Only .env.development and .env.test are allowed (local values, content still scanned); other .env files usually hold unquoted secrets the content scan cannot see"
       FAILED=1
       ;;
     id_rsa|id_ed25519|id_ecdsa|id_dsa)

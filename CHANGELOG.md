@@ -55,11 +55,13 @@ versioning follows [SemVer](https://semver.org/).
   `http://127.0.0.1` URLs is deleted, since it hit Playwright, Cypress and Vite
   configs and test files.
 
-- **Framework env files such as `.env.development` no longer block a commit.**
+- **`.env.development` and `.env.test` no longer block a commit.**
   The filename check refused every `.env.*` name, but Next.js and Vite commit
-  `.env.development`, `.env.test` and `.env.production` by convention. Only
-  `.env`, `.env.local`, `.env.*.local` and `*.env` are refused by name now, and
-  the secrets scan still reads the content of every other `.env.*` file.
+  these two by convention and their values are local. Those two exact names are
+  allowed now, and the secrets scan still reads their content. Every other
+  `.env.<name>` (`.env.production`, `.env.staging`, `.env.local`,
+  `.env.development.local`) is still refused by name, because those files
+  usually hold unquoted secrets that the content scan does not match.
 
 - **The agent PreToolUse hook no longer blocks an edit that removes a secret.**
   `agent-precheck` scanned every string in the tool payload, including an

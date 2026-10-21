@@ -374,13 +374,14 @@ echo "placeholder" >authorized_keys
 git add -f authorized_keys
 assert_passes "authorized_keys (public keys) is not blocked"
 
-# 36k. Framework env files. Next.js and Vite commit `.env.development`,
-#      `.env.test` and `.env.production` by documented convention and keep
-#      secrets only in `.env` and `*.local`. The filename check therefore allows
-#      every `.env.<name>` except `.env.local` and `.env.*.local` (`.env` and
-#      `*.env` stay blocked by 01 / 36e). Allowing the NAME does not skip the
-#      CONTENT: the secrets scan reads every staged file regardless of name.
-#      Benign content isolates the filename rule in the first four fixtures.
+# 36k. Framework env files. The filename check allows exactly two framework
+#      names, `.env.development` and `.env.test`, whose values are typically
+#      local URLs and test fixtures. Every other `.env.<name>` stays refused by
+#      name: `.env.production`, `.env.staging` and friends usually hold
+#      unquoted secrets, which the content scan's quoted-value credential rule
+#      cannot see. Allowing the NAME does not skip the CONTENT: the secrets
+#      scan reads every staged file regardless of name. Benign content isolates
+#      the filename rule in the fixtures before the last two.
 printf 'API_URL=http://localhost:3000\n' >.env.development
 git add -f .env.development
 assert_passes ".env.development (framework env file) is not blocked"
@@ -402,3 +403,19 @@ assert_rejects ".env.development.local is blocked" "environment file"
 echo "AWS_KEY=AKIA""IOSFODNN7EXAMPLE" >.env.development
 git add -f .env.development
 assert_rejects ".env.development holding an AWS key is refused by the content scan" "AWS access key"
+
+printf 'API_URL=https://api.example.com\n' >.env.production
+git add -f .env.production
+assert_rejects ".env.production is blocked by name" "environment file"
+
+printf 'API_URL=https://api.example.com\n' >.env.staging
+git add -f .env.staging
+assert_rejects ".env.staging is blocked by name" "environment file"
+
+# Reviewer repro: unquoted secrets, which the quoted-value credential rule in
+# secrets.txt does not match, so only the filename check stands in the way.
+# The values are assembled at runtime so this file carries no secret shape.
+printf '%s=%s\n' PASSWORD "Zx9vQ2mL8n""B4kR7tW1yH" DB_PASSWORD "Sup3rS3""cret!2024" \
+  JWT_SECRET "k8Jq2Lx9Vb4N""m7Rt1Yw5Pz3Hc6Gd0Fs" >.env.production
+git add -f .env.production
+assert_rejects ".env.production with unquoted secrets is refused by the filename check" "environment file"
