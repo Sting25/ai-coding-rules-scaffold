@@ -249,7 +249,7 @@ scan() {
   # reasoning as the empty-config guard above and the matching guard in
   # check-secrets.
   if [ ${#patterns[@]} -eq 0 ]; then
-    local vmsg="$config has no valid patterns (all were invalid regexes), the forbidden-pattern scan for $stem is disabled. Fix the patterns (use 'git commit --no-verify' if intended)."
+    local vmsg="$config has no valid patterns (all were invalid regexes), the forbidden-pattern scan for $stem is disabled. Fix the patterns."
     if [ "$CI_MODE" -eq 1 ]; then echo "::error::$vmsg"; else echo "✗ $vmsg" >&2; fi
     FAILED=1
     return 0
@@ -379,7 +379,7 @@ config_usable() {
   elif [ ! -r "$c" ]; then why="is not readable"
   fi
   if [ -n "$why" ]; then
-    local m="$c $why, the forbidden-pattern scan cannot read its patterns and is disabled. Restore it as a regular readable file (use 'git commit --no-verify' if intended)."
+    local m="$c $why, the forbidden-pattern scan cannot read its patterns and is disabled. Restore it as a regular readable file."
     if [ "$CI_MODE" -eq 1 ]; then echo "::error::$m"; else echo "✗ $m" >&2; fi
     return 1
   fi

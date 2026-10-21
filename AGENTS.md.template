@@ -50,7 +50,7 @@ Before reporting a hook or check you created, confirm it exists on disk (`ls -l`
 - **One commit per logical change**; split a fix, a rename, and a feature. Exception: a fix and its regression test go in together.
 - **Never push, or merge into a protected branch, unless asked** ("push it", "merge it").
 - **Never rewrite pushed history** (`--amend`, rebase, `push --force`, `push --force-with-lease`) without explicit instruction for that specific push. On `main`/`master`, refuse and tell the user to run it themselves.
-- **Never `git commit --no-verify` past a failing check**; fix the hook if it is wrong. Sole exception: the hook's own refusal offers the bypass (removing forbidden-pattern config, a confirmed secret-scan false positive). Name it in your summary; in a committed script, mark the line `# scaffold-allow: <reason>`.
+- **Never `git commit --no-verify` past a failing check**; fix the hook if it is wrong. Sole exception, with the user's go-ahead: the hook's own refusal offers the bypass (removing forbidden-pattern config, a confirmed secret-scan false positive). Name it in your summary; in a committed script, mark the line `# scaffold-allow: <reason>`.
 - **Never `reset --hard`, `checkout .`, or `clean -fd`** on a dirty tree without confirming.
 - **Before risky multi-step work, tag a green restore point** (`git tag pre-<name>`), never a dirty checkpoint commit.
 - **Before touching a broken tree, show recent commits and tags**, propose the way back, and wait for a yes.

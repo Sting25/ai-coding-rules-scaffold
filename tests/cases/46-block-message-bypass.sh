@@ -25,7 +25,10 @@ reset_repo
 # old phrases verbatim (shell.txt flags a literal `git ... --no-verify`).
 BM_FLAG="--no""-verify"
 BM_OLD_BANNER="use 'git commit $BM_FLAG' to skip"
-BM_OLD_MARKER="append a comment containing 'scaffold""-allow'"
+# agent-precheck printed the old marker instruction over TWO echo lines, so the
+# two halves are searched separately; a joined phrase never matched it.
+BM_OLD_MARKER1="append a comment"
+BM_OLD_MARKER2="containing 'scaffold""-allow'"
 
 # 46a. A generic failure (a forbidden pattern in a staged file) prints the
 #      banner, and the banner does not name the bypass.
@@ -70,7 +73,7 @@ reset_repo
 # 46d. Self-check on the SOURCE templates (not an installed copy), so a future
 #      edit that restores the old text fails here: neither phrase may appear in
 #      any shipped hook or forbidden-patterns file.
-BM_HITS=$(grep -rnF -e "$BM_OLD_BANNER" -e "$BM_OLD_MARKER" \
+BM_HITS=$(grep -rnF -e "$BM_OLD_BANNER" -e "$BM_OLD_MARKER1" -e "$BM_OLD_MARKER2" \
   "$SCAFFOLD_DIR/githooks" "$SCAFFOLD_DIR/forbidden-patterns" || true)
 if [ -z "$BM_HITS" ]; then
   echo "  ✓ no shipped hook or pattern file carries the old bypass banner or the append-a-marker instruction"; PASS=$((PASS + 1))
@@ -88,5 +91,24 @@ else
   echo "  ✗ a rule message prescribes the scaffold-allow marker:"; printf '%s\n' "$BM_RULE_HITS" | sed 's/^/      /'; FAIL=$((FAIL + 1))
 fi
 
-unset BM_FLAG BM_OLD_BANNER BM_OLD_MARKER BM_HITS BM_RULE_HITS
+# 46f. The bypass is offered only where AGENTS.md sanctions it: a pattern file
+#      that is EMPTY or DELETED (pre-commit's two deletion guards, check-patterns'
+#      empty-file and manifest-recorded-missing refusals, check-secrets' empty
+#      secrets.txt) and gitleaks' user-confirmed false positive. A refusal whose
+#      fix is to repair the file (invalid regexes, not a regular file) does not
+#      offer it. Pinned by file and count over non-comment lines of the shipped
+#      hooks, so a new offer fails here. (forbidden-patterns/ is not searched:
+#      its two hits are the shell.txt rules that FORBID the flag.)
+BM_WANT="githooks/lib/check-gitleaks.template:1 githooks/lib/check-patterns.template:2 githooks/lib/check-secrets.template:1 githooks/pre-commit.template:2 "
+BM_GOT=$(cd "$SCAFFOLD_DIR" && grep -rnF -e "$BM_FLAG" githooks \
+  | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' | cut -d: -f1 | LC_ALL=C sort | uniq -c \
+  | awk '{ printf "%s:%s ", $2, $1 }')
+if [ "$BM_GOT" = "$BM_WANT" ]; then
+  echo "  ✓ the bypass flag is offered only by the sanctioned refusals (by file and count)"; PASS=$((PASS + 1))
+else
+  echo "  ✗ bypass offers by file and count differ from the sanctioned list"
+  echo "      want: $BM_WANT"; echo "      got:  $BM_GOT"; FAIL=$((FAIL + 1))
+fi
+
+unset BM_FLAG BM_OLD_BANNER BM_OLD_MARKER1 BM_OLD_MARKER2 BM_HITS BM_RULE_HITS BM_WANT BM_GOT
 reset_repo

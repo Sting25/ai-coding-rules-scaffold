@@ -38,9 +38,11 @@ versioning follows [SemVer](https://semver.org/).
   stops suggesting `git commit --no-verify`, and the agent-precheck block and the
   coverage-pragma, stub and shell rule messages stop telling the reader to add
   `scaffold-allow`. They now say to stop and report the block to the user. Only
-  the refusals for removed forbidden-pattern config and a secret-scan false
-  positive still print `--no-verify`. `AGENTS.md` now says a suppression also
-  needs the user's go-ahead.
+  the refusals for an emptied or deleted forbidden-pattern file and gitleaks'
+  user-confirmed false positive still print `--no-verify`; a pattern file with
+  only invalid regexes, or one that is not a regular file, is repaired, not
+  committed past. `AGENTS.md` now says a suppression, and the hook-offered
+  bypass, need the user's go-ahead.
 
 ### Fixed
 
