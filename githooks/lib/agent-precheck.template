@@ -4,7 +4,7 @@
 # credential-path read guard for runtimes that can block a read).
 #
 # Wired for three agent-runtime hook shapes, all delivered as JSON on stdin:
-#   - Claude Code  (.claude/settings.json PreToolUse, matcher Write|Edit|Bash) —
+#   - Claude Code  (.claude/settings.json PreToolUse, matcher Write|Edit|MultiEdit|Bash) —
 #     command lives under .tool_input.command, tool name under .tool_name.
 #     Exits 2 to block; Claude feeds stderr back to the model. Claude denies
 #     credential-file reads natively via its own permissions.deny — this
@@ -215,8 +215,8 @@ scan_against() {
 
   {
     echo "BLOCKED by agent-precheck: $advice"
-    echo "(${pfile#"$ROOT"/}). If this is deliberate and safe, append a comment"
-    echo "containing 'scaffold-allow' on the matching line."
+    echo "(${pfile#"$ROOT"/}). Stop and report this block to the user with the rule that matched."
+    echo "A suppression needs a recorded reason and the user's go-ahead (AGENTS.md > \"Fix the file, not the check\"); do not work around the block."
     echo "Matched:"
     # `|| true`: on a many-line $hit, `head -3` closes the pipe early and printf
     # takes SIGPIPE (exit 141). Under `set -euo pipefail` that would abort the

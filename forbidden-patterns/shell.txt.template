@@ -9,7 +9,7 @@
 (^|[^A-Za-z_])(curl|wget)([[:space:]]+[^|]*)?\|[[:space:]]*(sudo[[:space:]]+)?(bash|sh|zsh)([[:space:]]|$)	Piping remote download to a shell — review the script and run it as a separate step
 (^|[^A-Za-z_])rm[[:space:]]+((-[a-zA-Z]+|--[a-z]+)[[:space:]]+)+["']?(/|/\*|~|~/\*|\$\{?HOME\}?(/\*)?)["']?([[:space:]]|[;&]|$)	`rm -rf /` (or /*, ~, $HOME) detected — refuse to ship; scope to a specific path
 (^|[^A-Za-z_])chmod[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*0?777([[:space:]]|$)	chmod 0?777 — overly permissive; scope to specific user/group bits
-(^|[^A-Za-z_])git[[:space:]][^|;&]*[[:space:]]--no-verify([[:space:]]|[;&]|$)	git --no-verify bypasses the pre-commit/commit-msg hooks — fix the failure, don't skip the gate (mark a genuine uninstall with scaffold-allow)
+(^|[^A-Za-z_])git[[:space:]][^|;&]*[[:space:]]--no-verify([[:space:]]|[;&]|$)	git --no-verify bypasses the pre-commit/commit-msg hooks. Fix the failure, don't skip the gate (a genuine uninstall needs the user's go-ahead)
 (^|[^A-Za-z_])curl[[:space:]]([^|;&]*[[:space:]])?(-[a-zA-Z]*k[a-zA-Z]*|--insecure)([[:space:]]|$)	curl -k/--insecure disables TLS cert validation (MITM risk) — fix the cert/CA instead
 (^|[^A-Za-z_])wget[[:space:]]([^|;&]*[[:space:]])?--no-check-certificate([[:space:]]|$)	wget --no-check-certificate disables TLS cert validation (MITM risk) — fix the cert/CA instead
 
@@ -20,7 +20,7 @@
 # --dry-run (harmless, and not matched), and `git commit -m "add -n flag"` must
 # not fire. Clustered forms (-nm, -an) are covered; `grep -n`, `sort -n`,
 # `echo -n`, `ssh -n`, `head -n 5` and `git log -n 5` are not.
-(^|[^A-Za-z_])git[[:space:]]+commit[[:space:]]([^|;&"']*[[:space:]])?-[a-zA-Z]*n[a-zA-Z]*([[:space:]]|[;&]|$)	git commit -n is --no-verify in short form — fix the failing check, don't skip the gate (mark a genuine uninstall with scaffold-allow)
+(^|[^A-Za-z_])git[[:space:]]+commit[[:space:]]([^|;&"']*[[:space:]])?-[a-zA-Z]*n[a-zA-Z]*([[:space:]]|[;&]|$)	git commit -n is --no-verify in short form. Fix the failing check, don't skip the gate (a genuine uninstall needs the user's go-ahead)
 
 # --no-verify skips the hook for ONE commit; core.hooksPath disarms every hook in
 # the clone permanently, with no output and no committed artifact to review.
@@ -34,7 +34,7 @@
 # ships a `githooks/` dir), and `git -c core.hooksPath=<tmpdir>` (what a hook test
 # harness does — tests/cases/14,15,18 here). An earlier draft of this rule matched
 # all three and put four errors into this repo's own self-lint run.
-(^|[^A-Za-z_])git[[:space:]][^|;&]*core\.hooksPath[[:space:]=]+(["']?/dev/null|""|'')	core.hooksPath=/dev/null (or empty) disarms every hook in this clone — fix the failing check instead (mark a genuine uninstall with scaffold-allow)
+(^|[^A-Za-z_])git[[:space:]][^|;&]*core\.hooksPath[[:space:]=]+(["']?/dev/null|""|'')	core.hooksPath=/dev/null (or empty) disarms every hook in this clone. Fix the failing check instead (a genuine uninstall needs the user's go-ahead)
 
 # Git discipline (AGENTS.md > Git discipline). agent-precheck feeds this file to
 # Claude PreToolUse / Cursor beforeShellExecution, which is the only point at
@@ -43,7 +43,7 @@
 # would also block `git add -f`, `git config -f`, `git branch -f` and
 # `git checkout -f`, which are benign.
 (^|[^A-Za-z_])git[[:space:]]+push[[:space:]]([^|;&]*[[:space:]])?(--force(-with-lease)?([=[:space:]]|[;&]|$)|-f([[:space:]]|[;&]|$))	git push --force/-f/--force-with-lease rewrites published history — needs explicit instruction for this push, and on main/master ask first even then
-(^|[^A-Za-z_])git[[:space:]]+commit[[:space:]]([^|;&"']*[[:space:]])?--amend([[:space:]]|[;&]|$)	git commit --amend rewrites history — never on a pushed commit; scaffold-allow a vetted local amend
+(^|[^A-Za-z_])git[[:space:]]+commit[[:space:]]([^|;&"']*[[:space:]])?--amend([[:space:]]|[;&]|$)	git commit --amend rewrites history. Never on a pushed commit; a local amend needs the user's go-ahead
 (^|[^A-Za-z_])git[[:space:]]+checkout[[:space:]]+(--[[:space:]]+)?\.([[:space:]]|[;&]|$)	git checkout . discards every uncommitted change in the tree — confirm, and name the specific paths instead
 
 # Optional: the two tree-destroying commands (AGENTS.md > Git discipline names

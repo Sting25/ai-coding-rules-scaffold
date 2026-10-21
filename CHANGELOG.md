@@ -31,6 +31,14 @@ versioning follows [SemVer](https://semver.org/).
   not installed the pattern still blocks; `linter-dedupe = false` in
   `.scaffold.toml` keeps a rule on regardless.
 
+- **Block messages no longer offer the bypass.** The pre-commit failure banner
+  stops suggesting `git commit --no-verify`, and the agent-precheck block and the
+  coverage-pragma, stub and shell rule messages stop telling the reader to add
+  `scaffold-allow`. They now say to stop and report the block to the user. Only
+  the refusals for removed forbidden-pattern config and a secret-scan false
+  positive still print `--no-verify`. `AGENTS.md` now says a suppression also
+  needs the user's go-ahead.
+
 ### Fixed
 
 - **Emoji and translation files no longer trip the hidden-Unicode check.** A

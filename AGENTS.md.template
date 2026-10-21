@@ -20,7 +20,7 @@ git hook run pre-commit            # size / pattern / secret / hygiene / filenam
 - If another hook manager owns `core.hooksPath`, run `.githooks/pre-commit` directly; the doctor says which case applies.
 - These commands see everything on disk, gitignored code included. If one flags code you did not write, extend the config's ignores; never narrow the command.
 - In a monorepo, run `pytest` from the directory holding its config.
-- **Fix the file, not the check.** A `scaffold-allow` marker, a `.scaffold.toml` disable or downgrade, an ignore list widened over code you wrote, a skipped test, or a deleted test or workflow turns red green without fixing anything. Use one only for a genuine false positive you cannot fix, scoped narrowly with a recorded reason, and name it in the change summary. Never delete a test in the same change as the code it covered.
+- **Fix the file, not the check.** A `scaffold-allow` marker, a `.scaffold.toml` disable or downgrade, an ignore list widened over code you wrote, a skipped test, or a deleted test or workflow turns red green without fixing anything. Use one only for a genuine false positive you cannot fix, with the user's go-ahead, scoped narrowly with a recorded reason, and name it in the change summary. Never delete a test in the same change as the code it covered.
 
 ## Session start
 

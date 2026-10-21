@@ -48,7 +48,7 @@ os\.path\.join	Use pathlib.Path(), not os.path.join	linter=ruff
 # log (unlike a lowered threshold). Genuinely unexecutable code — a platform
 # branch this runner can never take — takes `scaffold-allow` and is named in the
 # handoff summary like any other suppression.
-(^|[[:space:]])#[[:space:]]*pragma:[[:space:]]*no[[:space:]]*cover	Coverage pragma removes the line from the patch-coverage gate — write the test, or scaffold-allow a genuinely unexecutable branch
+(^|[[:space:]])#[[:space:]]*pragma:[[:space:]]*no[[:space:]]*cover	Coverage pragma removes the line from the patch-coverage gate. Write the test; if a branch can never execute here, report it to the user instead of suppressing it
 
 # Optional: unfinished stub — the Python twin of rust.txt's todo!()/unimplemented!()
 # and kotlin.txt's TODO() rules. `raise NotImplementedError` inhabits any return
@@ -59,7 +59,7 @@ os\.path\.join	Use pathlib.Path(), not os.path.join	linter=ruff
 # grep cannot see it — an always-on rule would fire on correct ABCs. Enable it in
 # app code with no abstract base classes; mark real abstract methods
 # `# scaffold-allow: abstract`.
-# (^|[^A-Za-z_])raise[[:space:]]+NotImplementedError	Unfinished stub left in — implement it, or scaffold-allow an abstract-method placeholder
+# (^|[^A-Za-z_])raise[[:space:]]+NotImplementedError	Unfinished stub left in. Implement it; for a real abstract-method placeholder, ask the user before suppressing it
 
 # Optional: asyncio.get_event_loop() raises RuntimeError on 3.14+ when called with
 # no running loop. OFF by default: inside a coroutine/callback it correctly returns

@@ -51,7 +51,7 @@
 # `ignore next|start|stop|file|if|else` — so ordinary prose that happens to use
 # the verb (`// v8 ignores holes in sparse arrays, so use a dense array here.`)
 # does not fire.
-(/\*|//)[[:space:]]*(istanbul|[cv]8)[[:space:]]+ignore[[:space:]]+(next|start|stop|file|if|else)	Coverage ignore comment removes the line from the patch-coverage gate — write the test, or scaffold-allow a genuinely unexecutable branch
+(/\*|//)[[:space:]]*(istanbul|[cv]8)[[:space:]]+ignore[[:space:]]+(next|start|stop|file|if|else)	Coverage ignore comment removes the line from the patch-coverage gate. Write the test; if a branch can never execute here, report it to the user instead of suppressing it
 
 # --- Unfinished stubs (optional) ---
 # The TS twin of rust.txt's todo!()/unimplemented!() rules. A `throw` inhabits any

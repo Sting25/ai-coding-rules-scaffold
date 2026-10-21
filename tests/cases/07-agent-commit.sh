@@ -18,6 +18,16 @@ if command -v jq >/dev/null 2>&1; then
     echo "  ✗ agent-precheck — blocked but missing expected message"
     sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
   fi
+  # (46a) the block message tells the agent to stop and report, not to append a
+  #       scaffold-allow marker (issue #212; cases/46 covers the pre-commit side).
+  #       HOOK_OUT still holds the (46) block output.
+  if grep -qF "Stop and report this block to the user" "$HOOK_OUT" \
+     && ! grep -qF "append a comment" "$HOOK_OUT" && ! grep -qF "scaffold-allow" "$HOOK_OUT"; then
+    echo "  ✓ agent-precheck block says to stop and report, and does not offer scaffold-allow"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck block message still prescribes the marker or lacks the stop-and-report wording"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
   # (47) clean content is allowed (exit 0)
   pc='{"tool_name":"Write","tool_input":{"file_path":"x.ts","content":"export const x = 1;"}}'
   if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1; then

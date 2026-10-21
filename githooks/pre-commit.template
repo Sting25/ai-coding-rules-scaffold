@@ -420,7 +420,7 @@ fi
 
 if [ "$FAILED" -ne 0 ]; then
   echo ""
-  echo "Pre-commit failed. Fix the issues above or use 'git commit --no-verify' to skip (don't)."
+  echo "Pre-commit failed. Fix the cause of each issue above. If a check is wrong, fix the check. If you cannot resolve a refusal, report it to the user rather than bypassing it."
   exit 1
 fi
 

@@ -117,6 +117,7 @@ CASE_FLOORS=(
   "43-check-patterns-path-excludes.sh:18"
   "44-linter-dedupe.sh:42"
   "45-tsc-local-warning.sh:8"
+  "46-block-message-bypass.sh:5"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and
