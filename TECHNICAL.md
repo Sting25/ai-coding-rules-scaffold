@@ -42,7 +42,7 @@ Language pattern files auto-install when their manifest is detected (`go.mod`, `
 | Scaffold file                                                                       | Installed as                                                                | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `AGENTS.md.template`                                                                | `AGENTS.md`                                                                 | Primary agent doc: git discipline + project section                                                                                                                                                                                                                                                                                                                                                                                          |
-| `CLAUDE.md.pointer`                                                                 | `CLAUDE.md`                                                                 | Pointer importing `AGENTS.md` + `coding-rules.md` into Claude Code's context                                                                                                                                                                                                                                                                                                                                                                 |
+| `CLAUDE.md.pointer`                                                                 | `CLAUDE.md`                                                                 | Pointer importing `AGENTS.md` + `coding-rules.md` + `operational-rules.md` into Claude Code's context                                                                                                                                                                                                                                                                                                                                        |
 | `coding-rules.md`                                                                   | `coding-rules.md`                                                           | Short list of code-level rules that aren't tool-enforceable                                                                                                                                                                                                                                                                                                                                                                                  |
 | `operational-rules.md`                                                              | `operational-rules.md`                                                      | Process and collaboration rules — failure modes that no linter can catch                                                                                                                                                                                                                                                                                                                                                                     |
 | `ruff.toml.template`                                                                | `ruff.toml`                                                                 | Python lint config                                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -396,13 +396,10 @@ minimal; turn them on per project.
   installs _runtime hooks_ (`.claude/settings.json` plus the `PreToolUse`
   precheck) that block a bad tool call as it happens; the plain AGENTS.md
   path (always installed) is _always-loaded context_: CLAUDE.md imports
-  `AGENTS.md` (the condensed summary) and the full `coding-rules.md`
-  (short by rule, cheap to pin into every turn), while the much larger
-  `operational-rules.md` stays a link on purpose, since paying its full
-  size on every turn is the wrong trade. `--claude-skill` is what pulls
-  the **full text** of `operational-rules.md` (alongside
-  `coding-rules.md`) into context **on demand**, at the moments it
-  matters, rather than relying on the summary alone. Opt-in because it is
+  `AGENTS.md`, `coding-rules.md`, and `operational-rules.md`, all short
+  enough to pin into every turn. `--claude-skill` additionally has the agent
+  re-read the **full text** of both rule files **on demand**, at the moments
+  it matters (before an edit, a commit, or a conventions question). Opt-in because it is
   Claude Code specific; combine freely with `--claude` and with the default
   AGENTS.md install. `.claude/skills/coding-rules/SKILL.md` is USER-OWNED
   (`cp_safe`): a project may hand-edit it, so a re-run never overwrites it
@@ -643,10 +640,27 @@ though the fallback also runs.
 _Anchor:_ a BSD-first stat chain made a required Linux CI job a coin flip; it
 passed for weeks by luck, then failed an unrelated PR.
 
+### Adding rules to the shipped rule files
+
+`AGENTS.md.template`, `coding-rules.md`, and `operational-rules.md` load into
+every consumer session, so each rule has one home: `AGENTS.md` for repo
+mechanics and red lines (short imperatives, no rationale), `coding-rules.md`
+for rules about the code, `operational-rules.md` for judgment and
+collaboration. A rule earns its place when:
+
+- A real incident demonstrated the failure mode.
+- The fix generalizes beyond that incident.
+- Tool enforcement (lint, hooks) cannot catch it.
+- It fits in 1 to 3 lines, plus an anchor only where the anchor carries the why.
+
+Retire a rule when its anchor no longer applies to current tooling, a
+tool-enforced check absorbs it, or a better-worded rule supersedes it. Anchors
+name the type of incident, never a project, person, date, or version.
+
 ### End every session on this repo with a rules retrospective
 
 Before handoff, walk the session's incidents against the add-criteria in
-`operational-rules.md` and propose additions through this repo's issue flow; a
+"Adding rules to the shipped rule files" above and propose additions through this repo's issue flow; a
 lesson that lives only in a transcript or a repo-local issue is lost to every
 other project. This is a contributor practice for the scaffold itself, which is
 why it is not in `operational-rules.md`: that file ships into other people's

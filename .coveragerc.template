@@ -13,7 +13,7 @@ source = .
 # it has NO data for as COVERED — so adding `*/payments/*` here makes every
 # changed line under payments/ pass the 100% gate silently, with nothing in the
 # hook, in CI or in the diff to say a rule was turned down. This is the same
-# move operational-rules.md forbids as "widening a skip-list": if you must do
+# move AGENTS.md > "Checks" calls "a widened ignore list": if you must do
 # it, say so out loud in the PR. scaffold-doctor.sh reports any entry here that
 # is not in the shipped .coveragerc.template, so the drift is at least visible
 # on demand; keep this list to things that are genuinely not your source.

@@ -62,7 +62,7 @@
 # (^|[^A-Za-z_])git[[:space:]]+reset[[:space:]]([^|;&]*[[:space:]])?--hard([[:space:]]|[;&]|$)	git reset --hard destroys uncommitted work silently — confirm first and tag a restore point (claude-code#34327 lost 12 unpushed commits this way)
 # (^|[^A-Za-z_])git[[:space:]]+clean[[:space:]]([^|;&]*[[:space:]])?(-[a-zA-Z]*f[a-zA-Z]*|--force)([[:space:]]|[;&]|$)	git clean -f/-fd deletes untracked files irreversibly — dry-run it with `git clean -nd` and confirm the exact paths first
 
-# "Never print, cat, or echo secret files" (operational-rules.md). `cat .env`
+# "Never cat, print, echo, or log .env" (AGENTS.md, "Destructive actions"). `cat .env`
 # mid-debug is the named agent habit: the values then live in the transcript, the
 # CI log and any pasted diff forever, and every one of them needs rotating.
 # Claude's `Read(**/.env)` deny does not cover the Bash route; this rule does.

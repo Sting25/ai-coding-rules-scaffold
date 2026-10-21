@@ -10,11 +10,12 @@
 
 # install_claude_md — CLAUDE.md is USER-OWNED project memory, not a scaffold
 # file. Never replace it (not even with --force). If absent, create it from
-# the pointer template. If present, append a marked block importing AGENTS.md
-# and coding-rules.md once, and only if no @AGENTS.md import already exists.
-# The @coding-rules.md import exists because AGENTS.md only LINKS the rules
-# file (links keep AGENTS.md cross-tool), and a linked file is not loaded
-# into context at session start: the rules were reachable but not present.
+# the pointer template. If present, append a marked block importing AGENTS.md,
+# coding-rules.md and operational-rules.md once, and only if no @AGENTS.md
+# import already exists. The @coding-rules.md and @operational-rules.md
+# imports exist because AGENTS.md only LINKS the rules files (links keep
+# AGENTS.md cross-tool), and a linked file is not loaded into context at
+# session start: the rules were reachable but not present.
 # A CLAUDE.md already wired for @AGENTS.md is never edited in place; the gap
 # is surfaced as an advisory note instead.
 install_claude_md() {
@@ -36,6 +37,9 @@ install_claude_md() {
     if ! grep -q '@coding-rules.md' "CLAUDE.md" 2>/dev/null; then
       echo "note: CLAUDE.md does not import coding-rules.md. AGENTS.md only links the rules file, so the rules are NOT loaded into context at session start; add a '@coding-rules.md' line to CLAUDE.md to pin them."
     fi
+    if ! grep -q '@operational-rules.md' "CLAUDE.md" 2>/dev/null; then
+      echo "note: CLAUDE.md does not import operational-rules.md. AGENTS.md only links that file, so its rules are NOT loaded into context at session start; add a '@operational-rules.md' line to CLAUDE.md to pin them."
+    fi
     return
   fi
   {
@@ -43,9 +47,10 @@ install_claude_md() {
     printf 'See [AGENTS.md](./AGENTS.md) — agent + project rules (cross-tool convention).\n\n'
     printf '@AGENTS.md\n'
     printf '@coding-rules.md\n'
+    printf '@operational-rules.md\n'
     printf '<!-- ai-coding-rules-scaffold:end -->\n'
   } >>"CLAUDE.md"
-  echo "merged:       appended @AGENTS.md + @coding-rules.md imports to existing CLAUDE.md (your content kept)"
+  echo "merged:       appended @AGENTS.md + @coding-rules.md + @operational-rules.md imports to existing CLAUDE.md (your content kept)"
 }
 
 # install_agents_md, AGENTS.md carries a Project section the user fills in,
