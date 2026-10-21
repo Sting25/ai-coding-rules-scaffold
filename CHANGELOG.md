@@ -8,6 +8,13 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Fixed
 
+- **Local-development URLs no longer trip the secrets and frontend scans.** A
+  credential URL whose host is `localhost`, `127.0.0.1`, `[::1]` or `0.0.0.0`
+  (a CI service-container or test database) is no longer refused; any other host
+  still is. The `frontend.txt` rule against `http://localhost` and
+  `http://127.0.0.1` URLs is deleted, since it hit Playwright, Cypress and Vite
+  configs and test files.
+
 - **Framework env files such as `.env.development` no longer block a commit.**
   The filename check refused every `.env.*` name, but Next.js and Vite commit
   `.env.development`, `.env.test` and `.env.production` by convention. Only

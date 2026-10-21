@@ -40,10 +40,17 @@ echo 'if (el.innerHTML === "") { doThing(); }' >innerhtml-cmp.ts
 git add innerhtml-cmp.ts
 assert_passes "innerHTML comparison (===) is not flagged"
 
-# 40. hardcoded localhost URL is rejected — config/env instead.
+# 40. A localhost URL in a frontend file is NOT refused. frontend.txt used to
+#     ban `http://localhost` and `http://127.0.0.1`, which hit Playwright,
+#     Cypress and Vite configs, test files and dev-server code; the rule's whole
+#     subject was those two hosts, so it was deleted rather than narrowed.
 echo 'const api = "http://localhost:8080/v1";' >localhost.ts
 git add localhost.ts
-assert_rejects "hardcoded localhost URL is rejected" "hardcoded localhost"
+assert_passes "localhost URL in a frontend file is allowed"
+
+echo "export default { baseURL: 'http://localhost:3000' };" >playwright.config.ts
+git add playwright.config.ts
+assert_passes "Playwright-style baseURL on localhost is allowed"
 
 # 40b. Disabling TLS verification is rejected (frontend.txt Security). Both the
 #      env-var form and the rejectUnauthorized:false option form.

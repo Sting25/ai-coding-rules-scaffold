@@ -134,6 +134,30 @@ printf 'u = "redis://:secretpassword%shost"\n' '@' >redis.txt
 git add redis.txt
 assert_rejects "URL with empty-username credentials" "URL with embedded credentials"
 
+# 10b2. A credential URL whose host is local to the machine is a test or CI
+#       service-container URL (a localhost Postgres in conftest.py, a redis
+#       `services:` block) and must NOT be refused: Markdown and JSON cannot
+#       carry a `scaffold-allow` comment, so the rule used to have no escape
+#       there. The `@` is assembled by printf so this harness file carries no
+#       credential-URL shape of its own.
+printf 'URL = "postgresql://app:app%slocalhost:5432/test"\n' '@' >conftest.py
+git add conftest.py
+assert_passes "credential URL on localhost (python test DB) is allowed"
+
+printf 'services:\n  redis:\n    url: redis://:pw%s127.0.0.1:6379/0\n' '@' >ci-services.yml
+git add ci-services.yml
+assert_passes "credential URL on 127.0.0.1 (yml service container) is allowed"
+
+# 10b3. Over-loosening guard: any host that is not local is still refused,
+#       a hostname and a private IP alike.
+printf 'URL = "postgresql://app:s3cret%sdb.example.com:5432/prod"\n' '@' >prod_db.py
+git add prod_db.py
+assert_rejects "credential URL on a real hostname is still rejected" "URL with embedded credentials"
+
+printf 'dsn: mysql://root:pw%s10.0.0.5/app\n' '@' >mysql-dsn.yml
+git add mysql-dsn.yml
+assert_rejects "credential URL on a private IP is still rejected" "URL with embedded credentials"
+
 # 10c. SendGrid key prefix.
 printf 'k = SG.%s.%s\n' 'abcdefghijklmnopqrstuv' 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHI' >sg.txt
 git add sg.txt
