@@ -236,23 +236,25 @@ rm -rf "$_fp_dir"
 unset _fp_dir _fp_n
 
 # (D) the shipped defaults are actually shipped: every print-style rule carries
-# an exclude= list naming the CLI/script/test paths, and the Go ones add
-# *_test.go. Counted per file so dropping one field from a rule fails here.
+# an exclude= list naming its OWN language's CLI/script/test paths (no Rust or
+# Go paths on the Python rule). Counted per rule so dropping one field fails.
 _fp_d_bad=""
-_fp_tail='tests/*,test/*,scripts/*,bin/*,cmd/*,src/main.rs,src/bin/*,examples/*'
+_fp_py='tests/*,test/*,scripts/*,bin/*,examples/*'
+_fp_go='*_test.go,tests/*,scripts/*,cmd/*,examples/*'
+_fp_rs='tests/*,benches/*,examples/*,src/main.rs,src/bin/*'
 # _fp_has <stem> <description prefix> <expected globs>: some rule in the
 # template has that description and exactly that third field.
 _fp_has() {
   awk -F'\t' -v d="$2" -v e="exclude=$3" 'index($2, d) == 1 && $3 == e { f = 1 } END { exit !f }' \
     "$SCAFFOLD_DIR/forbidden-patterns/$1.txt.template"
 }
-_fp_has backend 'Use structlog (or the project' "$_fp_tail" || _fp_d_bad="$_fp_d_bad backend/print()"
-_fp_has go 'Remove fmt.Print/Println/Printf' "*_test.go,$_fp_tail" || _fp_d_bad="$_fp_d_bad go/fmt.Print"
-_fp_has go 'Remove the builtin println()' "*_test.go,$_fp_tail" || _fp_d_bad="$_fp_d_bad go/println"
-_fp_has rust 'Use the project logger (log/tracing), not println!()' "$_fp_tail" || _fp_d_bad="$_fp_d_bad rust/println!"
-_fp_has rust 'Use the project logger (log/tracing), not print!()' "$_fp_tail" || _fp_d_bad="$_fp_d_bad rust/print!"
-_fp_has rust 'Use the project logger (log/tracing), not eprintln!()' "$_fp_tail" || _fp_d_bad="$_fp_d_bad rust/eprintln!"
-_fp_has rust 'Use the project logger (log/tracing), not eprint!()' "$_fp_tail" || _fp_d_bad="$_fp_d_bad rust/eprint!"
+_fp_has backend 'Use structlog (or the project' "$_fp_py" || _fp_d_bad="$_fp_d_bad backend/print()"
+_fp_has go 'Remove fmt.Print/Println/Printf' "$_fp_go" || _fp_d_bad="$_fp_d_bad go/fmt.Print"
+_fp_has go 'Remove the builtin println()' "$_fp_go" || _fp_d_bad="$_fp_d_bad go/println"
+_fp_has rust 'Use the project logger (log/tracing), not println!()' "$_fp_rs" || _fp_d_bad="$_fp_d_bad rust/println!"
+_fp_has rust 'Use the project logger (log/tracing), not print!()' "$_fp_rs" || _fp_d_bad="$_fp_d_bad rust/print!"
+_fp_has rust 'Use the project logger (log/tracing), not eprintln!()' "$_fp_rs" || _fp_d_bad="$_fp_d_bad rust/eprintln!"
+_fp_has rust 'Use the project logger (log/tracing), not eprint!()' "$_fp_rs" || _fp_d_bad="$_fp_d_bad rust/eprint!"
 if [ -z "$_fp_d_bad" ]; then
   echo "  ✓ the print-style rules in backend.txt, go.txt and rust.txt ship their default excludes"
   PASS=$((PASS + 1))
@@ -260,7 +262,7 @@ else
   echo "  ✗ default exclude= missing or wrong on:$_fp_d_bad"
   FAIL=$((FAIL + 1))
 fi
-unset _fp_d_bad _fp_tail
+unset _fp_d_bad _fp_py _fp_go _fp_rs
 unset -f _fp_has
 
 # (P) the linter-dedupe pairs are actually shipped: exactly these six rules carry

@@ -13,10 +13,10 @@
 # Delimiter class is [([{] - bracket expressions take literal chars, no backslashes.
 
 (^|[^A-Za-z_])dbg![[:space:]]*[([{]	Remove dbg!() debug macro before committing
-(^|[^A-Za-z_])println![[:space:]]*[([{]	Use the project logger (log/tracing), not println!()	exclude=tests/*,test/*,scripts/*,bin/*,cmd/*,src/main.rs,src/bin/*,examples/*
-(^|[^A-Za-z_])print![[:space:]]*[([{]	Use the project logger (log/tracing), not print!()	exclude=tests/*,test/*,scripts/*,bin/*,cmd/*,src/main.rs,src/bin/*,examples/*
-(^|[^A-Za-z_])eprintln![[:space:]]*[([{]	Use the project logger (log/tracing), not eprintln!()	exclude=tests/*,test/*,scripts/*,bin/*,cmd/*,src/main.rs,src/bin/*,examples/*
-(^|[^A-Za-z_])eprint![[:space:]]*[([{]	Use the project logger (log/tracing), not eprint!()	exclude=tests/*,test/*,scripts/*,bin/*,cmd/*,src/main.rs,src/bin/*,examples/*
+(^|[^A-Za-z_])println![[:space:]]*[([{]	Use the project logger (log/tracing), not println!()	exclude=tests/*,benches/*,examples/*,src/main.rs,src/bin/*
+(^|[^A-Za-z_])print![[:space:]]*[([{]	Use the project logger (log/tracing), not print!()	exclude=tests/*,benches/*,examples/*,src/main.rs,src/bin/*
+(^|[^A-Za-z_])eprintln![[:space:]]*[([{]	Use the project logger (log/tracing), not eprintln!()	exclude=tests/*,benches/*,examples/*,src/main.rs,src/bin/*
+(^|[^A-Za-z_])eprint![[:space:]]*[([{]	Use the project logger (log/tracing), not eprint!()	exclude=tests/*,benches/*,examples/*,src/main.rs,src/bin/*
 (^|[^A-Za-z_])todo![[:space:]]*[([{]	Unfinished code: todo!() left in - implement or open a ticket
 (^|[^A-Za-z_])unimplemented![[:space:]]*[([{]	Unfinished code: unimplemented!() left in - implement before committing
 (^|[^A-Za-z_])unreachable![[:space:]]*[([{]	unreachable!() panics in prod if hit - prove it or return a Result

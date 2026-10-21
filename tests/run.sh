@@ -115,7 +115,7 @@ CASE_FLOORS=(
   "41-tsconfig-monorepo.sh:6"
   "42-doctor-narrow-path.sh:3"
   "43-check-patterns-path-excludes.sh:19"
-  "44-linter-dedupe.sh:53"
+  "44-linter-dedupe.sh:54"
   "45-tsc-local-warning.sh:8"
   "46-block-message-bypass.sh:6"
 )

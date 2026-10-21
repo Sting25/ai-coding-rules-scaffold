@@ -11,8 +11,11 @@ versioning follows [SemVer](https://semver.org/).
 - **Rules can skip paths, and the print rules no longer block CLI code.** A rule
   in `.scaffold.toml` takes `exclude = ["app/cli/*"]` to stop scanning matching
   paths for that rule only. The `print()`, `fmt.Print`/`println` and
-  `println!`/`eprintln!` rules now ship excluding `tests/`, `scripts/`, `bin/`,
-  `cmd/`, `examples/`, `src/main.rs`, `src/bin/` and Go `*_test.go` files.
+  `println!`/`eprintln!` rules now ship excluding each language's CLI, script,
+  example and test paths: `tests/`, `test/`, `scripts/`, `bin/` and
+  `examples/` for Python; `*_test.go`, `tests/`, `scripts/`, `cmd/` and
+  `examples/` for Go; `tests/`, `benches/`, `examples/`, `src/main.rs` and
+  `src/bin/` for Rust.
 
 ### Changed
 

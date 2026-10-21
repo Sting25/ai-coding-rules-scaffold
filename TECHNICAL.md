@@ -198,10 +198,11 @@ severity = "warn"
   that one rule scanning matching paths; every other rule still scans them. A
   glob is a shell `case` pattern on the repo-relative path, where `*` also
   matches `/` (`tests/*` covers every depth below the top-level `tests/`;
-  `*/tests/*` covers any depth). The print-style rules ship with defaults
-  (`tests/*`, `test/*`, `scripts/*`, `bin/*`, `cmd/*`, `src/main.rs`,
-  `src/bin/*`, `examples/*`, plus `*_test.go` for Go) so a fresh install does
-  not block CLI code, and config excludes are added to those defaults. The array
+  `*/tests/*` covers any depth). The print-style rules ship with per-language
+  defaults (Python: `tests/*`, `test/*`, `scripts/*`, `bin/*`, `examples/*`;
+  Go: `*_test.go`, `tests/*`, `scripts/*`, `cmd/*`, `examples/*`; Rust:
+  `tests/*`, `benches/*`, `examples/*`, `src/main.rs`, `src/bin/*`) so a fresh
+  install does not block CLI code, and config excludes are added to those defaults. The array
   must sit on one line with no trailing comment, or it is ignored whole.
 - **Hidden-Unicode allowances.** `hidden-unicode` ships two exemptions so
   ordinary international text is not blocked. A zero-width joiner (U+200D) is

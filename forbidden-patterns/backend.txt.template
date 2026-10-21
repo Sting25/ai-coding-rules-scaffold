@@ -17,7 +17,7 @@
 # installed) the regex still blocks. Force it on
 # per rule with `linter-dedupe = false` in .scaffold.toml.
 
-(^|[^A-Za-z_])print[[:space:]]*\(	Use structlog (or the project's logger), not print()	exclude=tests/*,test/*,scripts/*,bin/*,cmd/*,src/main.rs,src/bin/*,examples/*
+(^|[^A-Za-z_])print[[:space:]]*\(	Use structlog (or the project's logger), not print()	exclude=tests/*,test/*,scripts/*,bin/*,examples/*
 os\.path\.join	Use pathlib.Path(), not os.path.join	linter=ruff:PTH
 (^|[^A-Za-z_])breakpoint[[:space:]]*\(	Remove breakpoint() before committing
 (^|[^A-Za-z_])pdb\.set_trace[[:space:]]*\(	Remove pdb.set_trace() before committing

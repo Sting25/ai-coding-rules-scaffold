@@ -254,6 +254,17 @@ if .githooks/lib/scaffold-audit >"$HOOK_OUT" 2>&1 && grep -qF 'linter-dedupe' "$
 else
   echo "  ✗ scaffold-audit did not list the linter-dedupe override"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
+# One table may set both keys; the audit line names both, neither hides the other.
+cat >.scaffold.toml <<'TOML'
+[rules."frontend/Use the project logger, not console.log"]
+exclude = ["tools/*"]
+linter-dedupe = false
+TOML
+if .githooks/lib/scaffold-audit >"$HOOK_OUT" 2>&1 && grep -F 'console.log' "$HOOK_OUT" | grep -F 'path excludes added' | grep -qF 'linter-dedupe=false'; then
+  echo "  ✓ scaffold-audit shows both the exclude and the linter-dedupe label"; PASS=$((PASS + 1))
+else
+  echo "  ✗ scaffold-audit hid one of exclude / linter-dedupe"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
 
 rm -rf "$LD_TMP"
 unset LD_TMP LD_SAFE LD_NODE LD_RUFF LD_PATH LD_ARGS LD_ESLINT_CFG LD_RUFF_CFG LD_CONSOLE LD_DEBUGGER LD_TSIGNORE LD_TSNOCHECK LD_JOIN LD_TYPEIGN _ld_t _ld_p

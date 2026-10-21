@@ -32,8 +32,11 @@ out=$(awk '
     line="  rule \"" rid "\""
     if (disabled) line=line "  — DISABLED"
     else if (sev!="") line=line "  — severity=" sev
-    else if (excl!="") line=line "  - path excludes added"
-    else if (dedupe!="") line=line "  — linter-dedupe=" dedupe " (regex kept where its linter runs)"
+    else if (excl!="" || dedupe!="") {
+      # Both can be set in one table; neither label may hide the other.
+      if (excl!="") line=line "  - path excludes added"
+      if (dedupe!="") line=line "  - linter-dedupe=" dedupe " (regex kept where its linter runs)"
+    }
     else line=line "  — (recorded, no enforcement change)"
     print line
     if (excl!="")   print "      exclude: " excl

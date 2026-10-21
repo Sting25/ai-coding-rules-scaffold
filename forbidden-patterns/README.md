@@ -65,10 +65,12 @@ globs that the rule does not scan:
 <regex><TAB><description><TAB>exclude=tests/*,scripts/*
 ```
 
-The print-style rules (`backend.txt` `print()`, `go.txt` `fmt.Print*` and
-`println`, `rust.txt` `println!`/`print!`/`eprintln!`/`eprint!`) ship with
-`tests/*,test/*,scripts/*,bin/*,cmd/*,src/main.rs,src/bin/*,examples/*`, plus
-`*_test.go` for Go, so CLI programs, scripts and tests are not blocked. A glob
+The print-style rules ship with per-language defaults so CLI programs, scripts
+and tests are not blocked: `backend.txt` `print()` excludes
+`tests/*,test/*,scripts/*,bin/*,examples/*`; `go.txt` `fmt.Print*` and
+`println` exclude `*_test.go,tests/*,scripts/*,cmd/*,examples/*`; `rust.txt`
+`println!`/`print!`/`eprintln!`/`eprint!` exclude
+`tests/*,benches/*,examples/*,src/main.rs,src/bin/*`. A glob
 is a shell `case` pattern on the repo-relative path, where `*` also matches `/`
 (`tests/*` is the top-level `tests/` at any depth below it; use `*/tests/*` for
 a nested one). Only a field starting `exclude=` is read as one, a glob cannot

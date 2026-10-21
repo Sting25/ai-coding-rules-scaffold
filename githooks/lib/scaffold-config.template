@@ -82,7 +82,9 @@
 #                                        WARNING locally unless `severity =
 #                                        "error"` (lint.yml is the gate)
 #
-# Exit: 0 always for the two queries (prints the answer to stdout); 2 on misuse.
+# Exit: 0 for the five printing subcommands (size-cap, rule-state, rule-excludes,
+# rule-linter-dedupe, linter-runs; the answer is on stdout); path-excluded
+# answers by exit status, 0 excluded and 1 not; 2 on misuse.
 
 set -euo pipefail
 
