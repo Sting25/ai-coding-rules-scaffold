@@ -38,11 +38,13 @@
 #     technologist, rainbow flag), so a README or UI string using one is fine.
 #     A ZWJ anywhere else (between letters, inside an identifier, at a line
 #     edge, doubled) is still refused: that is the Trojan-source shape.
-#   - Locale files. Paths matching `locales/*`, `locale/*`, `i18n/*`, their
-#     `*/` nested forms, `*.po` and `*.pot` skip the hidden-Unicode scan
-#     entirely (ZWNJ is mandatory in Persian and some Indic scripts, LRM/RLM are
-#     routine in RTL strings, soft hyphens in German), because JSON/YAML/PO
-#     cannot carry a per-line `scaffold-allow`. Add more paths with
+#   - Locale data files. A translation-format file (json, yaml, yml, po, pot,
+#     xliff, xlf, arb, ftl, properties, strings) under a `locales/`, `locale/`
+#     or `i18n/` directory, plus any `*.po` and `*.pot`, skips the
+#     hidden-Unicode scan entirely (ZWNJ is mandatory in Persian and some Indic
+#     scripts, LRM/RLM are routine in RTL strings, soft hyphens in German),
+#     because those formats cannot carry a per-line `scaffold-allow`. Code and
+#     docs under those directories (`src/i18n/index.ts`) are still scanned. Add more paths with
 #     `exclude = ["src/strings.json"]` in `[rules.hidden-unicode]` in
 #     .scaffold.toml; they ADD to those defaults, are `case` globs on the
 #     repo-relative path (`*` spans `/`), and apply to THIS rule only: the
@@ -276,16 +278,25 @@ if [ "$HIDDEN_STATE" != disabled ]; then
   #   F0 9F 8C-AB xx   U+1F300-U+1FAFF (pictographs, incl. the skin tones
   #                    U+1F3FB-U+1F3FF = F0 9F 8F BB-BF)
   #   E2 98-9E xx      U+2600-U+27BF (misc symbols, dingbats: U+2640, U+2764)
-  #   EF B8 8F         U+FE0F variation selector 16 (allowed BEFORE a ZWJ only)
+  #   EF B8 8F         U+FE0F variation selector 16, allowed BEFORE a ZWJ only
+  #                    and only right after an emoji: a bare VS16 after a letter
+  #                    is not emoji context (`x` VS16 ZWJ emoji is refused).
   EMOJI_NEXT=$'\xf0\x9f[\x8c-\xab][\x80-\xbf]|\xe2[\x98-\x9e][\x80-\xbf]'
-  EMOJI_PREV="$EMOJI_NEXT"$'|\xef\xb8\x8f'
+  EMOJI_PREV="($EMOJI_NEXT)"$'(\xef\xb8\x8f)?'
   ZWJ_BYTES=$'\xe2\x80\x8d'
   ZWJ_MARK=$'\001'
   HIDDEN_RE=$'\xc2\xad|\xd8\x9c|\xe2\x80[\x8b\x8c\x8e\x8f\xaa-\xae]|\xe2\x81[\xa0\xa6-\xa9]|\xef\xbb\xbf|\xf3\xa0[\x80-\x87][\x80-\xbf]'
   ZWJ_RE="$HIDDEN_RE|$ZWJ_BYTES|$ZWJ_MARK"
-  # Locale paths skip this rule only (see the header). Shipped defaults here; a
-  # project adds more under [rules.hidden-unicode] `exclude`.
-  HIDDEN_EXCLUDES='locales/*,locale/*,i18n/*,*/locales/*,*/locale/*,*/i18n/*,*.po,*.pot'
+  # Locale DATA files skip this rule only (see the header): a translation format
+  # under a locale directory, never code or docs that sit beside it. Built by
+  # loop so the dir and extension lists stay readable; a project adds more under
+  # [rules.hidden-unicode] `exclude`.
+  HIDDEN_EXCLUDES='*.po,*.pot'
+  for d in locales locale i18n; do
+    for e in json yaml yml po pot xliff xlf arb ftl properties strings; do
+      HIDDEN_EXCLUDES="$HIDDEN_EXCLUDES,$d/*.$e,*/$d/*.$e"
+    done
+  done
   for file in "${FILES[@]}"; do
     # Per-rule path exclude: a locale file skips this scan entirely, and says so
     # once (it is a deliberate weakening, so it is never silent).

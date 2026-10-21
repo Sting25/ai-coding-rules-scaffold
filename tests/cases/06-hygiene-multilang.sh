@@ -221,6 +221,9 @@ hz_stage README.md "bad \xf0\x9f\x91\xa9${ZWJ}x here\n"
 assert_rejects "ZWJ between an emoji and an ASCII letter is rejected" "hidden Unicode"
 hz_stage README.md "bad x${ZWJ}\xf0\x9f\x91\xa9 here\n"
 assert_rejects "ZWJ between an ASCII letter and an emoji is rejected" "hidden Unicode"
+# VS16 counts as emoji context only right after an emoji, not after a letter.
+hz_stage README.md "bad x\xef\xb8\x8f${ZWJ}\xf0\x9f\x91\xa9 here\n"
+assert_rejects "letter + VS16 + ZWJ + emoji is rejected" "hidden Unicode"
 hz_stage README.md "bad \xf0\x9f\x91\xa9${ZWJ}${ZWJ}\xf0\x9f\x92\xbb here\n"
 assert_rejects "a doubled ZWJ between emoji is rejected" "hidden Unicode"
 # a stray \x01 byte after the joiner must not let the ZWJ slip through
@@ -242,6 +245,15 @@ hz_stage po/de.po "msgstr \"Donau${SHY}dampf\"\n"
 assert_passes "soft hyphen in a .po file is allowed by default"
 hz_stage src/strings.json "{\"k\": \"${RLM}text\"}\n"
 assert_rejects "the same RLM in src/strings.json is still rejected" "hidden Unicode"
+# The defaults cover locale DATA files only (json/yaml/po/xliff/ftl/...), never
+# code or docs that happen to sit under a locale directory.
+RLO='\xe2\x80\xae'
+hz_stage src/i18n/index.ts "export const x = '${RLO}';\n"
+assert_rejects "RLO in src/i18n/index.ts (code under i18n/) is rejected" "hidden Unicode"
+hz_stage locale/setup.py "x = '${RLO}'\n"
+assert_rejects "RLO in locale/setup.py (code under locale/) is rejected" "hidden Unicode"
+hz_stage docs/locales/README.md "see ${RLO}here\n"
+assert_rejects "RLO in docs/locales/README.md (docs under locales/) is rejected" "hidden Unicode"
 
 printf '[rules.hidden-unicode]\nexclude = ["src/strings.json"]\n' >.scaffold.toml
 git add .scaffold.toml

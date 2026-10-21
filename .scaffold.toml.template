@@ -93,9 +93,11 @@
 # by       = "rî 2026-06-11"
 #
 # `hidden-unicode` already allows a zero-width joiner between emoji (family and
-# profession emoji) and skips locale paths (locales/*, locale/*, i18n/*, their
-# `*/` nested forms, *.po, *.pot) so translations can carry ZWNJ, LRM/RLM and
-# soft hyphens. Add more paths to skip for this rule only (conflict markers and
+# profession emoji) and skips locale data files (json, yaml, yml, po, pot,
+# xliff, xlf, arb, ftl, properties and strings files under a locales/, locale/
+# or i18n/ directory, plus any *.po and *.pot) so translations can carry ZWNJ,
+# LRM/RLM and soft hyphens; code and docs in those directories are still
+# scanned. Add more paths to skip for this rule only (conflict markers and
 # case collisions still scan them); config entries add to those defaults:
 # [rules.hidden-unicode]
 # exclude = ["src/strings.json", "resources/lang/*"]

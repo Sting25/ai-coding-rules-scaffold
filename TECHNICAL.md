@@ -206,11 +206,14 @@ severity = "warn"
 - **Hidden-Unicode allowances.** `hidden-unicode` ships two exemptions so
   ordinary international text is not blocked. A zero-width joiner (U+200D) is
   allowed when it sits between two emoji codepoints (family, profession,
-  skin-tone and flag sequences); anywhere else it is still refused. And locale
-  files skip the rule entirely: `locales/*`, `locale/*`, `i18n/*`, their `*/`
-  nested forms, `*.po` and `*.pot` (translations legitimately carry ZWNJ, LRM and
-  RLM marks and soft hyphens, and JSON/YAML/PO cannot hold a per-line
-  `scaffold-allow`). Add paths with `exclude = [...]` under
+  skin-tone and flag sequences); anywhere else it is still refused, and a
+  variation selector counts as emoji context only right after an emoji. And
+  locale data files skip the rule entirely: a json, yaml, yml, po, pot, xliff,
+  xlf, arb, ftl, properties or strings file under a `locales/`, `locale/` or
+  `i18n/` directory (at the root or nested), plus any `*.po` and `*.pot`
+  (translations legitimately carry ZWNJ, LRM and RLM marks and soft hyphens,
+  and those formats cannot hold a per-line `scaffold-allow`). Code and docs in
+  those directories, such as `src/i18n/index.ts`, are still scanned. Add paths with `exclude = [...]` under
   `[rules.hidden-unicode]`; they add to those defaults and affect only this rule,
   so conflict-marker and case-collision still scan the same files. Each skipped
   file is named once in the output.
