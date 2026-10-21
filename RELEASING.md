@@ -17,6 +17,9 @@ The version lives in these places — all must agree on `vX.Y.Z`:
 
 ## 1. Prepare (PR to `main`)
 
+Version bumps travel only in this release PR: a feature PR that bumps `package.json` strands `main`
+on an unreleased number, and installs tracking the branch pick it up.
+
 1. Make sure `main` is green on both runners and `CHANGELOG.md`'s `[Unreleased]`
    section lists everything since the last tag. (If entries were missed, back-fill
    them — the changelog is the release notes.)
