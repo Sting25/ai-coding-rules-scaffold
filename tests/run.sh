@@ -89,7 +89,7 @@ CASE_FLOORS=(
   "15-local-checks.sh:7"
   "16-coverage-gate.sh:6"
   "17-whole-tree-configs.sh:11"
-  "18-doctor.sh:36"
+  "18-doctor.sh:34"
   "19-test-workflow.sh:17"
   "20-paired-artifacts.sh:19"
   "21-ci-workflow-drift.sh:25"
@@ -113,6 +113,7 @@ CASE_FLOORS=(
   "39-scaffold-assess.sh:10"
   "40-doctor-required-checks.sh:6"
   "41-tsconfig-monorepo.sh:6"
+  "42-doctor-narrow-path.sh:3"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and
