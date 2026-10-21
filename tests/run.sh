@@ -116,6 +116,7 @@ CASE_FLOORS=(
   "42-doctor-narrow-path.sh:3"
   "43-check-patterns-path-excludes.sh:18"
   "44-linter-dedupe.sh:42"
+  "45-tsc-local-warning.sh:8"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and

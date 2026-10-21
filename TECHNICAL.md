@@ -86,7 +86,10 @@ TypeScript, `tsc --noEmit` (against the shipped strict `tsconfig.json`) and
 `prettier --check` when a prettier config is present — so most of the
 build-breaking rules below also fire at commit time, not only in CI.
 Linters, the type-checker, and the formatter are silently skipped if not
-installed; CI is the authoritative backstop.
+installed; CI is the authoritative backstop. The `tsc` run is the exception to
+"fires at commit time as a failure": it is project-wide, so locally it only
+WARNS (output printed, commit allowed) and `lint.yml` fails the PR on it. Set
+`[rules.tsc]` `severity = "error"` in `.scaffold.toml` to block the commit.
 
 The shipped `eslint.config.js` extends typescript-eslint's
 **`strictTypeChecked`** tier (type-aware linting), wires import sorting and
@@ -116,7 +119,7 @@ Build-breaking (`ruff` / `eslint`, on every lint + commit + in CI):
 | Floating / misused promises (TS)                                                            | `@typescript-eslint/no-floating-promises`, `no-misused-promises` (type-aware)               |
 | Non-exhaustive `switch` over a union/enum (missing member)                                  | `@typescript-eslint/switch-exhaustiveness-check` (type-aware)                               |
 | Re-throwing in `catch` while discarding the original error cause/stack                      | `eslint preserve-caught-error` (needs ESLint ≥ 9.35)                                        |
-| TypeScript type errors                                                                      | `tsc --noEmit` (hook + CI, when `tsconfig.json` present)                                    |
+| TypeScript type errors                                                                      | `tsc --noEmit` (CI gate; hook warns only, when `tsconfig.json` present)                     |
 | Unformatted TS/JS                                                                           | `prettier --check` (hook + CI, when a prettier config is present; `prettier --write` fixes) |
 | Changed lines shipped without a test (opt-in strictness layer on default-on test execution) | `diff-cover` patch-coverage gate (`--coverage-gate`, CI)                                    |
 
@@ -185,7 +188,9 @@ severity = "warn"
 - **Rule ids.** Forbidden-pattern rules are keyed `"<patternfile-stem>/<description>"`
   (the text after the TAB in `.forbidden-patterns/<lang>.txt`). Hygiene rules
   use `conflict-marker` / `case-collision` / `hidden-unicode`; the size cap uses
-  `size`; the large-file byte cap uses `large-files`.
+  `size`; the large-file byte cap uses `large-files`. The pre-commit `tsc
+  --noEmit` step uses `tsc` and is the one rule that defaults to `warn`:
+  `severity = "error"` blocks the commit, `disabled = true` skips the step.
 - **Disable vs downgrade.** `disabled = true` turns the rule off; `severity =
 "warn"` keeps emitting the finding (a CI `::warning::`) without failing the
   build — a relaxed rule stays visible, never silent.

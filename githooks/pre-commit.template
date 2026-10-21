@@ -16,6 +16,11 @@
 #
 # Lines starting with # in those files are comments.
 #
+# `tsc --noEmit` (project-wide, when a tsconfig.json exists) is the one advisory
+# step: it prints the compiler output and WARNS, because lint.yml runs the same
+# command and fails the pull request. [rules.tsc] severity = "error" in
+# .scaffold.toml makes it block the commit; disabled = true skips it.
+#
 # The lib/check-* scripts scan the STAGED BLOB (`git show ":0:<path>"`), not the
 # working tree, so symlinks, embedded NUL bytes, and post-stage working-tree
 # edits cannot hide content from the scan.
@@ -348,10 +353,31 @@ fi
 # Type-check with tsc when a tsconfig.json exists and TypeScript is installed.
 # Run PROJECT-WIDE (no file args): passing individual files makes tsc ignore
 # tsconfig.json and its compiler options. A missing/unresolvable tsc prints a
-# notice and skips, like the checks above; CI is the authoritative backstop.
-if [ ${#STAGED_JS[@]} -gt 0 ] && [ -f tsconfig.json ]; then
+# notice and skips, like the checks above.
+#
+# A WARNING by default, unlike the checks above. Because it is project-wide, a
+# one-file commit would otherwise fail on pre-existing type errors in files the
+# commit never touched, and the only way out is --no-verify. The same
+# `tsc --noEmit` runs in lint.yml and fails the pull request, so the gate is
+# kept where it can be fixed on its own schedule. Per project, in
+# .scaffold.toml:  [rules.tsc]  severity = "error"  blocks the commit as before;
+#                              disabled = true      skips the step.
+# The helper is a sibling in $LIB; if it is missing (older install) the default
+# stands, which is warn.
+TSC_STATE=warn
+if [ -x "$LIB/scaffold-config" ]; then
+  TSC_STATE=$("$LIB/scaffold-config" rule-state tsc warn 2>/dev/null || true)
+  [ -n "$TSC_STATE" ] || TSC_STATE=warn
+fi
+if [ ${#STAGED_JS[@]} -gt 0 ] && [ -f tsconfig.json ] && [ "$TSC_STATE" != disabled ]; then
   if js_tool_installed typescript; then
-    npx --no-install tsc --noEmit || FAILED=1
+    if ! npx --no-install tsc --noEmit; then
+      if [ "$TSC_STATE" = error ]; then
+        FAILED=1
+      else
+        echo "! tsc --noEmit reported errors (warning locally; the lint workflow fails the PR on them)" >&2
+      fi
+    fi
   else
     echo "note: TypeScript not installed in this project's node_modules, skipping the local tsc type check." >&2
     echo "      CI's lint job is the authoritative gate; run 'npm install' for local feedback." >&2

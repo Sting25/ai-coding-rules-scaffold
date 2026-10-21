@@ -101,7 +101,17 @@ if node -e "require.resolve('typescript/package.json')" >/dev/null 2>&1; then
   echo '{"compilerOptions":{"strict":true,"noEmit":true}}' >tsconfig.json
   echo 'const n: number = "definitely not a number";' >typeerr.ts
   git add tsconfig.json typeerr.ts
-  assert_rejects "tsc --noEmit rejects a type error" "error TS"
+  # tsc is a local WARNING by default (lint.yml fails the PR on it); the compiler
+  # output is still printed. The blocking mode is cases/45.
+  if .githooks/pre-commit >"$HOOK_OUT" 2>&1 && grep -qF "error TS" "$HOOK_OUT" \
+     && grep -qF "! tsc --noEmit reported errors" "$HOOK_OUT"; then
+    echo "  ✓ tsc --noEmit type error is reported as a warning, commit allowed"
+    PASS=$((PASS + 1))
+  else
+    echo "  ✗ tsc --noEmit type error: expected exit 0 with compiler output and the warning line"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  reset_repo
 else
   echo "  - skipped tsc test (typescript not installed in temp repo)"
 fi
@@ -332,14 +342,19 @@ echo '{"name":"typescript","version":"0.0.0-test"}' >node_modules/typescript/pac
 echo '{"compilerOptions":{"strict":true,"noEmit":true}}' >tsconfig.json
 echo 'const n: number = 1;' >tscme.ts
 git add tsconfig.json tscme.ts
+#      tsc findings are a local WARNING by default (lint.yml is the gate), so the
+#      hook ACCEPTS, with the compiler output and the warning line printed. The
+#      `severity = "error"` blocking mode is asserted in cases/45.
 if PATH="$TSB:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
-  echo "  ✗ tsc block: hook accepted despite a type error"
-  sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
-elif grep -qF "STUB TSC" "$HOOK_OUT"; then
-  echo "  ✓ tsc findings fail the pre-commit hook (project-local install)"
-  PASS=$((PASS + 1))
+  if grep -qF "STUB TSC" "$HOOK_OUT" && grep -qF "! tsc --noEmit reported errors" "$HOOK_OUT"; then
+    echo "  ✓ tsc findings are printed as a warning and do not fail the hook (project-local install)"
+    PASS=$((PASS + 1))
+  else
+    echo "  ✗ tsc block: accepted, but tsc never ran or the warning line is missing"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
 else
-  echo "  ✗ tsc block: rejected, but tsc never ran"
+  echo "  ✗ tsc block: hook refused; a tsc failure must only warn by default"
   sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf node_modules "$TSB"

@@ -16,6 +16,13 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Changed
 
+- **A type error in another file no longer blocks your commit.** The pre-commit
+  `tsc --noEmit` run is project-wide, so a one-file commit used to fail on errors
+  in files you never touched. It now prints the compiler output and warns; the
+  lint workflow runs the same check and still fails the pull request. Add
+  `[rules.tsc]` with `severity = "error"` to `.scaffold.toml` to block locally
+  again, or `disabled = true` to skip the local run.
+
 - **One suppression is enough where a linter already enforces the rule.** The
   `console.log`, `debugger`, `@ts-ignore`, `@ts-nocheck`, `os.path.join` and bare
   `# type: ignore` pattern rules are skipped when pre-commit will run the

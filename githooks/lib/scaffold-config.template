@@ -31,8 +31,14 @@
 #                     matching [size] glob (longest pattern wins), else
 #                     [size].default, else nothing (caller keeps its own default).
 #                     Globs use bash `[[ == ]]` semantics, where `*` also spans `/`.
-#   rule-state <id>   Print exactly one of: disabled | warn | error (default
-#                     error). `disabled` wins over `severity`.
+#   rule-state <id> [<default>]
+#                     Print exactly one of: disabled | warn | error (default
+#                     error). `disabled` wins over `severity`. A caller whose
+#                     rule is advisory by default passes `warn` as <default>: it
+#                     applies when there is no config file or the rule's table
+#                     sets no `severity`; an explicit `severity = "error"` still
+#                     wins. Only `warn` is honoured as a default; anything else
+#                     is `error`.
 #   rule-excludes <id>
 #                     Print the path globs in that rule's `exclude` key, one per
 #                     line (nothing when it has none). A file whose repo-relative
@@ -57,6 +63,9 @@
 #   conflict-marker | case-collision    hygiene rules
 #   hidden-unicode                       hygiene rule; also takes `exclude`
 #   size                                 the file-size cap (whole check)
+#   tsc                                  the pre-commit `tsc --noEmit` step; a
+#                                        WARNING locally unless `severity =
+#                                        "error"` (lint.yml is the gate)
 #
 # Exit: 0 always for the two queries (prints the answer to stdout); 2 on misuse.
 
@@ -97,9 +106,9 @@ fi
 if [ ! -f "$CONFIG" ]; then
   case "$cmd" in
     size-cap)   exit 0 ;;
-    rule-state) echo "error"; exit 0 ;;
+    rule-state) if [ "${3:-}" = warn ]; then echo "warn"; else echo "error"; fi; exit 0 ;;
     rule-excludes|rule-linter-dedupe) exit 0 ;;
-    *)          echo "usage: scaffold-config {size-cap <path>|rule-state <id>|rule-excludes <id>|rule-linter-dedupe <id>|linter-runs <name> <path>}" >&2; exit 2 ;;
+    *)          echo "usage: scaffold-config {size-cap <path>|rule-state <id> [<default>]|rule-excludes <id>|rule-linter-dedupe <id>|linter-runs <name> <path>}" >&2; exit 2 ;;
   esac
 fi
 
@@ -148,11 +157,12 @@ case "$cmd" in
 
   rule-state)
     id=${2:-}
+    dflt=${3:-}
     [ -n "$id" ] || { echo "error"; exit 0; }
-    awk -v target="$id" '
+    awk -v target="$id" -v dflt="$dflt" '
       function trim(s){ sub(/^[ \t]+/,"",s); sub(/[ \t]+$/,"",s); return s }
       function unq(s){ if (s ~ /^".*"$/) s=substr(s,2,length(s)-2); return s }
-      BEGIN { match_=0; disabled=0; sev="error" }
+      BEGIN { match_=0; disabled=0; sev="" }
       {
         line=$0; sub(/\r$/,"",line); t=trim(line)
         if (t=="" || t ~ /^#/) next
@@ -171,6 +181,7 @@ case "$cmd" in
       END {
         if (disabled) print "disabled"
         else if (sev=="warn") print "warn"
+        else if (sev=="" && dflt=="warn") print "warn"
         else print "error"
       }
     ' "$CONFIG"
@@ -243,7 +254,7 @@ case "$cmd" in
     ;;
 
   *)
-    echo "usage: scaffold-config {size-cap <path>|rule-state <id>|rule-excludes <id>|rule-linter-dedupe <id>|linter-runs <name> <path>}" >&2
+    echo "usage: scaffold-config {size-cap <path>|rule-state <id> [<default>]|rule-excludes <id>|rule-linter-dedupe <id>|linter-runs <name> <path>}" >&2
     exit 2
     ;;
 esac

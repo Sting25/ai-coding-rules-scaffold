@@ -531,8 +531,11 @@ rm -f eslint.config.js
 `tsconfig.json` exists and a commit touches any JS/TS file, the hook runs
 `tsc --noEmit` on the whole tree, because tsc ignores its config when given
 file arguments. On an existing codebase that was not written for these
-options, every commit is blocked until the whole tree passes. Issue #163
-measured 12,235 errors in a workspaces monorepo from this one file.
+options, every commit prints those errors, as a WARNING: the commit is allowed
+and `lint.yml` fails the pull request on them. `[rules.tsc]` with
+`severity = "error"` in `.scaffold.toml` makes the hook block instead;
+`disabled = true` skips the local run. Issue #163 measured 12,235 errors in a
+workspaces monorepo from this one file.
 
 Do not adopt this on an existing codebase unless the measurement below is zero
 or you intend to fix everything it reports. Never adopt it at the root of a
