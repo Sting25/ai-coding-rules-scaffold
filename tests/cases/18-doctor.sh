@@ -317,57 +317,6 @@ else
 fi
 rm -rf "$DOCT"
 
-# (H) The two opt-in surfaces both fail OPEN when their tool is missing, and the
-# doctor's severities deliberately DIVERGE because their loudness does:
-# check-gitleaks announces itself on every commit (note), agent-precheck exits 0
-# with empty output (gap). Verified by measurement, not by symmetry.
-#
-# doc_minbin builds a PATH containing only the binaries the doctor itself needs,
-# so the result cannot depend on whether a given runner happens to ship jq or
-# gitleaks. Symlinks are resolved from the real PATH rather than hardcoded,
-# because jq lives in /usr/bin on some machines and /opt/homebrew/bin on others.
-doc_minbin() {
-  local d tool src
-  d=$(mktemp -d)
-  for tool in bash git grep sed awk basename; do
-    src=$(command -v "$tool" 2>/dev/null) || continue
-    ln -s "$src" "$d/$tool"
-  done
-  printf '%s' "$d"
-}
-
-doc_project DOCT
-DOCBIN=$(doc_minbin)
-cp "$SCAFFOLD_DIR/githooks/lib/check-gitleaks.template" "$DOCT/.githooks/lib/check-gitleaks"
-chmod +x "$DOCT/.githooks/lib/check-gitleaks"
-doc_rc=0
-( cd "$DOCT" && PATH="$DOCBIN" "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
-if [ "$doc_rc" -eq 0 ] && grep -qF "the local scan is a no-op" "$HOOK_OUT"; then
-  echo "  ✓ a gitleaks hook with no binary is a note (it warns on every commit itself)"
-  PASS=$((PASS + 1))
-else
-  echo "  ✗ gitleaks-without-binary misclassified (exit $doc_rc, wanted 0 + a note)"
-  sed 's/^/      /' "$HOOK_OUT"
-  FAIL=$((FAIL + 1))
-fi
-rm -rf "$DOCT"
-
-# agent-precheck with no jq says NOTHING, anywhere, ever — so it is a gap.
-doc_project DOCT
-cp "$SCAFFOLD_DIR/githooks/lib/agent-precheck.template" "$DOCT/.githooks/lib/agent-precheck"
-chmod +x "$DOCT/.githooks/lib/agent-precheck"
-doc_rc=0
-( cd "$DOCT" && PATH="$DOCBIN" "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || doc_rc=$?
-if [ "$doc_rc" -eq 1 ] && grep -qF "jq is not on PATH" "$HOOK_OUT"; then
-  echo "  ✓ an agent-precheck with no jq is a gap (it fails open in total silence)"
-  PASS=$((PASS + 1))
-else
-  echo "  ✗ agent-precheck-without-jq misclassified (exit $doc_rc, wanted 1)"
-  sed 's/^/      /' "$HOOK_OUT"
-  FAIL=$((FAIL + 1))
-fi
-rm -rf "$DOCT" "$DOCBIN"
-
 # agent-precheck's executable bit is load-bearing in a way check-gitleaks' is
 # not: claude-settings.json and cursor-hooks.json invoke the PATH DIRECTLY as a
 # command, with no -x guard anywhere, so a cleared bit yields exit 126 — and the

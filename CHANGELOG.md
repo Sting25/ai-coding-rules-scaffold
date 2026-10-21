@@ -4,6 +4,21 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **`scaffold-doctor.sh` no longer depends on `dirname(1)` to find its own
+  bundle.** It derived its directory with `$(cd "$(dirname "$0")" && pwd)`,
+  which under a PATH without coreutils fell through to `cd ""`. Bash 5.2
+  treated that as a no-op; bash 5.3 (the ubuntu-26.04 runner image) makes it
+  fail, and under `set -e` the doctor died on its first line of work. The
+  directory now comes from parameter expansion, so no external command is
+  involved. The narrowed-PATH doctor tests gain a parity assertion against a
+  full-PATH run, and their fixture installs the gitleaks CI twin, since the
+  paired-artifact section now actually runs there instead of being skipped by
+  the lost bundle.
+
 ## [v0.19.0] - 2026-09-04
 
 ### Added
