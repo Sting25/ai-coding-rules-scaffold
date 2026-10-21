@@ -114,16 +114,18 @@ else
 fi
 rm -rf "$UNEW"
 
-# (T) a CLAUDE.md already wired for @AGENTS.md but missing @coding-rules.md is
-# left untouched (user-owned file, never edited in place) and the gap is
-# surfaced as an advisory note instead.
+# (T) a CLAUDE.md already wired for @AGENTS.md but missing @coding-rules.md
+# and @operational-rules.md is left untouched (user-owned file, never edited
+# in place) and each gap is surfaced as an advisory note instead.
 UWIRED=$(mktemp -d)
 ( cd "$UWIRED" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
   && printf '# Mine\n\nHAND-WRITTEN-MEMORY\n\n@AGENTS.md\n' >CLAUDE.md \
   && "$SCAFFOLD_DIR/install.sh" --both --no-verify ) >"$HOOK_OUT" 2>&1
 if grep -q 'does not import coding-rules.md' "$HOOK_OUT" \
+   && grep -q 'does not import operational-rules.md' "$HOOK_OUT" \
    && grep -q 'HAND-WRITTEN-MEMORY' "$UWIRED/CLAUDE.md" \
-   && ! grep -q '@coding-rules.md' "$UWIRED/CLAUDE.md"; then
+   && ! grep -q '@coding-rules.md' "$UWIRED/CLAUDE.md" \
+   && ! grep -q '@operational-rules.md' "$UWIRED/CLAUDE.md"; then
   echo "  ✓ wired CLAUDE.md left untouched, missing rules import surfaced as note"; PASS=$((PASS + 1))
 else
   echo "  ✗ wired CLAUDE.md should get an advisory note, not an in-place edit"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))

@@ -396,13 +396,10 @@ minimal; turn them on per project.
   installs _runtime hooks_ (`.claude/settings.json` plus the `PreToolUse`
   precheck) that block a bad tool call as it happens; the plain AGENTS.md
   path (always installed) is _always-loaded context_: CLAUDE.md imports
-  `AGENTS.md` (the condensed summary) and the full `coding-rules.md`
-  (short by rule, cheap to pin into every turn), while the much larger
-  `operational-rules.md` stays a link on purpose, since paying its full
-  size on every turn is the wrong trade. `--claude-skill` is what pulls
-  the **full text** of `operational-rules.md` (alongside
-  `coding-rules.md`) into context **on demand**, at the moments it
-  matters, rather than relying on the summary alone. Opt-in because it is
+  `AGENTS.md`, `coding-rules.md`, and `operational-rules.md`, all short
+  enough to pin into every turn. `--claude-skill` additionally has the agent
+  re-read the **full text** of both rule files **on demand**, at the moments
+  it matters (before an edit, a commit, or a conventions question). Opt-in because it is
   Claude Code specific; combine freely with `--claude` and with the default
   AGENTS.md install. `.claude/skills/coding-rules/SKILL.md` is USER-OWNED
   (`cp_safe`): a project may hand-edit it, so a re-run never overwrites it

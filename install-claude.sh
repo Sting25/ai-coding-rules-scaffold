@@ -37,6 +37,9 @@ install_claude_md() {
     if ! grep -q '@coding-rules.md' "CLAUDE.md" 2>/dev/null; then
       echo "note: CLAUDE.md does not import coding-rules.md. AGENTS.md only links the rules file, so the rules are NOT loaded into context at session start; add a '@coding-rules.md' line to CLAUDE.md to pin them."
     fi
+    if ! grep -q '@operational-rules.md' "CLAUDE.md" 2>/dev/null; then
+      echo "note: CLAUDE.md does not import operational-rules.md. AGENTS.md only links that file, so its rules are NOT loaded into context at session start; add a '@operational-rules.md' line to CLAUDE.md to pin them."
+    fi
     return
   fi
   {
