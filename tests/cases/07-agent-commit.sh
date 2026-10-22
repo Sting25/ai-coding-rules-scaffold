@@ -18,6 +18,16 @@ if command -v jq >/dev/null 2>&1; then
     echo "  ✗ agent-precheck — blocked but missing expected message"
     sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
   fi
+  # (46a) the block message tells the agent to stop and report, not to append a
+  #       scaffold-allow marker (issue #212; cases/46 covers the pre-commit side).
+  #       HOOK_OUT still holds the (46) block output.
+  if grep -qF "Stop and report this block to the user" "$HOOK_OUT" \
+     && ! grep -qF "append a comment" "$HOOK_OUT" && ! grep -qF "scaffold-allow" "$HOOK_OUT"; then
+    echo "  ✓ agent-precheck block says to stop and report, and does not offer scaffold-allow"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck block message still prescribes the marker or lacks the stop-and-report wording"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
   # (47) clean content is allowed (exit 0)
   pc='{"tool_name":"Write","tool_input":{"file_path":"x.ts","content":"export const x = 1;"}}'
   if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1; then
@@ -32,6 +42,28 @@ if command -v jq >/dev/null 2>&1; then
     echo "  ✓ agent-precheck honors scaffold-allow"; PASS=$((PASS + 1))
   else
     echo "  ✗ agent-precheck — scaffold-allow not honored, expected allow"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  # (48a2) a credential URL on a local host is a test or CI service-container
+  #        URL: a Write carrying it is allowed (the `@` is assembled by printf so
+  #        this harness file carries no credential-URL shape of its own).
+  lurl=$(printf 'postgresql://app:app%slocalhost:5432/test' '@')
+  pc=$(jq -nc --arg c "URL = \"$lurl\"" '{tool_name:"Write",tool_input:{file_path:"conftest.py",content:$c}}')
+  if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1; then
+    echo "  ✓ agent-precheck allows a credential URL on localhost"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — blocked a localhost credential URL, expected allow"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  # (48a3) over-loosening guard: the same shape on a real hostname still blocks
+  rurl=$(printf 'postgresql://app:s3cret%sdb.example.com:5432/prod' '@')
+  pc=$(jq -nc --arg c "URL = \"$rurl\"" '{tool_name:"Write",tool_input:{file_path:"prod_db.py",content:$c}}')
+  if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1; then
+    echo "  ✗ agent-precheck — allowed a credential URL on db.example.com, expected block"; FAIL=$((FAIL + 1))
+  elif grep -qF "BLOCKED by agent-precheck" "$HOOK_OUT"; then
+    echo "  ✓ agent-precheck still blocks a credential URL on a real hostname"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — credential URL block missing expected message"
     sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
   fi
   # (48b) a Bash event piping a remote download to a shell is blocked, scanned
@@ -84,6 +116,60 @@ if command -v jq >/dev/null 2>&1; then
     echo "  ✓ agent-precheck blocks a secret in a Cursor top-level .command"; PASS=$((PASS + 1))
   else
     echo "  ✗ agent-precheck — Cursor secret block missing expected message"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  # (48f2) REGRESSION (audit, false positive): only the text a tool WRITES or
+  #        RUNS is scanned (Write.content, Edit.new_string, MultiEdit
+  #        edits[].new_string, Bash.command). An Edit that REMOVES a hardcoded
+  #        secret carries it in old_string; the scan used to walk every string
+  #        in the payload and blocked the very edit that fixes the problem.
+  pc=$(jq -nc --arg o "AWS=$akia" --arg n 'AWS=os.environ["AWS_KEY"]' \
+    '{tool_name:"Edit",tool_input:{file_path:"x.py",old_string:$o,new_string:$n}}')
+  if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1; then
+    echo "  ✓ agent-precheck allows an Edit that removes a secret (bad value only in old_string)"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — blocked an Edit with the secret only in old_string, expected allow"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  # (48f3) same for MultiEdit: the secret only in edits[0].old_string
+  pc=$(jq -nc --arg o "AWS=$akia" --arg n 'AWS=os.environ["AWS_KEY"]' \
+    '{tool_name:"MultiEdit",tool_input:{file_path:"x.py",edits:[{old_string:$o,new_string:$n},{old_string:"a",new_string:"b"}]}}')
+  if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1; then
+    echo "  ✓ agent-precheck allows a MultiEdit that removes a secret (bad value only in edits[].old_string)"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — blocked a MultiEdit with the secret only in edits[].old_string, expected allow"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  # (48f4) over-loosening guard: the secret in Edit.new_string is still blocked
+  pc=$(jq -nc --arg n "AWS=$akia" '{tool_name:"Edit",tool_input:{file_path:"x.py",old_string:"AWS=None",new_string:$n}}')
+  if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1; then
+    echo "  ✗ agent-precheck — allowed a secret in Edit.new_string, expected block"; FAIL=$((FAIL + 1))
+  elif grep -qF "BLOCKED by agent-precheck" "$HOOK_OUT"; then
+    echo "  ✓ agent-precheck still blocks a secret in Edit.new_string"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — Edit.new_string block missing expected message"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  # (48f5) over-loosening guard: the secret in MultiEdit edits[].new_string is still blocked
+  pc=$(jq -nc --arg n "AWS=$akia" '{tool_name:"MultiEdit",tool_input:{file_path:"x.py",edits:[{old_string:"a",new_string:"b"},{old_string:"AWS=None",new_string:$n}]}}')
+  if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1; then
+    echo "  ✗ agent-precheck — allowed a secret in MultiEdit edits[1].new_string, expected block"; FAIL=$((FAIL + 1))
+  elif grep -qF "BLOCKED by agent-precheck" "$HOOK_OUT"; then
+    echo "  ✓ agent-precheck still blocks a secret in MultiEdit edits[].new_string"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — MultiEdit.new_string block missing expected message"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  # (48f6) over-loosening guard: a secret in a Claude Bash .command is still
+  #        blocked (the Cursor top-level .command shape is 48f; Claude Write
+  #        content is 46; Claude Bash shell patterns are 48b).
+  pc=$(jq -nc --arg c "export AWS=$akia" '{tool_name:"Bash",tool_input:{command:$c}}')
+  if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1; then
+    echo "  ✗ agent-precheck — allowed a secret in a Claude Bash command, expected block"; FAIL=$((FAIL + 1))
+  elif grep -qF "BLOCKED by agent-precheck" "$HOOK_OUT"; then
+    echo "  ✓ agent-precheck still blocks a secret in a Claude Bash .command"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — Bash secret block missing expected message"
     sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
   fi
   # (48g) REGRESSION (SIGPIPE fail-OPEN): when a block fires on MANY matching
@@ -163,6 +249,22 @@ if command -v jq >/dev/null 2>&1; then
     sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
   fi
   rm -f ".githooks/lib/credential-read-patterns.txt"
+  # (48l) a rule line carrying the optional third `exclude=<globs>` field (the
+  #       per-rule path excludes check-patterns reads) must not change what
+  #       agent-precheck blocks: the field is not part of the regex and the rule
+  #       still arms. A probe rule with the field is appended to the installed
+  #       shell.txt; the Bash payload it matches is still refused.
+  printf 'curl[[:space:]]+exclude-field-probe\tProbe rule with a path exclude\texclude=tests/*,scripts/*\n' >>.forbidden-patterns/shell.txt
+  pc='{"tool_name":"Bash","tool_input":{"command":"curl exclude-field-probe"}}'
+  rc=0
+  printf '%s' "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1 || rc=$?
+  if [ "$rc" -eq 2 ] && grep -qF "BLOCKED by agent-precheck" "$HOOK_OUT"; then
+    echo "  ✓ agent-precheck still blocks a rule that carries an exclude= field"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck: rule with an exclude= field exited $rc, expected block (exit 2)"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  git checkout --quiet -- .forbidden-patterns/shell.txt
 else
   echo "  - skipped agent-precheck tests (jq not installed)"
 fi

@@ -11,8 +11,12 @@
 # so a new language is added by dropping `<lang>.txt` with that header — no edit
 # to this script. backend.txt / frontend.txt / shell.txt have a built-in
 # fallback mapping for backward compatibility.
-# Pattern format: <regex><TAB><description>
+# Pattern format: <regex><TAB><description>[<TAB>exclude=<globs>][<TAB>linter=<name>:<tokens>]
 # (TAB is the field separator so regex can use literal `|` alternation.)
+# The optional trailing fields, in either order, each recognised by its `name=`
+# prefix: `exclude=` carries a rule's DEFAULT path excludes ("Per-rule path
+# excludes" below), `linter=eslint:no-console` marks a rule its linter already
+# enforces ("Linter dedupe" below). Other text after a TAB stays description.
 #
 # Scope by pattern FILE (opt-in, for callers that run more than one tier):
 #   CHECK_PATTERNS_INCLUDE  space-separated basenames; ONLY these are scanned
@@ -34,6 +38,34 @@
 # Bare `--` was dropped as a leader (cross-language bypass); see check-secrets
 # for why inline suppression isn't a hostile-committer boundary. Use sparingly.
 #
+# Per-rule path excludes. A rule can opt out whole paths, for example so the
+# print-style rules do not block a CLI entry point, a script or a test:
+#   * Shipped defaults: the third TAB field, `exclude=tests/*,scripts/*`
+#     (comma-separated globs; a glob cannot contain a comma or a TAB).
+#   * Project additions: `.scaffold.toml`, in the rule's own table (same
+#     "<patternfile-stem>/<description>" id as disabled / severity):
+#       [rules."backend/Use structlog (or the project's logger), not print()"]
+#       exclude = ["app/cli/*"]
+#     Config excludes are ADDED to the shipped defaults, never a replacement.
+# A glob is a bash `case` pattern matched against the repo-relative path, so
+# `*` also matches `/`: `tests/*` covers every depth below tests/ but only the
+# top-level tests/ (use `*/tests/*` for any depth), and `*_test.go` matches in
+# any directory. A file matching any glob is skipped for THAT rule only; every
+# other rule still scans it. Precedence, first match wins, per finding:
+#   1. per-line `scaffold-allow` marker (the line is not a finding at all)
+#   2. per-rule path exclude (the file is not scanned for this rule)
+#   3. per-rule `linter=` dedupe (the linter that replaces the rule will run)
+#   4. per-rule `disabled = true` / `severity = "warn"` in `.scaffold.toml`
+# A rule with no exclude behaves exactly as before.
+#
+# Linter dedupe. A `linter=<eslint|ruff>:<token>[|<token>]` rule duplicates one
+# that linter enforces, so a legitimate case would need two suppressions. It is
+# SKIPPED when `scaffold-config linter-runs` says the linter will lint the file
+# AND a token is in its config file, ENFORCED otherwise; `linter-dedupe = false`
+# in the rule's .scaffold.toml table keeps it on. Locally "will lint" is
+# pre-commit's test (config and binary present). Under --ci it is lint.yml's
+# test (config present), because in CI the linter is installed in another job.
+#
 # A pattern file that the install manifest (.githooks/.scaffold-manifest)
 # records but that is no longer in the checkout fails CLOSED (#159). Auto-
 # discovery alone cannot see a REMOVED config, only an absent one, and the two
@@ -53,8 +85,8 @@ set -euo pipefail
 # Unset rather than `CDPATH= cd` so any later cd in this file is safe too.
 unset CDPATH
 
-CI_MODE=0
-[ "${1:-}" = "--ci" ] && CI_MODE=1
+CI_MODE=0; LR_MODE=local
+[ "${1:-}" = "--ci" ] && CI_MODE=1 && LR_MODE=--ci
 
 # Escape a value for a GitHub workflow command (see check-secrets). `data` mode
 # escapes %, CR, LF; `prop` mode (file=) additionally escapes : and , so a
@@ -72,6 +104,9 @@ ghesc() {
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG_BIN="$SELF_DIR/scaffold-config"
 cfg() { [ -x "$CONFIG_BIN" ] || return 0; "$CONFIG_BIN" "$@" 2>/dev/null || true; }
+# path_excluded <rule-id> <file> <default-globs>: the shared matcher in
+# scaffold-config (check-hygiene calls the same one). No helper, not excluded.
+path_excluded() { [ -x "$CONFIG_BIN" ] && "$CONFIG_BIN" path-excluded "$@" 2>/dev/null; }
 
 # Emit one finding at the resolved severity. `warn` reports without failing the
 # build (a deliberate, audited downgrade); `error` fails. FAILED is the global
@@ -135,8 +170,8 @@ scan() {
   local stem
   stem=$(basename "$config" .txt)
 
-  local raw_patterns=() raw_descs=()
-  local line pattern description
+  local raw_patterns=() raw_descs=() raw_excl=() raw_lint=()
+  local line pattern description rest excl lint d1 d2 flds f
   while IFS= read -r line || [ -n "$line" ]; do
     line=${line%$'\r'}
     [ -z "$line" ] && continue
@@ -148,10 +183,28 @@ scan() {
       *) echo "warning: $config: line has no TAB separator, skipped: $line" >&2; continue ;;
     esac
     pattern=${line%%$'\t'*}
-    description=${line#*$'\t'}
+    rest=${line#*$'\t'}
+    description=$rest
+    excl=""
+    lint=""
+    # Optional trailing `exclude=<globs>` and `linter=<name>:<tokens>`, either
+    # order. The description ends at the first TAB that starts one, so other text
+    # after a second TAB stays description and older rule ids are unchanged.
+    case "$rest" in
+      *$'\t'exclude=*|*$'\t'linter=*)
+        d1=${rest%%$'\t'exclude=*}; d2=${rest%%$'\t'linter=*}
+        if [ "${#d1}" -le "${#d2}" ]; then description=$d1; else description=$d2; fi
+        IFS=$'\t' read -r -a flds <<<"${rest#"$description"}"
+        for f in "${flds[@]}"; do
+          case "$f" in exclude=*) excl=${f#exclude=} ;; linter=*) lint=${f#linter=} ;; esac
+        done
+        ;;
+    esac
     [ -z "$pattern" ] && continue
     raw_patterns+=("$pattern")
     raw_descs+=("$description")
+    raw_excl+=("$excl")
+    raw_lint+=("$lint")
   done <"$config"
 
   # A present-but-EMPTY pattern file (every rule line deleted or commented out)
@@ -173,9 +226,9 @@ scan() {
   # Validate each pattern up-front. An invalid ERE here would otherwise
   # poison the combined regex (silently dropping every file) and produce
   # cryptic per-file grep errors. `printf '' | grep -E p` returns 1
-  # (no match) for valid patterns and writes to stderr for invalid ones —
+  # (no match) for valid patterns and writes to stderr for invalid ones,
   # so empty stderr means valid.
-  local patterns=() descriptions=()
+  local patterns=() descriptions=() excludes=() linters=()
   local i p_err
   for i in "${!raw_patterns[@]}"; do
     p_err=$(printf '' | grep -E -- "${raw_patterns[$i]}" 2>&1 1>/dev/null || true)
@@ -185,6 +238,8 @@ scan() {
     fi
     patterns+=("${raw_patterns[$i]}")
     descriptions+=("${raw_descs[$i]}")
+    excludes+=("${raw_excl[$i]}")
+    linters+=("${raw_lint[$i]}")
   done
 
   # Every configured pattern was an invalid ERE and got dropped, the config is
@@ -192,15 +247,14 @@ scan() {
   # reasoning as the empty-config guard above and the matching guard in
   # check-secrets.
   if [ ${#patterns[@]} -eq 0 ]; then
-    local vmsg="$config has no valid patterns (all were invalid regexes), the forbidden-pattern scan for $stem is disabled. Fix the patterns (use 'git commit --no-verify' if intended)."
+    local vmsg="$config has no valid patterns (all were invalid regexes), the forbidden-pattern scan for $stem is disabled. Fix the patterns."
     if [ "$CI_MODE" -eq 1 ]; then echo "::error::$vmsg"; else echo "✗ $vmsg" >&2; fi
     FAILED=1
     return 0
   fi
 
-  # Combine all patterns into one ERE so a single grep call per file decides
-  # whether to drop into the per-pattern attribution loop. Cuts grep calls
-  # from O(P*F) to F + matching_files*P — large repos see a big speedup.
+  # Combine all patterns into one ERE so one grep per file decides whether to
+  # enter the per-pattern loop: O(P*F) grep calls become F + matching_files*P.
   local combined=""
   local p
   for p in "${patterns[@]}"; do
@@ -264,6 +318,14 @@ scan() {
       # Exempt only a comment-anchored marker (see check-secrets).
       m=$(grep -anE -- "$pat" <<<"$content" | grep -ivE '(^[0-9]+:|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true)
       [ -n "$m" ] || continue
+      # Per-rule path exclude (see header): shipped default plus .scaffold.toml.
+      # Checked only once the rule has matched, so the config helper is not
+      # spawned for every rule on every file.
+      if path_excluded "$stem/$desc" "$file" "${excludes[$i]}"; then continue; fi
+      # Linter dedupe (see header): the paired linter will run on this file, so
+      # it, not this regex, enforces the rule, unless the project opted back in.
+      if [ -n "${linters[$i]}" ] && [ "$(cfg linter-runs "${linters[$i]}" "$file" "$LR_MODE")" = yes ] \
+         && [ "$(cfg rule-linter-dedupe "$stem/$desc")" != off ]; then continue; fi
       # Per-rule override: `disabled` skips the rule, `warn` reports without
       # failing, anything else (incl. missing config) enforces as `error`.
       local state
@@ -315,7 +377,7 @@ config_usable() {
   elif [ ! -r "$c" ]; then why="is not readable"
   fi
   if [ -n "$why" ]; then
-    local m="$c $why, the forbidden-pattern scan cannot read its patterns and is disabled. Restore it as a regular readable file (use 'git commit --no-verify' if intended)."
+    local m="$c $why, the forbidden-pattern scan cannot read its patterns and is disabled. Restore it as a regular readable file."
     if [ "$CI_MODE" -eq 1 ]; then echo "::error::$m"; else echo "✗ $m" >&2; fi
     return 1
   fi

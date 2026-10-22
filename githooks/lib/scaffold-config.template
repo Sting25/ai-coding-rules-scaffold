@@ -10,8 +10,12 @@
 #   - bare or "quoted" keys:  default = 800   "src/**" = 1200   disabled = true
 #   - values: integers, true/false, and "double-quoted strings"
 #   - `#` comments on their own line, and blank lines
-# Arrays, inline tables, multiline strings, and trailing comments are NOT
-# supported. Anything it cannot parse is simply ignored — so a malformed config
+#   - ONE array form, for the per-rule `exclude` key only: a single-line array
+#     of "double-quoted" strings, exclude = ["tests/*", "scripts/*"]
+# Other arrays, inline tables, multiline strings, and trailing comments are NOT
+# supported (an exclude array that is multiline or carries a trailing comment
+# has no closing `]` on its line and is ignored whole). Anything it cannot parse
+# is simply ignored, so a malformed config
 # FAILS SAFE: an entry only ever takes effect when it parses cleanly, and the
 # scanners stay fully enforced otherwise. A config can only make checks weaker
 # through an explicit, well-formed entry that a reviewer can see in the diff.
@@ -27,27 +31,197 @@
 #                     matching [size] glob (longest pattern wins), else
 #                     [size].default, else nothing (caller keeps its own default).
 #                     Globs use bash `[[ == ]]` semantics, where `*` also spans `/`.
-#   rule-state <id>   Print exactly one of: disabled | warn | error (default
-#                     error). `disabled` wins over `severity`.
+#   rule-state <id> [<default>]
+#                     Print exactly one of: disabled | warn | error (default
+#                     error). `disabled` wins over `severity`. A caller whose
+#                     rule is advisory by default passes `warn` as <default>: it
+#                     applies when there is no config file or the rule's table
+#                     sets no `severity`; an explicit `severity = "error"` still
+#                     wins. Only `warn` is honoured as a default; anything else
+#                     is `error`.
+#   rule-excludes <id>
+#                     Print the path globs in that rule's `exclude` key, one per
+#                     line (nothing when it has none). A file whose repo-relative
+#                     path matches any glob is not scanned for THAT rule only.
+#                     The caller matches them with a bash `case` pattern, where
+#                     `*` also spans `/`, so `tests/*` covers every depth below
+#                     tests/. Repeated `exclude` keys in one table accumulate.
+#
+#   path-excluded <rule-id> <path> <default-globs>
+#                     Exit 0 when <path> matches a glob in the comma-separated
+#                     <default-globs> (a rule's shipped list; may be empty) or in
+#                     the rule's `exclude` key, else exit 1. Prints nothing.
+#                     check-patterns and check-hygiene both call it, so the two
+#                     share one matcher; a caller that cannot run it scans.
+#
+#   rule-linter-dedupe <id>
+#                     Print `off` when the rule's table sets `linter-dedupe =
+#                     false` (keep the regex even where its paired linter runs),
+#                     else nothing. See `linter-runs`.
+#   linter-runs <name>:<tokens> <path> [--ci]
+#                     Print `yes` when that linter (ruff or eslint) will lint
+#                     <path> with the rule switched on, else nothing. Needs no
+#                     .scaffold.toml. <tokens> is one or more `|`-separated config
+#                     tokens (`no-console`, `no-debugger|recommended`, `PTH`);
+#                     one must appear (fixed-string grep) in the linter's config
+#                     file, so a linter running on its defaults dedupes nothing.
+#                     "Will lint" locally is pre-commit's test (config, binary,
+#                     extension); the two tests below are copied from
+#                     pre-commit.template and a test pins them. With --ci it is
+#                     lint.yml's test instead (config present; for eslint
+#                     eslint.config.js, or a package.json naming eslint), since
+#                     in CI the linter runs in another job. check-patterns uses
+#                     it to drop a rule marked `linter=<name>:<tokens>`.
 #
 # Rule ids:
 #   "<patternfile-stem>/<description>"  forbidden-pattern rules (quote in TOML)
 #   conflict-marker | case-collision    hygiene rules
+#   hidden-unicode                       hygiene rule; also takes `exclude`
 #   size                                 the file-size cap (whole check)
+#   tsc                                  the pre-commit `tsc --noEmit` step; a
+#                                        WARNING locally unless `severity =
+#                                        "error"` (lint.yml is the gate)
 #
-# Exit: 0 always for the two queries (prints the answer to stdout); 2 on misuse.
+# Exit: 0 for the five printing subcommands (size-cap, rule-state, rule-excludes,
+# rule-linter-dedupe, linter-runs; the answer is on stdout); path-excluded
+# answers by exit status, 0 excluded and 1 not; 2 on misuse.
 
 set -euo pipefail
 
 CONFIG=".scaffold.toml"
 cmd=${1:-}
 
+# linter-runs answers from the working tree, not from .scaffold.toml, so it runs
+# before the no-config exit below. Mirrors pre-commit.template: a config-file
+# test, then the same tool lookup, and only for the extensions pre-commit hands
+# the linter that the shipped config actually lints (`*.vue` is handed to eslint
+# but the shipped config has no vue parser; `*.mts`/`*.cts` are never handed
+# over). Matching is case-sensitive like pre-commit's `case`, so `X.PY` is not
+# linted and keeps its regex rules.
+# The token test exists because a config FILE is not a config for the rule: a
+# bare package.json or pyproject.toml runs the linter on its defaults, which
+# carry no no-console or PTH, and treating it as a config dropped the regex
+# with nothing in its place. It is a plain substring test, not a parse.
+# --ci drops the binary test because lint.yml's python job pip-installs ruff
+# whenever its config exists, and its eslint step fails the job when
+# eslint.config.js exists but eslint is not installed; only a bare package.json
+# can skip eslint there, so that case needs package.json to name eslint.
+if [ "$cmd" = linter-runs ]; then
+  lspec=${2:-}; lpath=${3:-}; lmode=${4:-}
+  lname=${lspec%%:*}
+  # No token, no dedupe: the field is malformed, so the regex stays on.
+  case "$lspec" in *:?*) ltoks=${lspec#*:} ;; *) exit 0 ;; esac
+  # has_token <file>...: some `|`-separated token is in some existing file.
+  has_token() {
+    local f t rest
+    for f in "$@"; do
+      [ -f "$f" ] || continue
+      rest=$ltoks
+      while [ -n "$rest" ]; do
+        t=${rest%%|*}
+        if [ -n "$t" ] && grep -qF -- "$t" "$f"; then return 0; fi
+        case "$rest" in *'|'*) rest=${rest#*|} ;; *) rest="" ;; esac
+      done
+    done
+    return 1
+  }
+  case "$lname:$lpath" in
+    ruff:*.py)
+      { [ -f ruff.toml ] || [ -f pyproject.toml ]; } || exit 0
+      has_token ruff.toml .ruff.toml pyproject.toml || exit 0
+      if [ "$lmode" = --ci ]; then echo yes; exit 0; fi
+      if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/ruff" ]; then echo yes; exit 0; fi
+      for cand in .venv venv; do
+        if [ -x "$cand/bin/ruff" ]; then echo yes; exit 0; fi
+      done
+      if command -v ruff >/dev/null 2>&1; then echo yes; exit 0; fi
+      if command -v python3 >/dev/null 2>&1 && python3 -m ruff --version >/dev/null 2>&1; then echo yes; fi
+      ;;
+    eslint:*.ts|eslint:*.tsx|eslint:*.js|eslint:*.jsx|eslint:*.cjs|eslint:*.mjs)
+      { [ -f eslint.config.js ] || [ -f package.json ]; } || exit 0
+      has_token eslint.config.js eslint.config.cjs eslint.config.mjs .eslintrc* || exit 0
+      if [ "$lmode" = --ci ]; then
+        if [ -f eslint.config.js ] || grep -qF '"eslint"' package.json; then echo yes; fi
+        exit 0
+      fi
+      if command -v node >/dev/null 2>&1 && command -v npx >/dev/null 2>&1 \
+         && node -e "require.resolve('eslint/package.json')" >/dev/null 2>&1; then echo yes; fi
+      ;;
+  esac
+  exit 0
+fi
+
+# rule_excludes <id>: print the globs in that rule's `exclude` key, one per line.
+# Same table walk as rule-state. The value is read RAW (not unq'd) so the array
+# brackets survive: `[ "a", "b" ]` yields a and b, a bare "a" string yields a.
+# An array without its closing `]` on the same line is dropped whole (fail
+# safe: fewer excludes means more scanning, never less). Used by rule-excludes
+# and path-excluded; callers check that $CONFIG exists first.
+rule_excludes() {
+  local id=$1
+  awk -v target="$id" '
+    function trim(s){ sub(/^[ \t]+/,"",s); sub(/[ \t]+$/,"",s); return s }
+    function unq(s){ if (s ~ /^".*"$/) s=substr(s,2,length(s)-2); return s }
+    BEGIN { match_=0 }
+    {
+      line=$0; sub(/\r$/,"",line); t=trim(line)
+      if (t=="" || t ~ /^#/) next
+      if (t ~ /^\[/) {
+        sec=t; sub(/^\[/,"",sec); sub(/\]$/,"",sec)
+        if (sec ~ /^rules\./) { match_ = (unq(substr(sec,7))==target) }
+        else { match_=0 }
+        next
+      }
+      if (!match_) next
+      eq=index(t,"="); if (eq==0) next
+      key=unq(trim(substr(t,1,eq-1))); raw=trim(substr(t,eq+1))
+      if (key!="exclude") next
+      if (raw ~ /^\[.*\]$/) {
+        raw=substr(raw,2,length(raw)-2)
+        while (match(raw,/"[^"]*"/)) {
+          g=substr(raw,RSTART+1,RLENGTH-2)
+          if (g!="") print g
+          raw=substr(raw,RSTART+RLENGTH)
+        }
+      } else if (raw ~ /^".*"$/) {
+        g=substr(raw,2,length(raw)-2)
+        if (g!="") print g
+      }
+    }
+  ' "$CONFIG"
+}
+
+# path-excluded answers from the shipped defaults even with no .scaffold.toml,
+# so it runs before the no-config exit below. Defaults first, so a file the
+# shipped list already covers never pays for the config walk. Each glob is
+# compared with the path by `case`, never word-split or pathname-expanded, so
+# `tests/*` cannot match files in the working tree instead of the path.
+if [ "$cmd" = path-excluded ]; then
+  pe_id=${2:-}; pe_path=${3:-}; pe_defaults=${4:-}; nl=$'\n'
+  [ -n "$pe_path" ] || exit 1
+  pe_match() {
+    local g
+    while IFS= read -r g; do
+      [ -n "$g" ] || continue
+      # shellcheck disable=SC2254  # intentional glob match of the path against $g
+      case "$pe_path" in $g) return 0 ;; esac
+    done
+    return 1
+  }
+  pe_match <<<"${pe_defaults//,/$nl}" && exit 0
+  if [ -f "$CONFIG" ] && [ -n "$pe_id" ]; then
+    pe_match <<<"$(rule_excludes "$pe_id")" && exit 0
+  fi
+  exit 1
+fi
+
 # No config → defaults everywhere. size-cap prints nothing; rule-state is error.
 if [ ! -f "$CONFIG" ]; then
   case "$cmd" in
     size-cap)   exit 0 ;;
-    rule-state) echo "error"; exit 0 ;;
-    *)          echo "usage: scaffold-config {size-cap <path>|rule-state <id>}" >&2; exit 2 ;;
+    rule-state) if [ "${3:-}" = warn ]; then echo "warn"; else echo "error"; fi; exit 0 ;;
+    rule-excludes|rule-linter-dedupe) exit 0 ;;
+    *)          echo "usage: scaffold-config {size-cap <path>|rule-state <id> [<default>]|rule-excludes <id>|rule-linter-dedupe <id>|linter-runs <name>:<tokens> <path> [--ci]|path-excluded <id> <path> <globs>}" >&2; exit 2 ;;
   esac
 fi
 
@@ -96,11 +270,12 @@ case "$cmd" in
 
   rule-state)
     id=${2:-}
+    dflt=${3:-}
     [ -n "$id" ] || { echo "error"; exit 0; }
-    awk -v target="$id" '
+    awk -v target="$id" -v dflt="$dflt" '
       function trim(s){ sub(/^[ \t]+/,"",s); sub(/[ \t]+$/,"",s); return s }
       function unq(s){ if (s ~ /^".*"$/) s=substr(s,2,length(s)-2); return s }
-      BEGIN { match_=0; disabled=0; sev="error" }
+      BEGIN { match_=0; disabled=0; sev="" }
       {
         line=$0; sub(/\r$/,"",line); t=trim(line)
         if (t=="" || t ~ /^#/) next
@@ -119,13 +294,47 @@ case "$cmd" in
       END {
         if (disabled) print "disabled"
         else if (sev=="warn") print "warn"
+        else if (sev=="" && dflt=="warn") print "warn"
         else print "error"
       }
     ' "$CONFIG"
     ;;
 
+  rule-excludes)
+    id=${2:-}
+    [ -n "$id" ] || exit 0
+    rule_excludes "$id"
+    ;;
+
+  rule-linter-dedupe)
+    id=${2:-}
+    [ -n "$id" ] || exit 0
+    # Same table walk as rule-state. Only a well-formed `linter-dedupe = false`
+    # counts; anything else (true, a typo, a missing key) leaves the default,
+    # which is to drop the regex where the linter runs.
+    awk -v target="$id" '
+      function trim(s){ sub(/^[ \t]+/,"",s); sub(/[ \t]+$/,"",s); return s }
+      function unq(s){ if (s ~ /^".*"$/) s=substr(s,2,length(s)-2); return s }
+      BEGIN { match_=0; off=0 }
+      {
+        line=$0; sub(/\r$/,"",line); t=trim(line)
+        if (t=="" || t ~ /^#/) next
+        if (t ~ /^\[/) {
+          sec=t; sub(/^\[/,"",sec); sub(/\]$/,"",sec)
+          if (sec ~ /^rules\./) { match_ = (unq(substr(sec,7))==target) }
+          else { match_=0 }
+          next
+        }
+        if (!match_) next
+        eq=index(t,"="); if (eq==0) next
+        if (unq(trim(substr(t,1,eq-1)))=="linter-dedupe" && unq(trim(substr(t,eq+1)))=="false") off=1
+      }
+      END { if (off) print "off" }
+    ' "$CONFIG"
+    ;;
+
   *)
-    echo "usage: scaffold-config {size-cap <path>|rule-state <id>}" >&2
+    echo "usage: scaffold-config {size-cap <path>|rule-state <id> [<default>]|rule-excludes <id>|rule-linter-dedupe <id>|linter-runs <name>:<tokens> <path> [--ci]|path-excluded <id> <path> <globs>}" >&2
     exit 2
     ;;
 esac

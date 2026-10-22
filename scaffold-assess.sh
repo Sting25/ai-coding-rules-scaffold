@@ -158,7 +158,7 @@ elif nested=$(find . -maxdepth 3 \( -name .git -o -name node_modules -o -name ve
   echo "  ! tsconfig.json: per-directory tsconfig.json in ${nested% }; install.sh will not add a root one (#163), which would type-check the whole tree with these options instead"
 elif command -v node >/dev/null 2>&1 && node -e "require.resolve('typescript/package.json')" >/dev/null 2>&1; then
   n=$(npx --no-install tsc --noEmit -p "$SCAFFOLD_DIR/tsconfig.json.template" 2>&1 | grep -c 'error TS' || true)
-  echo "  $([ "$n" -eq 0 ] && echo ✓ || echo ✗) tsconfig.json: $n type error(s) across $js_files JS/TS file(s); the hook runs tsc PROJECT-WIDE on every JS/TS commit, so this is a blocker until zero"
+  echo "  $([ "$n" -eq 0 ] && echo ✓ || echo ✗) tsconfig.json: $n type error(s) across $js_files JS/TS file(s); tsc runs PROJECT-WIDE: the hook only warns locally, but the lint workflow's type-check blocks every PR until zero"
 else
   echo "  ! tsconfig.json: $js_files JS/TS file(s), typescript not resolvable here, not measured. It is project-wide: measure before adopting."
 fi

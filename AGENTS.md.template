@@ -20,7 +20,7 @@ git hook run pre-commit            # size / pattern / secret / hygiene / filenam
 - If another hook manager owns `core.hooksPath`, run `.githooks/pre-commit` directly; the doctor says which case applies.
 - These commands see everything on disk, gitignored code included. If one flags code you did not write, extend the config's ignores; never narrow the command.
 - In a monorepo, run `pytest` from the directory holding its config.
-- **Fix the file, not the check.** A `scaffold-allow` marker, a `.scaffold.toml` disable or downgrade, an ignore list widened over code you wrote, a skipped test, or a deleted test or workflow turns red green without fixing anything. Use one only for a genuine false positive you cannot fix, scoped narrowly with a recorded reason, and name it in the change summary. Never delete a test in the same change as the code it covered.
+- **Fix the file, not the check.** A `scaffold-allow` marker, a `.scaffold.toml` disable or downgrade, an ignore list widened over code you wrote, a skipped test, or a deleted test or workflow turns red green without fixing anything. Use one only for a genuine false positive you cannot fix, with the user's go-ahead, scoped narrowly with a recorded reason, and name it in the change summary. Never delete a test in the same change as the code it covered.
 
 ## Session start
 
@@ -50,7 +50,7 @@ Before reporting a hook or check you created, confirm it exists on disk (`ls -l`
 - **One commit per logical change**; split a fix, a rename, and a feature. Exception: a fix and its regression test go in together.
 - **Never push, or merge into a protected branch, unless asked** ("push it", "merge it").
 - **Never rewrite pushed history** (`--amend`, rebase, `push --force`, `push --force-with-lease`) without explicit instruction for that specific push. On `main`/`master`, refuse and tell the user to run it themselves.
-- **Never `git commit --no-verify` past a failing check**; fix the hook if it is wrong. Sole exception: the hook's own refusal offers the bypass (removing forbidden-pattern config, a confirmed secret-scan false positive). Name it in your summary; in a committed script, mark the line `# scaffold-allow: <reason>`.
+- **Never `git commit --no-verify` past a failing check**; fix the hook if it is wrong. Sole exception, with the user's go-ahead: the hook's own refusal offers the bypass (removing forbidden-pattern config, a confirmed secret-scan false positive). Name it in your summary; in a committed script, mark the line `# scaffold-allow: <reason>`.
 - **Never `reset --hard`, `checkout .`, or `clean -fd`** on a dirty tree without confirming.
 - **Before risky multi-step work, tag a green restore point** (`git tag pre-<name>`), never a dirty checkpoint commit.
 - **Before touching a broken tree, show recent commits and tags**, propose the way back, and wait for a yes.

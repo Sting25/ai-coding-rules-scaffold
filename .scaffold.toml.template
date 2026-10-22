@@ -9,7 +9,8 @@
 #
 # Format is a strict TOML subset (see .githooks/lib/scaffold-config for the
 # exact grammar): [section] headers, bare or "quoted" keys, and integer /
-# true,false / "string" values. No arrays, inline tables, or trailing comments.
+# true,false / "string" values. The one array form is a single-line list of
+# strings for a rule's `exclude` key. No inline tables or trailing comments.
 #
 # SECURITY BOUNDARY — what you CANNOT override here:
 #   The secret scanner (check-secrets) and the credential-filename check
@@ -52,6 +53,12 @@
 # Each [rules."..."] table accepts:
 #   disabled = true            # turn the rule off entirely (still auditable)
 #   severity = "warn"          # error (default) -> warn: emit but don't fail
+#   exclude  = ["app/cli/*"]   # skip THIS rule for these paths (forbidden-pattern
+#                              # rules and `hidden-unicode`); single line, added to
+#                              # the rule's shipped defaults. Globs are shell `case`
+#                              # patterns on the repo-relative path; `*` spans `/`
+#   linter-dedupe = false      # keep a `linter=` rule's regex even where its
+#                              # linter (eslint / ruff) runs; default drops it
 #   reason   = "..."           # why — surfaced by scaffold-audit
 #   by       = "name + date"   # who signed off
 #
@@ -70,6 +77,11 @@
 # reason   = "debug logging allowed in the spike branch"
 # by       = "sam 2026-06-11"
 #
+# [rules."backend/Use structlog (or the project's logger), not print()"]
+# exclude = ["app/cli/*", "*/management/commands/*"]
+# reason  = "CLI programs print to stdout by design"
+# by      = "sam 2026-10-21"
+#
 # [rules.case-collision]
 # severity = "warn"
 # reason   = "monorepo intentionally ships Readme.md beside README.md"
@@ -79,3 +91,13 @@
 # severity = "warn"
 # reason   = "this repo legitimately ships RTL/bidi content in localized docs"
 # by       = "rî 2026-06-11"
+#
+# `hidden-unicode` already allows a zero-width joiner between emoji (family and
+# profession emoji) and skips locale data files (json, yaml, yml, po, pot,
+# xliff, xlf, arb, ftl, properties and strings files under a locales/, locale/
+# or i18n/ directory, plus any *.po and *.pot) so translations can carry ZWNJ,
+# LRM/RLM and soft hyphens; code and docs in those directories are still
+# scanned. Add more paths to skip for this rule only (conflict markers and
+# case collisions still scan them); config entries add to those defaults:
+# [rules.hidden-unicode]
+# exclude = ["src/strings.json", "resources/lang/*"]

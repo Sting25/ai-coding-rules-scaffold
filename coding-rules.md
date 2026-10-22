@@ -30,7 +30,7 @@ Stack-specific deny patterns live in `.forbidden-patterns/*.txt`, one per langua
 
    **Integration tests hit a real database**, an ephemeral one per run if isolation matters, never a mock connection. Run pre-production checks in an environment built by the same provisioning as production.
 
-7. **The pre-commit hook is the gate.** It runs the size, pattern, and secret guards, the linter, and `tsc --noEmit` when a `tsconfig.json` exists. Wire the rest of the type-checking (`pyright` / `mypy`) into CI. `AGENTS.md` > "Git discipline" is the only authority on `--no-verify`.
+7. **The pre-commit hook is the gate.** It runs the size, pattern, and secret guards and the linter; `tsc` only warns (CI's lint job gates it). Wire the rest of the type-checking (`pyright` / `mypy`) into CI. `AGENTS.md` > "Git discipline" is the only authority on `--no-verify`.
 
 ## Observability
 

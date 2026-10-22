@@ -275,11 +275,13 @@ cp_ci_silent "no manifest entry and no file stays silent" never.py
 
 # 28q. The control for 28p: with backend.txt absent AND unrecorded, the other
 #      tiers must still scan. Without it 28p would pass just as well against a
-#      check-patterns that had stopped reporting anything at all.
-printf 'console.log("debug");\n' >never.ts
+#      check-patterns that had stopped reporting anything at all. alert(), not
+#      console.log: the installed eslint.config.js names no-console, so --ci
+#      dedupes console.log to lint.yml's eslint step (cases/44).
+printf 'alert("debug");\n' >never.ts
 git add never.ts
 cp_ci_run "other tiers still scan while backend.txt is unrecorded" \
-  "console.log" never.ts
+  "alert()" never.ts
 reset_repo
 
 # 28r. Every install that predates the manifest has no manifest at all, and so

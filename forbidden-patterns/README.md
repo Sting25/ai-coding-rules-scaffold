@@ -56,6 +56,90 @@ nothing. The shipped pre-commit hook and CI workflow leave both unset.
 One pattern per line. Field separator is a literal TAB. Lines starting with
 `#` are comments and skipped.
 
+### Per-rule path excludes
+
+A rule line may carry an optional third TAB field of comma-separated path
+globs that the rule does not scan:
+
+```
+<regex><TAB><description><TAB>exclude=tests/*,scripts/*
+```
+
+The print-style rules ship with per-language defaults so CLI programs, scripts
+and tests are not blocked: `backend.txt` `print()` excludes
+`tests/*,test/*,scripts/*,bin/*,examples/*`; `go.txt` `fmt.Print*` and
+`println` exclude `*_test.go,tests/*,scripts/*,cmd/*,examples/*`; `rust.txt`
+`println!`/`print!`/`eprintln!`/`eprint!` exclude
+`tests/*,benches/*,examples/*,src/main.rs,src/bin/*`. A glob
+is a shell `case` pattern on the repo-relative path, where `*` also matches `/`
+(`tests/*` is the top-level `tests/` at any depth below it; use `*/tests/*` for
+a nested one). Only a field starting `exclude=` is read as one, a glob cannot
+contain a comma or a TAB, and `secrets.txt` takes none (secret scanning is never
+path-exempt).
+
+A project adds its own paths in `.scaffold.toml`, in the rule's table, keyed
+`"<patternfile-stem>/<description>"` like `disabled` and `severity`. The array
+is single-line, and its entries are added to the shipped defaults:
+
+```toml
+[rules."backend/Use structlog (or the project's logger), not print()"]
+exclude = ["app/cli/*"]
+```
+
+An excluded path is skipped for that rule only. Order per finding: a
+`scaffold-allow` marker on the line, then the path exclude, then the linter
+dedupe below, then the rule's `disabled` / `severity` setting.
+
+### Linter dedupe
+
+A rule line may also carry `linter=eslint:<token>` or `linter=ruff:<token>`, in
+either order with `exclude=`. `|` separates alternative tokens, any one of which
+suffices:
+
+```
+<regex><TAB><description><TAB>linter=eslint:no-debugger|recommended
+```
+
+It marks a rule that the scaffold's own linter config already enforces:
+`console.log` (`no-console`), `debugger` (`no-debugger`), `@ts-ignore` and
+`@ts-nocheck` (`ban-ts-comment`) for eslint, `os.path.join` (`PTH118`) and a bare
+`# type: ignore` (`PGH003`) for ruff. Keeping both layers meant a legitimate case
+needed two suppressions (`// eslint-disable-next-line` plus `scaffold-allow`), and
+a linter per-file ignore never reached the regex.
+
+check-patterns skips such a rule for a file when that linter will lint it with
+the rule on. Three things must hold. The config is present (`ruff.toml` or
+`pyproject.toml`; `eslint.config.js` or `package.json`). A token is in the
+linter's config file (`ruff.toml`, `.ruff.toml` or `pyproject.toml`;
+`eslint.config.js`, `.cjs`, `.mjs` or `.eslintrc*`), found by a plain substring
+search; the shipped fields are `eslint:no-console`,
+`eslint:no-debugger|recommended`, `eslint:ban-ts-comment|strictTypeChecked`,
+`ruff:PTH` and `ruff:PGH`, so a bare `package.json` or `pyproject.toml` whose
+linter runs on its defaults keeps the regex. And the file is one the linter is
+handed (`.py` for ruff; `.ts .tsx .js .jsx .cjs .mjs` for eslint,
+case-sensitive). A name other than `eslint` or `ruff`, or a field with no token,
+never skips anything.
+
+Locally the linter must also be installed (a ruff in the active or project
+virtualenv, on `PATH`, or `python3 -m ruff`; an eslint that node resolves from
+this project's `node_modules`), mirroring pre-commit, so where pre-commit would
+print "note: eslint not installed ..." the regex still blocks. Under `--ci` the
+binary test is the lint workflow's instead, because its eslint and ruff steps run
+in another job: ruff runs whenever its config is present, and eslint whenever
+`eslint.config.js` is present or `package.json` names `eslint`.
+
+The test is `scaffold-config linter-runs <name>:<tokens> <path> [--ci]`. The
+token search is a substring match, not a parse, so a config that names a rule
+only to switch it off still counts. To keep the regex on for one rule
+regardless, add `linter-dedupe = false` to its table in `.scaffold.toml`:
+
+```toml
+[rules."frontend/Use the project logger, not console.log"]
+linter-dedupe = false
+```
+
+`secrets.txt` takes no `linter=` field.
+
 ### Regex syntax
 
 **Extended Regular Expressions** (ERE) — the dialect that `grep -E`

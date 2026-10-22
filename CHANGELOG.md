@@ -4,6 +4,92 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Rules can skip paths, and the print rules no longer block CLI code.** A rule
+  in `.scaffold.toml` takes `exclude = ["app/cli/*"]` to stop scanning matching
+  paths for that rule only. The `print()`, `fmt.Print`/`println` and
+  `println!`/`eprintln!` rules now ship excluding each language's CLI, script,
+  example and test paths: `tests/`, `test/`, `scripts/`, `bin/` and
+  `examples/` for Python; `*_test.go`, `tests/`, `scripts/`, `cmd/` and
+  `examples/` for Go; `tests/`, `benches/`, `examples/`, `src/main.rs` and
+  `src/bin/` for Rust.
+
+### Changed
+
+- **A type error in another file no longer blocks your commit.** The pre-commit
+  `tsc --noEmit` run is project-wide, so a one-file commit used to fail on errors
+  in files you never touched. It now prints the compiler output and warns; the
+  lint workflow runs the same check and still fails the pull request. Add
+  `[rules.tsc]` with `severity = "error"` to `.scaffold.toml` to block locally
+  again, or `disabled = true` to skip the local run.
+
+- **One suppression is enough where a linter already enforces the rule.** The
+  `console.log`, `debugger`, `@ts-ignore`, `@ts-nocheck`, `os.path.join` and bare
+  `# type: ignore` pattern rules are skipped when the matching linter (eslint
+  or ruff) will lint the file and its config file names the rule (`no-console`,
+  `PTH` and so on), so `// eslint-disable-next-line` no longer also needs
+  `scaffold-allow`. Locally that means pre-commit will run the linter; in CI it
+  means the lint workflow's eslint or ruff step will. Where the linter is not
+  configured, runs on its defaults, or is not installed, the pattern still
+  blocks; `linter-dedupe = false` in `.scaffold.toml` keeps a rule on
+  regardless.
+
+- **Block messages no longer offer the bypass.** The pre-commit failure banner
+  stops suggesting `git commit --no-verify`, and the agent-precheck block and the
+  coverage-pragma, stub and shell rule messages stop telling the reader to add
+  `scaffold-allow`. They now say to stop and report the block to the user. Only
+  the refusals for an emptied or deleted forbidden-pattern file and gitleaks'
+  user-confirmed false positive still print `--no-verify`; a pattern file with
+  only invalid regexes, or one that is not a regular file, is repaired, not
+  committed past. `AGENTS.md` now says a suppression, and the hook-offered
+  bypass, need the user's go-ahead.
+
+### Fixed
+
+- **Emoji and translation files no longer trip the hidden-Unicode check.** A
+  zero-width joiner between two emoji (family, profession and rainbow-flag
+  emoji) is now allowed in READMEs and UI strings, while one inside an
+  identifier or at a line edge is still refused. Locale data files (JSON,
+  YAML, PO, XLIFF, ARB, Fluent, properties and strings files under `locales/`,
+  `locale/` or `i18n/`, plus any `*.po`) skip the check; code and docs in those
+  directories are still scanned. `exclude = [...]` under
+  `[rules.hidden-unicode]` in `.scaffold.toml` adds paths.
+
+- **Local-development URLs no longer trip the secrets and frontend scans.** A
+  credential URL whose host is `localhost`, `127.0.0.1`, `[::1]` or `0.0.0.0`
+  (a CI service-container or test database) is no longer refused; any other host
+  still is. The `frontend.txt` rule against `http://localhost` and
+  `http://127.0.0.1` URLs is deleted, since it hit Playwright, Cypress and Vite
+  configs and test files.
+
+- **`.env.development` and `.env.test` no longer block a commit.**
+  The filename check refused every `.env.*` name, but Next.js and Vite commit
+  these two by convention and their values are local. Those two exact names are
+  allowed now, and the secrets scan still reads their content. Every other
+  `.env.<name>` (`.env.production`, `.env.staging`, `.env.local`,
+  `.env.development.local`) is still refused by name, because those files
+  usually hold unquoted secrets that the content scan does not match.
+
+- **The agent PreToolUse hook no longer blocks an edit that removes a secret.**
+  `agent-precheck` scanned every string in the tool payload, including an
+  Edit's `old_string`, so replacing a hardcoded key with an environment read
+  was refused for containing the key. It now scans only what the tool would
+  write or run: `content`, `new_string`, `edits[].new_string` and `command`.
+
+### Changed
+
+- **The doctor no longer reports a tuned coverage threshold or an unavailable
+  branch protection as a gap.** A `DIFF_COVER_FAIL_UNDER` of 1 to 99 is now a
+  note naming the value; 0, a missing variable and a non-numeric value stay
+  gaps. A required-status-checks lookup that GitHub answers with HTTP 403 or
+  "upgrade" (a private repo on the Free plan) is a note instead of a gap that
+  could never be cleared; a 200 or 404 with no checks is still a gap. Both
+  notes still print under `--quiet`, since each names a guardrail that is
+  weaker than shipped or was not measured.
+
 ## [v0.19.1] - 2026-10-21
 
 ### Fixed

@@ -129,4 +129,89 @@ else
   fi
 fi
 
+# --- doctor: a tuned threshold is a note, a dead gate is a gap --------------------
+# coverage.yml.template tells the reader to lower DIFF_COVER_FAIL_UNDER to adopt
+# an existing codebase and ratchet up, so 1-99 is legitimate tuning: a NOTE that
+# names the value, exit 0. The gap stays for the states where the gate is inert:
+# 0 (cannot fail), no variable, or no number in it. AGENTS.md makes every session
+# report every gap, so a gap that can never be cleared is a standing false alarm.
+echo "cases/16 — doctor classifies DIFF_COVER_FAIL_UNDER (note 1-99, gap otherwise)"
+
+# cov_doctor <value-or-"-"> [doctor-arg] : fresh project with the coverage gate
+# installed, the env value rewritten to $1 ("-" deletes the line), doctor run
+# (with $2, e.g. --quiet, when given); sets COV_RC and leaves its output in
+# HOOK_OUT.
+cov_doctor() {
+  local val=$1 darg=${2:-} t
+  fixture_repo t
+  echo '#!/usr/bin/env bash' >"$t/run.sh"
+  fixture_install "$t" --shell --no-verify --coverage-gate
+  if [ "$val" = "-" ]; then
+    sed '/^[[:space:]]*DIFF_COVER_FAIL_UNDER[[:space:]]*:/d' "$t/.github/workflows/coverage.yml" >"$t/cov.tmp"
+  else
+    sed "s/^\([[:space:]]*DIFF_COVER_FAIL_UNDER[[:space:]]*:\).*/\1 \"$val\"/" "$t/.github/workflows/coverage.yml" >"$t/cov.tmp"
+  fi
+  mv "$t/cov.tmp" "$t/.github/workflows/coverage.yml"
+  COV_RC=0
+  # shellcheck disable=SC2086  # darg is empty or one flag
+  ( cd "$t" && "$SCAFFOLD_DIR/scaffold-doctor.sh" $darg ) >"$HOOK_OUT" 2>&1 || COV_RC=$?
+  rm -rf "$t"
+}
+
+cov_doctor 90
+if [ "$COV_RC" -eq 0 ] && grep -qF "! coverage gate set to 90, not 100" "$HOOK_OUT" \
+   && ! grep -q '✗' "$HOOK_OUT"; then
+  echo "  ✓ threshold 90: a note naming the value, no gap, doctor exits 0"; PASS=$((PASS + 1))
+else
+  echo "  ✗ threshold 90 should be a note and exit 0 (got exit $COV_RC)"; grep -i 'coverage\|✗' "$HOOK_OUT" | sed 's/^/      /'; FAIL=$((FAIL + 1))
+fi
+
+# A tuned gate is a guardrail set below its shipped strength, so --quiet (gaps
+# only, for CI and pre-flight callers) must still show it.
+cov_doctor 90 --quiet
+if [ "$COV_RC" -eq 0 ] && grep -qF "coverage gate set to 90, not 100" "$HOOK_OUT"; then
+  echo "  ✓ threshold 90 under --quiet: the note still prints, exit 0"; PASS=$((PASS + 1))
+else
+  echo "  ✗ threshold 90 under --quiet should still print the note, exit 0 (got exit $COV_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+
+for v in 1 99; do
+  cov_doctor "$v"
+  if [ "$COV_RC" -eq 0 ] && grep -qF "coverage gate set to $v, not 100" "$HOOK_OUT"; then
+    echo "  ✓ threshold $v (edge of the 1-99 band) is a note, exit 0"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ threshold $v should be a note and exit 0 (got exit $COV_RC)"; grep -i 'coverage\|✗' "$HOOK_OUT" | sed 's/^/      /'; FAIL=$((FAIL + 1))
+  fi
+done
+
+cov_doctor 100
+if [ "$COV_RC" -eq 0 ] && grep -qF "✓ patch coverage: 100% of changed lines" "$HOOK_OUT" \
+   && ! grep -qF "coverage gate set to" "$HOOK_OUT"; then
+  echo "  ✓ threshold 100 stays a plain armed line, no note"; PASS=$((PASS + 1))
+else
+  echo "  ✗ threshold 100 should be armed with no note (got exit $COV_RC)"; grep -i 'coverage' "$HOOK_OUT" | sed 's/^/      /'; FAIL=$((FAIL + 1))
+fi
+
+cov_doctor 0
+if [ "$COV_RC" -eq 1 ] && grep -qF "✗ DIFF_COVER_FAIL_UNDER is 0" "$HOOK_OUT"; then
+  echo "  ✓ threshold 0 is still a gap (the gate cannot fail), exit 1"; PASS=$((PASS + 1))
+else
+  echo "  ✗ threshold 0 should be a gap and exit 1 (got exit $COV_RC)"; grep -i 'coverage\|✗' "$HOOK_OUT" | sed 's/^/      /'; FAIL=$((FAIL + 1))
+fi
+
+cov_doctor abc
+if [ "$COV_RC" -eq 1 ] && grep -qF "✗ coverage.yml has no DIFF_COVER_FAIL_UNDER" "$HOOK_OUT"; then
+  echo "  ✓ non-numeric threshold is still a gap, exit 1"; PASS=$((PASS + 1))
+else
+  echo "  ✗ non-numeric threshold should be a gap and exit 1 (got exit $COV_RC)"; grep -i 'coverage\|✗' "$HOOK_OUT" | sed 's/^/      /'; FAIL=$((FAIL + 1))
+fi
+
+cov_doctor -
+if [ "$COV_RC" -eq 1 ] && grep -qF "✗ coverage.yml has no DIFF_COVER_FAIL_UNDER" "$HOOK_OUT"; then
+  echo "  ✓ missing threshold variable is still a gap, exit 1"; PASS=$((PASS + 1))
+else
+  echo "  ✗ missing threshold variable should be a gap and exit 1 (got exit $COV_RC)"; grep -i 'coverage\|✗' "$HOOK_OUT" | sed 's/^/      /'; FAIL=$((FAIL + 1))
+fi
+unset -f cov_doctor
+
 reset_repo

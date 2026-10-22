@@ -4,7 +4,7 @@
 # credential-path read guard for runtimes that can block a read).
 #
 # Wired for three agent-runtime hook shapes, all delivered as JSON on stdin:
-#   - Claude Code  (.claude/settings.json PreToolUse, matcher Write|Edit|Bash) —
+#   - Claude Code  (.claude/settings.json PreToolUse, matcher Write|Edit|MultiEdit|Bash) —
 #     command lives under .tool_input.command, tool name under .tool_name.
 #     Exits 2 to block; Claude feeds stderr back to the model. Claude denies
 #     credential-file reads natively via its own permissions.deny — this
@@ -105,14 +105,18 @@ fi
 
 tool=$(jq -r '.tool_name // empty' <<<"$payload" 2>/dev/null || true)
 
-# Pull every string value out of the event regardless of the tool's field names
-# (Claude: Write.content, Edit.new_string, MultiEdit edits[].new_string,
-# Bash.command; Cursor: top-level .command). `(.tool_input // .)` walks
-# .tool_input when present (Claude) and otherwise the whole payload (Cursor,
-# which has no .tool_input) — so a Cursor command at the top level is still
-# scanned instead of silently failing open. `.. | strings` then walks the whole
-# subtree, staying correct even if a tool's schema changes.
-content=$(jq -r '[(.tool_input // .) | .. | strings] | join("\n")' <<<"$payload" 2>/dev/null || true)
+# Scan only the text the tool would WRITE or RUN: Write.content, Edit.new_string,
+# MultiEdit edits[].new_string, Bash.command (Cursor: top-level .command, and
+# .content for a file write). Walking every string in the payload also scanned
+# old_string, which is text the edit REMOVES: an Edit that replaces a hardcoded
+# secret with an env-var read carries the secret in old_string and was blocked
+# for fixing the very problem this hook exists to prevent. file_path and the
+# other metadata are not content either. `(.tool_input // .)` picks .tool_input
+# when present (Claude) and otherwise the whole payload (Cursor, which has no
+# .tool_input), so a Cursor command at the top level is still scanned instead
+# of silently failing open. The `?` and the string filter keep an absent or
+# non-string field from aborting the extraction.
+content=$(jq -r '[(.tool_input // .) | (.content?, .new_string?, (.edits[]? | .new_string?), .command?) | strings] | join("\n")' <<<"$payload" 2>/dev/null || true)
 [ -n "$content" ] || exit 0
 
 # Drop pathologically long lines (a minified bundle pasted into a Write) so the
@@ -164,6 +168,13 @@ scan_bucket() {
 
 scan_against() {
   local pfile=$1 iflag=$2 advice=$3
+  # Only secrets.txt and shell.txt reach this function, and neither carries the
+  # optional third `exclude=<globs>` field that check-patterns reads (it is for
+  # per-language rules such as backend.txt's print() rule, which this hook does
+  # not scan). The pattern is cut at the first TAB below, so a third field on a
+  # line here would be ignored, not parsed into the regex. Path excludes are
+  # deliberately NOT applied: a Bash payload has no file path, and the commit
+  # scan applies them to the files that matter.
   [ -f "$pfile" ] || return 0
   # Two buckets: rules matched with this file's DEFAULT case flag, and rules
   # carrying the `(?-i)` marker, which are matched case-SENSITIVELY regardless.
@@ -204,8 +215,8 @@ scan_against() {
 
   {
     echo "BLOCKED by agent-precheck: $advice"
-    echo "(${pfile#"$ROOT"/}). If this is deliberate and safe, append a comment"
-    echo "containing 'scaffold-allow' on the matching line."
+    echo "(${pfile#"$ROOT"/}). Stop and report this block to the user with the rule that matched."
+    echo "A suppression needs a recorded reason and the user's go-ahead (AGENTS.md > \"Fix the file, not the check\"); do not work around the block."
     echo "Matched:"
     # `|| true`: on a many-line $hit, `head -3` closes the pipe early and printf
     # takes SIGPIPE (exit 141). Under `set -euo pipefail` that would abort the

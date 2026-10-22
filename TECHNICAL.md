@@ -22,7 +22,7 @@ Both invoke the same `lib/check-*` scripts (`check-size`, `check-large-files`, `
 Two always-on enforcement layers (pre-commit hook + CI mirror) plus optional agent-runtime hooks. What each stack gets:
 
 - **Python** — `ruff` (annotations, complexity, `pathlib`, no-blind-except, async-safety `ASYNC`, FastAPI `FAST`, logging `G`/`LOG`, a curated `flake8-bandit` security subset) **+** a `backend.txt` regex deny-list: `print()`, `breakpoint()`/`pdb`/`ipdb`, `os.path.join`, deprecated `datetime.utcnow()` / `utcfromtimestamp()`. FastAPI (Pydantic responses) and SQLAlchemy-2.0 conventions live in `coding-rules.md`.
-- **TypeScript / JavaScript** — type-aware `eslint` (`strictTypeChecked`: floating/misused promises, `switch-exhaustiveness-check`, `preserve-caught-error`, `no-explicit-any`, import sort + unused-import removal) **+** `tsc --noEmit` (against a shipped strict `tsconfig.json`) **+** `prettier --check` (formatting, run separately from eslint) **+** a `frontend.txt` deny-list: `console.log`/`debugger`/`alert`, focused tests (`.only`), `@ts-ignore`/`@ts-nocheck`, hardcoded `localhost`, and TLS-verification-disable (`NODE_TLS_REJECT_UNAUTHORIZED`, `rejectUnauthorized: false`).
+- **TypeScript / JavaScript** — type-aware `eslint` (`strictTypeChecked`: floating/misused promises, `switch-exhaustiveness-check`, `preserve-caught-error`, `no-explicit-any`, import sort + unused-import removal) **+** `tsc --noEmit` (against a shipped strict `tsconfig.json`) **+** `prettier --check` (formatting, run separately from eslint) **+** a `frontend.txt` deny-list: `console.log`/`debugger`/`alert`, focused tests (`.only`), `@ts-ignore`/`@ts-nocheck`, and TLS-verification-disable (`NODE_TLS_REJECT_UNAUTHORIZED`, `rejectUnauthorized: false`).
   - **React** — `dangerouslySetInnerHTML` (XSS); opt-in `react-hooks` + `jsx-a11y` blocks.
   - **Vue** — `.vue` scanned; `v-html` (XSS).
   - **Svelte** — `.svelte` scanned; `{@html}` (XSS).
@@ -86,7 +86,10 @@ TypeScript, `tsc --noEmit` (against the shipped strict `tsconfig.json`) and
 `prettier --check` when a prettier config is present — so most of the
 build-breaking rules below also fire at commit time, not only in CI.
 Linters, the type-checker, and the formatter are silently skipped if not
-installed; CI is the authoritative backstop.
+installed; CI is the authoritative backstop. The `tsc` run is the exception to
+"fires at commit time as a failure": it is project-wide, so locally it only
+WARNS (output printed, commit allowed) and `lint.yml` fails the PR on it. Set
+`[rules.tsc]` `severity = "error"` in `.scaffold.toml` to block the commit.
 
 The shipped `eslint.config.js` extends typescript-eslint's
 **`strictTypeChecked`** tier (type-aware linting), wires import sorting and
@@ -116,7 +119,7 @@ Build-breaking (`ruff` / `eslint`, on every lint + commit + in CI):
 | Floating / misused promises (TS)                                                            | `@typescript-eslint/no-floating-promises`, `no-misused-promises` (type-aware)               |
 | Non-exhaustive `switch` over a union/enum (missing member)                                  | `@typescript-eslint/switch-exhaustiveness-check` (type-aware)                               |
 | Re-throwing in `catch` while discarding the original error cause/stack                      | `eslint preserve-caught-error` (needs ESLint ≥ 9.35)                                        |
-| TypeScript type errors                                                                      | `tsc --noEmit` (hook + CI, when `tsconfig.json` present)                                    |
+| TypeScript type errors                                                                      | `tsc --noEmit` (CI gate; hook warns only, when `tsconfig.json` present)                     |
 | Unformatted TS/JS                                                                           | `prettier --check` (hook + CI, when a prettier config is present; `prettier --write` fixes) |
 | Changed lines shipped without a test (opt-in strictness layer on default-on test execution) | `diff-cover` patch-coverage gate (`--coverage-gate`, CI)                                    |
 
@@ -127,7 +130,7 @@ Commit + CI-breaking (pre-commit hook + `lint.yml`):
 | `print()`, `breakpoint()`, `pdb`/`ipdb.set_trace()`, `os.path.join`, deprecated `datetime.utcnow()`/`utcfromtimestamp()` in Python files                                                                                                                                                                              | regex (backend.txt)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `console.log` / `debugger` / `alert` in TS/JS                                                                                                                                                                                                                                                                         | regex (frontend.txt)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | XSS sinks — `dangerouslySetInnerHTML` (React), `v-html` (Vue, `.vue`), `{@html}` (Svelte, `.svelte`)                                                                                                                                                                                                                  | regex (frontend.txt)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Focused tests (`.only`), `@ts-ignore` / `@ts-nocheck`, hardcoded `localhost`/`127.0.0.1` URLs, TLS-verification-disable (`NODE_TLS_REJECT_UNAUTHORIZED`, `rejectUnauthorized: false`)                                                                                                                                 | regex (frontend.txt)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Focused tests (`.only`), `@ts-ignore` / `@ts-nocheck`, TLS-verification-disable (`NODE_TLS_REJECT_UNAUTHORIZED`, `rejectUnauthorized: false`)                                                                                                                                                                         | regex (frontend.txt)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Dangerous shell in `*.sh`/`*.bash` — `curl \| bash`, `rm -rf /`, `chmod 777`, `git --no-verify` (hook bypass)                                                                                                                                                                                                         | regex (shell.txt)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | File size > 500 lines                                                                                                                                                                                                                                                                                                 | line count of the staged blob (`git show :0:<path>`, counting a final line with no trailing newline)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Large binary file > 500 KB (`check-large-files`, P-15)                                                                                                                                                                                                                                                                | byte size of the staged blob (`git cat-file -s :0:<path>`); default cap raisable via `.scaffold.toml [large-files] default = <bytes>`. No extension skip list, unlike `check-size`, so a video, model checkpoint, database dump, or zipped export is caught even though it would pass the line-count cap untouched                                                                                                                                                                                                                                                                                                                             |
@@ -175,6 +178,9 @@ by       = "alex 2026-06-11"
 [rules."frontend/Use the project logger, not console.log"]
 severity = "warn"          # error (default) → warn: still reported, doesn't fail
 
+[rules."backend/Use structlog (or the project's logger), not print()"]
+exclude = ["app/cli/*"]    # skip this rule (only) for these paths; single-line array
+
 [rules.case-collision]     # hygiene ids: conflict-marker, case-collision, hidden-unicode
 severity = "warn"
 ```
@@ -182,10 +188,38 @@ severity = "warn"
 - **Rule ids.** Forbidden-pattern rules are keyed `"<patternfile-stem>/<description>"`
   (the text after the TAB in `.forbidden-patterns/<lang>.txt`). Hygiene rules
   use `conflict-marker` / `case-collision` / `hidden-unicode`; the size cap uses
-  `size`; the large-file byte cap uses `large-files`.
+  `size`; the large-file byte cap uses `large-files`. The pre-commit type-check
+  step uses `tsc` and is the one rule that defaults to `warn`:
+  `severity = "error"` blocks the commit, `disabled = true` skips the step.
 - **Disable vs downgrade.** `disabled = true` turns the rule off; `severity =
 "warn"` keeps emitting the finding (a CI `::warning::`) without failing the
   build — a relaxed rule stays visible, never silent.
+- **Per-rule path excludes.** `exclude = ["glob", ...]` in a rule's table stops
+  that one rule scanning matching paths; every other rule still scans them. A
+  glob is a shell `case` pattern on the repo-relative path, where `*` also
+  matches `/` (`tests/*` covers every depth below the top-level `tests/`;
+  `*/tests/*` covers any depth). The print-style rules ship with per-language
+  defaults (Python: `tests/*`, `test/*`, `scripts/*`, `bin/*`, `examples/*`;
+  Go: `*_test.go`, `tests/*`, `scripts/*`, `cmd/*`, `examples/*`; Rust:
+  `tests/*`, `benches/*`, `examples/*`, `src/main.rs`, `src/bin/*`) so a fresh
+  install does not block CLI code, and config excludes are added to those defaults. The array
+  must sit on one line with no trailing comment, or it is ignored whole.
+- **Hidden-Unicode allowances.** `hidden-unicode` ships two exemptions so
+  ordinary international text is not blocked. A zero-width joiner (U+200D) is
+  allowed when it sits between two emoji codepoints (family, profession,
+  skin-tone and flag sequences); anywhere else it is still refused, and a
+  variation selector counts as emoji context only right after an emoji. And
+  locale data files skip the rule entirely: a json, yaml, yml, po, pot, xliff,
+  xlf, arb, ftl, properties or strings file under a `locales/`, `locale/` or
+  `i18n/` directory (at the root or nested), plus any `*.po` and `*.pot`
+  (translations legitimately carry ZWNJ, LRM and RLM marks and soft hyphens,
+  and those formats cannot hold a per-line `scaffold-allow`). Code and docs in
+  those directories, such as `src/i18n/index.ts`, are still scanned. Add paths with `exclude = [...]` under
+  `[rules.hidden-unicode]`; they add to those defaults and affect only this rule,
+  so conflict-marker and case-collision still scan the same files. Each skipped
+  file is named once in the output.
+  Order per finding: `scaffold-allow` on the line, then the path exclude, then
+  `disabled` / `severity`.
 - **Modifying a pattern's regex/description** is just editing the
   `.forbidden-patterns/<lang>.txt` you already own; git history is the audit
   trail. `.scaffold.toml` owns disable + severity, so a regex never lives in two

@@ -103,6 +103,73 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# 7 to 10. A protection call that fails is classified by WHY it failed. A private
+# repo on the GitHub Free plan answers 403 "Upgrade to GitHub Pro or make this
+# repository public": protection cannot exist there, so a gap would be a
+# permanent exit 1 nobody can clear. That is a note (and exit 0). The gap stays
+# for every other empty result: a 404 "Branch not protected" (a repo that CAN
+# have protection and has none) and, from 5 above, a 200 with zero checks.
+# _rc_stub_err <stderr-text> <json-body>: the protection endpoint fails the way
+# gh does, body on stdout, "gh: ..." on stderr, exit 1; the rules endpoint
+# answers an empty list.
+_rc_stub_err() {
+  {
+    echo '#!/bin/sh'
+    echo "case \"\$*\" in *\"auth status\"*) exit 0 ;; *\"/protection\"*) echo '$2'; echo '$1' >&2; exit 1 ;; *\"/rules/branches/\"*) echo 0 ;; *\"repos/\"*) echo main ;; esac"
+  } > "$_rc_nogh/gh"
+  chmod +x "$_rc_nogh/gh"
+}
+_rc_stub_err 'gh: Upgrade to GitHub Pro or make this repository public to enable this feature. (HTTP 403)' '{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature.","status":"403"}'
+_rc_rc=0; ( cd "$_RC_REPO" && PATH="$_rc_nogh" "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || _rc_rc=$?
+if [ "$_rc_rc" -eq 0 ] && grep -qE '^  ! required status checks: not checked \(branch protection is unavailable on this plan' "$HOOK_OUT" \
+   && ! grep -q 'requires NO status checks' "$HOOK_OUT"; then
+  echo "  ✓ 403 'Upgrade to GitHub Pro' (private repo, Free plan): a note, not a gap, exit 0"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ expected a note and exit 0 for the Free-plan 403 (got exit $_rc_rc)"; grep -i 'status checks' "$HOOK_OUT" | sed 's/^/      /'
+  FAIL=$((FAIL + 1))
+fi
+_rc_stub_err 'gh: Forbidden (HTTP 403)' '{"message":"Forbidden","status":"403"}'
+_rc_rc=0; ( cd "$_RC_REPO" && PATH="$_rc_nogh" "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || _rc_rc=$?
+if [ "$_rc_rc" -eq 0 ] && grep -q 'not checked (branch protection is unavailable on this plan' "$HOOK_OUT" \
+   && ! grep -q 'requires NO status checks' "$HOOK_OUT"; then
+  echo "  ✓ a bare HTTP 403 with no upgrade text is also a note, exit 0"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ expected a note and exit 0 for a bare 403 (got exit $_rc_rc)"; grep -i 'status checks' "$HOOK_OUT" | sed 's/^/      /'
+  FAIL=$((FAIL + 1))
+fi
+# --quiet prints gaps only, but "not checked" is a guardrail nobody measured, so
+# the note must survive it (and the exit stays 0).
+_rc_rc=0; ( cd "$_RC_REPO" && PATH="$_rc_nogh" "$SCAFFOLD_DIR/scaffold-doctor.sh" --quiet ) >"$HOOK_OUT" 2>&1 || _rc_rc=$?
+if [ "$_rc_rc" -eq 0 ] && grep -q 'not checked (branch protection is unavailable on this plan' "$HOOK_OUT"; then
+  echo "  ✓ the 403 note still prints under --quiet, exit 0"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ expected the 403 note under --quiet and exit 0 (got exit $_rc_rc)"; sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+_rc_stub_err 'gh: Branch not protected (HTTP 404)' '{"message":"Branch not protected","status":"404"}'
+_rc_rc=0; ( cd "$_RC_REPO" && PATH="$_rc_nogh" "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || _rc_rc=$?
+if [ "$_rc_rc" -eq 1 ] && grep -q '✗ .*requires NO status checks' "$HOOK_OUT" \
+   && ! grep -q 'unavailable on this plan' "$HOOK_OUT"; then
+  echo "  ✓ 404 'Branch not protected' stays a gap, exit 1"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ expected a gap and exit 1 for a 404 (got exit $_rc_rc)"; grep -i 'status checks' "$HOOK_OUT" | sed 's/^/      /'
+  FAIL=$((FAIL + 1))
+fi
+_rc_stub 0 0
+_rc_rc=0; ( cd "$_RC_REPO" && PATH="$_rc_nogh" "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || _rc_rc=$?
+if [ "$_rc_rc" -eq 1 ] && grep -q '✗ .*requires NO status checks' "$HOOK_OUT" \
+   && ! grep -q 'unavailable on this plan' "$HOOK_OUT"; then
+  echo "  ✓ 200 with zero checks stays a gap and is not mistaken for the Free-plan note"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ expected a gap and exit 1 for 200 with zero checks (got exit $_rc_rc)"; grep -i 'status checks' "$HOOK_OUT" | sed 's/^/      /'
+  FAIL=$((FAIL + 1))
+fi
+
 rm -rf "$_RC_REPO" "$_rc_nogh"
 unset _RC_REPO _rc_nogh _rc_tool _rc_path _rc_rc
-unset -f _rc_fixture _rc_stub
+unset -f _rc_fixture _rc_stub _rc_stub_err

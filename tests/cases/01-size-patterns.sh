@@ -134,6 +134,46 @@ printf 'u = "redis://:secretpassword%shost"\n' '@' >redis.txt
 git add redis.txt
 assert_rejects "URL with empty-username credentials" "URL with embedded credentials"
 
+# 10b2. A credential URL whose host is local to the machine is a test or CI
+#       service-container URL (a localhost Postgres in conftest.py, a redis
+#       `services:` block) and must NOT be refused: Markdown and JSON cannot
+#       carry a `scaffold-allow` comment, so the rule used to have no escape
+#       there. The `@` is assembled by printf so this harness file carries no
+#       credential-URL shape of its own.
+printf 'URL = "postgresql://app:app%slocalhost:5432/test"\n' '@' >conftest.py
+git add conftest.py
+assert_passes "credential URL on localhost (python test DB) is allowed"
+
+printf 'services:\n  redis:\n    url: redis://:pw%s127.0.0.1:6379/0\n' '@' >ci-services.yml
+git add ci-services.yml
+assert_passes "credential URL on 127.0.0.1 (yml service container) is allowed"
+
+# 10b3. Over-loosening guard: any host that is not local is still refused,
+#       a hostname and a private IP alike.
+printf 'URL = "postgresql://app:s3cret%sdb.example.com:5432/prod"\n' '@' >prod_db.py
+git add prod_db.py
+assert_rejects "credential URL on a real hostname is still rejected" "URL with embedded credentials"
+
+printf 'dsn: mysql://root:pw%s10.0.0.5/app\n' '@' >mysql-dsn.yml
+git add mysql-dsn.yml
+assert_rejects "credential URL on a private IP is still rejected" "URL with embedded credentials"
+
+# 10b4. Look-alikes of a local host are refused: a longer name, a longer IP, a
+#       different IPv6 loopback-shaped literal, and a second `@` straight after
+#       the local name. The two allowed controls carry a port.
+#       `{at}` stands for a second `@`, substituted at runtime.
+for _lh in 'localhost.evil.com/db' '127.0.0.10/db' '[::2]:5432/db' 'localhost{at}evil.com/db'; do
+  printf 'u = "postgresql://app:pw%s%s"\n' '@' "${_lh//\{at\}/@}" >lookalike.txt
+  git add lookalike.txt
+  assert_rejects "credential URL on look-alike host ${_lh%%/*} is rejected" "URL with embedded credentials"
+done
+for _lh in '[::1]:5432/db' '0.0.0.0:80/db'; do
+  printf 'u = "postgresql://app:pw%s%s"\n' '@' "$_lh" >localok.txt
+  git add localok.txt
+  assert_passes "credential URL on local host ${_lh%%/*} is allowed"
+done
+unset _lh
+
 # 10c. SendGrid key prefix.
 printf 'k = SG.%s.%s\n' 'abcdefghijklmnopqrstuv' 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHI' >sg.txt
 git add sg.txt
