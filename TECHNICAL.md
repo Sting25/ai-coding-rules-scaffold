@@ -188,8 +188,8 @@ severity = "warn"
 - **Rule ids.** Forbidden-pattern rules are keyed `"<patternfile-stem>/<description>"`
   (the text after the TAB in `.forbidden-patterns/<lang>.txt`). Hygiene rules
   use `conflict-marker` / `case-collision` / `hidden-unicode`; the size cap uses
-  `size`; the large-file byte cap uses `large-files`. The pre-commit `tsc
-  --noEmit` step uses `tsc` and is the one rule that defaults to `warn`:
+  `size`; the large-file byte cap uses `large-files`. The pre-commit type-check
+  step uses `tsc` and is the one rule that defaults to `warn`:
   `severity = "error"` blocks the commit, `disabled = true` skips the step.
 - **Disable vs downgrade.** `disabled = true` turns the rule off; `severity =
 "warn"` keeps emitting the finding (a CI `::warning::`) without failing the
