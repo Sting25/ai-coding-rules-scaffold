@@ -49,6 +49,10 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Fixed
 
+- **The doctor's template-drift note no longer fires on a recased heading or a
+  renamed `## Project`.** Headings in `AGENTS.md` and `coding-rules.md` are now
+  compared ignoring case and surrounding whitespace, and the `## Project`
+  section, which the template hands to you, is left out of the comparison.
 - **The doctor no longer reports a gap on the scaffold checkout itself.** The
   repository holds the shipped `coding-rules.md` as source and has no root
   `CLAUDE.md`, so the "no CLAUDE.md to import it" check had nothing to fix

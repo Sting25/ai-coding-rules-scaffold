@@ -89,6 +89,52 @@ else
 fi
 rm -rf "$DOCF"
 
+# (D) #187: heading drift compares case- and whitespace-insensitively and
+# leaves the user-owned `## Project` alone. Each mutation is paired with the
+# narrowing case: a real level change or a deleted heading is still a note.
+docf_retitle() {
+  sed -i.bak 's/^## Testing$/## testing   /' coding-rules.md && rm -f coding-rules.md.bak
+  sed -i.bak 's/^## Project$/## Project: widgets/' AGENTS.md && rm -f AGENTS.md.bak
+}
+docf_level_change() {
+  sed -i.bak 's/^## Testing$/### Testing/' coding-rules.md && rm -f coding-rules.md.bak
+}
+docf_drop_project() {
+  sed -i.bak '/^## Project$/d' AGENTS.md && rm -f AGENTS.md.bak
+}
+docf_project DOCF
+( cd "$DOCF" && docf_retitle ) >/dev/null 2>&1 || true
+docf_rc=0
+( cd "$DOCF" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || docf_rc=$?
+if [ "$docf_rc" -eq 0 ] && grep -qF "## testing" "$DOCF/coding-rules.md" \
+   && grep -qF "## Project: widgets" "$DOCF/AGENTS.md" \
+   && grep -qF "AGENTS.md carries every section of the shipped template" "$HOOK_OUT" \
+   && grep -qF "coding-rules.md carries every section of the shipped template" "$HOOK_OUT" \
+   && ! grep -qF "predates the shipped template" "$HOOK_OUT"; then
+  echo "  ✓ a recased heading with trailing spaces and a renamed ## Project are not drift"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ case, whitespace or ## Project edits were reported as drift (exit $docf_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCF"
+docf_project DOCF
+( cd "$DOCF" && docf_level_change && docf_drop_project ) >/dev/null 2>&1 || true
+docf_rc=0
+( cd "$DOCF" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || docf_rc=$?
+if [ "$docf_rc" -eq 0 ] \
+   && grep -qF 'coding-rules.md predates the shipped template: missing "## Testing"' "$HOOK_OUT" \
+   && grep -qF "AGENTS.md carries every section of the shipped template" "$HOOK_OUT"; then
+  echo "  ✓ a heading level change is still drift, and a deleted ## Project is not"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ the heading comparison widened or narrowed wrongly (exit $docf_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCF"
+
 unset DOCF DRIFTMOD SELFH docf_rc
-unset -f docf_project
+unset -f docf_project docf_retitle docf_level_change docf_drop_project
 reset_repo

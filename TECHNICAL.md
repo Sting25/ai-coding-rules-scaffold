@@ -539,7 +539,8 @@ oldest installs fall furthest.
 `scaffold-doctor.sh`'s "template drift" section makes that visible: every
 `## ` and `### ` heading in the shipped template becomes the inventory, and
 any heading present in the shipped file but missing from the installed one
-is named. This is always a note, never a gap, because a section a project
+is named. Headings compare ignoring case and surrounding whitespace, and the
+user-owned `## Project` heading is left out. This is always a note, never a gap, because a section a project
 deliberately trimmed is legitimate and must not flip the exit code; the
 note names the missing headings and points at the shipped file to diff
 against. A doctor run from a copy that does not carry the rest of the
