@@ -223,31 +223,46 @@ def toml_list(items: list[str]) -> str:
 
 
 TABLE_RE = re.compile(r"^\[tool\.mutmut\]\n(?:(?!^\[).*\n?)*", re.MULTILINE)
-TEST_SELECTION_RE = re.compile(
-    r"^\s*pytest_add_cli_args_test_selection\s*=\s*(\[[^\]]*\])", re.MULTILINE
+KEY_RE = re.compile(
+    r"^\s*(pytest_add_cli_args_test_selection|also_copy)\s*=\s*(\[[^\]]*\])", re.MULTILINE
 )
+
+
+def package_root(wt: str, rel: str) -> str:
+    """Highest directory above `rel` that is still a package (#197), so the
+    copy in mutants/ is a whole package, not a leaf. No package: its own."""
+    d = pathlib.PurePosixPath(rel).parent
+    top = d
+    while str(d) != "." and pathlib.Path(wt, d, "__init__.py").exists():
+        top, d = d, d.parent
+    return str(top)
+
+
+def carried_config(text: str) -> str:
+    """The project's [tool.mutmut] keys minus the scope keys (#197), as JSON
+    (valid TOML). Without tomllib (3.11+) only KEY_RE's keys carry."""
+    try:
+        import tomllib
+        table = tomllib.loads(text).get("tool", {}).get("mutmut", {})
+        return "".join(f"{k} = {json.dumps(v)}\n" for k, v in table.items()
+                       if k not in ("source_paths", "only_mutate"))
+    except (ImportError, ValueError, TypeError):
+        return "".join(f"{k} = {v}\n" for k, v in KEY_RE.findall(text))
 
 
 def inject_config(wt: str, src_files: list[str]) -> tuple[list[str], list[str]]:
     """Scope mutmut to exactly the changed files via a [tool.mutmut] table.
 
-    Overrides source_paths/only_mutate unconditionally (that is the whole
-    point of a diff-scoped run). Carries over an existing
-    pytest_add_cli_args_test_selection value if the project already has
-    one, since dropping it could silently change which tests mutmut runs.
-    Any other pre-existing [tool.mutmut] keys are not preserved; this is a
-    stated, deliberate simplification, not an oversight (see docstring
-    "known limitations").
+    Overrides source_paths (package root of each changed file) and
+    only_mutate unconditionally. Every other project key is carried over,
+    notably pytest_add_cli_args_test_selection (which tests run) and
+    also_copy (without it, suites reading non-source files fail in mutants/).
     """
-    dirs = sorted({str(pathlib.PurePosixPath(p).parent) for p in src_files})
+    dirs = sorted({package_root(wt, p) for p in src_files})
     only_mutate = sorted(src_files)
     pp = pathlib.Path(wt, "pyproject.toml")
     text = pp.read_text() if pp.exists() else ""
-    carry_match = TEST_SELECTION_RE.search(text)
-    carry = (
-        f"pytest_add_cli_args_test_selection = {carry_match.group(1)}\n"
-        if carry_match else ""
-    )
+    carry = carried_config(text)
     text = TABLE_RE.sub("", text)
     block = (
         "\n[tool.mutmut]\n"

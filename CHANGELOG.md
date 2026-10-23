@@ -142,6 +142,17 @@ WORKTREE` note when it does. Python tools are resolved by one shared helper,
   requests). If it is missing, the fetch passes the job token for that one
   command only and masks it in the log (#196).
 
+- **The mutation check keeps your `[tool.mutmut]` settings and copies the whole
+  package.** `check-mutation-diff` rewrote the table and kept only the test
+  selection, so a project's `also_copy` never reached mutmut and a suite that
+  reads non-source files (deploy units, static files, docs) failed the baseline
+  inside `mutants/`. It also copied only each changed file's own directory, a
+  truncated package. It now carries every other key you set (`also_copy`,
+  `do_not_mutate` and the rest; on Python before 3.11 only `also_copy` and the
+  test selection) and points `source_paths` at the top-level package of each
+  changed file. `only_mutate` still limits mutation to the changed files
+  (#197).
+
 ### Changed
 
 - **The doctor no longer reports a tuned coverage threshold or an unavailable
