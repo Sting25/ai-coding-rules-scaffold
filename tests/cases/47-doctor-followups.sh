@@ -35,6 +35,25 @@ else
 fi
 rm -rf "$DOCF"
 
-unset DOCF docf_rc
+# (B) #187: section 9 lives in scaffold-doctor-drift.sh. A doctor copied
+# without it must say so in a note and still exit 0 on a healthy project.
+DRIFTMOD=$(mktemp -d)
+cp "$SCAFFOLD_DIR/scaffold-doctor.sh" "$DRIFTMOD/scaffold-doctor.sh"
+docf_project DOCF
+docf_rc=0
+( cd "$DOCF" && "$DRIFTMOD/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || docf_rc=$?
+if [ "$docf_rc" -eq 0 ] \
+   && grep -qF "scaffold-doctor-drift.sh not found next to scaffold-doctor.sh ($DRIFTMOD)" "$HOOK_OUT" \
+   && ! grep -qF "carries every section of the shipped template" "$HOOK_OUT"; then
+  echo "  ✓ a doctor copied without scaffold-doctor-drift.sh reports a note, not a crash or a false ok"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ the missing-drift-module fallback misbehaved (exit $docf_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCF" "$DRIFTMOD"
+
+unset DOCF DRIFTMOD docf_rc
 unset -f docf_project
 reset_repo

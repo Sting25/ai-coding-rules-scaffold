@@ -273,10 +273,10 @@ rm -rf "$DOCD"
 # rest of the bundle, or mid-upgrade) must say so — same "not found next to
 # scaffold-doctor.sh" fallback shape as sections 4 and 8 — rather than
 # silently reporting the false "ok" a missing template would otherwise produce
-# as an empty diff. DRIFTLESS carries only scaffold-doctor.sh itself (section
-# 9 is inline, same as cases/20's DOCLESS fixture for section 8's fallback).
+# as an empty diff. DRIFTLESS carries the doctor and its drift module but not
+# the templates (the module-missing case is in cases/47).
 DRIFTLESS=$(mktemp -d)
-cp "$SCAFFOLD_DIR/scaffold-doctor.sh" "$DRIFTLESS/scaffold-doctor.sh"
+cp "$SCAFFOLD_DIR/scaffold-doctor.sh" "$SCAFFOLD_DIR/scaffold-doctor-drift.sh" "$DRIFTLESS/"
 chmod +x "$DRIFTLESS/scaffold-doctor.sh"
 docd_project DOCD
 docd_rc=0
