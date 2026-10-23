@@ -19,6 +19,18 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Changed
 
+- **`--force` no longer replaces your own configs and rules docs.** It replaced
+  `coding-rules.md`, `operational-rules.md`, `eslint.config.js`, `.coveragerc`,
+  `ruff.toml`, `.prettierignore`, `vitest.config.ts`, `.claude/settings.json`,
+  `.scaffold.toml`, `.github/dependabot.yml` and the other files you are meant
+  to edit, with only a routine `backed up:` line, so project edits were lost
+  without a warning. `--force` now replaces scaffold-owned files only (hooks,
+  scripts, CI workflows, forbidden-pattern files). For a changed file of yours
+  it prints `kept (user-owned): <file> ... --force-all replaces it` and leaves
+  it alone. The new `--force-all` replaces those files too, backing each up and
+  printing the backup path as before. Scripts that relied on `--force` to reset
+  your configs need `--force-all`.
+
 - **A type error in another file no longer blocks your commit.** The pre-commit
   `tsc --noEmit` run is project-wide, so a one-file commit used to fail on errors
   in files you never touched. It now prints the compiler output and warns; the

@@ -10,6 +10,8 @@
 # install.sh always sets FORCE before sourcing, so this is a no-op there; if the
 # lib is ever sourced without it, 0 (= not --force) is the safe default.
 : "${FORCE:=0}"
+# --force-all (implies FORCE=1) also replaces USER-OWNED files; see cp_safe (#190).
+: "${FORCE_ALL:=0}"
 
 # install-manifest.sh defines the provenance helpers and install.sh sources it
 # BEFORE this file, so these stubs are dead there. scaffold-doctor.sh sources
@@ -38,8 +40,12 @@ fi
 #                refresh risks silently discarding that).
 #   cp_safe      USER-OWNED files — ruff.toml, eslint config, .scaffold.toml,
 #                dependabot.yml, the rules docs, etc. A project customizes these,
-#                so they're never auto-replaced: skip unless --force (which backs
-#                up first). CLAUDE.md / AGENTS.md have their own merge handlers.
+#                so they're never auto-replaced: not on a plain re-run and not
+#                under --force (#190), only under --force-all (which backs up
+#                first). cp_safe IS the user-owned marker: a file is user-owned
+#                exactly when install code routes it through cp_safe, so the
+#                ownership split lives in this one function and its call sites.
+#                CLAUDE.md / AGENTS.md have their own merge handlers.
 #   cp_pattern   .forbidden-patterns/*.txt — the hard case: scaffold-SHIPPED yet
 #                user-EXTENDED (teams append their own rows). Auto-overwriting
 #                would clobber those rows, so a re-run only NOTIFIES on drift and
@@ -151,7 +157,7 @@ _cp_replace() {
 # going" (`|| return 0`) — never abort, and never overwrite without a backup. Every
 # cp_* overwrite funnels through here, so this is also the one place that can warn
 # on a dropped `Repo adaptation:` marker regardless of which policy triggered it
-# (#127): cp_scaffold's unconditional refresh, or --force on cp_safe/cp_pattern/
+# (#127): cp_scaffold's unconditional refresh, --force-all on cp_safe, or --force on cp_pattern/
 # cp_scaffold_preserve.
 _backup() {
   local dst=$1
@@ -222,20 +228,27 @@ _warn_repo_adaptations() {
   fi
 }
 
-# cp_safe SRC DST — USER-OWNED file. Install if absent; otherwise leave it alone
-# unless --force (which backs up the differing file, then replaces it).
+# cp_safe SRC DST — USER-OWNED file. Install if absent; otherwise leave it alone.
+# Only --force-all (not --force, #190) backs up the differing file and replaces
+# it. A plain --force used to replace these too, and a consumer lost project
+# edits to eslint.config.js, .coveragerc and both rules docs behind a routine
+# "backed up:" line; --force now covers scaffold-owned files only. A user-owned
+# file that differs under --force gets one line naming it and the flag.
 cp_safe() {
   local src=$1 dst=$2
   if [ -e "$dst" ] || [ -L "$dst" ]; then
-    if [ "$FORCE" -eq 0 ]; then
+    if [ "$FORCE_ALL" -eq 0 ]; then
       if [ -L "$dst" ]; then
-        echo "skip (exists, symlink): $dst — left untouched; a scaffold path that is a symlink is suspicious. Replace it with --force."
+        echo "skip (exists, symlink): $dst — left untouched; a scaffold path that is a symlink is suspicious. --force-all replaces it."
+      elif [ "$FORCE" -eq 1 ]; then
+        # Identical under --force is silent: nothing to keep, nothing to say.
+        cmp -s "$src" "$dst" || echo "kept (user-owned): $dst differs from the shipped version and --force does not replace it; --force-all replaces it (backs it up first)"
       else
-        echo "skip (exists): $dst  — left untouched (use --force to replace)"
+        echo "skip (exists): $dst  — left untouched (--force-all replaces it)"
       fi
       return
     fi
-    # --force: back up before overwriting, but only when it actually differs. A
+    # --force-all: back up before overwriting, but only when it actually differs. A
     # symlink is never compared through (`-L` short-circuits) and always replaced.
     if [ ! -L "$dst" ] && cmp -s "$src" "$dst"; then
       return

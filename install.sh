@@ -8,7 +8,8 @@
 #   install.sh --both       # install both stacks
 #   install.sh --shell      # shell-only project (hooks + shell/secrets patterns, no Python/TS configs)
 #   install.sh --interactive # wizard: prompts for stack + each flag below (-i)
-#   install.sh --force      # replace scaffold files (backs each up first; never CLAUDE.md/AGENTS.md)
+#   install.sh --force      # replace scaffold-owned files (hooks, scripts, workflows, patterns), each backed up first; your own configs and rules docs stay
+#   install.sh --force-all  # --force, plus replace user-owned files (rules docs, ruff.toml, eslint.config.js, ...), backed up first; never CLAUDE.md/AGENTS.md
 #   install.sh --no-verify  # skip the post-install linter smoke test
 #   install.sh --claude     # also install opt-in Claude Code agent guardrails
 #   install.sh --cursor     # also install opt-in Cursor agent guardrails (.cursor/hooks.json)
@@ -37,11 +38,11 @@
 # commit-msg hook) is REFRESHED when it differs from the shipped version, so
 # security fixes reach you just by re-running, and every file it overwrites is
 # BACKED UP to .scaffold-bak first, so an edit you made to one is recoverable
-# and the "backed up:" line tells you it happened. User-owned configs are left
-# alone. A drifted .forbidden-patterns/*.txt or CI workflow (lint.yml, tests.yml,
+# and the "backed up:" line tells you it happened. User-owned files (rules docs,
+# configs) are left alone, even under --force; only --force-all replaces them.
+# A drifted .forbidden-patterns/*.txt or CI workflow (lint.yml, tests.yml,
 # coverage.yml, gitleaks.yml, dependency-review.yml, zizmor.yml, socket-security.yml,
-# test-guard.yml)
-# only prints a notice and keeps your file (--force replaces it, backed up first).
+# test-guard.yml) only prints a notice and keeps your file (--force replaces it, backed up first).
 # .githooks/local.d/ is never written to at all: it's where project-local checks
 # live precisely so an upgrade cannot unwire them.
 #
@@ -82,6 +83,7 @@ for arg in "$@"; do
     --shell)      MODE="shell" ;;
     --interactive|-i) INTERACTIVE=1 ;;
     --force)      FORCE=1 ;;
+    --force-all)  FORCE=1; FORCE_ALL=1 ;;
     --no-verify)  VERIFY=0 ;;
     --claude)     CLAUDE=1 ;;
     --cursor)     CURSOR=1 ;;
@@ -98,7 +100,7 @@ for arg in "$@"; do
     --coverage-gate) COVERAGE_GATE=1 ;;
     --no-test-workflow) NO_TEST_WORKFLOW=1 ;;
     --no-install) NO_INSTALL=1 ;;
-    --help|-h)    sed -n '2,52p' "$0"; exit 0 ;;
+    --help|-h)    sed -n '2,53p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -222,8 +224,8 @@ done
 cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/lint.yml.template" ".github/workflows/lint.yml"
 # .githooks/local.d/ — the project-local check extension point (#72). The
 # DIRECTORY is user-owned territory: nothing here ever writes into it beyond
-# this one README, and the README goes through cp_safe so even --force backs it
-# up rather than discarding an edit. It is what makes the directory exist in a
+# this one README, and the README goes through cp_safe so even --force keeps
+# an edit (only --force-all replaces it, backed up). It is what makes the directory exist in a
 # fresh install and, being tracked, survive a clone; it is not executable, so
 # the hook's `-x` guard skips it. This is the whole point of the fix — pre-commit
 # above is cp_scaffold (refreshed on upgrade, so a call site added there is

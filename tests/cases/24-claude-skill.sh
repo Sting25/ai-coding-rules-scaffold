@@ -57,12 +57,12 @@ if grep -qF "local note" "$SKILL_PATH" && [ ! -e "$SKILL_PATH.scaffold-bak" ] \
 else
   echo "  ✗ a hand-edited SKILL.md should be skipped, not replaced, on a plain re-run"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
-( cd "$S" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --claude-skill --force ) >"$HOOK_OUT" 2>&1
+( cd "$S" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --claude-skill --force-all ) >"$HOOK_OUT" 2>&1
 if [ -f "$SKILL_PATH.scaffold-bak" ] && grep -qF "local note" "$SKILL_PATH.scaffold-bak" \
    && cmp -s "$SCAFFOLD_DIR/claude-skill/coding-rules/SKILL.md.template" "$SKILL_PATH"; then
-  echo "  ✓ --force backs up the edited SKILL.md then installs the shipped version"; PASS=$((PASS + 1))
+  echo "  ✓ --force-all backs up the edited SKILL.md then installs the shipped version"; PASS=$((PASS + 1))
 else
-  echo "  ✗ --force should back up the edited SKILL.md then replace it"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  echo "  ✗ --force-all should back up the edited SKILL.md then replace it"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$S"
 

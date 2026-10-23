@@ -7,7 +7,7 @@
 
 # --- 9. template drift (AGENTS.md, coding-rules.md) --------------------------
 # AGENTS.md is never rewritten once it exists, and coding-rules.md is replaced
-# wholesale only under --force — correct, since both are user-owned once
+# wholesale only under --force-all — correct, since both are user-owned once
 # installed. The flip side is silent: a scaffold release that adds a section
 # to either shipped file leaves an install behind with nothing on disk saying
 # so (#133). Neither file carries a version marker, so section HEADINGS
@@ -46,4 +46,4 @@ doctor_heading_drift() {
 doctor_heading_drift "AGENTS.md" "$SCAFFOLD_DIR/AGENTS.md.template" "AGENTS.md" \
   "install.sh never rewrites this file"
 doctor_heading_drift "coding-rules.md" "$SCAFFOLD_DIR/coding-rules.md" "coding-rules.md" \
-  "install.sh --force replaces it wholesale (backup in .scaffold-bak); merging by hand keeps local edits"
+  "install.sh --force-all replaces it wholesale (backup in .scaffold-bak); merging by hand keeps local edits"

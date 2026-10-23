@@ -49,12 +49,12 @@ if grep -qF "local override" "$S/.npmrc" && [ ! -e "$S/.npmrc.scaffold-bak" ] \
 else
   echo "  ✗ a hand-edited .npmrc should be skipped, not replaced, on a plain re-run"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
-( cd "$S" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --npm-cooldown --force ) >"$HOOK_OUT" 2>&1
+( cd "$S" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --npm-cooldown --force-all ) >"$HOOK_OUT" 2>&1
 if [ -f "$S/.npmrc.scaffold-bak" ] && grep -qF "local override" "$S/.npmrc.scaffold-bak" \
    && cmp -s "$SCAFFOLD_DIR/.npmrc.template" "$S/.npmrc"; then
-  echo "  ✓ --force backs up the edited .npmrc then installs the shipped version"; PASS=$((PASS + 1))
+  echo "  ✓ --force-all backs up the edited .npmrc then installs the shipped version"; PASS=$((PASS + 1))
 else
-  echo "  ✗ --force should back up the edited .npmrc then replace it"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  echo "  ✗ --force-all should back up the edited .npmrc then replace it"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$S"
 

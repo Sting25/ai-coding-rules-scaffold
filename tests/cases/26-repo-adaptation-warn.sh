@@ -77,7 +77,7 @@ rm -rf "$N"
 # marker was afterwards found only in eslint.config.js.scaffold-bak.
 _radapt_fixture JS
 printf '\n// Repo adaptation: relaxed no-console for the vendored worker\n' >>"$JS/eslint.config.js"
-( cd "$JS" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --coverage-gate --force ) >"$HOOK_OUT" 2>&1
+( cd "$JS" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --coverage-gate --force-all ) >"$HOOK_OUT" 2>&1
 if grep -q "warning: eslint.config.js carried 1 'Repo adaptation' line(s)" "$HOOK_OUT" \
    && grep -q 'relaxed no-console for the vendored worker' "$HOOK_OUT" \
    && grep -qF "eslint.config.js.scaffold-bak" "$HOOK_OUT" \
@@ -95,7 +95,7 @@ rm -rf "$JS"
 _radapt_fixture JN
 awk 'NR == 1 { print; print "  \"// Repo adaptation: kept ES2019 for the vendored runtime\": true," ; next } { print }' \
   "$JN/tsconfig.json" >"$JN/tsconfig.next" && mv "$JN/tsconfig.next" "$JN/tsconfig.json"
-( cd "$JN" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --coverage-gate --force ) >"$HOOK_OUT" 2>&1
+( cd "$JN" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --coverage-gate --force-all ) >"$HOOK_OUT" 2>&1
 if grep -q "warning: tsconfig.json carried 1 'Repo adaptation' line(s)" "$HOOK_OUT" \
    && grep -q 'kept ES2019 for the vendored runtime' "$HOOK_OUT"; then
   echo "  ✓ a JSON '// Repo adaptation:' key warns by name when overwritten"; PASS=$((PASS + 1))

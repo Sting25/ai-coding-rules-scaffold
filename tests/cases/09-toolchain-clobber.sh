@@ -134,11 +134,11 @@ rm -rf "$UWIRED"
 
 # (T) install --force must NOT clobber CLAUDE.md or a customized AGENTS.md.
 UFC=$(mk_userproj)
-( cd "$UFC" && "$SCAFFOLD_DIR/install.sh" --both --force --no-verify ) >"$HOOK_OUT" 2>&1
+( cd "$UFC" && "$SCAFFOLD_DIR/install.sh" --both --force-all --no-verify ) >"$HOOK_OUT" 2>&1
 if grep -q 'HAND-WRITTEN-MEMORY' "$UFC/CLAUDE.md" && grep -q 'CUSTOM-PROJECT-SECTION' "$UFC/AGENTS.md"; then
-  echo "  ✓ --force preserves user CLAUDE.md and AGENTS.md"; PASS=$((PASS + 1))
+  echo "  ✓ --force-all preserves user CLAUDE.md and AGENTS.md"; PASS=$((PASS + 1))
 else
-  echo "  ✗ --force clobbered a user-owned file"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  echo "  ✗ --force-all clobbered a user-owned file"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$UFC"
 
@@ -157,11 +157,11 @@ rm -rf "$UIDEM"
 UBK=$(mk_userproj)
 ( cd "$UBK" && "$SCAFFOLD_DIR/install.sh" --both --no-verify >/dev/null 2>&1 \
             && echo '# local edit' >>ruff.toml \
-            && "$SCAFFOLD_DIR/install.sh" --both --force --no-verify ) >"$HOOK_OUT" 2>&1
+            && "$SCAFFOLD_DIR/install.sh" --both --force-all --no-verify ) >"$HOOK_OUT" 2>&1
 if [ -f "$UBK/ruff.toml.scaffold-bak" ] && grep -q 'local edit' "$UBK/ruff.toml.scaffold-bak"; then
-  echo "  ✓ --force backs up changed files to .scaffold-bak"; PASS=$((PASS + 1))
+  echo "  ✓ --force-all backs up changed files to .scaffold-bak"; PASS=$((PASS + 1))
 else
-  echo "  ✗ --force did not back up the changed file"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  echo "  ✗ --force-all did not back up the changed file"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$UBK"
 

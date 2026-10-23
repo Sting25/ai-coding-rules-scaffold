@@ -240,15 +240,15 @@ fi
 # agents read. The append is now gated on the gate being PRESENT, so the same
 # run that removes the section puts it back.
 _tg_fixture TGF --test-guard
-( cd "$TGF" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --force ) >"$HOOK_OUT" 2>&1
+( cd "$TGF" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --force-all ) >"$HOOK_OUT" 2>&1
 if [ "$(grep -c 'ai-coding-rules-scaffold:test-guard:begin' "$TGF/coding-rules.md")" -eq 1 ] \
    && grep -q 'characterization' "$TGF/coding-rules.md" \
    && [ -f "$TGF/.github/workflows/test-guard.yml" ] \
    && [ -x "$TGF/.githooks/lib/check-red-green" ] \
    && grep -q 'merged:.*test-guard (red-green) section' "$HOOK_OUT"; then
-  echo "  ✓ --force without --test-guard keeps the rules section the armed gate depends on"; PASS=$((PASS + 1))
+  echo "  ✓ --force-all without --test-guard keeps the rules section the armed gate depends on"; PASS=$((PASS + 1))
 else
-  echo "  ✗ --force should re-append the test-guard rules section while the gate is installed"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  echo "  ✗ --force-all should re-append the test-guard rules section while the gate is installed"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$TGF"
 
@@ -268,10 +268,10 @@ rm -rf "$TGR"
 # that never installed the gate. --force on a plain install leaves coding-rules.md
 # exactly as shipped, with no test-guard section.
 _tg_fixture TGN
-( cd "$TGN" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --force ) >"$HOOK_OUT" 2>&1
+( cd "$TGN" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --force-all ) >"$HOOK_OUT" 2>&1
 if ! grep -q 'ai-coding-rules-scaffold:test-guard:begin' "$TGN/coding-rules.md" \
    && cmp -s "$SCAFFOLD_DIR/coding-rules.md" "$TGN/coding-rules.md"; then
-  echo "  ✓ a project without the gate still gets no test-guard section on --force"; PASS=$((PASS + 1))
+  echo "  ✓ a project without the gate still gets no test-guard section on --force-all"; PASS=$((PASS + 1))
 else
   echo "  ✗ a project without the gate should not gain a test-guard section"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi

@@ -416,7 +416,7 @@ minimal; turn them on per project.
   number, rather than a second one to reconcile. `.npmrc` is USER-OWNED
   (`cp_safe`, not `cp_scaffold_preserve`): a project may already have one, or
   may hand-edit the shipped copy, so a re-run never overwrites it without
-  `--force`. See the template header for the `before` config interaction
+  `--force-all`. See the template header for the `before` config interaction
   (an exact date wins over the relative window when both are set).
 
 - **Claude Code Skill (`install.sh --claude-skill` →
@@ -437,7 +437,7 @@ minimal; turn them on per project.
   Claude Code specific; combine freely with `--claude` and with the default
   AGENTS.md install. `.claude/skills/coding-rules/SKILL.md` is USER-OWNED
   (`cp_safe`): a project may hand-edit it, so a re-run never overwrites it
-  without `--force`.
+  without `--force-all`.
 
 - **Patch-coverage gate (`install.sh --coverage-gate` →
   `.github/workflows/coverage.yml`, installed _instead of_ the default-on
@@ -529,7 +529,7 @@ it.
 ### Template drift (installs that predate a release)
 
 `install.sh` never rewrites an existing `AGENTS.md`, and it replaces
-`coding-rules.md` only wholesale under `--force`. Both are the right policy
+`coding-rules.md` only wholesale under `--force-all`. Both are the right policy
 once a file is user-owned: an installer that overwrote local edits on every
 run would be worse than one that leaves them alone. The side effect is that
 neither file carries a version marker, so a release that adds a section to
@@ -577,7 +577,7 @@ That policy checks provenance, not just today's template: every file it writes i
 
 **Marking a customization so an overwrite warns instead of staying silent:** any time a file the installer is about to replace or refresh (a plain `cp_scaffold` refresh, or `--force` on a normally drift-preserving or preserved file) contains a comment line reading `# Repo adaptation: <why>`, the installer prints a loud `warning:` naming that exact line and the path of the `.scaffold-bak` it just wrote, instead of only the routine `backed up:` line. Add this marker next to any edit you make to a scaffold-owned file that a plain drift note would not otherwise protect, most usefully in `.githooks/pre-commit` (refreshed on every re-run, not drift-preserving) or a CI workflow you plan to `--force` past later. It does not stop the overwrite; it makes sure you notice.
 
-Your own config files are a separate case: they're local forks of the templates and are left alone entirely unless you pass `--force`. `install.sh --force` replaces them, backing up each changed file to `<file>.scaffold-bak` first so no edit is lost — and it never overwrites your `CLAUDE.md` (the import block is merged in once) or `AGENTS.md` (left as-is, since its Project section is yours). Diff first:
+Your own config files are a separate case: they're local forks of the templates and are left alone entirely unless you pass `--force-all`. Plain `--force` replaces scaffold-owned files only (hooks, scripts, workflows, pattern files); for a changed user-owned file it prints `kept (user-owned): <file> ... --force-all replaces it` and leaves the file. `install.sh --force-all` replaces them, backing up each changed file to `<file>.scaffold-bak` first so no edit is lost — and it never overwrites your `CLAUDE.md` (the import block is merged in once) or `AGENTS.md` (left as-is, since its Project section is yours). Diff first:
 
 ```sh
 diff ~/src/ai-coding-rules-scaffold/ruff.toml.template ruff.toml
