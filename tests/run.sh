@@ -119,7 +119,7 @@ CASE_FLOORS=(
   "45-tsc-local-warning.sh:8"
   "46-block-message-bypass.sh:6"
   "47-doctor-followups.sh:6"
-  "48-force-ownership.sh:4"
+  "48-force-ownership.sh:8"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and

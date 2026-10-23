@@ -61,6 +61,14 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Fixed
 
+- **A repo with no TypeScript no longer gets a root `tsconfig.json`.** The
+  installer now skips it, with the reason printed, when the repo has no
+  `.ts`, `.tsx`, `.mts` or `.cts` files outside `node_modules`, `vendor`, `dist`
+  and `build`. A root `tsconfig.json` turns on a whole-tree `tsc --noEmit` in the
+  pre-commit hook and `lint.yml`, which a plain JavaScript project never asked
+  for. Add it yourself when the first `.ts` file lands.
+  `scaffold-assess.sh` reports the same verdict.
+
 - **The doctor's template-drift note no longer fires on a recased heading or a
   renamed `## Project`.** Headings in `AGENTS.md` and `coding-rules.md` are now
   compared ignoring case and surrounding whitespace, and the `## Project`

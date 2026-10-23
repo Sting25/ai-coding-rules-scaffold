@@ -156,6 +156,8 @@ elif grep -q '"workspaces"' package.json 2>/dev/null || [ -f pnpm-workspace.yaml
   echo "  ! tsconfig.json: workspaces monorepo, do not add a root tsconfig.json (#163); per-package configs already type-check"
 elif nested=$(find . -maxdepth 3 \( -name .git -o -name node_modules -o -name vendor -o -name dist -o -name build \) -prune -o -type f -name tsconfig.json -print 2>/dev/null | sed -e 's#^\./##' -e 's#/tsconfig\.json$##' | sort | tr '\n' ' ') && [ -n "$nested" ]; then
   echo "  ! tsconfig.json: per-directory tsconfig.json in ${nested% }; install.sh will not add a root one (#163), which would type-check the whole tree with these options instead"
+elif [ -z "$(git ls-files --cached --others --exclude-standard -- '*.ts' '*.tsx' '*.mts' '*.cts' | grep -vE '(^|/)(node_modules|vendor|dist|build)/|^vitest\.config\.(ts|mts|cts)$' || true)" ]; then
+  echo "  - tsconfig.json: no TypeScript files (tracked or untracked-unignored); install.sh will not add a root one (#191). Add it yourself when the first .ts lands"
 elif command -v node >/dev/null 2>&1 && node -e "require.resolve('typescript/package.json')" >/dev/null 2>&1; then
   n=$(npx --no-install tsc --noEmit -p "$SCAFFOLD_DIR/tsconfig.json.template" 2>&1 | grep -c 'error TS' || true)
   echo "  $([ "$n" -eq 0 ] && echo ✓ || echo ✗) tsconfig.json: $n type error(s) across $js_files JS/TS file(s); tsc runs PROJECT-WIDE: the hook only warns locally, but the lint workflow's type-check blocks every PR until zero"

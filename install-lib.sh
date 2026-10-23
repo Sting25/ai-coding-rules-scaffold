@@ -412,9 +412,32 @@ mkx() { if [ -f "$1" ]; then chmod +x "$1"; fi; }
 # #163, and the natural reaction, --no-verify, switches off every other
 # guardrail too). So the file is placed by policy, mirroring COMPONENTS.md's
 # adopt=tsconfig block: an existing root file goes through cp_safe unchanged;
-# a workspaces repo or one with per-directory tsconfig files gets a skip that
-# names the reason; a plain repo gets the file plus a note saying what the hook
-# will now do and how to undo it, so the placement is never silent.
+# a workspaces repo, one with per-directory tsconfig files, or one with no
+# tracked TypeScript at all (#191) gets a skip that names the reason; a plain
+# repo gets the file plus a note saying what the hook will now do and how to
+# undo it, so the placement is never silent.
+
+# _has_tracked_ts: 0 when the repo has any .ts/.tsx/.mts/.cts outside
+# node_modules/vendor/dist/build. Counts files in git's index AND untracked,
+# non-ignored ones: a fresh project installs the scaffold before its first
+# commit, and its sources are all untracked then. Outside a git repo it falls
+# back to a bounded find. scaffold-assess.sh runs the same git query, so the
+# two stay in step.
+_has_tracked_ts() {
+  local found
+  if git rev-parse --git-dir >/dev/null 2>&1; then
+    found=$(git -c core.quotepath=off ls-files --cached --others --exclude-standard -- '*.ts' '*.tsx' '*.mts' '*.cts' 2>/dev/null || true)
+  else
+    found=$(find . -maxdepth 6 \( -name .git -o -name node_modules -o -name vendor \
+        -o -name dist -o -name build \) -prune -o \
+        -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.mts' -o -name '*.cts' \) -print 2>/dev/null || true)
+  fi
+  # The scaffold's own root vitest.config.* is TypeScript it placed itself, so a
+  # re-run in a TS-free repo must not count it as the project's.
+  found=$(printf '%s\n' "$found" | grep -vE '(^|/)(node_modules|vendor|dist|build)/|^vitest\.config\.(ts|mts|cts)$' || true)
+  [ -n "$found" ]
+}
+
 cp_tsconfig_root() {
   local src=$1 nested
   if [ -e tsconfig.json ] || [ -L tsconfig.json ]; then
@@ -437,6 +460,10 @@ cp_tsconfig_root() {
   nested=${nested% }
   if [ -n "$nested" ]; then
     echo "skip (tsconfig.json in $nested): tsconfig.json  (not writing a root tsconfig.json: this repo type-checks per directory, and a root file would make the pre-commit hook and lint.yml run 'tsc --noEmit' over the whole tree instead, #163. Merge tsconfig.json.template's compilerOptions into those configs if you want the strictness.)"
+    return
+  fi
+  if ! _has_tracked_ts; then
+    echo "skip (no tracked TypeScript files): tsconfig.json  (not writing a root tsconfig.json: this repo has no .ts/.tsx/.mts/.cts, and a root file would make the pre-commit hook and lint.yml run 'tsc --noEmit' for no reason, #191. Add tsconfig.json yourself, from tsconfig.json.template, when the first .ts lands.)"
     return
   fi
   cp_safe "$src" "tsconfig.json"
