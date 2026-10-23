@@ -706,22 +706,17 @@ _Anchor:_ an orchestration session filed its lessons as a repo-local issue
 only; the owner had to ask explicitly before the generalizable rules were
 proposed to the global file every session actually loads.
 
-### Why `scaffold-doctor.sh` reports 2 guardrails "installed but NOT running"
+### Why `scaffold-doctor.sh` reports 1 guardrail "installed but NOT running"
 
 This is expected and deliberate. Read this before "fixing" it.
 
 Since 2026-09-02 the doctor reports a check as a GAP when the script is on disk
 but nothing invokes it, rather than calling it armed because the file exists. On
-this repo that surfaces two:
+this repo that surfaces one:
 
-| Reported not running      | Why it stays that way                                                                                                                                     |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lib/check-red-green`     | Part of the opt-in `--test-guard` layer. This repo never opted in, and the gate is built around per-test suites rather than this repo's shell case files. |
-| `lib/check-mutation-diff` | Same layer, same reason. Also needs `mutmut`, which this repo does not depend on.                                                                         |
-
-They are present only because `scripts/dev-setup.sh` renders every template it
-finds. Wiring them is tracked as item 2 of the harness-adoption issue, not an
-oversight.
+| Reported not running         | Why it stays that way                                                                                                                                      |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/lint.yml` | This repo holds only `lint.yml.template`; its own CI is `self-lint.yml` and `shellcheck.yml`, so the doctor finds no rendered `lint.yml` to back the hook. |
 
 Two others that used to appear in that list were genuine and were wired on
 2026-09-02:
@@ -732,7 +727,7 @@ Two others that used to appear in that list were genuine and were wired on
   The local pass tells developers CI is the authoritative gate; without the
   workflow that statement was untrue for this repo.
 
-If the count changes, something moved. Two is the expected number; anything else
+If the count changes, something moved. One is the expected number; anything else
 deserves a look rather than a shrug.
 
 ## Using this without an AI
