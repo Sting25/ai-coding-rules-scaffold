@@ -267,41 +267,22 @@ prettier_config_present() {
   return 1
 }
 
-# Resolve a Python tool the way it is actually installed, not the way it happens
-# to land on PATH. `command -v ruff` alone answered "not installed" for the
-# ordinary case of a pip/uv install into the project's venv with the venv not
-# activated, so real lint errors committed clean (#144). Routes, in order: the
-# active virtualenv, this project's .venv/ or venv/, PATH, then
-# `python3 -m <tool>` for a `pip install --user` that exposes the module but no
-# console script on PATH. Sets PY_TOOL_CMD to the argv prefix that runs the tool
-# and returns 0; returns 1 only when no route works, so the skip notice below
-# still fires when the tool is genuinely absent.
-PY_TOOL_CMD=()
-py_tool() {
-  local name=$1 cand
+# Python tools (ruff) are resolved by the shared lib/py-tool, the same resolver
+# scaffold-assess.sh and install-verify.sh use: active virtualenv, this
+# project's .venv/ or venv/, the main worktree's .venv from a linked worktree
+# (#192), PATH, then `python3 -m <tool>` (#144). Sets PY_TOOL_CMD to the argv
+# prefix that runs the tool; py_tool returns 1 only when no route works, so the
+# skip notice below still fires when the tool is genuinely absent.
+if [ -r "$LIB/py-tool" ]; then
+  # shellcheck source=githooks/lib/py-tool.template
+  . "$LIB/py-tool"
+else
   PY_TOOL_CMD=()
-  if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/$name" ]; then
-    PY_TOOL_CMD=("$VIRTUAL_ENV/bin/$name")
-    return 0
-  fi
-  for cand in .venv venv; do
-    if [ -x "$cand/bin/$name" ]; then
-      PY_TOOL_CMD=("./$cand/bin/$name")
-      return 0
-    fi
-  done
-  if command -v "$name" >/dev/null 2>&1; then
-    PY_TOOL_CMD=("$name")
-    return 0
-  fi
-  # --version doubles as a check that the module is actually runnable, not just
-  # importable-shaped, so a broken install falls through to the notice.
-  if command -v python3 >/dev/null 2>&1 && python3 -m "$name" --version >/dev/null 2>&1; then
-    PY_TOOL_CMD=(python3 -m "$name")
-    return 0
-  fi
-  return 1
-}
+  py_tool() {
+    echo "note: .githooks/lib/py-tool is missing, so Python tools are not resolved; re-run install.sh." >&2
+    return 1
+  }
+fi
 
 STAGED_PY=()
 STAGED_JS=()
@@ -322,7 +303,7 @@ if [ ${#STAGED_PY[@]} -gt 0 ] && { [ -f ruff.toml ] || [ -f pyproject.toml ]; };
     "${PY_TOOL_CMD[@]}" check -- "${STAGED_PY[@]}" || FAILED=1
   else
     echo "note: ruff not installed, skipping the local lint pass on staged .py files." >&2
-    echo "      Looked in .venv/bin, venv/bin, \$PATH and 'python3 -m ruff'." >&2
+    echo "      Looked in \$VIRTUAL_ENV, .venv, venv, the main worktree's .venv, \$PATH and 'python3 -m ruff'." >&2
     echo "      CI's lint job is the authoritative gate; install ruff for local feedback." >&2
   fi
 fi

@@ -130,12 +130,12 @@ if [ "$cmd" = linter-runs ]; then
       { [ -f ruff.toml ] || [ -f pyproject.toml ]; } || exit 0
       has_token ruff.toml .ruff.toml pyproject.toml || exit 0
       if [ "$lmode" = --ci ]; then echo yes; exit 0; fi
-      if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/ruff" ]; then echo yes; exit 0; fi
-      for cand in .venv venv; do
-        if [ -x "$cand/bin/ruff" ]; then echo yes; exit 0; fi
-      done
-      if command -v ruff >/dev/null 2>&1; then echo yes; exit 0; fi
-      if command -v python3 >/dev/null 2>&1 && python3 -m ruff --version >/dev/null 2>&1; then echo yes; fi
+      # The same resolver the hook runs ruff through, so the two cannot disagree
+      # about whether ruff is here. No resolver beside this script: keep the regex.
+      [ -r "$(dirname "$0")/py-tool" ] || exit 0
+      # shellcheck source=githooks/lib/py-tool.template
+      . "$(dirname "$0")/py-tool"
+      if py_tool ruff 2>/dev/null; then echo yes; fi
       ;;
     eslint:*.ts|eslint:*.tsx|eslint:*.js|eslint:*.jsx|eslint:*.cjs|eslint:*.mjs)
       { [ -f eslint.config.js ] || [ -f package.json ]; } || exit 0

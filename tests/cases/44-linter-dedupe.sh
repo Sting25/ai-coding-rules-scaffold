@@ -223,10 +223,17 @@ ld_pin "the ruff config test" '[ -f ruff.toml ] || [ -f pyproject.toml ]'
 ld_pin "the eslint config test" '[ -f eslint.config.js ] || [ -f package.json ]'
 ld_pin "the node and npx presence test" 'command -v node >/dev/null 2>&1 && command -v npx >/dev/null 2>&1'
 ld_pin "the node resolve probe" "node -e \"require.resolve('"
+# The ruff tool lookup is no longer duplicated: both call the shared resolver.
+ld_pin "the shared ruff resolver call" 'py_tool ruff'
+ld_pin "sourcing the shared resolver" '/py-tool"'
 # shellcheck disable=SC2016  # the expansion text is matched literally
-ld_pin "the active-virtualenv route" '[ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/'
-ld_pin "the project venv route" 'for cand in .venv venv; do'
-ld_pin "the python -m route" 'command -v python3 >/dev/null 2>&1 && python3 -m'
+if grep -qF '[ -n "${VIRTUAL_ENV:-}" ]' "$SCAFFOLD_DIR/githooks/lib/py-tool.template" \
+   && grep -qF 'for cand in .venv venv; do' "$SCAFFOLD_DIR/githooks/lib/py-tool.template" \
+   && grep -qF 'python3 -m "$name"' "$SCAFFOLD_DIR/githooks/lib/py-tool.template"; then
+  echo "  ✓ lib/py-tool carries the virtualenv, project venv and python -m routes"; PASS=$((PASS + 1))
+else
+  echo "  ✗ lib/py-tool lost one of its routes"; FAIL=$((FAIL + 1))
+fi
 
 # 44l. --ci: the binary lives in another job, so lint.yml's own test decides
 #      (config present). PATH here holds neither node nor ruff.

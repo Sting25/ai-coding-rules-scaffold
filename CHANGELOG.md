@@ -61,6 +61,15 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Fixed
 
+- **A linked git worktree no longer skips the local ruff pass.** `git worktree
+  add` checks out tracked files only, so a gitignored `.venv` is never there and
+  the hook found no ruff. The hook now borrows the main worktree's `.venv` after
+  its own `.venv`/`venv` and before PATH, and prints one `BORROWED FROM MAIN
+  WORKTREE` note when it does. Python tools are resolved by one shared helper,
+  `.githooks/lib/py-tool` (installed with the hook; hand adopters copy it too,
+  see COMPONENTS.md entry 1), which probes `bin/` and `Scripts/` so Git Bash on
+  Windows works (#192).
+
 - **A repo with no TypeScript no longer gets a root `tsconfig.json`.** The
   installer now skips it, with the reason printed, when the repo has no
   `.ts`, `.tsx`, `.mts` or `.cts` files outside `node_modules`, `vendor`, `dist`
