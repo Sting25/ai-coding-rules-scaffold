@@ -49,6 +49,9 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Fixed
 
+- **The doctor no longer flags the installer's `.scaffold-bak` backups in
+  `.githooks/local.d/`.** A refreshed `README.md.scaffold-bak` was reported as a
+  check that is "present but not executable"; backups are now skipped.
 - **Emoji and translation files no longer trip the hidden-Unicode check.** A
   zero-width joiner between two emoji (family, profession and rainbow-flag
   emoji) is now allowed in READMEs and UI strings, while one inside an

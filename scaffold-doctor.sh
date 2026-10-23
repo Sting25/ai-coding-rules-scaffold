@@ -349,7 +349,8 @@ else
   found=0
   for lc in .githooks/local.d/*; do
     [ -f "$lc" ] || continue
-    case "$(basename "$lc")" in README.md) continue ;; esac
+    # The installer's own backups (README.md.scaffold-bak) are not checks.
+    case "$(basename "$lc")" in README.md|*.scaffold-bak*) continue ;; esac
     found=$((found + 1))
     if [ -x "$lc" ]; then ok "local.d/$(basename "$lc") armed"
     else note "local.d/$(basename "$lc") present but not executable (that bit is the off switch)"; fi
