@@ -134,6 +134,14 @@ WORKTREE` note when it does. Python tools are resolved by one shared helper,
   `pull-requests: read`; the workflow-level permissions stay `contents: read`
   (#195).
 
+- **The coverage workflow no longer fails on private repositories when it
+  fetches the base branch.** The diff-cover step ran `git fetch` after a
+  checkout that deliberately keeps no credentials, so a private repo failed
+  with exit 128. The checkout already fetches full history, so the fetch is
+  now skipped when `origin/$GITHUB_BASE_REF` exists (also for fork pull
+  requests). If it is missing, the fetch passes the job token for that one
+  command only and masks it in the log (#196).
+
 ### Changed
 
 - **The doctor no longer reports a tuned coverage threshold or an unavailable

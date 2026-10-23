@@ -181,9 +181,22 @@ jobs:
 
       # ── Gate: every changed line must be covered ──────────────────────────
       - name: Enforce patch coverage (diff-cover)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           pip install diff-cover==10.3.0  # pinned (see note above); NOT Dependabot-tracked, bump by hand
-          git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
+          # The checkout above (fetch-depth 0) already fetched origin/$GITHUB_BASE_REF,
+          # for fork PRs too (origin is the base repo), so normally nothing is fetched.
+          # Credentials are not persisted, so a fetch needs an explicit, one-command
+          # token or a private repo fails with exit 128. A fork PR's token is read-only,
+          # which is enough to fetch.
+          if ! git rev-parse --verify -q "origin/$GITHUB_BASE_REF" >/dev/null; then
+            AUTH=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
+            echo "::add-mask::$AUTH"
+            git -c "http.extraheader=AUTHORIZATION: basic $AUTH" \
+              fetch --no-tags --depth=1 origin \
+              "+refs/heads/$GITHUB_BASE_REF:refs/remotes/origin/$GITHUB_BASE_REF"
+          fi
           REPORTS=""
           [ -f coverage.xml ] && REPORTS="$REPORTS coverage.xml"
           [ -f coverage/cobertura-coverage.xml ] && REPORTS="$REPORTS coverage/cobertura-coverage.xml"
