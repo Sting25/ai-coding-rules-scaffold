@@ -124,10 +124,20 @@ jobs:
       # mutants warn but never fail this step, exit 2 (cannot evaluate) does.
       # No continue-on-error here on purpose; the script's own exit codes
       # already carry the pass/warn/fail semantics this workflow wants.
+      #
+      # The base is derived at run time, not read from the event payload:
+      # github.event.pull_request.base.sha is frozen when the PR last changed,
+      # but the checkout is a synthetic merge against the base branch's CURRENT
+      # tip. Diffing from the stale sha pulls every commit merged since into the
+      # mutation scope (#199). The first parent of that merge commit is the
+      # current base; a checkout that is not a merge falls back to merge-base.
       - name: Mutation testing (diff-scoped, advisory)
         if: steps.detect.outputs.present == 'true'
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           pip install mutmut==3.7.0
+          if git rev-parse --verify -q 'HEAD^2' >/dev/null; then
+            BASE_SHA=$(git rev-parse 'HEAD^1')
+          else
+            BASE_SHA=$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)
+          fi
           python3 .githooks/lib/check-mutation-diff --base "$BASE_SHA" --ci

@@ -138,4 +138,53 @@ if [ "$(wc -l <"$MD/count" | tr -d ' ')" -eq 1 ]; then
 else
   echo "  ✗ mutmut must run exactly once on that failure (ran $(wc -l <"$MD/count" | tr -d ' ') times)"; FAIL=$((FAIL + 1))
 fi
+if grep -qF 'mutmut noise line 60' "$HOOK_OUT" && grep -qF 'mutmut noise line 22' "$HOOK_OUT" \
+   && ! grep -qF 'mutmut noise line 21' "$HOOK_OUT"; then
+  echo "  ✓ the last 40 lines of mutmut's output are printed on the hard-failure path, and no more"; PASS=$((PASS + 1))
+else
+  echo "  ✗ expected exactly the last 40 lines of mutmut output (lines 22 to 60 plus the final message)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+md_run "mutmut: failed to collect stats"
+if [ "$md_rc" -eq 2 ] && grep -qF 'baseline test suite fails' "$HOOK_OUT" && grep -qF 'mutmut noise line 60' "$HOOK_OUT"; then
+  echo "  ✓ \"failed to collect stats\" also prints mutmut's output"; PASS=$((PASS + 1))
+else
+  echo "  ✗ expected exit 2 with mutmut's output after the stats failure (got exit $md_rc)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+
+# --- (C) test-guard: the mutation step derives its base, never the webhook sha ----------
+# The mutation step is the last step of the template; its run block is lifted so the
+# test runs the text consumers get, with the final command swapped to print the base.
+md_step=$(awk '/- name: Mutation testing/ { on = 1 } on' "$MD_WF")
+# shellcheck disable=SC2016  # $BASE_SHA is literal template text in the sed pattern
+md_blk=$(printf '%s\n' "$md_step" | awk '/^ +run: \|/ { inb = 1; next } inb { sub(/^ {10}/, ""); print }' \
+  | grep -v '^pip install' | sed 's|^python3 \.githooks/lib/check-mutation-diff --base "\$BASE_SHA" --ci$|echo "$BASE_SHA"|')
+# shellcheck disable=SC2016  # $BASE_SHA is literal template text here
+if ! printf '%s\n' "$md_step" | grep -q 'pull_request\.base\.sha' && printf '%s\n' "$md_blk" | grep -q '^echo "\$BASE_SHA"$'; then
+  echo "  ✓ test-guard.yml.template: the mutation step no longer reads pull_request.base.sha"; PASS=$((PASS + 1))
+else
+  echo "  ✗ test-guard.yml.template: the mutation step must derive its base at run time and not use pull_request.base.sha"; FAIL=$((FAIL + 1))
+fi
+# main moves on (c2) after the PR branched (c1); the synthetic PR merge has c2 as first parent.
+git init -q "$MD/pr" && md_git "$MD/pr" commit -q --allow-empty -m c1 && md_git "$MD/pr" branch -M main
+md_c1=$(git -C "$MD/pr" rev-parse HEAD)
+md_git "$MD/pr" checkout -q -b feature && md_git "$MD/pr" commit -q --allow-empty -m p1
+md_git "$MD/pr" checkout -q main && md_git "$MD/pr" commit -q --allow-empty -m c2
+md_c2=$(git -C "$MD/pr" rev-parse HEAD)
+git -C "$MD/pr" update-ref refs/remotes/origin/main "$md_c2"
+md_git "$MD/pr" checkout -q --detach && md_git "$MD/pr" merge -q --no-ff -m merge feature
+md_got=$(cd "$MD/pr" && GITHUB_BASE_REF=main bash -e -c "$md_blk" 2>"$HOOK_OUT") || md_got=""
+if [ "$md_got" = "$md_c2" ] && [ "$md_got" != "$md_c1" ]; then
+  echo "  ✓ PR merge checkout: the base is HEAD^1, the current base tip, not the older commit the PR branched from"; PASS=$((PASS + 1))
+else
+  echo "  ✗ expected HEAD^1 ($md_c2) on a merge checkout, got '$md_got'"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+# A checkout of the PR head itself is not a merge: the base falls back to merge-base.
+md_git "$MD/pr" checkout -q --detach feature
+md_got=$(cd "$MD/pr" && GITHUB_BASE_REF=main bash -e -c "$md_blk" 2>"$HOOK_OUT") || md_got=""
+if [ "$md_got" = "$md_c1" ]; then
+  echo "  ✓ non-merge checkout: the base falls back to merge-base with origin/\$GITHUB_BASE_REF"; PASS=$((PASS + 1))
+else
+  echo "  ✗ expected merge-base ($md_c1) on a non-merge checkout, got '$md_got'"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+
 rm -rf "$MD"

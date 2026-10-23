@@ -427,6 +427,8 @@ def main() -> int:
         for needle, msg in HARD_FAILURES:
             if needle in out:
                 emit("error", msg, args.ci)
+                print("--- last 40 line(s) of mutmut output ---")
+                print("\n".join(out.splitlines()[-40:]))
                 return 2
 
         scope = set(only_mutate)

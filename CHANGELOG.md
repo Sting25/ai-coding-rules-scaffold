@@ -142,6 +142,15 @@ WORKTREE` note when it does. Python tools are resolved by one shared helper,
   requests). If it is missing, the fetch passes the job token for that one
   command only and masks it in the log (#196).
 
+- **The test-guard mutation step diffs from the current base and shows mutmut's
+  output when it fails.** The step took the base from the pull request event,
+  which is frozen at the PR's last push while the checkout is a merge against
+  the base branch's current tip, so merges that landed afterwards were pulled
+  into the mutation scope. It now uses the first parent of that merge commit,
+  or the merge-base when the checkout is not a merge. On a hard failure the
+  check also prints the last 40 lines of mutmut's output, which were discarded
+  before (#199).
+
 - **A mutmut "Failed to run clean test" now fails the mutation step instead of
   reading as "not checked".** mutmut runs your pytest suite in-process several
   times, so test state that leaks between those runs (a module-level cache,
