@@ -121,6 +121,7 @@ CASE_FLOORS=(
   "47-doctor-followups.sh:7"
   "48-force-ownership.sh:10"
   "49-py-tool-resolver.sh:9"
+  "50-ci-template-credentials.sh:2"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and

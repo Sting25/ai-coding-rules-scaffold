@@ -126,6 +126,14 @@ WORKTREE` note when it does. Python tools are resolved by one shared helper,
   was refused for containing the key. It now scans only what the tool would
   write or run: `content`, `new_string`, `edits[].new_string` and `command`.
 
+- **The gitleaks workflow no longer fails with a 403 on private repositories.**
+  On a pull request, gitleaks-action lists the PR's commits through the API,
+  which needs `pull-requests: read`. The template granted only
+  `contents: read`, so every pull request on a private repo failed with
+  "Resource not accessible by integration". The gitleaks job now also has
+  `pull-requests: read`; the workflow-level permissions stay `contents: read`
+  (#195).
+
 ### Changed
 
 - **The doctor no longer reports a tuned coverage threshold or an unavailable
