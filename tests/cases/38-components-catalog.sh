@@ -23,6 +23,11 @@
 # `verify` blocks that depend on an optional tool (ruff, actionlint) already
 # branch on its presence inside the block, so this case has no tool gate of
 # its own: every assertion runs on a bare machine.
+#
+# The cumulative fixture carries one tracked app.ts: the tsconfig block skips a
+# repo with no TypeScript (#191), and this case must exercise the adoption path
+# that its verify block proves armed. The skip path has its own assertion in
+# cases/48.
 
 echo "cases/38: COMPONENTS.md adopt and verify blocks run as written, in a fresh repo"
 
@@ -49,7 +54,8 @@ if [ "${#_cc_names[@]}" -eq 0 ]; then
 else
   _cc_repo=$(mktemp -d)
   ( cd "$_cc_repo" && git init -q && git config user.email t@test.local && git config user.name "Scaffold Test" \
-      && git config commit.gpgsign false && printf '# verify fixture\n' > README.md && git add README.md && git commit -q -m "init" )
+      && git config commit.gpgsign false && printf '# verify fixture\n' > README.md \
+      && printf 'export const answer: number = 42;\n' > app.ts && git add README.md app.ts && git commit -q -m "init" )
   for _cc_name in "${_cc_names[@]}"; do
     _cc_adopt=$(_cc_block adopt "$_cc_name")
     _cc_verify=$(_cc_block verify "$_cc_name")

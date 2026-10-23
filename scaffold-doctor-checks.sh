@@ -91,3 +91,15 @@ for chk_path in .githooks/lib/check-*; do
   fi
 done
 
+# lib/py-tool is the Python tool resolver the hook sources for ruff. Missing, the
+# hook prints a note and SKIPS the local ruff pass on every commit, so staged
+# .py files go unlinted locally and CI is the only gate. Only a hook that
+# actually sources it is held to it (an install that predates py-tool has none).
+if [ -f .githooks/pre-commit ] && grep -q 'py-tool' .githooks/pre-commit; then
+  if [ ! -r .githooks/lib/py-tool ]; then
+    gap "lib/py-tool is missing: the hook skips the local ruff pass on every commit (it prints a note and moves on)" \
+        "re-run install.sh to restore .githooks/lib/py-tool"
+  else
+    ok "lib/py-tool present (the hook resolves ruff through it)"
+  fi
+fi

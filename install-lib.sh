@@ -10,6 +10,8 @@
 # install.sh always sets FORCE before sourcing, so this is a no-op there; if the
 # lib is ever sourced without it, 0 (= not --force) is the safe default.
 : "${FORCE:=0}"
+# --force-all (implies FORCE=1) also replaces USER-OWNED files; see cp_safe (#190).
+: "${FORCE_ALL:=0}"
 
 # install-manifest.sh defines the provenance helpers and install.sh sources it
 # BEFORE this file, so these stubs are dead there. scaffold-doctor.sh sources
@@ -38,8 +40,12 @@ fi
 #                refresh risks silently discarding that).
 #   cp_safe      USER-OWNED files — ruff.toml, eslint config, .scaffold.toml,
 #                dependabot.yml, the rules docs, etc. A project customizes these,
-#                so they're never auto-replaced: skip unless --force (which backs
-#                up first). CLAUDE.md / AGENTS.md have their own merge handlers.
+#                so they're never auto-replaced: not on a plain re-run and not
+#                under --force (#190), only under --force-all (which backs up
+#                first). cp_safe IS the user-owned marker: a file is user-owned
+#                exactly when install code routes it through cp_safe, so the
+#                ownership split lives in this one function and its call sites.
+#                CLAUDE.md / AGENTS.md have their own merge handlers.
 #   cp_pattern   .forbidden-patterns/*.txt — the hard case: scaffold-SHIPPED yet
 #                user-EXTENDED (teams append their own rows). Auto-overwriting
 #                would clobber those rows, so a re-run only NOTIFIES on drift and
@@ -151,7 +157,7 @@ _cp_replace() {
 # going" (`|| return 0`) — never abort, and never overwrite without a backup. Every
 # cp_* overwrite funnels through here, so this is also the one place that can warn
 # on a dropped `Repo adaptation:` marker regardless of which policy triggered it
-# (#127): cp_scaffold's unconditional refresh, or --force on cp_safe/cp_pattern/
+# (#127): cp_scaffold's unconditional refresh, --force-all on cp_safe, or --force on cp_pattern/
 # cp_scaffold_preserve.
 _backup() {
   local dst=$1
@@ -222,20 +228,27 @@ _warn_repo_adaptations() {
   fi
 }
 
-# cp_safe SRC DST — USER-OWNED file. Install if absent; otherwise leave it alone
-# unless --force (which backs up the differing file, then replaces it).
+# cp_safe SRC DST — USER-OWNED file. Install if absent; otherwise leave it alone.
+# Only --force-all (not --force, #190) backs up the differing file and replaces
+# it. A plain --force used to replace these too, and a consumer lost project
+# edits to eslint.config.js, .coveragerc and both rules docs behind a routine
+# "backed up:" line; --force now covers scaffold-owned files only. A user-owned
+# file that differs under --force gets one line naming it and the flag.
 cp_safe() {
   local src=$1 dst=$2
   if [ -e "$dst" ] || [ -L "$dst" ]; then
-    if [ "$FORCE" -eq 0 ]; then
+    if [ "${FORCE_ALL:-0}" != "1" ]; then
       if [ -L "$dst" ]; then
-        echo "skip (exists, symlink): $dst — left untouched; a scaffold path that is a symlink is suspicious. Replace it with --force."
+        echo "skip (exists, symlink): $dst — left untouched; a scaffold path that is a symlink is suspicious. --force-all replaces it."
+      elif [ "$FORCE" -eq 1 ]; then
+        # Identical under --force is silent: nothing to keep, nothing to say.
+        cmp -s "$src" "$dst" || echo "kept (user-owned): $dst differs from the shipped version and --force does not replace it; --force-all replaces it (backs it up first)"
       else
-        echo "skip (exists): $dst  — left untouched (use --force to replace)"
+        echo "skip (exists): $dst  — left untouched (--force-all replaces it)"
       fi
       return
     fi
-    # --force: back up before overwriting, but only when it actually differs. A
+    # --force-all: back up before overwriting, but only when it actually differs. A
     # symlink is never compared through (`-L` short-circuits) and always replaced.
     if [ ! -L "$dst" ] && cmp -s "$src" "$dst"; then
       return
@@ -399,9 +412,32 @@ mkx() { if [ -f "$1" ]; then chmod +x "$1"; fi; }
 # #163, and the natural reaction, --no-verify, switches off every other
 # guardrail too). So the file is placed by policy, mirroring COMPONENTS.md's
 # adopt=tsconfig block: an existing root file goes through cp_safe unchanged;
-# a workspaces repo or one with per-directory tsconfig files gets a skip that
-# names the reason; a plain repo gets the file plus a note saying what the hook
-# will now do and how to undo it, so the placement is never silent.
+# a workspaces repo, one with per-directory tsconfig files, or one with no
+# tracked TypeScript at all (#191) gets a skip that names the reason; a plain
+# repo gets the file plus a note saying what the hook will now do and how to
+# undo it, so the placement is never silent.
+
+# _has_tracked_ts: 0 when the repo has any .ts/.tsx/.mts/.cts outside
+# node_modules/vendor/dist/build. Counts files in git's index AND untracked,
+# non-ignored ones: a fresh project installs the scaffold before its first
+# commit, and its sources are all untracked then. Outside a git repo it falls
+# back to a bounded find. scaffold-assess.sh runs the same git query, so the
+# two stay in step.
+_has_tracked_ts() {
+  local found
+  if git rev-parse --git-dir >/dev/null 2>&1; then
+    found=$(git -c core.quotepath=off ls-files --cached --others --exclude-standard -- '*.ts' '*.tsx' '*.mts' '*.cts' 2>/dev/null || true)
+  else
+    found=$(find . -maxdepth 6 \( -name .git -o -name node_modules -o -name vendor \
+        -o -name dist -o -name build \) -prune -o \
+        -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.mts' -o -name '*.cts' \) -print 2>/dev/null || true)
+  fi
+  # The scaffold's own root vitest.config.* is TypeScript it placed itself, so a
+  # re-run in a TS-free repo must not count it as the project's.
+  found=$(printf '%s\n' "$found" | grep -vE '(^|/)(node_modules|vendor|dist|build)/|^(\./)?vitest\.config\.(ts|mts|cts)$' || true)
+  [ -n "$found" ]
+}
+
 cp_tsconfig_root() {
   local src=$1 nested
   if [ -e tsconfig.json ] || [ -L tsconfig.json ]; then
@@ -424,6 +460,10 @@ cp_tsconfig_root() {
   nested=${nested% }
   if [ -n "$nested" ]; then
     echo "skip (tsconfig.json in $nested): tsconfig.json  (not writing a root tsconfig.json: this repo type-checks per directory, and a root file would make the pre-commit hook and lint.yml run 'tsc --noEmit' over the whole tree instead, #163. Merge tsconfig.json.template's compilerOptions into those configs if you want the strictness.)"
+    return
+  fi
+  if ! _has_tracked_ts; then
+    echo "skip (no tracked TypeScript files): tsconfig.json  (not writing a root tsconfig.json: this repo has no .ts/.tsx/.mts/.cts, and a root file would make the pre-commit hook and lint.yml run 'tsc --noEmit' for no reason, #191. Add tsconfig.json yourself, from tsconfig.json.template, when the first .ts lands.)"
     return
   fi
   cp_safe "$src" "tsconfig.json"

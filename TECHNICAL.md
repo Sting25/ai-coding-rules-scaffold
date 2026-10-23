@@ -57,6 +57,7 @@ Language pattern files auto-install when their manifest is detected (`go.mod`, `
 | `githooks/lib/check-{size,large-files,patterns,filenames,secrets,hygiene}.template` | `.githooks/lib/check-{size,large-files,patterns,filenames,secrets,hygiene}` | Reusable check scripts; the same scripts run from CI so hook and CI can't drift                                                                                                                                                                                                                                                                                                                                                              |
 | `githooks/lib/scaffold-config.template`                                             | `.githooks/lib/scaffold-config`                                             | Reads per-project rule overrides from `.scaffold.toml` (per-path size caps, per-rule disable / severity)                                                                                                                                                                                                                                                                                                                                     |
 | `githooks/lib/scaffold-audit.template`                                              | `.githooks/lib/scaffold-audit`                                              | Lists every active override in `.scaffold.toml`; run locally and echoed by CI                                                                                                                                                                                                                                                                                                                                                                |
+| `githooks/lib/py-tool.template`                                                     | `.githooks/lib/py-tool`                                                     | Shared resolver for Python tools (ruff, pytest): active venv, `.venv`, `venv`, the main worktree's `.venv` from a linked worktree, PATH, `python3 -m`. Sourced by the hook and `scaffold-config`; `scaffold-assess.sh` and `install-verify.sh` source the template.                                                                                                                                                                          |
 | `githooks/local.d/README.md.template`                                               | `.githooks/local.d/README.md`                                               | Documents the project-local check contract. The **directory** is yours: drop executables in and hook + CI both run them, and `install.sh` never writes into it                                                                                                                                                                                                                                                                               |
 | `.scaffold.toml.template`                                                           | `.scaffold.toml`                                                            | Per-project rule overrides — ships empty (commented), enforces nothing until edited                                                                                                                                                                                                                                                                                                                                                          |
 | `.github/workflows/lint.yml.template`                                               | `.github/workflows/lint.yml`                                                | CI mirror — invokes the same `lib/check-*` scripts as the hook, scoped to the PR/push diff (`lib/ci-changed-files`) for quality gates, whole-tree for the secret/credential scans                                                                                                                                                                                                                                                            |
@@ -416,7 +417,7 @@ minimal; turn them on per project.
   number, rather than a second one to reconcile. `.npmrc` is USER-OWNED
   (`cp_safe`, not `cp_scaffold_preserve`): a project may already have one, or
   may hand-edit the shipped copy, so a re-run never overwrites it without
-  `--force`. See the template header for the `before` config interaction
+  `--force-all`. See the template header for the `before` config interaction
   (an exact date wins over the relative window when both are set).
 
 - **Claude Code Skill (`install.sh --claude-skill` →
@@ -437,7 +438,7 @@ minimal; turn them on per project.
   Claude Code specific; combine freely with `--claude` and with the default
   AGENTS.md install. `.claude/skills/coding-rules/SKILL.md` is USER-OWNED
   (`cp_safe`): a project may hand-edit it, so a re-run never overwrites it
-  without `--force`.
+  without `--force-all`.
 
 - **Patch-coverage gate (`install.sh --coverage-gate` →
   `.github/workflows/coverage.yml`, installed _instead of_ the default-on
@@ -529,7 +530,7 @@ it.
 ### Template drift (installs that predate a release)
 
 `install.sh` never rewrites an existing `AGENTS.md`, and it replaces
-`coding-rules.md` only wholesale under `--force`. Both are the right policy
+`coding-rules.md` only wholesale under `--force-all`. Both are the right policy
 once a file is user-owned: an installer that overwrote local edits on every
 run would be worse than one that leaves them alone. The side effect is that
 neither file carries a version marker, so a release that adds a section to
@@ -539,7 +540,8 @@ oldest installs fall furthest.
 `scaffold-doctor.sh`'s "template drift" section makes that visible: every
 `## ` and `### ` heading in the shipped template becomes the inventory, and
 any heading present in the shipped file but missing from the installed one
-is named. This is always a note, never a gap, because a section a project
+is named. Headings compare ignoring case and surrounding whitespace, and the
+user-owned `## Project` heading is left out. This is always a note, never a gap, because a section a project
 deliberately trimmed is legitimate and must not flip the exit code; the
 note names the missing headings and points at the shipped file to diff
 against. A doctor run from a copy that does not carry the rest of the
@@ -576,7 +578,7 @@ That policy checks provenance, not just today's template: every file it writes i
 
 **Marking a customization so an overwrite warns instead of staying silent:** any time a file the installer is about to replace or refresh (a plain `cp_scaffold` refresh, or `--force` on a normally drift-preserving or preserved file) contains a comment line reading `# Repo adaptation: <why>`, the installer prints a loud `warning:` naming that exact line and the path of the `.scaffold-bak` it just wrote, instead of only the routine `backed up:` line. Add this marker next to any edit you make to a scaffold-owned file that a plain drift note would not otherwise protect, most usefully in `.githooks/pre-commit` (refreshed on every re-run, not drift-preserving) or a CI workflow you plan to `--force` past later. It does not stop the overwrite; it makes sure you notice.
 
-Your own config files are a separate case: they're local forks of the templates and are left alone entirely unless you pass `--force`. `install.sh --force` replaces them, backing up each changed file to `<file>.scaffold-bak` first so no edit is lost — and it never overwrites your `CLAUDE.md` (the import block is merged in once) or `AGENTS.md` (left as-is, since its Project section is yours). Diff first:
+Your own config files are a separate case: they're local forks of the templates and are left alone entirely unless you pass `--force-all`. Plain `--force` replaces scaffold-owned files only (hooks, scripts, workflows, pattern files); for a changed user-owned file it prints `kept (user-owned): <file> ... --force-all replaces it` and leaves the file. `install.sh --force-all` replaces them, backing up each changed file to `<file>.scaffold-bak` first so no edit is lost, and it never overwrites your `CLAUDE.md` (the import block is merged in once) or `AGENTS.md` (left as-is, since its Project section is yours). Diff first:
 
 ```sh
 diff ~/src/ai-coding-rules-scaffold/ruff.toml.template ruff.toml
@@ -704,22 +706,17 @@ _Anchor:_ an orchestration session filed its lessons as a repo-local issue
 only; the owner had to ask explicitly before the generalizable rules were
 proposed to the global file every session actually loads.
 
-### Why `scaffold-doctor.sh` reports 2 guardrails "installed but NOT running"
+### Why `scaffold-doctor.sh` reports 1 guardrail "installed but NOT running"
 
 This is expected and deliberate. Read this before "fixing" it.
 
 Since 2026-09-02 the doctor reports a check as a GAP when the script is on disk
 but nothing invokes it, rather than calling it armed because the file exists. On
-this repo that surfaces two:
+this repo that surfaces one:
 
-| Reported not running      | Why it stays that way                                                                                                                                     |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lib/check-red-green`     | Part of the opt-in `--test-guard` layer. This repo never opted in, and the gate is built around per-test suites rather than this repo's shell case files. |
-| `lib/check-mutation-diff` | Same layer, same reason. Also needs `mutmut`, which this repo does not depend on.                                                                         |
-
-They are present only because `scripts/dev-setup.sh` renders every template it
-finds. Wiring them is tracked as item 2 of the harness-adoption issue, not an
-oversight.
+| Reported not running         | Why it stays that way                                                                                                                                      |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/lint.yml` | This repo holds only `lint.yml.template`; its own CI is `self-lint.yml` and `shellcheck.yml`, so the doctor finds no rendered `lint.yml` to back the hook. |
 
 Two others that used to appear in that list were genuine and were wired on
 2026-09-02:
@@ -730,7 +727,7 @@ Two others that used to appear in that list were genuine and were wired on
   The local pass tells developers CI is the authoritative gate; without the
   workflow that statement was untrue for this repo.
 
-If the count changes, something moved. Two is the expected number; anything else
+If the count changes, something moved. One is the expected number; anything else
 deserves a look rather than a shrug.
 
 ## Using this without an AI

@@ -101,10 +101,10 @@ install_opt_in_test_guard() {
 # coding-rules.md whenever the gate is ON DISK, whether or not THIS run passed
 # --test-guard.
 #
-# coding-rules.md is cp_safe (user-owned), so --force replaces it wholesale with
+# coding-rules.md is cp_safe (user-owned), so --force-all replaces it wholesale with
 # the shipped copy, which does not carry the section. Measured (audit
 # code-install-policy-3): `install.sh --python --test-guard` left the marker
-# count at 1, then a plain `install.sh --python --force` took it to 0 while
+# count at 1, then a `--force` that then replaced the file (as it did before #190, when only --force-all stopped doing so) took it to 0 while
 # .github/workflows/test-guard.yml and .githooks/lib/check-red-green stayed on
 # disk and scaffold-doctor.sh still reported "0 gaps". The CI gate went on
 # failing PRs over a contract (@pytest.mark.characterization) that had vanished
@@ -113,7 +113,7 @@ install_opt_in_test_guard() {
 #
 # Gating on presence rather than on the flag matches print_not_enabled_summary's
 # own convention for exactly this reason: a plain re-run of a test-guard project
-# passes TEST_GUARD=0 even though the gate is installed. So a --force run
+# passes TEST_GUARD=0 even though the gate is installed. So a --force-all run
 # re-appends the section it just removed, in the same run.
 ensure_test_guard_rules_section() {
   [ -f "coding-rules.md" ] || return 0
@@ -268,7 +268,7 @@ warn_unwired_optin() {
   local file=$1 needle=$2 tpl=$3
   if [ -e "$file" ] && ! _optin_wired "$file" "$needle"; then
     echo "warning: $file exists but does not mention '$needle', so this protection is NOT armed."
-    echo "         Merge the relevant keys from $tpl into it by hand. --force would replace your file instead."
+    echo "         Merge the relevant keys from $tpl into it by hand. --force-all would replace your file instead (backed up first)."
   fi
 }
 

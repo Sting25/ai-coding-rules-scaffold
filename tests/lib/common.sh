@@ -152,5 +152,8 @@ git add . && git commit --quiet -m "install scaffold" --no-verify  # scaffold-al
 # isolated to the layer they test; config DELIVERY is verified in its own fresh
 # install near the end, and the dedicated tsc test (case 42) makes its own
 # tsconfig.json on demand.
-git rm -q tsconfig.json .prettierrc.json .prettierignore vitest.config.ts
+# tsconfig.json is --ignore-unmatch: this fixture has no .ts file when the
+# scaffold is installed, so since #191 the installer no longer places one.
+git rm -q --ignore-unmatch tsconfig.json
+git rm -q .prettierrc.json .prettierignore vitest.config.ts
 git commit --quiet -m "isolate hook unit tests from optional tsc/prettier steps" --no-verify  # scaffold-allow: test fixture

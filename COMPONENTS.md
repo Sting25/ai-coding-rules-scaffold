@@ -64,7 +64,9 @@ All six scanners read the files staged in the commit being made and nothing
 else, so every one of them is safe on an existing codebase. They share one
 contract: NUL-separated staged paths on stdin, non-zero exit blocks the
 commit. `scaffold-config` is an optional sibling that reads `.scaffold.toml`
-overrides (entry 13); without it every rule runs at its default.
+overrides (entry 13); without it every rule runs at its default. `py-tool` is
+the resolver the hook uses to find `ruff` (a project venv, a linked worktree's
+main `.venv`, PATH); without it the local ruff pass is skipped with a note.
 
 **Prerequisites:** bash, git. No other tool.
 
@@ -72,7 +74,8 @@ overrides (entry 13); without it every rule runs at its default.
 mkdir -p .githooks/lib
 cp "$SCAFFOLD/githooks/pre-commit.template" .githooks/pre-commit
 cp "$SCAFFOLD/githooks/lib/scaffold-config.template" .githooks/lib/scaffold-config
-chmod +x .githooks/pre-commit .githooks/lib/scaffold-config
+cp "$SCAFFOLD/githooks/lib/py-tool.template" .githooks/lib/py-tool
+chmod +x .githooks/pre-commit .githooks/lib/scaffold-config .githooks/lib/py-tool
 git config core.hooksPath .githooks
 ```
 
@@ -539,21 +542,28 @@ workspaces monorepo from this one file.
 
 Do not adopt this on an existing codebase unless the measurement below is zero
 or you intend to fix everything it reports. Never adopt it at the root of a
-monorepo that has per-package tsconfigs; those already do the job.
+monorepo that has per-package tsconfigs; those already do the job. Skip it in a
+repo with no TypeScript files at all (none tracked or untracked-unignored,
+ignoring `node_modules`, `vendor`, `dist`, `build` and the scaffold's own
+`vitest.config.ts`): there is nothing to type-check, `install.sh` does not add
+it there either (#191), and the block below skips on its own. Add it when the
+first `.ts` lands.
 
-Measure first, nothing copied:
-`npx tsc --noEmit -p "$SCAFFOLD/tsconfig.json.template" 2>&1 | grep -c 'error TS'`
+Measure first, nothing copied (only when the repo has `.ts` files; this is the
+same measurement `scaffold-assess.sh` runs):
+`npx --no-install tsc --noEmit -p "$SCAFFOLD/tsconfig.json.template" 2>&1 | grep -c 'error TS'`
 
 ```sh adopt=tsconfig
 if [ -f tsconfig.json ]; then echo "tsconfig.json exists, leave it";
 elif grep -q '"workspaces"' package.json 2>/dev/null || [ -f pnpm-workspace.yaml ]; then echo "workspaces monorepo: do not add a root tsconfig.json";
 elif [ -n "$(find . -maxdepth 3 \( -name .git -o -name node_modules -o -name vendor -o -name dist -o -name build \) -prune -o -type f -name tsconfig.json -print 2>/dev/null)" ]; then echo "per-directory tsconfig.json files exist: do not add a root one, it would type-check the whole tree";
+elif ts=$({ git -c core.quotepath=off ls-files --cached --others --exclude-standard -- '*.ts' '*.tsx' '*.mts' '*.cts' 2>/dev/null || find . -maxdepth 6 \( -name .git -o -name node_modules -o -name vendor -o -name dist -o -name build \) -prune -o -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.mts' -o -name '*.cts' \) -print 2>/dev/null; } | sed 's#^\./##' | grep -vE '(^|/)(node_modules|vendor|dist|build)/|^vitest\.config\.(ts|mts|cts)$' || true) && [ -z "$ts" ]; then echo "no TypeScript files: do not add a root tsconfig.json (#191); add it when the first .ts lands";
 else cp "$SCAFFOLD/tsconfig.json.template" tsconfig.json; fi
 ```
 
 ```sh verify=tsconfig
 set -e
-[ -f tsconfig.json ] || { echo "tsconfig.json not written (existing config or monorepo)"; exit 0; }
+[ -f tsconfig.json ] || { echo "tsconfig.json not written (existing config, monorepo or no TypeScript files)"; exit 0; }
 echo "verified: tsconfig.json present; the hook will now type-check the whole tree on JS/TS commits"
 ```
 

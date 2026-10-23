@@ -43,6 +43,11 @@ VERIFY_ANSWER_FD=0
 # replacing the whole function with `offer(){ return 0; }` went undetected.
 : "${SCAFFOLD_VERIFY_TTY:=}"
 
+# The hook's own tool resolver (venv, linked-worktree venv, PATH, python -m), so
+# a tool the hook runs from .venv is never reported missing here (#194).
+# shellcheck source=githooks/lib/py-tool.template
+. "${SCAFFOLD_DIR:-$(dirname "${BASH_SOURCE[0]}")}/githooks/lib/py-tool.template"
+
 # Detect the project's package manager from lockfiles / available binaries.
 js_install_cmd() {
   if [ -f pnpm-lock.yaml ] && command -v pnpm >/dev/null 2>&1; then echo "pnpm add -D"
@@ -123,13 +128,15 @@ run_toolchain_verify() {
     case "$MODE" in
       python|both)
         PYI=$(py_install_cmd)
-        offer "ruff" "command -v ruff" "$PYI" "ruff"
+        # Resolve once outside offer (which hides stderr) so a BORROWED note shows.
+        py_tool ruff || :; py_tool pytest || :
+        offer "ruff" "py_tool ruff" "$PYI" "ruff"
         # ruff present: also confirm the config actually loads (2+ = config error).
-        if command -v ruff >/dev/null 2>&1; then
-          ruff_exit=0; ruff check --quiet . >/dev/null 2>&1 || ruff_exit=$?
+        if py_tool ruff; then
+          ruff_exit=0; "${PY_TOOL_CMD[@]}" check --quiet . >/dev/null 2>&1 || ruff_exit=$?
           [ "$ruff_exit" -ge 2 ] && echo "  ✗ ruff config errored (exit $ruff_exit), check ruff.toml"
         fi
-        offer "pytest + coverage" "command -v pytest" "$PYI" "pytest pytest-cov"
+        offer "pytest + coverage" "py_tool pytest" "$PYI" "pytest pytest-cov"
         ;;
     esac
     case "$MODE" in

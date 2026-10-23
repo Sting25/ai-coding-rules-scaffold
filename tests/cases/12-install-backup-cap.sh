@@ -13,12 +13,12 @@ echo "cases/12 — install backup-cap skip (B12)"
 B12=$(mktemp -d)
 ( cd "$B12" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
   && "$SCAFFOLD_DIR/install.sh" --both --no-verify >/dev/null 2>&1 )
-# Make ruff.toml (a user-owned cp_safe file) differ so --force will try to back it up.
+# Make ruff.toml (a user-owned cp_safe file) differ so --force-all will try to back it up.
 echo '# LOCAL EDIT B12' >>"$B12/ruff.toml"
 # Saturate the backup slots: base + .1..99 = 100 existing ⇒ the cap trips.
 : >"$B12/ruff.toml.scaffold-bak"
 for i in $(seq 1 99); do : >"$B12/ruff.toml.scaffold-bak.$i"; done
-if ( cd "$B12" && "$SCAFFOLD_DIR/install.sh" --both --force --no-verify ) >"$HOOK_OUT" 2>&1 \
+if ( cd "$B12" && "$SCAFFOLD_DIR/install.sh" --both --force-all --no-verify ) >"$HOOK_OUT" 2>&1 \
    && grep -q 'too many .scaffold-bak' "$HOOK_OUT" \
    && grep -q 'Done' "$HOOK_OUT" \
    && grep -q 'LOCAL EDIT B12' "$B12/ruff.toml"; then

@@ -57,9 +57,10 @@ done
 
 # Captured BEFORE any cd: this is where scaffold-doctor.sh itself lives (the
 # npm package root, the Homebrew libexec dir, or a git clone), which is also
-# where install-wiring.sh and scaffold-doctor-gates.sh ship alongside it in all
-# three distribution paths: the first lets the "paired artifacts" section reuse
-# install.sh's own detection logic, the second carries sections 9-12.
+# where install-wiring.sh, scaffold-doctor-gates.sh and scaffold-doctor-drift.sh
+# ship alongside it in all three distribution paths: the first lets the "paired
+# artifacts" section reuse install.sh's own detection logic, the others carry
+# sections 9-12.
 # No dirname(1): cases/18 runs this under a PATH narrowed to bash git grep sed
 # awk basename, and bash 5.3 (ubuntu-26.04, 2026-10-21) made `cd ""` fail, so
 # `$(cd "$(dirname "$0")" && pwd)` died here under set -e instead of degrading.
@@ -71,7 +72,8 @@ SCAFFOLD_DIR="$(cd "$_sd" && pwd)"
 # one symlink hop, computed here: a relative $0 is relative to the caller's cwd.
 DOCTOR_DIR="$SCAFFOLD_DIR"; _d0=$0
 [ ! -L "$_d0" ] || { _t=$(readlink "$_d0"); case $_t in /*) _d0=$_t ;; *) _d0=${_d0%/*}/$_t ;; esac; }
-{ [ -f "$DOCTOR_DIR/scaffold-doctor-gates.sh" ] && [ -f "$DOCTOR_DIR/scaffold-doctor-checks.sh" ]; } || [ "${_d0%/*}" = "$_d0" ] ||
+{ [ -f "$DOCTOR_DIR/scaffold-doctor-gates.sh" ] && [ -f "$DOCTOR_DIR/scaffold-doctor-checks.sh" ] &&
+  [ -f "$DOCTOR_DIR/scaffold-doctor-drift.sh" ]; } || [ "${_d0%/*}" = "$_d0" ] ||
   DOCTOR_DIR="$(cd "${_d0%/*}" 2>/dev/null && pwd)" || DOCTOR_DIR="$SCAFFOLD_DIR"
 
 # The shipped checks read their config by BARE RELATIVE PATH
@@ -156,7 +158,11 @@ fi
 # gets a one-time note, so older installs carry the gap silently. Nothing to
 # check when coding-rules.md was never installed. `CLAUDE.md` may be a symlink
 # to `CLAUDE.md.pointer` in some setups — `[ -f ]` and `grep` both follow it.
-if [ -f coding-rules.md ]; then
+# The scaffold checkout itself holds the SHIPPED coding-rules.md as source and
+# has no root CLAUDE.md by design (#187), so there is nothing to import into.
+if [ -f coding-rules.md ] && [ "$(pwd -P)" = "$(cd "$SCAFFOLD_DIR" && pwd -P)" ]; then
+  note "coding-rules.md is the shipped source here (this is the scaffold checkout, not an install): CLAUDE.md import check skipped"
+elif [ -f coding-rules.md ]; then
   if [ ! -f CLAUDE.md ]; then
     gap "coding-rules.md exists but there is no CLAUDE.md to import it"
   # Anchored, not a substring match: an unanchored '@coding-rules.md' also
@@ -349,7 +355,8 @@ else
   found=0
   for lc in .githooks/local.d/*; do
     [ -f "$lc" ] || continue
-    case "$(basename "$lc")" in README.md) continue ;; esac
+    # The installer's own backups (README.md.scaffold-bak) are not checks.
+    case "$(basename "$lc")" in README.md|*.scaffold-bak*) continue ;; esac
     found=$((found + 1))
     if [ -x "$lc" ]; then ok "local.d/$(basename "$lc") armed"
     else note "local.d/$(basename "$lc") present but not executable (that bit is the off switch)"; fi
@@ -450,43 +457,14 @@ else
 fi
 
 # --- 9. template drift (AGENTS.md, coding-rules.md) --------------------------
-# AGENTS.md is never rewritten once it exists, and coding-rules.md is replaced
-# wholesale only under --force — correct, since both are user-owned once
-# installed. The flip side is silent: a scaffold release that adds a section
-# to either shipped file leaves an install behind with nothing on disk saying
-# so (#133). Neither file carries a version marker, so section HEADINGS
-# (every `## `/`### ` line) are the inventory, reported as a NOTE never a gap
-# since a project may have deliberately trimmed one.
-section "template drift"
-# doctor_heading_drift <installed> <shipped> <label> <policy-note>. One awk
-# pass mirrors section 4's forbidden-patterns-vs-template comparison: only
-# headings that were SHIPPED and are now absent are reported (an extra local
-# section is healthy, not drift). The regex skips a `{{...}}`/`<TOKEN>`
-# placeholder install.sh would substitute; neither shipped file has one today
-# (checked), so this guards a future heading rather than a live case.
-doctor_heading_drift() {
-  local td_inst=$1 td_shipped=$2 td_label=$3 td_policy=$4 td_quoted
-  [ -f "$td_inst" ] || return 0
-  if [ ! -f "$td_shipped" ]; then
-    note "$(basename "$td_shipped") not found next to scaffold-doctor.sh ($SCAFFOLD_DIR): $td_label drift cannot be checked; re-fetch the full scaffold bundle, not just this one file"
-    return 0
-  fi
-  td_quoted=$(awk '
-    FNR == NR { have[$0] = 1; next }
-    !/^(## |### )/ { next }
-    /\{\{/ || /<[A-Za-z_-]+>/ { next }
-    !($0 in have) { printf "%s\"%s\"", (n++ ? ", " : ""), $0 }
-  ' "$td_inst" "$td_shipped" 2>/dev/null || true)
-  if [ -z "$td_quoted" ]; then
-    ok "$td_label carries every section of the shipped template"
-    return 0
-  fi
-  note "$(basename "$td_inst") predates the shipped template: missing $td_quoted. diff it against $td_shipped and adopt what applies; $td_policy"
-}
-doctor_heading_drift "AGENTS.md" "$SCAFFOLD_DIR/AGENTS.md.template" "AGENTS.md" \
-  "install.sh never rewrites this file"
-doctor_heading_drift "coding-rules.md" "$SCAFFOLD_DIR/coding-rules.md" "coding-rules.md" \
-  "install.sh --force replaces it wholesale (backup in .scaffold-bak); merging by hand keeps local edits"
+# Lives in scaffold-doctor-drift.sh (its header says why), SOURCED here. Missing,
+# it is a note, for the same reason the gates module is.
+if [ -f "$DOCTOR_DIR/scaffold-doctor-drift.sh" ]; then
+  # shellcheck source=scaffold-doctor-drift.sh
+  . "$DOCTOR_DIR/scaffold-doctor-drift.sh"
+else
+  note "scaffold-doctor-drift.sh not found next to scaffold-doctor.sh ($DOCTOR_DIR): the AGENTS.md and coding-rules.md template-drift check is skipped; re-fetch the full scaffold bundle, not just this one file"
+fi
 
 # --- summary ----------------------------------------------------------------
 echo ""

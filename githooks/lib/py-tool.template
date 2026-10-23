@@ -1,0 +1,76 @@
+# shellcheck shell=bash
+# shellcheck disable=SC2034  # PY_TOOL_SRC is read by the sourcing script
+# .githooks/lib/py-tool: the one place a Python tool (ruff, pytest) is resolved.
+# SOURCED, never run. pre-commit and lib/scaffold-config source the installed
+# copy; scaffold-assess.sh and install-verify.sh source this template from the
+# scaffold checkout. Three PATH-only lookups used to disagree: a tool installed
+# only in the project's venv was "absent" to some callers, so an assessment
+# measured the wrong ruff and the installer offered `pip install` for tools the
+# hook already ran (#144, #192, #194).
+#
+#   py_tool <name>       sets PY_TOOL_CMD (argv prefix) and PY_TOOL_SRC (what it
+#                        resolved to, for display); returns 1 when no route works
+#   py_tool_version      prints the first line of `--version` for PY_TOOL_CMD
+#
+# Routes, in order: $VIRTUAL_ENV, ./.venv, ./venv, the MAIN worktree's .venv when
+# this is a linked git worktree (`git worktree add` copies tracked files only, so
+# a gitignored .venv is never there; one BORROWED note is printed to stderr the
+# first time), PATH, then `python3 -m <name>` (`py -3 -m` where python3 is
+# absent). Each venv is probed under bin/ and Scripts/, so Windows Git Bash works.
+PY_TOOL_CMD=()
+PY_TOOL_SRC=""
+PY_TOOL_NOTED=0
+
+# _py_venv_tool <venv-dir> <name>: set PY_TOOL_CMD when the venv has the tool.
+_py_venv_tool() {
+  local f
+  for f in "$1/bin/$2" "$1/Scripts/$2" "$1/Scripts/$2.exe"; do
+    if [ -x "$f" ]; then PY_TOOL_CMD=("$f"); return 0; fi
+  done
+  return 1
+}
+
+# _py_main_worktree: print the main worktree's root, only from a linked worktree.
+# The common git dir is <main>/.git for every worktree; its parent is the main
+# checkout. Output that is not an existing directory (an old git that ignores
+# --path-format) or a bare repository is no answer.
+_py_main_worktree() {
+  local common top
+  common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+  [ -d "$common" ] && [ "${common##*/}" = .git ] || return 1
+  top=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
+  [ "$(cd "${common%/*}" && pwd -P)" != "$(cd "$top" && pwd -P)" ] || return 1
+  printf '%s' "${common%/*}"
+}
+
+py_tool() {
+  local name=$1 cand main
+  PY_TOOL_CMD=(); PY_TOOL_SRC=""
+  if [ -n "${VIRTUAL_ENV:-}" ] && _py_venv_tool "$VIRTUAL_ENV" "$name"; then
+    PY_TOOL_SRC=${PY_TOOL_CMD[0]}; return 0
+  fi
+  for cand in .venv venv; do
+    if _py_venv_tool "./$cand" "$name"; then PY_TOOL_SRC=${PY_TOOL_CMD[0]#./}; return 0; fi
+  done
+  if main=$(_py_main_worktree) && _py_venv_tool "$main/.venv" "$name"; then
+    PY_TOOL_SRC=${PY_TOOL_CMD[0]}
+    if [ "$PY_TOOL_NOTED" -eq 0 ]; then
+      PY_TOOL_NOTED=1
+      echo "note: BORROWED FROM MAIN WORKTREE: $name from $main/.venv (this worktree has no venv of its own)" >&2
+    fi
+    return 0
+  fi
+  if command -v "$name" >/dev/null 2>&1; then
+    PY_TOOL_CMD=("$name"); PY_TOOL_SRC=$(command -v "$name"); return 0
+  fi
+  # --version doubles as a check that the module is runnable, not just importable.
+  if command -v python3 >/dev/null 2>&1 && python3 -m "$name" --version >/dev/null 2>&1; then
+    PY_TOOL_CMD=(python3 -m "$name"); PY_TOOL_SRC="python3 -m $name"; return 0
+  fi
+  if command -v py >/dev/null 2>&1 && py -3 -m "$name" --version >/dev/null 2>&1; then
+    PY_TOOL_CMD=(py -3 -m "$name"); PY_TOOL_SRC="py -3 -m $name"; return 0
+  fi
+  return 1
+}
+
+py_tool_version() { "${PY_TOOL_CMD[@]}" --version 2>&1 | head -n 1; }

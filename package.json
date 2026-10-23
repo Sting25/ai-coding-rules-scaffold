@@ -20,6 +20,7 @@
     "scaffold-assess.sh",
     "scaffold-doctor-gates.sh",
     "scaffold-doctor-checks.sh",
+    "scaffold-doctor-drift.sh",
     "bin/",
     "githooks/",
     "forbidden-patterns/",

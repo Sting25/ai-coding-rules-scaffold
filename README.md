@@ -117,7 +117,8 @@ Tests run in CI by default: a plain install also drops `.github/workflows/tests.
 ./install.sh --frontend     # TS/JS only
 ./install.sh --both         # both stacks
 ./install.sh --shell        # shell-only project (no Python/TS manifest) — hooks + shell/secrets patterns only
-./install.sh --force        # replace scaffold files (each backed up to .scaffold-bak; CLAUDE.md/AGENTS.md never overwritten)
+./install.sh --force        # replace scaffold-owned files (hooks, scripts, workflows, pattern files), each backed up to .scaffold-bak; your configs and rules docs stay
+./install.sh --force-all    # also replace user-owned files (rules docs, ruff.toml, eslint.config.js, ...), each backed up; CLAUDE.md/AGENTS.md never overwritten
 ./install.sh --no-verify    # skip the post-install toolchain check (no detect/offer)
 ./install.sh --claude       # also install opt-in Claude Code agent guardrails
 ./install.sh --cursor       # also install opt-in Cursor agent guardrails
@@ -152,7 +153,8 @@ scaffold-owned code: the pre-commit hook, the `.githooks/lib/*` scanners, and
 the `commit-msg` hook, whenever it differs from the shipped version, with no
 `--force` needed, so pulling a new tag and re-running delivers security
 fixes. Your own configs (`ruff.toml`, `eslint.config.js`, `.scaffold.toml`,
-the rules docs, …) are left untouched, and `.forbidden-patterns/*.txt` files
+the rules docs, …) are left untouched, even by `--force` (a changed one gets a
+`kept (user-owned)` line; `--force-all` replaces them, backed up), and `.forbidden-patterns/*.txt` files
 and the CI workflows (`lint.yml`, `tests.yml`, `coverage.yml`, `gitleaks.yml`,
 `dependency-review.yml`, `zizmor.yml`, `socket-security.yml`, `test-guard.yml`)
 that you've edited are kept with a drift notice rather than overwritten (use

@@ -5,12 +5,14 @@
 
 # --- toolchain config delivery + detect/offer ------------------------------
 # Fresh install (the bootstrap repo removed some of these to isolate the hook
-# unit tests). A --both install must drop every auto-by-stack config.
+# unit tests). A --both install must drop every auto-by-stack config (tsconfig.json
+# needs a .ts file in the fixture since #191).
 # set -euo pipefail is inherited from the driver, so a failed cd aborts the run.
 # shellcheck disable=SC2164
 cd "$WORK"
 DTMP=$(mktemp -d)
 ( cd "$DTMP" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
+  && echo 'export const x = 1;' >index.ts \
   && "$SCAFFOLD_DIR/install.sh" --both --no-verify ) >"$HOOK_OUT" 2>&1
 for f in tsconfig.json .prettierrc.json .prettierignore vitest.config.ts pytest.ini .coveragerc; do
   if [ -f "$DTMP/$f" ]; then
@@ -134,11 +136,11 @@ rm -rf "$UWIRED"
 
 # (T) install --force must NOT clobber CLAUDE.md or a customized AGENTS.md.
 UFC=$(mk_userproj)
-( cd "$UFC" && "$SCAFFOLD_DIR/install.sh" --both --force --no-verify ) >"$HOOK_OUT" 2>&1
+( cd "$UFC" && "$SCAFFOLD_DIR/install.sh" --both --force-all --no-verify ) >"$HOOK_OUT" 2>&1
 if grep -q 'HAND-WRITTEN-MEMORY' "$UFC/CLAUDE.md" && grep -q 'CUSTOM-PROJECT-SECTION' "$UFC/AGENTS.md"; then
-  echo "  ✓ --force preserves user CLAUDE.md and AGENTS.md"; PASS=$((PASS + 1))
+  echo "  ✓ --force-all preserves user CLAUDE.md and AGENTS.md"; PASS=$((PASS + 1))
 else
-  echo "  ✗ --force clobbered a user-owned file"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  echo "  ✗ --force-all clobbered a user-owned file"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$UFC"
 
@@ -157,11 +159,11 @@ rm -rf "$UIDEM"
 UBK=$(mk_userproj)
 ( cd "$UBK" && "$SCAFFOLD_DIR/install.sh" --both --no-verify >/dev/null 2>&1 \
             && echo '# local edit' >>ruff.toml \
-            && "$SCAFFOLD_DIR/install.sh" --both --force --no-verify ) >"$HOOK_OUT" 2>&1
+            && "$SCAFFOLD_DIR/install.sh" --both --force-all --no-verify ) >"$HOOK_OUT" 2>&1
 if [ -f "$UBK/ruff.toml.scaffold-bak" ] && grep -q 'local edit' "$UBK/ruff.toml.scaffold-bak"; then
-  echo "  ✓ --force backs up changed files to .scaffold-bak"; PASS=$((PASS + 1))
+  echo "  ✓ --force-all backs up changed files to .scaffold-bak"; PASS=$((PASS + 1))
 else
-  echo "  ✗ --force did not back up the changed file"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  echo "  ✗ --force-all did not back up the changed file"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$UBK"
 

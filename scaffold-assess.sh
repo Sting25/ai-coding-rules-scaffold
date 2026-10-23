@@ -56,7 +56,7 @@ fi
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/lib" "$WORK/patterns"
-for t in "$SCAFFOLD_DIR"/githooks/lib/check-*.template "$SCAFFOLD_DIR"/githooks/lib/scaffold-config.template; do
+for t in "$SCAFFOLD_DIR"/githooks/lib/check-*.template "$SCAFFOLD_DIR"/githooks/lib/scaffold-config.template "$SCAFFOLD_DIR"/githooks/lib/py-tool.template; do
   n=$(basename "$t" .template)
   cp "$t" "$WORK/lib/$n" && chmod +x "$WORK/lib/$n"
 done
@@ -64,6 +64,9 @@ for t in "$SCAFFOLD_DIR"/forbidden-patterns/*.txt.template; do
   cp "$t" "$WORK/patterns/$(basename "$t" .template)"
 done
 export SCAFFOLD_PATTERNS_DIR="$WORK/patterns"
+# The resolver the hook uses, so the ruff measured here is the ruff the hook runs.
+# shellcheck source=githooks/lib/py-tool.template
+. "$SCAFFOLD_DIR/githooks/lib/py-tool.template"
 
 ALL="$WORK/all.z"
 git -c core.quotepath=off ls-files -z >"$ALL"
@@ -140,9 +143,9 @@ echo "Project-wide configs (entries 6 to 10), measured with the shipped config:"
 py_files=$(tr '\0' '\n' <"$ALL" | grep -c '\.py$' || true)
 if [ "$py_files" -eq 0 ]; then
   echo "  - ruff.toml: not applicable (no tracked .py files)"
-elif command -v ruff >/dev/null 2>&1 || python3 -m ruff --version >/dev/null 2>&1; then
-  if command -v ruff >/dev/null 2>&1; then RUFF=ruff; else RUFF="python3 -m ruff"; fi
-  n=$($RUFF check --no-cache --config "$SCAFFOLD_DIR/ruff.toml.template" --quiet --exit-zero --output-format concise . 2>/dev/null | grep -c . || true)
+elif py_tool ruff; then
+  echo "  - ruff measured with $PY_TOOL_SRC ($(py_tool_version))"
+  n=$("${PY_TOOL_CMD[@]}" check --no-cache --config "$SCAFFOLD_DIR/ruff.toml.template" --quiet --exit-zero --output-format concise . 2>/dev/null | grep -c . || true)
   echo "  $([ "$n" -eq 0 ] && echo ✓ || echo ✗) ruff.toml: $n finding(s) across $py_files .py file(s); the hook lints only staged files, so this is the debt, not a blocker"
 else
   echo "  ! ruff.toml: $py_files .py file(s), ruff not installed here, not measured"
@@ -156,6 +159,8 @@ elif grep -q '"workspaces"' package.json 2>/dev/null || [ -f pnpm-workspace.yaml
   echo "  ! tsconfig.json: workspaces monorepo, do not add a root tsconfig.json (#163); per-package configs already type-check"
 elif nested=$(find . -maxdepth 3 \( -name .git -o -name node_modules -o -name vendor -o -name dist -o -name build \) -prune -o -type f -name tsconfig.json -print 2>/dev/null | sed -e 's#^\./##' -e 's#/tsconfig\.json$##' | sort | tr '\n' ' ') && [ -n "$nested" ]; then
   echo "  ! tsconfig.json: per-directory tsconfig.json in ${nested% }; install.sh will not add a root one (#163), which would type-check the whole tree with these options instead"
+elif [ -z "$(git ls-files --cached --others --exclude-standard -- '*.ts' '*.tsx' '*.mts' '*.cts' | grep -vE '(^|/)(node_modules|vendor|dist|build)/|^vitest\.config\.(ts|mts|cts)$' || true)" ]; then
+  echo "  - tsconfig.json: no TypeScript files (tracked or untracked-unignored); install.sh will not add a root one (#191). Add it yourself when the first .ts lands"
 elif command -v node >/dev/null 2>&1 && node -e "require.resolve('typescript/package.json')" >/dev/null 2>&1; then
   n=$(npx --no-install tsc --noEmit -p "$SCAFFOLD_DIR/tsconfig.json.template" 2>&1 | grep -c 'error TS' || true)
   echo "  $([ "$n" -eq 0 ] && echo ✓ || echo ✗) tsconfig.json: $n type error(s) across $js_files JS/TS file(s); tsc runs PROJECT-WIDE: the hook only warns locally, but the lint workflow's type-check blocks every PR until zero"
@@ -173,8 +178,8 @@ echo
 
 echo "Tools on this machine (what the hook and CI can run):"
 tool() { if eval "$2" >/dev/null 2>&1; then echo "  ✓ $1"; else echo "  - $1: absent ($3)"; fi; }
-tool "ruff (Python lint)"          "command -v ruff || python3 -m ruff --version" "entry 6 does nothing without it"
-tool "pytest"                      "command -v pytest || python3 -m pytest --version" "entries 4 and 18 need it"
+tool "ruff (Python lint)"          "py_tool ruff" "entry 6 does nothing without it"
+tool "pytest"                      "py_tool pytest" "entries 4 and 18 need it"
 tool "node"                        "command -v node" "every JS/TS tool below needs it"
 tool "eslint (project-local)"      "node -e \"require.resolve('eslint/package.json')\"" "entry 9 skips with a note"
 tool "typescript (project-local)"  "node -e \"require.resolve('typescript/package.json')\"" "entry 10 skips with a note"

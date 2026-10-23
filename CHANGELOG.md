@@ -19,6 +19,18 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Changed
 
+- **`--force` no longer replaces your own configs and rules docs.** It replaced
+  `coding-rules.md`, `operational-rules.md`, `eslint.config.js`, `.coveragerc`,
+  `ruff.toml`, `.prettierignore`, `vitest.config.ts`, `.claude/settings.json`,
+  `.scaffold.toml`, `.github/dependabot.yml` and the other files you are meant
+  to edit, with only a routine `backed up:` line, so project edits were lost
+  without a warning. `--force` now replaces scaffold-owned files only (hooks,
+  scripts, CI workflows, forbidden-pattern files). For a changed file of yours
+  it prints `kept (user-owned): <file> ... --force-all replaces it` and leaves
+  it alone. The new `--force-all` replaces those files too, backing each up and
+  printing the backup path as before. Scripts that relied on `--force` to reset
+  your configs need `--force-all`.
+
 - **A type error in another file no longer blocks your commit.** The pre-commit
   `tsc --noEmit` run is project-wide, so a one-file commit used to fail on errors
   in files you never touched. It now prints the compiler output and warns; the
@@ -49,6 +61,41 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Fixed
 
+- **A linked git worktree no longer skips the local ruff pass.** `git worktree
+add` checks out tracked files only, so a gitignored `.venv` is never there and
+  the hook found no ruff. The hook now borrows the main worktree's `.venv` after
+  its own `.venv`/`venv` and before PATH, and prints one `BORROWED FROM MAIN
+WORKTREE` note when it does. Python tools are resolved by one shared helper,
+  `.githooks/lib/py-tool` (installed with the hook; hand adopters copy it too,
+  see COMPONENTS.md entry 1), which probes `bin/` and `Scripts/` so Git Bash on
+  Windows works (#192).
+- **`scaffold-assess.sh` and the installer's toolchain check use the project's
+  own ruff and pytest.** Both looked only at PATH and the system Python, so a
+  project with its tools in `.venv` was assessed with a different ruff (7
+  phantom findings against a clean 0) and was told to `pip install` tools it
+  already had. They now use the hook's resolver, and the assessment prints which
+  binary and version it measured, for example `ruff measured with .venv/bin/ruff
+(ruff 0.16.5)` (#194).
+
+- **A repo with no TypeScript no longer gets a root `tsconfig.json`.** The
+  installer now skips it, with the reason printed, when the repo has no
+  `.ts`, `.tsx`, `.mts` or `.cts` files outside `node_modules`, `vendor`, `dist`
+  and `build`. A root `tsconfig.json` turns on a whole-tree `tsc --noEmit` in the
+  pre-commit hook and `lint.yml`, which a plain JavaScript project never asked
+  for. Add it yourself when the first `.ts` file lands.
+  `scaffold-assess.sh` reports the same verdict.
+
+- **The doctor's template-drift note no longer fires on a recased heading or a
+  renamed `## Project`.** Headings in `AGENTS.md` and `coding-rules.md` are now
+  compared ignoring case and surrounding whitespace, and the `## Project`
+  section, which the template hands to you, is left out of the comparison.
+- **The doctor no longer reports a gap on the scaffold checkout itself.** The
+  repository holds the shipped `coding-rules.md` as source and has no root
+  `CLAUDE.md`, so the "no CLAUDE.md to import it" check had nothing to fix
+  there. It is now a note when the project directory is the scaffold directory.
+- **The doctor no longer flags the installer's `.scaffold-bak` backups in
+  `.githooks/local.d/`.** A refreshed `README.md.scaffold-bak` was reported as a
+  check that is "present but not executable"; backups are now skipped.
 - **Emoji and translation files no longer trip the hidden-Unicode check.** A
   zero-width joiner between two emoji (family, profession and rainbow-flag
   emoji) is now allowed in READMEs and UI strings, while one inside an
