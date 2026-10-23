@@ -5,12 +5,14 @@
 
 # --- toolchain config delivery + detect/offer ------------------------------
 # Fresh install (the bootstrap repo removed some of these to isolate the hook
-# unit tests). A --both install must drop every auto-by-stack config.
+# unit tests). A --both install must drop every auto-by-stack config (tsconfig.json
+# needs a .ts file in the fixture since #191).
 # set -euo pipefail is inherited from the driver, so a failed cd aborts the run.
 # shellcheck disable=SC2164
 cd "$WORK"
 DTMP=$(mktemp -d)
 ( cd "$DTMP" && git init --quiet && git config user.email test@test.local && git config user.name "Scaffold Test" && echo '{"name":"x"}' >package.json && echo 'name="x"' >pyproject.toml \
+  && echo 'export const x = 1;' >index.ts \
   && "$SCAFFOLD_DIR/install.sh" --both --no-verify ) >"$HOOK_OUT" 2>&1
 for f in tsconfig.json .prettierrc.json .prettierignore vitest.config.ts pytest.ini .coveragerc; do
   if [ -f "$DTMP/$f" ]; then

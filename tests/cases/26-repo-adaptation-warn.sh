@@ -92,7 +92,10 @@ rm -rf "$JS"
 # tsconfig.json / .prettierrc.json / the agent configs is a `//`-prefixed KEY,
 # which is valid JSON and must be matched by the same pattern. Inserted after
 # the opening brace, where the shipped tsconfig.json already carries `//` lines.
-_radapt_fixture JN
+# The fixture needs a .ts file or the installer skips tsconfig.json (#191).
+fixture_repo JN
+( cd "$JN" && echo '{"name":"x"}' >package.json && echo 'export const x = 1;' >index.ts )
+fixture_install "$JN" --frontend --no-verify --coverage-gate
 awk 'NR == 1 { print; print "  \"// Repo adaptation: kept ES2019 for the vendored runtime\": true," ; next } { print }' \
   "$JN/tsconfig.json" >"$JN/tsconfig.next" && mv "$JN/tsconfig.next" "$JN/tsconfig.json"
 ( cd "$JN" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify --coverage-gate --force-all ) >"$HOOK_OUT" 2>&1
