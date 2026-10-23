@@ -49,6 +49,10 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Fixed
 
+- **The doctor no longer reports a gap on the scaffold checkout itself.** The
+  repository holds the shipped `coding-rules.md` as source and has no root
+  `CLAUDE.md`, so the "no CLAUDE.md to import it" check had nothing to fix
+  there. It is now a note when the project directory is the scaffold directory.
 - **The doctor no longer flags the installer's `.scaffold-bak` backups in
   `.githooks/local.d/`.** A refreshed `README.md.scaffold-bak` was reported as a
   check that is "present but not executable"; backups are now skipped.

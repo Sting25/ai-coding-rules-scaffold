@@ -158,7 +158,11 @@ fi
 # gets a one-time note, so older installs carry the gap silently. Nothing to
 # check when coding-rules.md was never installed. `CLAUDE.md` may be a symlink
 # to `CLAUDE.md.pointer` in some setups — `[ -f ]` and `grep` both follow it.
-if [ -f coding-rules.md ]; then
+# The scaffold checkout itself holds the SHIPPED coding-rules.md as source and
+# has no root CLAUDE.md by design (#187), so there is nothing to import into.
+if [ -f coding-rules.md ] && [ "$(pwd -P)" = "$(cd "$SCAFFOLD_DIR" && pwd -P)" ]; then
+  note "coding-rules.md is the shipped source here (this is the scaffold checkout, not an install): CLAUDE.md import check skipped"
+elif [ -f coding-rules.md ]; then
   if [ ! -f CLAUDE.md ]; then
     gap "coding-rules.md exists but there is no CLAUDE.md to import it"
   # Anchored, not a substring match: an unanchored '@coding-rules.md' also

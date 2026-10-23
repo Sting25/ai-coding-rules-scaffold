@@ -54,6 +54,41 @@ else
 fi
 rm -rf "$DOCF" "$DRIFTMOD"
 
-unset DOCF DRIFTMOD docf_rc
+# (C) #187: the scaffold checkout holds the shipped coding-rules.md and no root
+# CLAUDE.md, so the #136 import check has nothing to report there. Run the
+# doctor from a copy of that shape (the doctor beside its own project root) and
+# from an ordinary install with CLAUDE.md removed: the first is a note, the
+# second must stay a gap, or the skip has widened into "never check".
+SELFH=$(mktemp -d)
+cp "$SCAFFOLD_DIR/scaffold-doctor.sh" "$SCAFFOLD_DIR/scaffold-doctor-drift.sh" "$SCAFFOLD_DIR/coding-rules.md" "$SELFH/"
+git -C "$SELFH" init -q
+docf_rc=0
+( cd "$SELFH" && bash ./scaffold-doctor.sh ) >"$HOOK_OUT" 2>&1 || docf_rc=$?
+if grep -qF "CLAUDE.md import check skipped" "$HOOK_OUT" \
+   && ! grep -qF "there is no CLAUDE.md to import it" "$HOOK_OUT"; then
+  echo "  ✓ the #136 import check is skipped when the project is the scaffold checkout"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ the self-host skip did not apply (exit $docf_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$SELFH"
+docf_project DOCF
+rm -f "$DOCF/CLAUDE.md"
+docf_rc=0
+( cd "$DOCF" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || docf_rc=$?
+if [ "$docf_rc" -eq 1 ] && grep -qF "coding-rules.md exists but there is no CLAUDE.md to import it" "$HOOK_OUT" \
+   && ! grep -qF "import check skipped" "$HOOK_OUT"; then
+  echo "  ✓ an installed project with no CLAUDE.md is still a gap"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ the missing-CLAUDE.md gap was lost (exit $docf_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCF"
+
+unset DOCF DRIFTMOD SELFH docf_rc
 unset -f docf_project
 reset_repo
