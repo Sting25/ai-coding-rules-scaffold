@@ -47,10 +47,11 @@ mutmut majors, whose CLI and config surface differ substantially:
   - mutmut's own process exit code is NOT the verdict. A run with
     surviving mutants exits 0, identically to a run where everything was
     killed. The only reliable exit-code signal is a NONZERO code paired
-    with one of two specific strings: "failed to collect stats" (the
-    baseline suite itself failed, before mutation testing starts) or
-    "BadTestExecutionCommandsException" (the configured test-selection
-    args are not runnable by pytest at all). Everything else must be read
+    with one of three specific strings: "failed to collect stats" (the
+    baseline suite itself failed, before mutation testing starts),
+    "Failed to run clean test" (test state leaked between its in-process
+    pytest runs) or "BadTestExecutionCommandsException" (the configured
+    test-selection args are not runnable by pytest at all). Everything else must be read
     from the artifacts mutmut writes under mutants/, never from $?.
   - A bad/nonexistent source_paths entry produces NO distinct error: 0
     files get mutated, the baseline suite runs and passes, and mutmut
@@ -75,13 +76,11 @@ mutmut majors, whose CLI and config surface differ substantially:
     all, saying so explicitly when it does.
   - Measured but easy to miss: a run that aborts early via "Stopping
     early..." still writes .meta files, but every mutant in them has
-    exit_code None, i.e. status "not checked", the SAME empty-bucket
-    signature as a genuinely broken baseline. Text-matching
-    "failed to collect stats" is what actually tells the two apart; the
-    JSON alone cannot. "not checked" mutants that survive this
-    disambiguation are folded into the advisory count below, on the
-    reasoning that a mutant nothing ever ran is exactly as unconstrained
-    as one that ran and survived.
+    exit_code None ("not checked"), the SAME empty-bucket signature as a
+    broken baseline. Text-matching the hard-failure strings above tells
+    the two apart; the JSON alone cannot. Surviving "not checked" mutants
+    are folded into the advisory count: a mutant nothing ran is as
+    unconstrained as one that ran and survived.
 
 WHAT COUNTS AS "COULD NOT EVALUATE" (exit 2) VS ADVISORY (exit 0).
 Per #145's design: advisory first, strict later. Exit 2 is reserved for
@@ -97,6 +96,9 @@ KNOWN LIMITATIONS, stated rather than silently absorbed:
   - No dry-run mutant count exists in this mutmut major, so --max-mutants
     is enforced AFTER the full run completes, not as a fast preflight. The
     run itself is not cheaper just because the cap will reject it.
+  - mutmut runs the suite in-process several times, then once per forked
+    mutant, so state surviving a pytest.main() call (module-level caches,
+    global config) fails the baseline: a hard failure, never retried.
   - Config injection merges into pyproject.toml only; a project configured
     solely via setup.cfg's [mutmut] section is not merged and gets a fresh
     pyproject.toml written into the worktree instead, which may or may not
@@ -349,14 +351,29 @@ def parse_results_fallback(wt: str, scope: set[str], ci: bool) -> dict[str, dict
     return {"(pooled: " + ", ".join(sorted(scope)) + ")": counts}
 
 
+# Exit-2 signatures in mutmut's output; its tail is printed too (#199).
+HARD_FAILURES = (
+    ("failed to collect stats",
+     "the baseline test suite fails before any mutation testing starts "
+     "(mutmut: \"failed to collect stats\"). Fix the failing tests first."),
+    ("Failed to run clean test",
+     "the suite passed mutmut's stats run but failed its clean run (mutmut: "
+     "\"Failed to run clean test\"). Test state leaks between mutmut's "
+     "in-process pytest runs (module-level caches, global config); the fix "
+     "belongs in the suite. Not retried: a retry fabricates kills (#198)."),
+    ("BadTestExecutionCommandsException",
+     "pytest cannot run with the configured test-selection arguments "
+     "(mutmut: BadTestExecutionCommandsException). Check "
+     "pytest_add_cli_args_test_selection."),
+)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", required=True, help="base ref to compare against")
     ap.add_argument("--ci", action="store_true")
-    ap.add_argument(
-        "--max-mutants", type=int, default=400, dest="max_mutants",
-        help="refuse to report on more than this many mutants (guards CI time)",
-    )
+    ap.add_argument("--max-mutants", type=int, default=400, dest="max_mutants",
+                    help="refuse to report on more than this many mutants (guards CI time)")
     args = ap.parse_args()
 
     v = verify_mutmut(args.ci)
@@ -407,20 +424,10 @@ def main() -> int:
         r = run([sys.executable, "-m", "mutmut", "run"], cwd=wt)
         out = (r.stdout or "") + (r.stderr or "")
 
-        if "failed to collect stats" in out:
-            emit("error",
-                 "the baseline test suite fails before any mutation testing "
-                 "starts (mutmut: \"failed to collect stats\"). Fix the "
-                 "failing tests first; a mutation gate cannot run against a "
-                 "red baseline.", args.ci)
-            return 2
-        if "BadTestExecutionCommandsException" in out:
-            emit("error",
-                 "pytest could not run at all with the configured "
-                 "test-selection arguments (mutmut: "
-                 "BadTestExecutionCommandsException). Check "
-                 "pytest_add_cli_args_test_selection.", args.ci)
-            return 2
+        for needle, msg in HARD_FAILURES:
+            if needle in out:
+                emit("error", msg, args.ci)
+                return 2
 
         scope = set(only_mutate)
         per_file = parse_meta_files(wt, scope)

@@ -122,7 +122,7 @@ CASE_FLOORS=(
   "48-force-ownership.sh:10"
   "49-py-tool-resolver.sh:9"
   "50-ci-template-credentials.sh:6"
-  "51-mutation-diff-config.sh:2"
+  "51-mutation-diff-config.sh:4"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and

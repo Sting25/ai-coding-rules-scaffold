@@ -142,6 +142,14 @@ WORKTREE` note when it does. Python tools are resolved by one shared helper,
   requests). If it is missing, the fetch passes the job token for that one
   command only and masks it in the log (#196).
 
+- **A mutmut "Failed to run clean test" now fails the mutation step instead of
+  reading as "not checked".** mutmut runs your pytest suite in-process several
+  times, so test state that leaks between those runs (a module-level cache,
+  global logging or app config) fails the later ones. The check did not
+  recognise that message and reported an empty advisory summary with exit 0. It
+  now exits 2 and says the fix belongs in the suite. It does not retry, because
+  a retry measured as fabricating kills (#198).
+
 - **The mutation check keeps your `[tool.mutmut]` settings and copies the whole
   package.** `check-mutation-diff` rewrote the table and kept only the test
   selection, so a project's `also_copy` never reached mutmut and a suite that

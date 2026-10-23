@@ -96,4 +96,46 @@ EOF
   fi
 fi
 
+# --- (B) hard failures: explanation, mutmut output, and no retry ---------------------
+# A stub mutmut that prints $MD_STUB_OUT and counts its invocations. importlib.metadata
+# finds its dist-info through PYTHONPATH, so verify_mutmut() accepts it as 3.7.0.
+mkdir -p "$MD/stub/mutmut" "$MD/stub/mutmut-3.7.0.dist-info"
+printf 'Metadata-Version: 2.1\nName: mutmut\nVersion: 3.7.0\n' >"$MD/stub/mutmut-3.7.0.dist-info/METADATA"
+: >"$MD/stub/mutmut/__init__.py"
+cat >"$MD/stub/mutmut/__main__.py" <<'EOF'
+import os, sys
+with open(os.environ["MD_STUB_COUNT"], "a") as f:
+    f.write("run\n")
+sys.stdout.write(open(os.environ["MD_STUB_OUT"]).read())
+sys.exit(1)
+EOF
+git init -q "$MD/repo"
+mkdir -p "$MD/repo/app"
+: >"$MD/repo/app/__init__.py"
+printf 'def f():\n    return 1\n' >"$MD/repo/app/m.py"
+md_git "$MD/repo" add -A && md_git "$MD/repo" commit -q -m base
+printf 'def f():\n    return 2\n' >"$MD/repo/app/m.py"
+md_git "$MD/repo" commit -q -am change
+
+md_run() {  # $1 = text mutmut ends with; sets md_rc, output in $HOOK_OUT
+  { for i in $(seq 1 60); do echo "mutmut noise line $i"; done; echo "$1"; } >"$MD/stub.out"
+  : >"$MD/count"
+  md_rc=0
+  ( cd "$MD/repo" && MD_STUB_OUT="$MD/stub.out" MD_STUB_COUNT="$MD/count" PYTHONPATH="$MD/stub" \
+      python3 "$MD_TPL" --base HEAD~1 ) >"$HOOK_OUT" 2>&1 || md_rc=$?
+}
+
+md_run "Failed to run clean test"
+if [ "$md_rc" -eq 2 ] && grep -qF 'Failed to run clean test' "$HOOK_OUT" \
+   && grep -qF 'in-process pytest runs' "$HOOK_OUT" \
+   && grep -qF 'belongs in the suite' "$HOOK_OUT" && ! grep -q 'not checked' "$HOOK_OUT"; then
+  echo "  ✓ \"Failed to run clean test\" exits 2 and explains the in-process state leak, not the advisory path"; PASS=$((PASS + 1))
+else
+  echo "  ✗ expected exit 2 with the state-leak explanation (got exit $md_rc)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+if [ "$(wc -l <"$MD/count" | tr -d ' ')" -eq 1 ]; then
+  echo "  ✓ mutmut ran exactly once: that failure is not retried"; PASS=$((PASS + 1))
+else
+  echo "  ✗ mutmut must run exactly once on that failure (ran $(wc -l <"$MD/count" | tr -d ' ') times)"; FAIL=$((FAIL + 1))
+fi
 rm -rf "$MD"
