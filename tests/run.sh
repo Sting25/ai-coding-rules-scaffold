@@ -118,8 +118,8 @@ CASE_FLOORS=(
   "44-linter-dedupe.sh:54"
   "45-tsc-local-warning.sh:8"
   "46-block-message-bypass.sh:6"
-  "47-doctor-followups.sh:6"
-  "48-force-ownership.sh:8"
+  "47-doctor-followups.sh:7"
+  "48-force-ownership.sh:10"
   "49-py-tool-resolver.sh:9"
 )
 
