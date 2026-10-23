@@ -10,7 +10,7 @@
 # Every tool here is a stub that names itself, so no real ruff is needed and the
 # winner of each lookup is visible in the output.
 
-echo "cases/49: shared py-tool resolver: venv beats PATH, a linked worktree borrows (#192)"
+echo "cases/49: shared py-tool resolver: venv beats PATH, linked worktree borrows, assess and verify use it (#192, #194)"
 
 # pt_stub FILE NAME VERSION LABEL: an executable that prints "NAME VERSION" for
 # --version and "LABEL RAN" for anything else, then exits 1, so a run that
@@ -80,11 +80,64 @@ else
   echo "  ✗ expected the worktree's own .venv to win"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 
+# --- (C) scaffold-assess.sh prints the binary and version it measured ----------
+fixture_repo PT_C
+printf 'import os\n' >"$PT_C/m.py"
+git -C "$PT_C" add m.py
+git -C "$PT_C" commit -q --no-verify -m init  # scaffold-allow: test fixture
+pt_stub "$PT_C/.venv/bin/ruff" ruff 9.9.9 "ASSESS VENV RUFF"
+pt_stub "$PT/assessbin/ruff" ruff 1.1.1 "ASSESS PATH RUFF"
+( cd "$PT_C" && PATH="$PT/assessbin:$PATH" bash "$SCAFFOLD_DIR/scaffold-assess.sh" ) >"$HOOK_OUT" 2>&1 || true
+if grep -qF "ruff measured with .venv/bin/ruff (ruff 9.9.9)" "$HOOK_OUT"; then
+  echo "  ✓ assess measures with the project's .venv ruff and prints its path and version"; PASS=$((PASS + 1))
+else
+  echo "  ✗ expected 'ruff measured with .venv/bin/ruff (ruff 9.9.9)'"; grep -n "ruff" "$HOOK_OUT" | sed 's/^/      /'; FAIL=$((FAIL + 1))
+fi
+rm -rf "$PT_C/.venv"
+( cd "$PT_C" && PATH="$PT/assessbin:$PATH" bash "$SCAFFOLD_DIR/scaffold-assess.sh" ) >"$HOOK_OUT" 2>&1 || true
+if grep -qF "ruff measured with $PT/assessbin/ruff (ruff 1.1.1)" "$HOOK_OUT"; then
+  echo "  ✓ assess names the PATH binary and version when there is no venv"; PASS=$((PASS + 1))
+else
+  echo "  ✗ expected the PATH ruff to be named"; grep -n "ruff" "$HOOK_OUT" | sed 's/^/      /'; FAIL=$((FAIL + 1))
+fi
+
+# --- (D) install-verify.sh does not offer pip install for a tool in .venv -------
+# PATH holds only the utilities the module needs, so ruff and pytest are absent
+# from PATH by construction; whatever the host has installed cannot leak in.
+PT_SAFE="$PT/safe"
+mkdir -p "$PT_SAFE"
+for pt_t in env bash sh git grep sed awk tr head dirname cat uname; do
+  pt_p=$(command -v "$pt_t" 2>/dev/null || true)
+  [ -n "$pt_p" ] && ln -s "$pt_p" "$PT_SAFE/$pt_t"
+done
+fixture_repo PT_D
+printf '[project]\nname = "x"\n' >"$PT_D/pyproject.toml"
+pt_verify() {
+  ( cd "$PT_D" && MODE=python VERIFY=1 NO_INSTALL=1 SCAFFOLD_DIR="$SCAFFOLD_DIR" PATH="$PT_SAFE" \
+      bash -c '. "$SCAFFOLD_DIR/install-verify.sh"; run_toolchain_verify' ) >"$HOOK_OUT" 2>&1 || true
+}
+pt_verify
+if grep -qF "! ruff not installed, run: pip install ruff" "$HOOK_OUT" \
+   && grep -qF "! pytest + coverage not installed, run: pip install pytest pytest-cov" "$HOOK_OUT"; then
+  echo "  ✓ control: with no ruff or pytest anywhere, install-verify still offers pip install"; PASS=$((PASS + 1))
+else
+  echo "  ✗ control run did not offer the install"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+pt_stub "$PT_D/.venv/bin/ruff" ruff 3.3.3 "VERIFY RUFF"
+pt_stub "$PT_D/.venv/bin/pytest" pytest 4.4.4 "VERIFY PYTEST"
+pt_verify
+if grep -qF "✓ ruff installed" "$HOOK_OUT" && grep -qF "✓ pytest + coverage installed" "$HOOK_OUT" \
+   && ! grep -qF "pip install" "$HOOK_OUT"; then
+  echo "  ✓ ruff and pytest present only in .venv are reported installed, no pip install offered"; PASS=$((PASS + 1))
+else
+  echo "  ✗ expected both tools reported installed from .venv and no pip install line"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+
 rm -rf "$PT"
 git -C "$PT_A" worktree prune
-rm -rf "$PT_A"
-unset PT PT_A PT_WT
-unset -f pt_stub
+rm -rf "$PT_A" "$PT_C" "$PT_D"
+unset PT PT_A PT_C PT_D PT_WT PT_SAFE pt_t pt_p
+unset -f pt_stub pt_verify
 # shellcheck disable=SC2164  # set -euo pipefail is inherited from the driver
 cd "$WORK"
 reset_repo

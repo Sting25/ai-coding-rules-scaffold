@@ -69,6 +69,13 @@ versioning follows [SemVer](https://semver.org/).
   `.githooks/lib/py-tool` (installed with the hook; hand adopters copy it too,
   see COMPONENTS.md entry 1), which probes `bin/` and `Scripts/` so Git Bash on
   Windows works (#192).
+- **`scaffold-assess.sh` and the installer's toolchain check use the project's
+  own ruff and pytest.** Both looked only at PATH and the system Python, so a
+  project with its tools in `.venv` was assessed with a different ruff (7
+  phantom findings against a clean 0) and was told to `pip install` tools it
+  already had. They now use the hook's resolver, and the assessment prints which
+  binary and version it measured, for example `ruff measured with .venv/bin/ruff
+  (ruff 0.16.5)` (#194).
 
 - **A repo with no TypeScript no longer gets a root `tsconfig.json`.** The
   installer now skips it, with the reason printed, when the repo has no
