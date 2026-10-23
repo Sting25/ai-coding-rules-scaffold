@@ -106,6 +106,25 @@ jobs:
             fi
           done
 
+      # The base is derived at run time, not read from the event payload:
+      # github.event.pull_request.base.sha is frozen when the PR last changed,
+      # but the checkout is a synthetic merge against the base branch's CURRENT
+      # tip. Diffing from the stale sha pulls every commit merged since into
+      # the scope (#199). merge-base with the base branch's tip is right for
+      # both checkouts: on the synthetic merge it is the merge's first parent
+      # by construction, and on a PR head (even one that merged the base
+      # branch itself) it is where the PR left the base. A "is HEAD^2 set"
+      # test cannot tell those two apart, so none is used.
+      - name: Resolve base commit
+        id: base
+        if: steps.detect.outputs.present == 'true'
+        run: |
+          if ! BASE_SHA=$(git merge-base "origin/$GITHUB_BASE_REF" HEAD); then
+            echo "::error::cannot resolve origin/$GITHUB_BASE_REF or its merge-base with HEAD. The checkout needs fetch-depth: 0 and the pull request's base branch."
+            exit 1
+          fi
+          echo "sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+
       # PR-only by the trigger above: "new relative to the base" has no
       # meaning on a push to main, where the comparison already happened in
       # the PR that produced it.
@@ -117,27 +136,17 @@ jobs:
       - name: Red-green (new tests must fail against base)
         if: steps.detect.outputs.present == 'true'
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ steps.base.outputs.sha }}
         run: python3 .githooks/lib/check-red-green --base "$BASE_SHA" --ci
 
       # Diff-scoped mutation testing, advisory-first (issue #145): surviving
       # mutants warn but never fail this step, exit 2 (cannot evaluate) does.
       # No continue-on-error here on purpose; the script's own exit codes
       # already carry the pass/warn/fail semantics this workflow wants.
-      #
-      # The base is derived at run time, not read from the event payload:
-      # github.event.pull_request.base.sha is frozen when the PR last changed,
-      # but the checkout is a synthetic merge against the base branch's CURRENT
-      # tip. Diffing from the stale sha pulls every commit merged since into the
-      # mutation scope (#199). The first parent of that merge commit is the
-      # current base; a checkout that is not a merge falls back to merge-base.
       - name: Mutation testing (diff-scoped, advisory)
         if: steps.detect.outputs.present == 'true'
+        env:
+          BASE_SHA: ${{ steps.base.outputs.sha }}
         run: |
           pip install mutmut==3.7.0
-          if git rev-parse --verify -q 'HEAD^2' >/dev/null; then
-            BASE_SHA=$(git rev-parse 'HEAD^1')
-          else
-            BASE_SHA=$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)
-          fi
           python3 .githooks/lib/check-mutation-diff --base "$BASE_SHA" --ci

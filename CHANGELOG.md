@@ -146,18 +146,24 @@ WORKTREE` note when it does. Python tools are resolved by one shared helper,
   output when it fails.** The step took the base from the pull request event,
   which is frozen at the PR's last push while the checkout is a merge against
   the base branch's current tip, so merges that landed afterwards were pulled
-  into the mutation scope. It now uses the first parent of that merge commit,
-  or the merge-base when the checkout is not a merge. On a hard failure the
-  check also prints the last 40 lines of mutmut's output, which were discarded
-  before (#199).
+  into the mutation scope. One step now resolves the base as the merge-base
+  with `origin/$GITHUB_BASE_REF` (the merge's first parent on the synthetic
+  merge checkout, the point where the PR left the base on a PR head, including
+  one that merged its base) and feeds both the red-green and the mutation
+  step; it fails with a clear message if that branch does not resolve. On a
+  hard failure the mutation check also prints the last 40 lines of mutmut's
+  output, which were discarded before (#199).
 
 - **A mutmut "Failed to run clean test" now fails the mutation step instead of
   reading as "not checked".** mutmut runs your pytest suite in-process several
   times, so test state that leaks between those runs (a module-level cache,
-  global logging or app config) fails the later ones. The check did not
+  global logging or app config) fails the later ones, and so does a test that
+  relies on one mutmut did not select (its clean run executes only the tests
+  tied to the mutants, stopping at the first failure). The check did not
   recognise that message and reported an empty advisory summary with exit 0. It
   now exits 2 and says the fix belongs in the suite. It does not retry, because
-  a retry measured as fabricating kills (#198).
+  a retry measured as fabricating kills (#198). The same exit 2 now covers
+  mutmut's "tests recorded trampoline hits but none match any mutant key".
 
 - **The mutation check keeps your `[tool.mutmut]` settings and copies the whole
   package.** `check-mutation-diff` rewrote the table and kept only the test
@@ -166,9 +172,12 @@ WORKTREE` note when it does. Python tools are resolved by one shared helper,
   inside `mutants/`. It also copied only each changed file's own directory, a
   truncated package. It now carries every other key you set (`also_copy`,
   `do_not_mutate` and the rest; on Python before 3.11 only `also_copy` and the
-  test selection) and points `source_paths` at the top-level package of each
-  changed file. `only_mutate` still limits mutation to the changed files
-  (#197).
+  test selection) and points `source_paths` at the package root of each
+  changed file: the highest ancestor with an `__init__.py`, or, for a namespace
+  layout with none, the top of the tree below the repo root, `src/`, or a source
+  root declared in `pyproject.toml`. Settings that are tables, and
+  `[tool.mutmut.*]` subtables, are not carried and are named on stderr.
+  `only_mutate` still limits mutation to the changed files (#197).
 
 ### Changed
 
