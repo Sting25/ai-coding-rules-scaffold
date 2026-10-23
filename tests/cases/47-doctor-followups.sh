@@ -135,6 +135,25 @@ else
 fi
 rm -rf "$DOCF"
 
-unset DOCF DRIFTMOD SELFH docf_rc
+# (D) lib/py-tool: the hook skips the local ruff pass with a note when it is
+# missing, so the doctor must call that a gap (and stay clean when it is there).
+docf_project DOCF
+docf_rc=0
+( cd "$DOCF" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || docf_rc=$?
+docf_ctl=0; [ "$docf_rc" -eq 0 ] && grep -qF "lib/py-tool present" "$HOOK_OUT" && docf_ctl=1
+rm -f "$DOCF/.githooks/lib/py-tool"
+docf_rc=0
+( cd "$DOCF" && "$SCAFFOLD_DIR/scaffold-doctor.sh" ) >"$HOOK_OUT" 2>&1 || docf_rc=$?
+if [ "$docf_ctl" -eq 1 ] && [ "$docf_rc" -ne 0 ] && grep -qF "lib/py-tool is missing" "$HOOK_OUT"; then
+  echo "  ✓ deleting .githooks/lib/py-tool is a doctor gap; with it present the doctor is clean"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ the doctor should report a gap for a missing lib/py-tool (control=$docf_ctl, exit $docf_rc)"
+  sed 's/^/      /' "$HOOK_OUT"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$DOCF"
+
+unset DOCF DRIFTMOD SELFH docf_rc docf_ctl
 unset -f docf_project docf_retitle docf_level_change docf_drop_project
 reset_repo

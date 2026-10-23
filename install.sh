@@ -57,7 +57,7 @@ set -euo pipefail
 SCAFFOLD_DIR="$(cd "$(dirname "$0")" && pwd)"
 MODE="auto"
 INTERACTIVE=0
-FORCE=0
+FORCE=0 FORCE_ALL=0
 VERIFY=1
 CLAUDE=0
 CURSOR=0

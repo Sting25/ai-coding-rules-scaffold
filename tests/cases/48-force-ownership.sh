@@ -131,9 +131,48 @@ fo_with=0; [ -f "$FON/tsconfig.json" ] && fo_with=1
 rm -rf "$FON"; FON=$(mktemp -d)
 echo '{"name":"x"}' >"$FON/package.json"; echo 'x' >"$FON/a.js"
 ( cd "$FON" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
-if [ "$fo_with" -eq 1 ] && [ ! -e "$FON/tsconfig.json" ]; then
-  echo "  ✓ outside a git repo the same probe decides: .ts present installs, absent skips"; PASS=$((PASS + 1))
+# Second run: the first one placed ./vitest.config.ts, which `find` prints with a
+# leading ./ and which must not count as the project's TypeScript.
+fo_vt=0; [ -f "$FON/vitest.config.ts" ] && fo_vt=1
+( cd "$FON" && "$SCAFFOLD_DIR/install.sh" --frontend --no-verify ) >"$HOOK_OUT" 2>&1
+if [ "$fo_with" -eq 1 ] && [ "$fo_vt" -eq 1 ] && [ ! -e "$FON/tsconfig.json" ]; then
+  echo "  ✓ outside a git repo the same probe decides: .ts present installs, absent skips, also on a re-run"; PASS=$((PASS + 1))
 else
-  echo "  ✗ the non-git fallback should install with a .ts file and skip without one (with=$fo_with)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  echo "  ✗ the non-git fallback should install with a .ts file and skip without one (with=$fo_with, vitest.config.ts placed=$fo_vt)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$FON"
+
+# (T) #190: an inherited FORCE_ALL must not arm --force-all. install.sh resets
+# both flags, so FORCE_ALL=1 in the environment leaves an edited user-owned
+# file alone, and a non-integer value is ignored rather than erroring.
+FOE=$(mktemp -d)
+( cd "$FOE" && git init --quiet && echo 'name="x"' >pyproject.toml && "$SCAFFOLD_DIR/install.sh" --python --no-verify ) >"$HOOK_OUT" 2>&1
+printf '\n# LOCAL EDIT ENV\n' >>"$FOE/ruff.toml"
+cp "$FOE/ruff.toml" "$FOE/ruff.mine"
+( cd "$FOE" && FORCE_ALL=1 "$SCAFFOLD_DIR/install.sh" --python --no-verify ) >"$HOOK_OUT" 2>&1
+fo_a=0; cmp -s "$FOE/ruff.toml" "$FOE/ruff.mine" && fo_a=1
+( cd "$FOE" && FORCE_ALL=banana "$SCAFFOLD_DIR/install.sh" --python --no-verify ) >"$HOOK_OUT" 2>&1
+fo_b=0; cmp -s "$FOE/ruff.toml" "$FOE/ruff.mine" && ! grep -q 'integer expression' "$HOOK_OUT" && fo_b=1
+if [ "$fo_a" -eq 1 ] && [ "$fo_b" -eq 1 ]; then
+  echo "  ✓ FORCE_ALL=1 or FORCE_ALL=banana in the environment does not replace an edited ruff.toml"; PASS=$((PASS + 1))
+else
+  echo "  ✗ an inherited FORCE_ALL must not arm --force-all (env=1 kept: $fo_a, env=banana kept: $fo_b)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$FOE"
+
+# (T) #191: the COMPONENTS.md tsconfig adopt block, run as a hand adopter would
+# (cases/38 runs it in a repo that has a .ts file), skips a TS-free repo and
+# adopts once a .ts file exists.
+fo_blk=$(awk '$0 == "```sh adopt=tsconfig" { inb = 1; next } inb && $0 == "```" { inb = 0; next } inb { print }' "$SCAFFOLD_DIR/COMPONENTS.md")
+fo_ts_repo FOC
+( cd "$FOC" && SCAFFOLD="$SCAFFOLD_DIR" bash -e -c "$fo_blk" ) >"$HOOK_OUT" 2>&1
+fo_a=0; [ ! -e "$FOC/tsconfig.json" ] && grep -qF "no TypeScript files" "$HOOK_OUT" && fo_a=1
+echo 'export const q: number = 1;' >"$FOC/q.ts"
+( cd "$FOC" && SCAFFOLD="$SCAFFOLD_DIR" bash -e -c "$fo_blk" ) >"$HOOK_OUT" 2>&1
+fo_b=0; [ -f "$FOC/tsconfig.json" ] && fo_b=1
+if [ "$fo_a" -eq 1 ] && [ "$fo_b" -eq 1 ]; then
+  echo "  ✓ the COMPONENTS.md tsconfig block skips a TS-free repo and adopts once a .ts file exists"; PASS=$((PASS + 1))
+else
+  echo "  ✗ the COMPONENTS.md tsconfig block should skip without TypeScript and adopt with it (skip ok: $fo_a, adopt ok: $fo_b)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+fi
+rm -rf "$FOC"

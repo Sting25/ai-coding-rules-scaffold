@@ -268,7 +268,7 @@ warn_unwired_optin() {
   local file=$1 needle=$2 tpl=$3
   if [ -e "$file" ] && ! _optin_wired "$file" "$needle"; then
     echo "warning: $file exists but does not mention '$needle', so this protection is NOT armed."
-    echo "         Merge the relevant keys from $tpl into it by hand. --force would replace your file instead."
+    echo "         Merge the relevant keys from $tpl into it by hand. --force-all would replace your file instead (backed up first)."
   fi
 }
 

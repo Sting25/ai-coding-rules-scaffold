@@ -237,7 +237,7 @@ _warn_repo_adaptations() {
 cp_safe() {
   local src=$1 dst=$2
   if [ -e "$dst" ] || [ -L "$dst" ]; then
-    if [ "$FORCE_ALL" -eq 0 ]; then
+    if [ "${FORCE_ALL:-0}" != "1" ]; then
       if [ -L "$dst" ]; then
         echo "skip (exists, symlink): $dst — left untouched; a scaffold path that is a symlink is suspicious. --force-all replaces it."
       elif [ "$FORCE" -eq 1 ]; then
@@ -434,7 +434,7 @@ _has_tracked_ts() {
   fi
   # The scaffold's own root vitest.config.* is TypeScript it placed itself, so a
   # re-run in a TS-free repo must not count it as the project's.
-  found=$(printf '%s\n' "$found" | grep -vE '(^|/)(node_modules|vendor|dist|build)/|^vitest\.config\.(ts|mts|cts)$' || true)
+  found=$(printf '%s\n' "$found" | grep -vE '(^|/)(node_modules|vendor|dist|build)/|^(\./)?vitest\.config\.(ts|mts|cts)$' || true)
   [ -n "$found" ]
 }
 
