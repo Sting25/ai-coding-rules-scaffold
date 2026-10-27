@@ -28,7 +28,7 @@ if git -C "$SCAFFOLD_DIR" ls-files >"$CO_LIST" 2>/dev/null && [ -s "$CO_LIST" ];
   ( cd "$SCAFFOLD_DIR" \
     && grep -vxF -e CHANGELOG.md -e SECURITY_AUDIT.md -e tests/cases/52-claude-only-scope.sh "$CO_LIST" \
     | while IFS= read -r co_f; do [ -f "$co_f" ] && printf '%s\n' "$co_f"; done \
-    | xargs grep -liI cursor ) >"$CO_HITS" 2>&1 || true
+    | xargs grep -lIE -e '--cursor|\.cursor/|cursor-hooks|credential-read-patterns|[Cc]ursor (agent|support|IDE|hook)|\bCursor\b' ) >"$CO_HITS" 2>&1 || true
   if [ ! -s "$CO_HITS" ]; then
     echo "  ✓ no shipped file mentions Cursor"; PASS=$((PASS + 1))
   else

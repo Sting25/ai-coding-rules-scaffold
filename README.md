@@ -5,7 +5,7 @@
 
 **Two-layer enforcement (pre-commit hook + CI mirror) for small teams using AI agents** — catches debug leaks (`print`, `console.log`, `breakpoint`, `pdb`), unbounded file growth, nested-if hell, silenced exceptions, hardcoded secrets/tokens, and stray `.env` or private-key files before they merge. The same `lib/check-*` scripts run in both layers, so the hook and CI can't drift apart and `--no-verify` doesn't become the escape hatch.
 
-Built for Claude Code; the commit-time and CI guardrails work with or without an AI agent. Python/FastAPI + TypeScript/React are first-class, with deny-pattern coverage for Vue, Svelte, PHP, Go, Rust, Java, Kotlin, Ruby, and shell — see [Supported stacks](./TECHNICAL.md#supported-stacks) in TECHNICAL.md.
+Built for Claude Code; the commit-time and CI guardrails work with or without an AI agent. Python/FastAPI + TypeScript/React are first-class, with deny-pattern coverage for Vue, Svelte, PHP, Go, Rust, Java, Kotlin, Ruby, and shell. See [Supported stacks](./TECHNICAL.md#supported-stacks) in TECHNICAL.md.
 
 ## What it does
 
@@ -44,7 +44,7 @@ That setup hits four compounding failure modes that ordinary linting alone doesn
 
 4. **Forbidden patterns recur.** Agents reach for old import paths, deprecated service names, and outdated idioms because their training data still has them. A per-stack regex deny-list (`backend.txt`, `frontend.txt`, `secrets.txt`, `shell.txt`) is the only durable fix — the agent can't be talked out of recurrent muscle memory, but the build can fail on it.
 
-This scaffold ships the **enforcement layer** that addresses all four directly. Two layers are always-on: commit-time (the pre-commit hook) and merge-time (the CI mirror), both running the same `lib/check-*` scripts. A third opt-in layer — agent-runtime hooks that block bad patterns _before_ they're written — ships via `install.sh --claude` (Claude Code); see [Opt-in layers](./TECHNICAL.md#opt-in-layers) in TECHNICAL.md and [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) for the design space and tradeoffs.
+This scaffold ships the **enforcement layer** that addresses all four directly. Two layers are always-on: commit-time (the pre-commit hook) and merge-time (the CI mirror), both running the same `lib/check-*` scripts. A third opt-in layer, agent-runtime hooks that block bad patterns _before_ they're written, ships via `install.sh --claude` (Claude Code); see [Opt-in layers](./TECHNICAL.md#opt-in-layers) in TECHNICAL.md and [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) for the design space and tradeoffs.
 
 What the scaffold doesn't try to solve: parallel-session collisions, context-window discipline across long projects, and spec-first workflows. Those belong to git workflow (`git worktree` per session), nested `CLAUDE.md` files, and project-specific spec docs respectively. Recommended patterns for each are documented in `AGENTS.md` and `RECOMMENDATIONS.md`.
 
@@ -231,12 +231,12 @@ The rules live in `AGENTS.md`, the cross-tool standard file ([agents.md](https:/
 
 You can use `operational-rules.md` (and/or `coding-rules.md`) standalone, without the linter / hook / CI scaffolding. Drop the file(s) into your project root and reference them from `CLAUDE.md`:
 
-- **Claude Code** — add to `CLAUDE.md`:
-  ```
-  @operational-rules.md
-  @coding-rules.md
-  ```
-  The `@` directive auto-loads on session start.
+```
+@operational-rules.md
+@coding-rules.md
+```
+
+The `@` directive auto-loads on session start.
 
 No `install.sh`, no hooks, no CI — the docs are useful in isolation. The full scaffold layers on the enforcement (commit hooks + CI mirror) that turns the rules into machine-checkable failures.
 

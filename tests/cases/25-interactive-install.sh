@@ -31,7 +31,10 @@ rm -rf "$N"
 # default — accept the detected stack, every opt-in stays off, the default
 # test-execution workflow (plain tests.yml, no coverage gate) is installed.
 D=$(_iact_fixture)
-: >"$D/answers.txt"  # 13 empty lines: one per prompt in the default flow
+# 13 empty lines. The default flow asks 14 prompts: these Enters answer the first
+# 13, and the 14th (coverage-gate, asked because test-workflow defaulted to Y)
+# takes its default at EOF.
+: >"$D/answers.txt"
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13; do printf '\n' >>"$D/answers.txt"; done
 ( cd "$D" && SCAFFOLD_TTY="$D/answers.txt" "$SCAFFOLD_DIR/install.sh" --interactive --no-verify ) >"$HOOK_OUT" 2>&1 || true
 if [ -f "$D/.github/workflows/tests.yml" ] && [ ! -e "$D/.github/workflows/coverage.yml" ] \

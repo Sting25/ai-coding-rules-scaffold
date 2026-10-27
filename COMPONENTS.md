@@ -678,9 +678,10 @@ rm -rf .githooks/local.d
 
 ## 15. AI agent guardrails (Claude Code)
 
-`agent-precheck` is a PreToolUse hook: it refuses an agent's attempt to write a
-credential-shaped string, to run a dangerous shell pattern, or to read a
-credential file into context. `.claude/settings.json` wires it for Claude Code.
+`agent-precheck` is a PreToolUse hook: it blocks an agent that is about to write
+a credential-shaped string or run a dangerous shell pattern.
+`.claude/settings.json` wires the hook and also denies credential-file reads
+natively through `permissions.deny`.
 
 **Blast radius:** the agent's tool calls in this repo. No effect on commits or
 files.

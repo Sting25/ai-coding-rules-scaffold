@@ -268,7 +268,8 @@ if ! grep -q "PRESENT BUT NOT ARMED" "$HOOK_OUT" \
    && ! grep -q "is NOT armed" "$HOOK_OUT" \
    && grep -q "note: .npmrc sets min-release-age=7" "$HOOK_OUT" \
    && grep -q "min-release-age" "$PAOK/.npmrc" \
-   && grep -q "agent-precheck" "$PAOK/.claude/settings.json"; then
+   && grep -q "agent-precheck" "$PAOK/.claude/settings.json" \
+   && [ -x "$PAOK/.githooks/lib/agent-precheck" ]; then
   echo "  ✓ a correctly wired install reports no unarmed opt-in and keeps its normal notes"; PASS=$((PASS + 1))
 else
   echo "  ✗ a correctly wired install should report no unarmed opt-in"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))

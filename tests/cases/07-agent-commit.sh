@@ -142,7 +142,7 @@ if command -v jq >/dev/null 2>&1; then
   # (48g) REGRESSION (SIGPIPE fail-OPEN): when a block fires on MANY matching
   #       lines, the block message's `printf '%s\n' "$hit" | head -3` took
   #       SIGPIPE under `set -euo pipefail` and the script aborted at exit 141 —
-  #       BEFORE the `exit 2` the agent runtimes require to actually block, so
+  #       BEFORE the `exit 2` the agent runtime requires to actually block, so
   #       the dangerous action was allowed. Assert the exit code is EXACTLY 2
   #       (141 is non-zero too, so a "non-zero == blocked" check would wrongly
   #       pass here). `pass`+`word` is built at runtime so this file stays clean.

@@ -200,7 +200,11 @@ WORKTREE` note when it does. Python tools are resolved by one shared helper,
   branches of `agent-precheck`, and the Cursor entries in `scaffold-doctor` and
   `uninstall.sh`. The docs no longer describe Aider, Cline, Copilot or Cursor
   setups. A project that installed with `--cursor` keeps its `.cursor/hooks.json`
-  and `.githooks/lib/credential-read-patterns.txt`; delete them by hand.
+  and `.githooks/lib/credential-read-patterns.txt`. Once `install.sh --claude`
+  (or any re-run that refreshes `.githooks/lib/agent-precheck`) installs the new
+  precheck, that leftover `hooks.json` no longer blocks anything: the script no
+  longer understands Cursor's payload shape, so it fails open. Delete both files
+  by hand.
 
 ## [v0.19.1] - 2026-10-21
 
