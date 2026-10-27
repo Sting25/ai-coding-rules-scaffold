@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # cases/29-install-symlink-dirs.sh: what install.sh does when a scaffold PARENT
-# directory (.githooks, .github, .claude, .cursor) is a symlink. Sourced into
+# directory (.githooks, .github, .claude) is a symlink. Sourced into
 # the driver's shell, so PASS/FAIL/HOOK_OUT/SCAFFOLD_DIR and reset_repo are
 # already in scope.
 #

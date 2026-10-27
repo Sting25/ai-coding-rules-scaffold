@@ -295,7 +295,7 @@ fi
 if [ -s "$SCC/argv" ] \
    && ! _scc_has githooks/lib/check-red-green.template \
    && ! _scc_has githooks/lib/check-mutation-diff.template \
-   && ! _scc_has githooks/lib/credential-read-patterns.txt.template; then
+   && ! _scc_has forbidden-patterns/secrets.txt.template; then
   echo "  ✓ discovery excludes the python3 hooks and the data template"
   PASS=$((PASS + 1))
 else

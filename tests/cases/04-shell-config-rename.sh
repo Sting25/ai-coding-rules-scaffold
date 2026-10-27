@@ -19,7 +19,7 @@ git add cleanup.sh
 assert_passes "scoped rm -rf /tmp/... is not flagged"
 
 # 25b. `git ... --no-verify` is rejected — it bypasses the pre-commit/commit-msg
-#      gate. Consumed by agent-precheck (Claude/Cursor) at the action boundary;
+#      gate. Consumed by agent-precheck (Claude) at the action boundary;
 #      this scans the committed shell file too. `gi`+`t` split so this harness
 #      file carries no live pattern in the new fixture line.
 echo "gi""t commit -m 'wip' --no-verify" >skip.sh

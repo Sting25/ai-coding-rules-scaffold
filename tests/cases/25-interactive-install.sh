@@ -31,11 +31,11 @@ rm -rf "$N"
 # default — accept the detected stack, every opt-in stays off, the default
 # test-execution workflow (plain tests.yml, no coverage gate) is installed.
 D=$(_iact_fixture)
-: >"$D/answers.txt"  # 14 empty lines: one per prompt in the default flow
-for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do printf '\n' >>"$D/answers.txt"; done
+: >"$D/answers.txt"  # 13 empty lines: one per prompt in the default flow
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13; do printf '\n' >>"$D/answers.txt"; done
 ( cd "$D" && SCAFFOLD_TTY="$D/answers.txt" "$SCAFFOLD_DIR/install.sh" --interactive --no-verify ) >"$HOOK_OUT" 2>&1 || true
 if [ -f "$D/.github/workflows/tests.yml" ] && [ ! -e "$D/.github/workflows/coverage.yml" ] \
-   && [ ! -e "$D/.claude/settings.json" ] && [ ! -e "$D/.cursor/hooks.json" ] \
+   && [ ! -e "$D/.claude/settings.json" ] \
    && [ ! -e "$D/.npmrc" ] && grep -q "Detected stack: frontend" "$HOOK_OUT"; then
   echo "  ✓ an all-default wizard run installs the default frontend + plain tests.yml, no opt-ins"; PASS=$((PASS + 1))
 else
@@ -59,13 +59,12 @@ n
 n
 n
 n
-n
 y
 y
 EOF
 ( cd "$C" && SCAFFOLD_TTY="$C/answers.txt" "$SCAFFOLD_DIR/install.sh" --interactive --no-verify ) >"$HOOK_OUT" 2>&1 || true
 if [ -f "$C/.claude/settings.json" ] && [ -f "$C/.github/workflows/coverage.yml" ] \
-   && [ ! -e "$C/.github/workflows/tests.yml" ] && [ ! -e "$C/.cursor/hooks.json" ]; then
+   && [ ! -e "$C/.github/workflows/tests.yml" ]; then
   echo "  ✓ wizard 'y' answers map to --claude + --coverage-gate, others stay off"; PASS=$((PASS + 1))
 else
   echo "  ✗ wizard 'y' answers should install --claude + --coverage-gate only"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
@@ -118,7 +117,7 @@ rm -rf "$B"
 # neither tests.yml nor coverage.yml is installed, and the loud skip banner
 # fires (matching the flag path cases/19 already covers).
 W=$(_iact_fixture)
-for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13; do printf '\n' >>"$W/answers.txt"; done
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do printf '\n' >>"$W/answers.txt"; done
 printf 'n\n' >>"$W/answers.txt"
 ( cd "$W" && SCAFFOLD_TTY="$W/answers.txt" "$SCAFFOLD_DIR/install.sh" --interactive --no-verify ) >"$HOOK_OUT" 2>&1 || true
 if [ ! -e "$W/.github/workflows/tests.yml" ] && [ ! -e "$W/.github/workflows/coverage.yml" ] \
