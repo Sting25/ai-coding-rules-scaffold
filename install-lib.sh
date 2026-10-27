@@ -209,7 +209,7 @@ _backup() {
 # code-install-policy-4), a `// Repo adaptation:` line in eslint.config.js was
 # backed up and overwritten by `install.sh --frontend --force` in total silence
 # while the `#` line in lint.yml warned by name. JSON templates (tsconfig.json,
-# .prettierrc.json, claude-settings.json, cursor-hooks.json) cannot carry a `#`
+# .prettierrc.json, claude-settings.json) cannot carry a `#`
 # comment at all, so for those the convention is a `//`-prefixed KEY, which is
 # valid JSON and matches here:
 #

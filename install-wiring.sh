@@ -18,13 +18,13 @@
 
 # _optin_wired FILE NEEDLE: is the protection actually WIRED INTO an existing
 # config, or is the file merely present? cp_safe leaves a pre-existing
-# .claude/settings.json / .cursor/hooks.json / .npmrc alone, correctly, because
-# they are user-owned. So file presence answers "does a config exist here",
-# never "does the guardrail run", and both install.sh's summary and
-# scaffold-doctor.sh used presence as the signal: with three stub files in
-# place, an install printed "skip (exists)" three times, omitted all three from
-# its not-enabled list, and the doctor then reported "lib/agent-precheck armed"
-# and "0 gaps" while `grep -rl agent-precheck .claude .cursor` found nothing
+# .claude/settings.json / .npmrc alone, correctly, because they are
+# user-owned. So file presence answers "does a config exist here", never "does
+# the guardrail run", and both install.sh's summary and scaffold-doctor.sh used
+# presence as the signal: with stub files in place, an install printed "skip
+# (exists)" for each, omitted them from its not-enabled list, and the doctor
+# then reported "lib/agent-precheck armed" and "0 gaps" while
+# `grep -rl agent-precheck .claude` found nothing
 # (audit code-install-policy-1). Grep for the wiring instead.
 _optin_wired() {
   [ -f "$1" ] || return 1
@@ -103,17 +103,16 @@ check_paired_artifacts() {
       "re-run install.sh to install the default tests.yml (or install.sh --coverage-gate for the stricter gate)"
   fi
 
-  # 4. agent-precheck vs the runtime config that has to invoke it. --claude and
-  # --cursor install .githooks/lib/agent-precheck, but cp_safe SKIPS a
-  # pre-existing .claude/settings.json or .cursor/hooks.json, so the precheck
+  # 4. agent-precheck vs the runtime config that has to invoke it. --claude
+  # installs .githooks/lib/agent-precheck, but cp_safe SKIPS a
+  # pre-existing .claude/settings.json, so the precheck
   # ends up on disk and executable with nothing calling it: the one shape where
   # a guardrail is fully installed and cannot possibly run. Exactly the pair
   # this function exists for, and the reason the presence check was never
   # enough (audit code-install-policy-1).
   if [ -f .githooks/lib/agent-precheck ] \
-     && ! _optin_wired .claude/settings.json agent-precheck \
-     && ! _optin_wired .cursor/hooks.json agent-precheck; then
-    "$gap_fn" ".githooks/lib/agent-precheck is installed but nothing invokes it: neither .claude/settings.json nor .cursor/hooks.json mentions agent-precheck, so the agent write/read guard never runs" \
-      "merge the hooks block from claude-settings.json.template into .claude/settings.json (or cursor-hooks.json.template into .cursor/hooks.json); install.sh --claude / --cursor only creates those files when they are absent"
+     && ! _optin_wired .claude/settings.json agent-precheck; then
+    "$gap_fn" ".githooks/lib/agent-precheck is installed but nothing invokes it: .claude/settings.json does not mention agent-precheck, so the agent write guard never runs" \
+      "merge the hooks block from claude-settings.json.template into .claude/settings.json; install.sh --claude only creates that file when it is absent"
   fi
 }

@@ -42,7 +42,7 @@ class AiCodingRulesScaffold < Formula
         ai-coding-rules-scaffold --both     # or pick the stack explicitly
         ai-coding-rules-scaffold --help     # all flags
 
-      The optional agent guardrails (--claude / --cursor) need jq:
+      The optional agent guardrails (--claude) need jq:
         brew install jq
     EOS
   end

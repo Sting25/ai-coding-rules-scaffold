@@ -78,7 +78,7 @@ CASE_FLOORS=(
   "04-shell-config-rename.sh:55"
   "05-frontend-typescript.sh:26"
   "06-hygiene-multilang.sh:66"
-  "07-agent-commit.sh:13"
+  "07-agent-commit.sh:12"
   "08-overrides-gitleaks.sh:14"
   "09-toolchain-clobber.sh:33"
   "10-ci-diff-scope.sh:12"
@@ -123,6 +123,7 @@ CASE_FLOORS=(
   "49-py-tool-resolver.sh:9"
   "50-ci-template-credentials.sh:6"
   "51-mutation-diff-config.sh:15"
+  "52-claude-only-scope.sh:3"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and

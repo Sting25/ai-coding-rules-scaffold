@@ -25,26 +25,25 @@ un_project() {
 
 # (A) --dry-run must not touch the filesystem. The empty-directory sweep at the
 # end of uninstall.sh called rmdir with no DRY_RUN guard, unlike every other
-# removal in the script, so a dry run genuinely deleted .claude/, .cursor/ and
+# removal in the script, so a dry run genuinely deleted .claude/ and
 # every other already-empty scaffold directory while its closing line said
 # "no files changed". Both halves are asserted: the tree is identical afterwards
 # AND the run still names what it would remove, because a dry run that prints
 # nothing is equally "harmless" and equally useless.
 un_project UDRY
 UDRY_LOG=$(mktemp -d)
-( cd "$UDRY" && mkdir -p .claude .cursor \
+( cd "$UDRY" && mkdir -p .claude \
   && find . -path ./.git -prune -o -print | sort >"$UDRY_LOG/before.list" \
   && "$SCAFFOLD_DIR/uninstall.sh" --dry-run \
   && find . -path ./.git -prune -o -print | sort >"$UDRY_LOG/after.list" ) >"$HOOK_OUT" 2>&1
 UDRY_HOOKS=$( cd "$UDRY" || exit 0
               git config --get core.hooksPath || true )
 if diff -q "$UDRY_LOG/before.list" "$UDRY_LOG/after.list" >/dev/null 2>&1 \
-   && [ -d "$UDRY/.claude" ] && [ -d "$UDRY/.cursor" ] \
+   && [ -d "$UDRY/.claude" ] \
    && [ -f "$UDRY/.githooks/pre-commit" ] \
    && [ "$UDRY_HOOKS" = ".githooks" ] \
    && grep -qF "would remove: .githooks/pre-commit" "$HOOK_OUT" \
-   && grep -qF "would remove empty: .claude" "$HOOK_OUT" \
-   && grep -qF "would remove empty: .cursor" "$HOOK_OUT"; then
+   && grep -qF "would remove empty: .claude" "$HOOK_OUT"; then
   echo "  ✓ --dry-run deletes nothing and still names what it would remove"; PASS=$((PASS + 1))
 else
   echo "  ✗ --dry-run changed the tree (or stopped naming removals)"

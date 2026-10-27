@@ -391,7 +391,7 @@ rm -f .github/workflows/tests.yml .github/workflows/coverage.yml
 in your codebase; `AGENTS.md` is the short always-loaded summary that points at
 them. These are documents, not code. They are the most-adopted piece of the
 scaffold and need nothing else. README "Use the rules without the rest of the
-scaffold" covers Claude Code, Cursor, Aider and Cline wiring.
+scaffold" covers the Claude Code wiring.
 
 **Blast radius:** none on your files. They change what an agent does next.
 
@@ -676,12 +676,12 @@ test -f .githooks/local.d/README.md && echo "verified: local.d extension point p
 rm -rf .githooks/local.d
 ```
 
-## 15. AI agent guardrails (Claude Code, Cursor)
+## 15. AI agent guardrails (Claude Code)
 
-`agent-precheck` is a PreToolUse hook: it refuses an agent's attempt to write a
-credential-shaped string, to run a dangerous shell pattern, or to read a
-credential file into context. `.claude/settings.json` wires it for Claude Code;
-`.cursor/hooks.json` for Cursor.
+`agent-precheck` is a PreToolUse hook: it blocks an agent that is about to write
+a credential-shaped string or run a dangerous shell pattern.
+`.claude/settings.json` wires the hook and also denies credential-file reads
+natively through `permissions.deny`.
 
 **Blast radius:** the agent's tool calls in this repo. No effect on commits or
 files.
@@ -695,9 +695,6 @@ cp "$SCAFFOLD/githooks/lib/agent-precheck.template" .githooks/lib/agent-precheck
 chmod +x .githooks/lib/agent-precheck
 mkdir -p .claude
 [ -f .claude/settings.json ] && echo ".claude/settings.json exists, merge the hooks key from $SCAFFOLD/claude-settings.json.template" || cp "$SCAFFOLD/claude-settings.json.template" .claude/settings.json
-# Cursor instead of, or as well as:
-# mkdir -p .cursor && cp "$SCAFFOLD/cursor-hooks.json.template" .cursor/hooks.json
-# cp "$SCAFFOLD/githooks/lib/credential-read-patterns.txt.template" .githooks/lib/credential-read-patterns.txt
 ```
 
 ```sh verify=agent-guard
@@ -708,8 +705,8 @@ echo "verified: agent-precheck present and referenced from .claude/settings.json
 ```
 
 ```sh remove=agent-guard
-rm -f .githooks/lib/agent-precheck .githooks/lib/credential-read-patterns.txt
-# then delete the hooks entry from .claude/settings.json or .cursor/hooks.json
+rm -f .githooks/lib/agent-precheck
+# then delete the hooks entry from .claude/settings.json
 ```
 
 ## 16. gitleaks (second secret scanner)

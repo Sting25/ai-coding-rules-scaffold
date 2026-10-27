@@ -1,7 +1,7 @@
 {
   "name": "ai-coding-rules-scaffold",
   "version": "0.19.1",
-  "description": "Agent-agnostic coding-rules scaffold: pre-commit + CI guardrails (file size, forbidden patterns, secret/credential scanning, hygiene) that install into your project, plus `scaffold-doctor` to check they are actually armed and not just present. Run via `npx ai-coding-rules-scaffold`. AI agents: run the installer, never hand-copy files.",
+  "description": "Coding-rules scaffold for Claude Code: pre-commit + CI guardrails (file size, forbidden patterns, secret/credential scanning, hygiene) that install into your project, plus `scaffold-doctor` to check they are actually armed and not just present. Run via `npx ai-coding-rules-scaffold`. AI agents: run the installer, never hand-copy files.",
   "bin": {
     "ai-coding-rules-scaffold": "bin/cli.js"
   },
@@ -34,7 +34,6 @@
     "AGENTS.md.template",
     "CLAUDE.md.pointer",
     "claude-settings.json.template",
-    "cursor-hooks.json.template",
     "eslint.config.js.template",
     "tsconfig.json.template",
     "vitest.config.ts.template",

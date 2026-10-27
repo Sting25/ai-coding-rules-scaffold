@@ -12,7 +12,6 @@
 #   install.sh --force-all  # --force, plus replace user-owned files (rules docs, ruff.toml, eslint.config.js, ...), backed up first; never CLAUDE.md/AGENTS.md
 #   install.sh --no-verify  # skip the post-install linter smoke test
 #   install.sh --claude     # also install opt-in Claude Code agent guardrails
-#   install.sh --cursor     # also install opt-in Cursor agent guardrails (.cursor/hooks.json)
 #   install.sh --commit-msg # also install the Conventional-Commits commit-msg hook
 #   install.sh --gitleaks-hook # also install opt-in local gitleaks pre-commit pass
 #   install.sh --gitleaks-ci # also install the gitleaks CI workflow (unskippable gate)
@@ -60,7 +59,6 @@ INTERACTIVE=0
 FORCE=0 FORCE_ALL=0
 VERIFY=1
 CLAUDE=0
-CURSOR=0
 COMMIT_MSG=0
 GITLEAKS_HOOK=0
 GITLEAKS_CI=0
@@ -86,7 +84,6 @@ for arg in "$@"; do
     --force-all)  FORCE=1; FORCE_ALL=1 ;;
     --no-verify)  VERIFY=0 ;;
     --claude)     CLAUDE=1 ;;
-    --cursor)     CURSOR=1 ;;
     --commit-msg) COMMIT_MSG=1 ;;
     --gitleaks-hook) GITLEAKS_HOOK=1 ;;
     --gitleaks-ci) GITLEAKS_CI=1 ;;
@@ -100,7 +97,7 @@ for arg in "$@"; do
     --coverage-gate) COVERAGE_GATE=1 ;;
     --no-test-workflow) NO_TEST_WORKFLOW=1 ;;
     --no-install) NO_INSTALL=1 ;;
-    --help|-h)    sed -n '2,53p' "$0"; exit 0 ;;
+    --help|-h)    sed -n '2,52p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -348,29 +345,19 @@ for L in $LANGS; do
   cp_pattern "$SCAFFOLD_DIR/forbidden-patterns/${L}.txt.template" ".forbidden-patterns/${L}.txt"
 done
 
-# Agent-runtime guardrails (opt-in: --claude / --cursor). Both runtimes share
-# one precheck script (it auto-detects the Claude vs Cursor payload shape), so
-# install it once if either flag is set, then drop each runtime's config. An
-# existing .claude/settings.json or .cursor/hooks.json is left alone by cp_safe —
-# merge the template's keys in by hand.
-if [ "$CLAUDE" -eq 1 ] || [ "$CURSOR" -eq 1 ]; then
+# Agent guardrails (opt-in: --claude): the precheck script, then settings.json.
+# An existing .claude/settings.json is left alone by cp_safe — merge the
+# template's keys in by hand.
+if [ "$CLAUDE" -eq 1 ]; then
   cp_scaffold "$SCAFFOLD_DIR/githooks/lib/agent-precheck.template" ".githooks/lib/agent-precheck"
   mkx ".githooks/lib/agent-precheck"
   if ! command -v jq >/dev/null 2>&1; then
     echo "warning: jq not found — the agent precheck needs jq (it fails open without it): https://jqlang.github.io/jq/"
   fi
-fi
-# Claude Code: settings.json adds a credential-file read deny-list plus the
-# PreToolUse hook (matcher Write|Edit|MultiEdit|Bash).
-if [ "$CLAUDE" -eq 1 ]; then
+  # settings.json adds a credential-file read deny-list plus the PreToolUse
+  # hook (matcher Write|Edit|MultiEdit|Bash).
   cp_safe "$SCAFFOLD_DIR/claude-settings.json.template" ".claude/settings.json"
   warn_unwired_optin ".claude/settings.json" agent-precheck "$SCAFFOLD_DIR/claude-settings.json.template"
-fi
-# Cursor: hooks.json wires beforeShellExecution + beforeReadFile (credential-path deny); no before-write hook, so secret-on-write stays unportable here.
-if [ "$CURSOR" -eq 1 ]; then
-  cp_safe "$SCAFFOLD_DIR/cursor-hooks.json.template" ".cursor/hooks.json"
-  warn_unwired_optin ".cursor/hooks.json" agent-precheck "$SCAFFOLD_DIR/cursor-hooks.json.template"
-  cp_pattern "$SCAFFOLD_DIR/githooks/lib/credential-read-patterns.txt.template" ".githooks/lib/credential-read-patterns.txt"
 fi
 
 # Conventional-Commits commit-msg hook (opt-in: --commit-msg). Active the moment
@@ -493,7 +480,7 @@ case "$MODE" in
 esac
 print_history_scan_note; print_not_enabled_summary
 
-# A symlinked scaffold DIRECTORY (.githooks, .github, .claude, .cursor) makes
+# A symlinked scaffold DIRECTORY (.githooks, .github, .claude) makes
 # every write under it a refusal in _mkdir_safe, so this run really did not
 # install what it was asked to: name the paths once and FAIL, rather than
 # exiting 0 over a half-written install (audit code-install-policy-2).

@@ -242,8 +242,8 @@ install_test_workflow_ci() {
 # whose config file can exist WITHOUT the protection wired into it. THREE
 # states, not two: absent (install it), present but not wired (merge it), wired
 # (say nothing). The two-state presence check reported a stub .claude/
-# settings.json, .cursor/hooks.json or .npmrc as an enabled protection and left
-# all three off this list entirely, so the one reader this summary exists for,
+# settings.json or .npmrc as an enabled protection and left both off this
+# list entirely, so the one reader this summary exists for,
 # an agent relaying it to its user, was told everything was on (audit
 # code-install-policy-1). Returns 0 when it printed a line, so the caller can
 # set `any`.
@@ -295,9 +295,6 @@ print_not_enabled_summary() {
   _pne_wired .claude/settings.json agent-precheck \
     "Claude Code agent guardrails" "./install.sh --claude" \
     "merge the hooks block from claude-settings.json.template into it" && any=1
-  _pne_wired .cursor/hooks.json agent-precheck \
-    "Cursor agent guardrails" "./install.sh --cursor" \
-    "merge the hooks block from cursor-hooks.json.template into it" && any=1
   [ -f .githooks/commit-msg ]                    || { echo "  - commit-msg hook (Conventional Commits): not enabled. Enable with ./install.sh --commit-msg"; any=1; }
   if [ "$any" -eq 0 ]; then
     echo "  (none: every opt-in protection above is already enabled in this project)"

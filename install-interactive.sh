@@ -19,7 +19,7 @@
 # (the actual thing this wizard replaces). Pass them as flags alongside
 # --interactive if needed.
 #
-# Every CLAUDE/CURSOR/... assignment below is read only after install.sh
+# Every CLAUDE/COMMIT_MSG/... assignment below is read only after install.sh
 # sources this file, so shellcheck (which lints this file on its own) can't
 # see the use and flags each one SC2034; same cross-file pattern already
 # documented and suppressed once in install-lib.sh's TEST_CI_STATE.
@@ -65,7 +65,6 @@ run_interactive() {
   fi
 
   _ask "Install Claude Code agent guardrails (--claude)?" N;      CLAUDE=$_ASK_ANS
-  _ask "Install Cursor agent guardrails (--cursor)?" N;           CURSOR=$_ASK_ANS
   _ask "Install the Conventional-Commits commit-msg hook (--commit-msg)?" N
   COMMIT_MSG=$_ASK_ANS
   _ask "Install the local gitleaks pre-commit pass (--gitleaks-hook)?" N

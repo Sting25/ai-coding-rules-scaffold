@@ -318,9 +318,9 @@ fi
 rm -rf "$DOCT"
 
 # agent-precheck's executable bit is load-bearing in a way check-gitleaks' is
-# not: claude-settings.json and cursor-hooks.json invoke the PATH DIRECTLY as a
+# not: claude-settings.json invokes the PATH DIRECTLY as a
 # command, with no -x guard anywhere, so a cleared bit yields exit 126 — and the
-# agent runtimes block only on exit 2. Measured: the tool call proceeds, and
+# agent runtime blocks only on exit 2. Measured: the tool call proceeds, and
 # nothing is printed anywhere. The doctor reported "armed" for this until it
 # was caught in review.
 doc_project DOCT

@@ -34,7 +34,7 @@ jobs:
           # since they are sourced and carry no shebang). Everything else is
           # skipped by the same rule, which is why the python3 hooks
           # (check-mutation-diff, check-red-green) and the data templates
-          # (credential-read-patterns.txt.template) need no exclusion list.
+          # (forbidden-patterns/*.txt.template) need no exclusion list.
           files=()
           while IFS= read -r f; do
             [ -f "$f" ] || continue
