@@ -225,7 +225,7 @@ backups_remain() {
   local f
   for f in ./*.scaffold-bak* .githooks/*.scaffold-bak* .githooks/lib/*.scaffold-bak* \
            .github/workflows/*.scaffold-bak* .forbidden-patterns/*.scaffold-bak* \
-           .claude/*.scaffold-bak* .cursor/*.scaffold-bak*; do
+           .claude/*.scaffold-bak*; do
     [ -e "$f" ] && return 0
   done
   return 1
@@ -338,9 +338,6 @@ clean_claude_md
 # Opt-in Claude Code guardrails (only present if installed with --claude).
 remove_if_unmodified ".githooks/lib/agent-precheck"  "$SCAFFOLD_DIR/githooks/lib/agent-precheck.template"
 remove_if_unmodified ".claude/settings.json"         "$SCAFFOLD_DIR/claude-settings.json.template"
-# Opt-in Cursor guardrails (only present if installed with --cursor).
-remove_if_unmodified ".cursor/hooks.json"            "$SCAFFOLD_DIR/cursor-hooks.json.template"
-remove_if_unmodified ".githooks/lib/credential-read-patterns.txt" "$SCAFFOLD_DIR/githooks/lib/credential-read-patterns.txt.template"
 # Opt-in commit-msg hook (only present if installed with --commit-msg).
 remove_if_unmodified ".githooks/commit-msg"          "$SCAFFOLD_DIR/githooks/commit-msg.template"
 # Opt-in local gitleaks pass (only present if installed with --gitleaks-hook).
@@ -400,7 +397,7 @@ clean_gitignore
 # Clean up empty dirs the installer created
 # local.d before .githooks, so an emptied local.d lets .githooks go too.
 for dir in .githooks/lib .githooks/local.d .githooks .github/workflows .github \
-           .claude/skills/coding-rules .claude/skills .claude .cursor; do
+           .claude/skills/coding-rules .claude/skills .claude; do
   [ -d "$dir" ] || continue
   if [ "$DRY_RUN" -eq 1 ]; then
     # Never rmdir here: a dry run reports, it does not delete.

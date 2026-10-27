@@ -37,7 +37,7 @@
 (^|[^A-Za-z_])git[[:space:]][^|;&]*core\.hooksPath[[:space:]=]+(["']?/dev/null|""|'')	core.hooksPath=/dev/null (or empty) disarms every hook in this clone. Fix the failing check instead (a genuine uninstall needs the user's go-ahead)
 
 # Git discipline (AGENTS.md > Git discipline). agent-precheck feeds this file to
-# Claude PreToolUse / Cursor beforeShellExecution, which is the only point at
+# Claude PreToolUse, which is the only point at
 # which a destructive git command can still be stopped — after it runs there is
 # nothing left to gate. Each rule is anchored to its subcommand: a bare `-f` arm
 # would also block `git add -f`, `git config -f`, `git branch -f` and

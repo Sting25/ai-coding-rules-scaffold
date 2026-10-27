@@ -328,11 +328,11 @@ else
 fi
 if [ -f .githooks/lib/agent-precheck ]; then
   if [ ! -x .githooks/lib/agent-precheck ]; then
-    # Unlike check-gitleaks, nothing guards this call with -x. Both
-    # claude-settings.json and cursor-hooks.json invoke the path DIRECTLY as a
-    # command, so a missing executable bit yields exit 126 — and the agent
-    # runtimes block only on exit 2, so 126 is allowed through. Measured: the
-    # tool call proceeds and nothing is printed anywhere.
+    # Unlike check-gitleaks, nothing guards this call with -x.
+    # claude-settings.json invokes the path DIRECTLY as a command, so a missing
+    # executable bit yields exit 126 — and the agent runtime blocks only on
+    # exit 2, so 126 is allowed through. Measured: the tool call proceeds and
+    # nothing is printed anywhere.
     gap "lib/agent-precheck is not executable — the agent runtime gets exit 126, not the exit 2 that blocks, so the tool call proceeds" \
         "chmod +x .githooks/lib/agent-precheck"
   elif command -v jq >/dev/null 2>&1; then
@@ -342,7 +342,7 @@ if [ -f .githooks/lib/agent-precheck ]; then
         "install jq (brew install jq)"
   fi
 else
-  note "agent guardrails not installed (opt in with install.sh --claude or --cursor)"
+  note "agent guardrails not installed (opt in with install.sh --claude)"
 fi
 
 # --- 6. project-local checks ------------------------------------------------
