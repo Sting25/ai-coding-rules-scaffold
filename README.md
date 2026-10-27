@@ -5,7 +5,7 @@
 
 **Two-layer enforcement (pre-commit hook + CI mirror) for small teams using AI agents** — catches debug leaks (`print`, `console.log`, `breakpoint`, `pdb`), unbounded file growth, nested-if hell, silenced exceptions, hardcoded secrets/tokens, and stray `.env` or private-key files before they merge. The same `lib/check-*` scripts run in both layers, so the hook and CI can't drift apart and `--no-verify` doesn't become the escape hatch.
 
-Agent-agnostic: works with Cursor, Claude Code, Copilot, Cline, Aider, or no AI at all. Python/FastAPI + TypeScript/React are first-class, with deny-pattern coverage for Vue, Svelte, PHP, Go, Rust, Java, Kotlin, Ruby, and shell — see [Supported stacks](./TECHNICAL.md#supported-stacks) in TECHNICAL.md.
+Built for Claude Code; the commit-time and CI guardrails work with or without an AI agent. Python/FastAPI + TypeScript/React are first-class, with deny-pattern coverage for Vue, Svelte, PHP, Go, Rust, Java, Kotlin, Ruby, and shell — see [Supported stacks](./TECHNICAL.md#supported-stacks) in TECHNICAL.md.
 
 ## What it does
 
@@ -24,7 +24,7 @@ Drop-in guardrails that **block bad code from being committed or merged**. One `
 
 - **One command to install** — `./install.sh` drops in the hook, the CI workflow, the rule docs, and per-stack configs, auto-detecting Python vs TS/JS.
 - **Two layers, one implementation** — the hook and the CI job call the exact same `lib/check-*` scripts, so they can never drift apart.
-- **Agent-agnostic** — rules live in `AGENTS.md` (with a thin `CLAUDE.md` pointer); Cursor, Claude Code, Aider, and others read them directly.
+- **Claude Code first.** Rules live in `AGENTS.md`, with a thin `CLAUDE.md` pointer that pulls them into every Claude Code session.
 - **Tunable, not all-or-nothing** — per-path size caps and per-rule disable/warn via `.scaffold.toml`, plus inline `# scaffold-allow` for the rare legitimate exception.
 - **Cleanly removable** — `uninstall.sh` reverses everything and never touches the content of your own `CLAUDE.md` / `AGENTS.md` (see [Update & uninstall](./TECHNICAL.md#update--uninstall) in TECHNICAL.md for how to run it per install method).
 
@@ -44,7 +44,7 @@ That setup hits four compounding failure modes that ordinary linting alone doesn
 
 4. **Forbidden patterns recur.** Agents reach for old import paths, deprecated service names, and outdated idioms because their training data still has them. A per-stack regex deny-list (`backend.txt`, `frontend.txt`, `secrets.txt`, `shell.txt`) is the only durable fix — the agent can't be talked out of recurrent muscle memory, but the build can fail on it.
 
-This scaffold ships the **enforcement layer** that addresses all four directly. Two layers are always-on: commit-time (the pre-commit hook) and merge-time (the CI mirror), both running the same `lib/check-*` scripts. A third opt-in layer — agent-runtime hooks that block bad patterns _before_ they're written — ships via `install.sh --claude` (Claude Code) and `install.sh --cursor` (Cursor); see [Opt-in layers](./TECHNICAL.md#opt-in-layers) in TECHNICAL.md and [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) for the design space and tradeoffs.
+This scaffold ships the **enforcement layer** that addresses all four directly. Two layers are always-on: commit-time (the pre-commit hook) and merge-time (the CI mirror), both running the same `lib/check-*` scripts. A third opt-in layer — agent-runtime hooks that block bad patterns _before_ they're written — ships via `install.sh --claude` (Claude Code); see [Opt-in layers](./TECHNICAL.md#opt-in-layers) in TECHNICAL.md and [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) for the design space and tradeoffs.
 
 What the scaffold doesn't try to solve: parallel-session collisions, context-window discipline across long projects, and spec-first workflows. Those belong to git workflow (`git worktree` per session), nested `CLAUDE.md` files, and project-specific spec docs respectively. Recommended patterns for each are documented in `AGENTS.md` and `RECOMMENDATIONS.md`.
 
@@ -71,7 +71,7 @@ go. It is a convenience and the paths below are alternatives to each other.
 ```sh
 npx ai-coding-rules-scaffold                  # auto-detects Python / JS
 npx ai-coding-rules-scaffold --both           # or pick the stack explicitly
-npx ai-coding-rules-scaffold --both --claude  # + AI-agent guardrails (also --cursor)
+npx ai-coding-rules-scaffold --both --claude  # + Claude Code agent guardrails
 ```
 
 This fetches the published package and runs the same installer documented below —
@@ -121,7 +121,6 @@ Tests run in CI by default: a plain install also drops `.github/workflows/tests.
 ./install.sh --force-all    # also replace user-owned files (rules docs, ruff.toml, eslint.config.js, ...), each backed up; CLAUDE.md/AGENTS.md never overwritten
 ./install.sh --no-verify    # skip the post-install toolchain check (no detect/offer)
 ./install.sh --claude       # also install opt-in Claude Code agent guardrails
-./install.sh --cursor       # also install opt-in Cursor agent guardrails
 ./install.sh --commit-msg   # also install the Conventional-Commits commit-msg hook
 ./install.sh --gitleaks-hook # also install opt-in local gitleaks pre-commit pass
 ./install.sh --gitleaks-ci  # also install the gitleaks CI workflow (unskippable gate)
@@ -169,7 +168,7 @@ in TECHNICAL.md for the full contract.
 Language pattern files are auto-installed when their manifest is detected
 (`go.mod`, `Cargo.toml`, `composer.json`, `pom.xml`/`build.gradle`, `Gemfile`,
 …); `--all-langs` installs them all. See [Opt-in layers](./TECHNICAL.md#opt-in-layers)
-in TECHNICAL.md for what `--claude`, `--cursor`, and `--commit-msg` add.
+in TECHNICAL.md for what `--claude` and `--commit-msg` add.
 
 **The scaffold ships configs + enforcement; the tools themselves are project
 deps.** At the end, `install.sh` runs a **detect → offer** pass: it checks for
@@ -226,26 +225,11 @@ Either way, the `lib/check-*` scripts in `.githooks/lib/` are also runnable dire
 
 ## AI agent integration
 
-The scaffold follows the cross-tool **`AGENTS.md` standard** ([agents.md](https://agents.md)) — a single file at the project root that multiple agents already read (Cursor, Aider, Codex, and others). For tools that read a different filename, `install.sh` or a one-line pointer handles it:
-
-- **Cursor** — reads `AGENTS.md` natively. Nothing else needed.
-- **Claude Code** — reads `CLAUDE.md`. `install.sh` drops a `CLAUDE.md` whose `@AGENTS.md`, `@coding-rules.md`, and `@operational-rules.md` imports pull all three rule files into context at session start.
-- **Aider** — add to `.aider.conf.yml`:
-  ```yaml
-  read:
-    - AGENTS.md
-    - coding-rules.md
-    - operational-rules.md
-  ```
-- **Cline** — create `.clinerules` with one line:
-  ```
-  Follow the rules in AGENTS.md, coding-rules.md, and operational-rules.md.
-  ```
-- **Continue / Copilot / other** — point the tool at `AGENTS.md` via whatever config it supports.
+The rules live in `AGENTS.md`, the cross-tool standard file ([agents.md](https://agents.md)). Claude Code reads `CLAUDE.md`, so `install.sh` drops a `CLAUDE.md` whose `@AGENTS.md`, `@coding-rules.md`, and `@operational-rules.md` imports pull all three rule files into context at session start.
 
 ### Use the rules without the rest of the scaffold
 
-You can use `operational-rules.md` (and/or `coding-rules.md`) standalone, without the linter / hook / CI scaffolding. Drop the file(s) into your project root and reference them from your AI tool's config:
+You can use `operational-rules.md` (and/or `coding-rules.md`) standalone, without the linter / hook / CI scaffolding. Drop the file(s) into your project root and reference them from `CLAUDE.md`:
 
 - **Claude Code** — add to `CLAUDE.md`:
   ```
@@ -253,8 +237,6 @@ You can use `operational-rules.md` (and/or `coding-rules.md`) standalone, withou
   @coding-rules.md
   ```
   The `@` directive auto-loads on session start.
-- **Cursor:** create `.cursor/rules/rules.mdc` (or use the command palette's "New Cursor Rule") with the frontmatter `alwaysApply: true` and one line under it: `Follow the rules in operational-rules.md and coding-rules.md.` The root-level `.cursorrules` file older guides point to is [legacy and will be deprecated](https://cursor.com/help/customization/rules).
-- **Aider / Cline / etc.**: add the filename(s) to whatever config the tool reads every session (`.aider.conf.yml`, `.clinerules`).
 
 No `install.sh`, no hooks, no CI — the docs are useful in isolation. The full scaffold layers on the enforcement (commit hooks + CI mirror) that turns the rules into machine-checkable failures.
 

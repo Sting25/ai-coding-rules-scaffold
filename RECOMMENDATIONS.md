@@ -8,20 +8,20 @@ Entries are dated. If one has gone untouched for over a year, delete it (or move
 
 ---
 
-## Agent-runtime hooks (Claude Code `PreToolUse`, Cursor `beforeShellExecution`, Gemini `BeforeTool`)
+## Agent-runtime hooks (Claude Code `PreToolUse`, Gemini `BeforeTool`)
 
-_Added 2026-04-23. **Minimal version shipped 2026-06-10** — `install.sh --claude` installs a `.claude/settings.json` deny-list plus a `PreToolUse` precheck (`.githooks/lib/agent-precheck`) that scans Write/Edit/Bash content against the same `.forbidden-patterns/secrets.txt` the commit-time scanner uses. **Cursor support added 2026-06-11** — `install.sh --cursor` wires the same precheck to Cursor's `beforeShellExecution` via `.cursor/hooks.json` (shell-command scan only; Cursor has no before-write hook). **Cursor read-file parity added 2026-08-29** — the same precheck now also answers Cursor's `beforeReadFile` hook, matching read paths against `.githooks/lib/credential-read-patterns.txt` (the Cursor sibling of Claude's native `permissions.deny` credential list) and responding with a `{"permission":"deny"}` JSON verdict. The full framework below remains out of scope._
+_Added 2026-04-23. **Minimal version shipped 2026-06-10** — `install.sh --claude` installs a `.claude/settings.json` deny-list plus a `PreToolUse` precheck (`.githooks/lib/agent-precheck`) that scans Write/Edit/Bash content against the same `.forbidden-patterns/secrets.txt` the commit-time scanner uses. The full framework below remains out of scope._
 
 **Adopt if:** you have ≥3 concurrent agents, OR CI is rejecting more than ~1 violation/week that the agent could have caught at write-time, OR a single security incident from agent-issued shell commands has happened.
 
 **What it is.** IDE-level hooks fire at the agent's action boundary — _before_ the agent edits a file or runs a shell command. Git hooks (this scaffold) fire at the commit boundary, after the agent has already written the code. Different boundary, different class of problem caught:
 
-| Layer                      | Catches                                                                    | This scaffold has it?                             |
-| -------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------- |
-| Agent hooks (pre-tool-use) | Agent about to exfiltrate a secret, run `curl \| bash`, edit outside scope | Yes — opt-in (`install.sh --claude` / `--cursor`) |
-| Linters (`ruff`, `eslint`) | Code quality once code is written                                          | Yes                                               |
-| Git pre-commit             | Debug leaks, file size, forbidden patterns at commit                       | Yes                                               |
-| CI mirror                  | All of the above, server-side, unskippable                                 | Yes                                               |
+| Layer                      | Catches                                                                    | This scaffold has it?                |
+| -------------------------- | -------------------------------------------------------------------------- | ------------------------------------ |
+| Agent hooks (pre-tool-use) | Agent about to exfiltrate a secret, run `curl \| bash`, edit outside scope | Yes — opt-in (`install.sh --claude`) |
+| Linters (`ruff`, `eslint`) | Code quality once code is written                                          | Yes                                  |
+| Git pre-commit             | Debug leaks, file size, forbidden patterns at commit                       | Yes                                  |
+| CI mirror                  | All of the above, server-side, unskippable                                 | Yes                                  |
 
 **The minimal version (now shipped).** `install.sh --claude` wires `PreToolUse` to `.githooks/lib/agent-precheck`, which scans the content of a Write/Edit/Bash call against `.forbidden-patterns/secrets.txt` — the same patterns the commit-time `check-secrets` uses. For **Bash** tool calls it additionally scans the command against `.forbidden-patterns/shell.txt` (case-sensitive, matching commit-time semantics) — blocking `curl|bash`, `rm -rf /`, `chmod 777` before the agent runs them, which is the shell-command security scan called out below as the highest-ROI hook. The same rule set runs in three places: agent → commit → CI. The bundled `.claude/settings.json` also denies the agent reading credential files (`.env`, `*.pem`, `~/.ssh/**`, `~/.aws/**`, …) outright, and sets `enableAllProjectMcpServers: false` with an empty `enabledMcpjsonServers` allowlist — so a cloned/forked repo's `.mcp.json` can't auto-approve a source/env-exfiltrating MCP server (CVE-2026-21852).
 

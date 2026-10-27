@@ -190,6 +190,18 @@ WORKTREE` note when it does. Python tools are resolved by one shared helper,
   notes still print under `--quiet`, since each names a guardrail that is
   weaker than shipped or was not measured.
 
+### Removed
+
+- **Cursor support.** The project targets Claude Code only. Removed the
+  `--cursor` installer flag (it is now rejected as an unknown argument),
+  `cursor-hooks.json.template`, `githooks/lib/credential-read-patterns.txt.template`
+  (read only by the Cursor `beforeReadFile` branch; Claude denies credential
+  reads through `permissions.deny` in `claude-settings.json`), the Cursor payload
+  branches of `agent-precheck`, and the Cursor entries in `scaffold-doctor` and
+  `uninstall.sh`. The docs no longer describe Aider, Cline, Copilot or Cursor
+  setups. A project that installed with `--cursor` keeps its `.cursor/hooks.json`
+  and `.githooks/lib/credential-read-patterns.txt`; delete them by hand.
+
 ## [v0.19.1] - 2026-10-21
 
 ### Fixed
