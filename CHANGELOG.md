@@ -8,6 +8,11 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+- **README documents three Claude Code harness behaviors (#224).** A new "Known
+  Claude Code harness behaviors" section names subagent permission denials, long
+  CI-style waits and output-style plugins that override reply length, each with
+  a working pattern.
+
 - **Worktree guidance now warns about path-confinement hooks (#223).** A hook that
   blocks access outside the repo root by path prefix can wrongly block linked
   worktrees, symlinks and home-directory caches. `AGENTS.md.template` and the
