@@ -31,6 +31,7 @@ wp_case() {
   # WP_IGNORE: note lines to disregard (a pyproject fixture also trips the unrelated ruff note)
   sect=$(grep -v -E "${WP_IGNORE:-^\$}" <<<"$sect" || true)
   if [ -n "${WP_NOFILE:-}" ] && [ -e "$t/$WP_NOFILE" ]; then ok=0; fi
+  ! grep -q 'WP SIDE EFFECT' "$HOOK_OUT" || ok=0  # the doctor must never run project code
   [ "$rc" -eq "${WP_WANT_RC:-0}" ] || ok=0
   if [ "$want_gaps" -eq 0 ]; then
     grep -q ' 0 gaps' "$HOOK_OUT" || ok=0
@@ -93,8 +94,12 @@ else
 fi
 
 # (g)-(i) the project name is data, never code; need a python3 to act as the venv interpreter.
-if command -v python3 >/dev/null 2>&1; then
-  wp_fake_venv() { mkdir -p .venv/bin && ln -s "$(command -v python3)" .venv/bin/python; }
+# The REAL interpreter (sys.executable), not `command -v python3`: on macOS that is the
+# xcode-select stub, which never runs Python, so the injection probe would pass with the bug
+# put back. Skip the block when the interpreter cannot execute even `-c 1`.
+WP_PY=$(python3 -I -c 'import sys; print(sys.executable)' 2>/dev/null || true)
+if [ -n "$WP_PY" ] && "$WP_PY" -I -c 1 >/dev/null 2>&1; then
+  wp_fake_venv() { mkdir -p .venv/bin && ln -s "$WP_PY" .venv/bin/python; }
   wp_inject() {
     printf '[project]\nname = "os;open('"'"'PWNED'"'"','"'"'w'"'"')#"\n' >pyproject.toml
     wp_fake_venv
@@ -107,8 +112,8 @@ if command -v python3 >/dev/null 2>&1; then
   # (h) a real (pip-less) venv whose .pth names a checkout
   wp_pth_venv() {
     printf '[project]\nname = "demo"\n' >pyproject.toml
-    mkdir -p src/demo && : >src/demo/__init__.py
-    python3 -m venv --without-pip .venv >/dev/null 2>&1 || return 0
+    mkdir -p src/demo && echo 'print("WP SIDE EFFECT")' >src/demo/__init__.py
+    "$WP_PY" -m venv --without-pip .venv >/dev/null 2>&1 || return 0
     printf '%s\n' "$WP_PTH" >"$(echo .venv/lib/python*/site-packages)/demo.pth"
   }
   wp_pth_outside() { WP_PTH=$WP_OTHER/src wp_pth_venv; }
@@ -119,5 +124,5 @@ if command -v python3 >/dev/null 2>&1; then
   rm -rf "$WP_OTHER"
   WP_IGNORE=""
 else
-  echo "  - skipped the venv import cases (no python3 on PATH)"; SKIP=$((SKIP + 1))
+  echo "  - skipped the venv import cases (no runnable python3)"; SKIP=$((SKIP + 1))
 fi
