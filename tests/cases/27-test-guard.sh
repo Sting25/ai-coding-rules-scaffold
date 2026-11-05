@@ -343,10 +343,20 @@ else
   echo "  ✗ mutation exit 1 should pass, summarise, warn and post a neutral check run (rc $TGD_RC/$TGD_RCB)"; sed 's/^/      /' "$HOOK_OUT" "$TGD/gh.log"; FAIL=$((FAIL + 1))
 fi
 
-if [ "$(cat "$TGD/env.log")" = "False" ]; then
-  echo "  ✓ the mutation step (which runs the PR's code) has no GH_TOKEN in its environment"; PASS=$((PASS + 1))
+# Structural, read off the workflow itself: the harness above never applies the
+# YAML env: maps, so a GH_TOKEN added back to the mutation step would pass the
+# runtime probe. Slice each step's text (from its name to the next "- name:")
+# and assert the token is declared only in the posting step.
+tg_step_text() { awk -v start="$1" '
+  index($0, start) { on = 1; next }
+  on && /^      - name: / { exit }
+  on { print }' "$TGW"; }
+if ! tg_step_text 'name: Mutation testing (diff-scoped, advisory)' | grep -q 'GH_TOKEN' \
+   && tg_step_text 'name: Post neutral check run (mutation declined)' | grep -q 'GH_TOKEN: \${{ github.token }}' \
+   && [ "$(cat "$TGD/env.log")" = "False" ]; then
+  echo "  ✓ GH_TOKEN is declared only on the posting step, not the mutation step that runs PR code"; PASS=$((PASS + 1))
 else
-  echo "  ✗ GH_TOKEN must not reach check-mutation-diff's environment"; FAIL=$((FAIL + 1))
+  echo "  ✗ GH_TOKEN must be declared on the posting step only (mutation step runs the PR's code)"; FAIL=$((FAIL + 1))
 fi
 
 for _tg_rc in 2 3; do
