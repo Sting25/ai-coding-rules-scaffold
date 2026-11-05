@@ -171,14 +171,17 @@ SCAFFOLD_MANIFEST_ERROR=""
 # manifest exists to fix (audit verify-6). Loud now, in the same shape as the
 # symlinked-directory refusal: name the file, say what it costs, say what to do.
 _manifest_write_failed() {
+  local _mf_dir
   SCAFFOLD_MANIFEST_ERROR=$1
+  # No dirname(1): a/b -> a, /b -> /, b -> .
+  case $SCAFFOLD_MANIFEST in */*) _mf_dir=${SCAFFOLD_MANIFEST%/*}; [ -n "$_mf_dir" ] || _mf_dir=/ ;; *) _mf_dir=. ;; esac
   rm -f "${SCAFFOLD_MANIFEST}.new.$$" "${SCAFFOLD_MANIFEST}.tmp.$$" 2>/dev/null || true
   echo "error: could not write $SCAFFOLD_MANIFEST ($1)." >&2
   echo "       The files above were installed, but nothing on disk now records that the" >&2
   echo "       scaffold wrote them, so the NEXT upgrade cannot tell its own untouched" >&2
   echo "       files from your edits: it will keep every drifted file instead of" >&2
   echo "       refreshing it, and new detectors and updated CI pins will not arrive." >&2
-  echo "       Make $(dirname "$SCAFFOLD_MANIFEST") writable (or clear whatever sits at" >&2
+  echo "       Make ${_mf_dir} writable (or clear whatever sits at" >&2
   echo "       the manifest path) and re-run install.sh." >&2
 }
 
@@ -220,7 +223,8 @@ manifest_flush() {
   local tmp new dir
   [ -n "$_MANIFEST_PENDING" ] || return 0
   _manifest_sweep_stale
-  dir=$(dirname "$SCAFFOLD_MANIFEST")
+  # No dirname(1); a/b -> a, /b -> /, b -> . (see _cp_replace in install-lib.sh)
+  case $SCAFFOLD_MANIFEST in */*) dir=${SCAFFOLD_MANIFEST%/*}; [ -n "$dir" ] || dir=/ ;; *) dir=. ;; esac
   new="${SCAFFOLD_MANIFEST}.new.$$"
   tmp="${SCAFFOLD_MANIFEST}.tmp.$$"
   if ! _mkdir_safe "$dir"; then

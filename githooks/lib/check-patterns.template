@@ -101,7 +101,8 @@ ghesc() {
 # Per-project overrides (.scaffold.toml via the sibling scaffold-config helper).
 # `cfg` fails open to empty output when the helper is missing (older install);
 # the caller then treats every rule as fully enforced (fail safe).
-SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
+SELF_DIR="$(cd "$_sd" && pwd)"
 CONFIG_BIN="$SELF_DIR/scaffold-config"
 cfg() { [ -x "$CONFIG_BIN" ] || return 0; "$CONFIG_BIN" "$@" 2>/dev/null || true; }
 # path_excluded <rule-id> <file> <default-globs>: the shared matcher in

@@ -65,6 +65,9 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Fixed
 
+- **The hooks, check scripts, assess, install and uninstall no longer need
+  `dirname`.** They resolve their own directory with shell parameter expansion,
+  so bash 5.3's fatal `cd ""` can no longer kill them before they start.
 - **A linked git worktree no longer skips the local ruff pass.** `git worktree
 add` checks out tracked files only, so a gitignored `.venv` is never there and
   the hook found no ruff. The hook now borrows the main worktree's `.venv` after

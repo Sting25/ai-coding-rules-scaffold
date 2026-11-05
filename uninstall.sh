@@ -30,7 +30,9 @@
 
 set -euo pipefail
 
-SCAFFOLD_DIR="$(cd "$(dirname "$0")" && pwd)"
+# bash 5.3: cd "" is fatal; no dirname(1) needed (see scaffold-doctor.sh)
+case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
+SCAFFOLD_DIR="$(cd "$_sd" && pwd)"
 DRY_RUN=0
 REMOVE_ALL=0
 DROP_MODE=0
