@@ -15,7 +15,7 @@
 # stay green. The commit that added the gate says the real behaviour was
 # verified BY HAND and never encoded; this file encodes it.
 #
-# FIVE CHECKS (four pytest verdicts plus a static one), on one shared fixture whose base commit ships a deliberately
+# NINE CHECKS (eight pytest verdicts plus a static one; (f)-(i) are the unchanged-body exemption), on one shared fixture whose base commit ships a deliberately
 # WRONG `add(a, b) -> a - b` plus a test pinned to that wrong behaviour:
 #   (a) a new test that FAILS on base  -> exit 0. The false-positive direction,
 #       and the one that matters most: a gate that blocks honest red-green work
@@ -43,8 +43,8 @@
 echo "cases/36: check-red-green's blocking verdict (#140)"
 
 if ! python3 -c 'import pytest' >/dev/null 2>&1; then
-  echo "  - SKIP: pytest not importable — check-red-green's 4 verdict assertions did NOT run (add a pinned 'pip install pytest' step to .github/workflows/test.yml to cover this in CI)"
-  SKIP=$((SKIP + 4))
+  echo "  - SKIP: pytest not importable — check-red-green's 8 verdict assertions did NOT run (add a pinned 'pip install pytest' step to .github/workflows/test.yml to cover this in CI)"
+  SKIP=$((SKIP + 8))
 else
   # A fixture repo with the --test-guard artifacts installed, one BASE commit,
   # and HEAD == base. Scenarios below add the second commit. Printed as
@@ -191,8 +191,74 @@ else
     rm -rf "$_rg_dir"
   fi
 
+  # (f)-(i): the unchanged-body exemption (#200). The base's only test is
+  # test_add_existing (passes on base: add(5, 5) == 0), so a copy of it in a
+  # NEW file is a new node ID that is green on base.
+  # _rg_case <label> <expect_rc> <expect_grep> <grep_must_match 1|0>: run the gate and
+  # book one PASS/FAIL. The scenario's HEAD commit is made by the caller.
+  _rg_check() {
+    local label=$1 want=$2 pat=$3 neg=$4 ok=0
+    _rg_rc=$(_rg_run "$_rg_dir" "$_rg_base")
+    if [ "$_rg_rc" -eq "$want" ] && grep -q "$pat" "$HOOK_OUT"; then ok=1; fi
+    if [ "$ok" -eq 1 ] && { [ "$neg" -eq 0 ] || ! grep -q 'exempt (unchanged body' "$HOOK_OUT"; }; then
+      echo "  ✓ $label (exit $want)"
+      PASS=$((PASS + 1))
+    else
+      echo "  ✗ $label: want exit $want matching '$pat', got exit $_rg_rc"
+      sed 's/^/      /' "$HOOK_OUT"
+      FAIL=$((FAIL + 1))
+    fi
+    rm -rf "$_rg_dir"
+  }
+  _rg_commit() { git -C "$_rg_dir" add -A && git -C "$_rg_dir" commit --quiet -m "$1" --no-verify; }  # scaffold-allow: test fixture
+
+  # (f) moved verbatim into a new file, deleted from the old one: exempt.
+  if _rg_new; then
+    printf 'from calc import add  # noqa: F401\n' >"$_rg_dir/tests/test_calc.py"
+    printf 'from calc import add\n\n\ndef test_add_existing():\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_calc_more.py"
+    _rg_commit "split: move test_add_existing"
+    _rg_check "a test moved verbatim to a new file is exempt as unchanged-body" 0 \
+      'exempt (unchanged body: moved or reformatted): tests/test_calc_more.py::test_add_existing' 0
+  fi
+
+  # (g) moved AND reformatted (quotes, trailing comma, re-wrapped call, a docstring).
+  #     In place a reformat keeps the node ID, so it is never "new"; it is the
+  #     move that makes it a new ID, and the formatter-equivalence is what exempts it.
+  if _rg_new; then
+    printf 'from calc import add  # noqa: F401\n' >"$_rg_dir/tests/test_calc.py"
+    printf 'from calc import add\n\n\ndef test_add_existing():\n    """A docstring, which carries no semantics."""\n    assert (\n        add(\n            5,\n            5,\n        )\n        == 0\n    )\n' >"$_rg_dir/tests/test_calc_fmt.py"
+    _rg_commit "format and move"
+    _rg_check "a moved test reformatted (wrapping, trailing comma, docstring) is exempt" 0 \
+      'exempt (unchanged body: moved or reformatted): tests/test_calc_fmt.py::test_add_existing' 0
+  fi
+
+  # (h) moved with a semantic edit that STILL passes on base: add(5, 5) == 0 becomes
+  #     add(4, 4) == 0 (a - b is 0 for equal operands). Body differs: offender.
+  if _rg_new; then
+    printf 'from calc import add  # noqa: F401\n' >"$_rg_dir/tests/test_calc.py"
+    printf 'from calc import add\n\n\ndef test_add_existing():\n    assert add(4, 4) == 0\n' >"$_rg_dir/tests/test_calc_more.py"
+    _rg_commit "move with an edit"
+    _rg_check "a moved test with a changed assertion stays an offender" 1 \
+      'green-on-base: tests/test_calc_more.py::test_add_existing' 1
+  fi
+
+  # (i) fail closed: the base commit carries an unparsable (but never collected)
+  #     test-dir file, so the base tests cannot all be read. Pytest never collects
+  #     it, so the gate still evaluates (not exit 2); the predicate refuses to
+  #     exempt, and the verbatim-moved test is reported as an offender (exit 1).
+  if _rg_new; then
+    printf 'def broken(:\n' >"$_rg_dir/tests/helper_broken.py"
+    _rg_commit "base also holds an unparsable helper"
+    _rg_base=$(git -C "$_rg_dir" rev-parse HEAD)
+    printf 'from calc import add  # noqa: F401\n' >"$_rg_dir/tests/test_calc.py"
+    printf 'from calc import add\n\n\ndef test_add_existing():\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_calc_more.py"
+    _rg_commit "move with an unparsable base"
+    _rg_check "an unparsable base test file fails closed: the moved test is an offender" 1 \
+      'green-on-base: tests/test_calc_more.py::test_add_existing' 1
+  fi
+
   unset _rg_dir _rg_base _rg_rc
-  unset -f _rg_fixture _rg_new _rg_run
+  unset -f _rg_fixture _rg_new _rg_run _rg_check _rg_commit
 fi
 unset _rg_stale _rg_pre _rg_post
 
