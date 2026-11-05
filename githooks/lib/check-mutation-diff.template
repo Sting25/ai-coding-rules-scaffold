@@ -404,7 +404,7 @@ def main() -> int:
     tmp = tempfile.mkdtemp(prefix="mutdiff-")
     wt = os.path.join(tmp, "wt")
     try:
-        run(["git", "worktree", "prune"])  # best-effort: drop stale registrations
+        run(["git", "worktree", "prune"])  # best-effort; drops every stale entry, locked ones stay
         r = run(["git", "worktree", "add", "--detach", wt, head_sha])
         if r.returncode != 0:
             emit("error", f"git worktree add failed: {r.stderr.strip()}", args.ci)

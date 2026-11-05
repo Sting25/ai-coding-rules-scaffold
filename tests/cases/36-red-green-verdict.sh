@@ -15,7 +15,7 @@
 # stay green. The commit that added the gate says the real behaviour was
 # verified BY HAND and never encoded; this file encodes it.
 #
-# THREE VERDICTS, on one shared fixture whose base commit ships a deliberately
+# FIVE CHECKS (four pytest verdicts plus a static one), on one shared fixture whose base commit ships a deliberately
 # WRONG `add(a, b) -> a - b` plus a test pinned to that wrong behaviour:
 #   (a) a new test that FAILS on base  -> exit 0. The false-positive direction,
 #       and the one that matters most: a gate that blocks honest red-green work
@@ -34,7 +34,7 @@
 # in the base worktree.
 #
 # THE PYTEST DEPENDENCY, stated rather than hidden. check-red-green shells out
-# to `sys.executable -m pytest`, so these three assertions cannot run without
+# to `sys.executable -m pytest`, so the four pytest assertions cannot run without
 # pytest importable. .github/workflows/test.yml installs ruff and zizmor but NOT
 # pytest, so in CI today this is a counted SKIP that shows up in the driver's
 # final Result line, not a silent pass — adding a pinned `pip install pytest`
@@ -199,7 +199,7 @@ unset _rg_stale _rg_pre _rg_post
 # (e) check-mutation-diff cannot be driven here (it needs mutmut and a mutation
 #     run, too heavy for this suite), so cover its prune-on-start statically:
 #     the prune call must come BEFORE the `worktree add` in the shipped template.
-_rg_pl=$(grep -n '"worktree", "prune"' "$SCAFFOLD_DIR/githooks/lib/check-mutation-diff.template" | head -1 | cut -d: -f1)
+_rg_pl=$(grep -n '^ *run(\["git", "worktree", "prune"\])' "$SCAFFOLD_DIR/githooks/lib/check-mutation-diff.template" | head -1 | cut -d: -f1)
 _rg_al=$(grep -n '"worktree", "add"' "$SCAFFOLD_DIR/githooks/lib/check-mutation-diff.template" | head -1 | cut -d: -f1)
 if [ -n "$_rg_pl" ] && [ -n "$_rg_al" ] && [ "$_rg_pl" -lt "$_rg_al" ]; then
   echo "  ✓ check-mutation-diff prunes worktrees before it adds one (static: line $_rg_pl < $_rg_al)"
