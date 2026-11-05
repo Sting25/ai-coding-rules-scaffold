@@ -8,6 +8,12 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+- **`operational-rules.md`: five rule changes (#207).** New rules "A gate is proven
+  by defeating it", "Every gate lives once, as a script that runs without the AI",
+  "Fact-check a cheap model's prose before it reaches the user" and "Sort a refusal
+  before you act on it" (hook refusal vs harness denial), and "One writer per repo
+  at a time" now covers sending a writer into a tree another session used.
+
 - **Worktree guidance now warns about path-confinement hooks (#223).** A hook that
   blocks access outside the repo root by path prefix can wrongly block linked
   worktrees, symlinks and home-directory caches. `AGENTS.md.template` and the

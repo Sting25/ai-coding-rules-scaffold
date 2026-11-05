@@ -56,6 +56,19 @@ the two inputs, check the setup step's exit status. A setup that silently no-ops
 a clean negative result, and clean results do not get re-examined.
 _Anchor:_ a conflict prediction measured "clean" because the edit under test was never committed.
 
+### A gate is proven by defeating it
+
+A new guardrail or test is not in place until a realistic evasion goes red against it. An
+evasion the compiler or optimizer removes (an unused import) proves nothing; use one that
+survives the build.
+_Anchor:_ a lint denylist passed 6 of 8 evasions; the build-graph test that replaced it caught
+all 12.
+
+### Every gate lives once, as a script that runs without the AI
+
+Put a check's logic in one script that the hook, CI and a human can all run. A rule that exists
+only in a prompt or a settings file is a request, not a gate.
+
 ## Process
 
 ### One durable home per kind of state
@@ -92,6 +105,12 @@ them shipped.
 
 ## Collaboration
 
+### Fact-check a cheap model's prose before it reaches the user
+
+Prose from a cheap model gets a per-sentence fact-check against the source before the user reads
+it: mechanical gates (lint, links, format) do not catch an invented claim.
+_Anchor:_ a decision-doc draft carried six invented claims and passed every mechanical gate.
+
 ### Agent reports measurements; user calls "done"
 
 Numbers (test counts, sizes, latency, pass rates) come from the agent. Verdicts ("fixed", "done",
@@ -109,11 +128,11 @@ agent was already using.
 
 ### Inherited state is a hypothesis
 
-A claim you did not measure this session (a handoff, PR text, a memory note, a local clone) about CI,
-branch position, conflicts, open decisions, or versions is re-measured from the system of record,
-naming the command, before it drives an action. CI fails only at job level with steps that ran;
-count branch position both ways; test conflicts with a trial merge; ask a repository's host, not a
-clone.
+A claim you did not measure this session (a handoff, PR text, a memory note, a local clone) about
+CI, branch position, conflicts, open decisions, or versions is re-measured from the system of
+record, naming the command, before it drives an action. CI fails only at job level with steps that
+ran; count branch position both ways; test conflicts with a trial merge; ask a repository's host,
+not a clone.
 _Anchor:_ a handoff called a PR red whose CI job had been cancelled before a single step ran.
 
 ### Plans default to PROPOSED; mark every assumption
@@ -139,10 +158,29 @@ TODO with an owner) with why and what would unblock it; the user decides fix now
 is not durable; a PR description counts only if the item also exists elsewhere.
 _Anchor:_ a check reported "skipped" on every run for months and never once executed.
 
+### Sort a refusal before you act on it
+
+A hook refusal and a harness denial are different things, and an ordinary non-zero exit (a failing
+test or build) is neither; check which one you hit.
+
+- A check failing on your own staged change (lint, type, format, commit subject, a missing failing
+  run for a test you just wrote): fix the file, never the gate; recommit and report it in your
+  summary.
+- A gate that is itself wrong or broken (missing tool, false positive, a violation on a line the
+  change did not touch): stop and report the message verbatim; fix the check only as its own
+  change, after the user's go-ahead.
+- A harness, classifier or permission denial: stop and report it verbatim. Never reword, re-quote,
+  annotate, split or wrap the command.
+
+_Anchor:_ three hook refusals stalled delegated work overnight; two were findings on the agent's
+own change (a 101-character commit subject, a type error in a test it had just written).
+
 ### One writer per repo at a time
 
 Before merging or releasing, re-fetch and check for other sessions' open PRs and recent mainline
 movement. Deleting, moving, or repointing a path another session may use (a checkout, a worktree,
-a symlink target) is a merge-grade write: look for live signals (fresh commits or issues from it,
-recent file times, open processes) and stop and ask on any; with none, get a go-ahead naming the
-path. Prefer a rename to a hard delete.
+a symlink target), or sending a writer into a tree another session used, is a merge-grade write:
+look for live signals (fresh commits or issues from it, long-lived processes, file and git-index
+mtimes within minutes) and stop and ask on any; with none, get a go-ahead naming the path. Prefer
+a rename to a hard delete.
+_Anchor:_ a handed-off builder kept writing for hours and its parent merged on a stale approval.
