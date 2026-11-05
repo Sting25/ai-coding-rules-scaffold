@@ -50,7 +50,9 @@ ghesc() {
 # Per-project overrides live in .scaffold.toml, read via the sibling
 # scaffold-config helper. `cfg` fails open to empty output if the helper is
 # missing (older install) — callers then fall back to the built-in defaults.
-SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+# bash 5.3: cd "" is fatal; no dirname(1) needed (see scaffold-doctor.sh)
+case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
+SELF_DIR="$(cd "$_sd" && pwd)"
 CONFIG_BIN="$SELF_DIR/scaffold-config"
 cfg() { [ -x "$CONFIG_BIN" ] || return 0; "$CONFIG_BIN" "$@" 2>/dev/null || true; }
 

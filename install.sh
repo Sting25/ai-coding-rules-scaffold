@@ -53,7 +53,9 @@
 
 set -euo pipefail
 
-SCAFFOLD_DIR="$(cd "$(dirname "$0")" && pwd)"
+# bash 5.3: cd "" is fatal; no dirname(1) needed (see scaffold-doctor.sh)
+case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
+SCAFFOLD_DIR="$(cd "$_sd" && pwd)"
 MODE="auto"
 INTERACTIVE=0
 FORCE=0 FORCE_ALL=0
@@ -272,7 +274,7 @@ if [ "$MODE" = "python" ] || [ "$MODE" = "both" ]; then
     while IFS= read -r cand; do
       [ -n "$cand" ] || continue
       if grep -qs -e '\[tool.pytest.ini_options\]' -e '\[pytest\]' "$cand" 2>/dev/null; then
-        PYTEST_CFG=$(dirname "$cand")
+        PYTEST_CFG=${cand%/*}   # find . prints ./x, so a slash is always present
         break
       fi
     done <<EOF_PYCFG

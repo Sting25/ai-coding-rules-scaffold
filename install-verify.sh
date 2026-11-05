@@ -46,7 +46,11 @@ VERIFY_ANSWER_FD=0
 # The hook's own tool resolver (venv, linked-worktree venv, PATH, python -m), so
 # a tool the hook runs from .venv is never reported missing here (#194).
 # shellcheck source=githooks/lib/py-tool.template
-. "${SCAFFOLD_DIR:-$(dirname "${BASH_SOURCE[0]}")}/githooks/lib/py-tool.template"
+if [ -z "${SCAFFOLD_DIR:-}" ]; then
+  # No dirname(1): a/b -> a, /b -> /, b -> .
+  case ${BASH_SOURCE[0]} in */*) SCAFFOLD_DIR=${BASH_SOURCE[0]%/*}; [ -n "$SCAFFOLD_DIR" ] || SCAFFOLD_DIR=/ ;; *) SCAFFOLD_DIR=. ;; esac
+fi
+. "$SCAFFOLD_DIR/githooks/lib/py-tool.template"
 
 # Detect the project's package manager from lockfiles / available binaries.
 js_install_cmd() {
