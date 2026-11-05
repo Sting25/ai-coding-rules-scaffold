@@ -138,6 +138,8 @@ Tests run in CI by default: a plain install also drops `.github/workflows/tests.
 ./install.sh --help         # show usage
 ```
 
+A test that was only moved to another file or reformatted is exempt from the red-green gate when its body already existed at the base commit, so splitting a long test file or running a formatter does not demand a fresh failing run. "Break the source and restore it" is not evidence for such a test. The exemption is one fail-closed predicate in the CI check: if the base tests cannot be read or parsed, the test stays an offender.
+
 Before it copies anything else, every run (including the first) adds
 `*.scaffold-bak`, `*.scaffold-bak.*`, `.githooks/.scaffold-manifest.new.*` and
 `.githooks/.scaffold-manifest.tmp.*` to your `.gitignore`, creating the file

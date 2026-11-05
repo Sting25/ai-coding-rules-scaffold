@@ -8,6 +8,13 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+- **Red-green gate exempts tests that were only moved or reformatted (#200).** A
+  new test node ID whose function body already existed in any base test file
+  (verbatim file split, or a formatter-only change) no longer counts as
+  green-on-base. One fail-closed predicate, `exempt_as_unchanged_test`, in
+  `check-red-green`; an unreadable or unparsable base test file exempts nothing.
+  The proposed local receipts, pre-commit check and tool hooks were dropped.
+
 - **README documents three Claude Code harness behaviors (#224).** A new "Known
   Claude Code harness behaviors" section names subagent permission denials, long
   CI-style waits and output-style plugins that override reply length, each with

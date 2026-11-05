@@ -53,6 +53,11 @@ scaffold's --strict-markers:
 USAGE
   check-red-green --base <ref> [--ci] [--strict-unevaluable] [--max-new N]
 
+A second exemption needs no marker: a new node ID whose test body ALREADY
+EXISTED in the base tree is not new behaviour, only a new address. This covers
+a test moved verbatim to another file (file split) and a test reformatted by a
+formatter. See exempt_as_unchanged_test(); it fails closed.
+
 Exit: 0 all new tests were red on base (or explicitly exempt)
       1 one or more new tests passed on base
       2 could not evaluate (no base, collection broken, git failure)
@@ -68,6 +73,8 @@ ratchets.
 from __future__ import annotations
 
 import argparse
+import ast
+import copy
 import os
 import pathlib
 import re
@@ -119,6 +126,99 @@ def is_real_source(p: str) -> bool:
 def is_test_path(p: str) -> bool:
     name = pathlib.PurePosixPath(p).name
     return bool(TEST_DIR_RE.search(p)) or name.startswith("test_") or name.endswith("_test.py")
+
+
+def _strip_doc(node):
+    n = copy.deepcopy(node)
+    b = n.body
+    if (b and isinstance(b[0], ast.Expr) and isinstance(b[0].value, ast.Constant)
+            and isinstance(b[0].value.value, str)):
+        n.body = b[1:] or [ast.Pass()]
+    return n
+
+
+def _test_keys(src: str) -> set:
+    """(class header | None, function) AST dumps for every top-level test
+    function and every method of a top-level class. Raises SyntaxError."""
+    keys = set()
+    for top in ast.parse(src).body:
+        if isinstance(top, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            keys.add((None, ast.dump(_strip_doc(top))))
+        elif isinstance(top, ast.ClassDef):
+            hdr = copy.deepcopy(top)
+            hdr.body = []
+            hdr = ast.dump(hdr)
+            for m in top.body:
+                if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    keys.add((hdr, ast.dump(_strip_doc(m))))
+    return keys
+
+
+def _git_show(sha: str, path: str) -> str | None:
+    r = run(["git", "show", f"{sha}:{path}"])
+    return r.stdout if r.returncode == 0 else None
+
+
+_BASE_KEYS: dict = {}
+
+
+def _base_keys(base_sha: str):
+    """Keys of every .py test file in the base tree, or None if ANY cannot be
+    listed, read or parsed (an unreadable base must not exempt anything)."""
+    if base_sha not in _BASE_KEYS:
+        keys = None
+        ls = run(["git", "ls-tree", "-r", "--name-only", base_sha])
+        if ls.returncode == 0:
+            keys = set()
+            for p in ls.stdout.splitlines():
+                if not (p.endswith(".py") and is_test_path(p) and is_real_source(p)):
+                    continue
+                src = _git_show(base_sha, p)
+                try:
+                    if src is None:
+                        raise SyntaxError(p)
+                    keys |= _test_keys(src)
+                except (SyntaxError, ValueError, RecursionError):
+                    keys = None
+                    break
+        _BASE_KEYS[base_sha] = keys
+    return _BASE_KEYS[base_sha]
+
+
+def exempt_as_unchanged_test(nid: str, head_sha: str, base_sha: str) -> bool:
+    """True when this test's function body (and enclosing class header)
+    already existed in ANY test file of the base tree, so the node ID is new
+    but the test is not: a verbatim move, or a formatter-only change.
+
+    Compared as ast.dump with docstrings stripped, so whitespace, quoting,
+    trailing commas and wrapping do not matter and any semantic edit does.
+    Fails closed: unlistable/unreadable/unparsable base test file, unreadable
+    HEAD file, or a node not found in HEAD all return False.
+    """
+    try:
+        path, *rest = nid.split("::")
+        rest = [re.sub(r"\[.*\]$", "", x) for x in rest]
+        src = _git_show(head_sha, path)
+        base = _base_keys(base_sha)
+        if src is None or base is None or not rest or len(rest) > 2:
+            return False
+        top = ast.parse(src).body
+        scope, name = (None, rest[0]) if len(rest) == 1 else (rest[0], rest[1])
+        hdr = None
+        if scope is not None:
+            cls = next((n for n in top if isinstance(n, ast.ClassDef)
+                        and n.name == scope), None)
+            if cls is None:
+                return False
+            h = copy.deepcopy(cls)
+            h.body = []
+            hdr = ast.dump(h)
+            top = cls.body
+        fn = next((n for n in top if isinstance(n, (ast.FunctionDef,
+                   ast.AsyncFunctionDef)) and n.name == name), None)
+        return fn is not None and (hdr, ast.dump(_strip_doc(fn))) in base
+    except (SyntaxError, ValueError, RecursionError):
+        return False
 
 
 def main() -> int:
@@ -263,17 +363,24 @@ def main() -> int:
 
         # ── Exempt the ones that say out loud that they pass on base ──────────
         exempt = []
+        unchanged = []
         still_offending = []
         for nid in offenders:
             rk = run(
                 [sys.executable, "-m", "pytest", "-q", "--collect-only",
                  "-m", "characterization", "--no-header", nid],
             )
-            (exempt if (rk.returncode == 0 and "::" in rk.stdout) else
-             still_offending).append(nid)
+            if rk.returncode == 0 and "::" in rk.stdout:
+                exempt.append(nid)
+            elif exempt_as_unchanged_test(nid, head_sha, base_sha):
+                unchanged.append(nid)
+            else:
+                still_offending.append(nid)
 
         for nid in exempt:
             print(f"  exempt (characterization): {nid}")
+        for nid in unchanged:
+            print(f"  exempt (unchanged body: moved or reformatted): {nid}")
         if red:
             print(f"  red on base, as required: {len(red)} test(s)")
 
@@ -312,6 +419,7 @@ def main() -> int:
         if not failed:
             print(f"red-green OK: {len(new_ids)} new test(s) accounted for "
                   f"({len(red)} red, {len(exempt)} characterization, "
+                  f"{len(unchanged)} unchanged-body, "
                   f"{sum(unevaluable.values())} unevaluable).")
         return 1 if failed else 0
 

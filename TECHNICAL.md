@@ -351,7 +351,11 @@ minimal; turn them on per project.
   (characterization before a refactor, coverage backfill) must carry
   `@pytest.mark.characterization(reason=...)`; the marker snippet for
   pytest.ini is printed at install time (pytest.ini is user-owned, so the
-  installer never edits it). Also appends a marker-guarded rules section to
+  installer never edits it). A
+  second, marker-free exemption (`exempt_as_unchanged_test`) covers a test moved
+  verbatim or reformatted: its function body (docstring stripped, compared as
+  an AST dump) already exists in some base test file; any unreadable or
+  unparsable base test file fails closed (the test stays an offender). Also appends a marker-guarded rules section to
   coding-rules.md so agents in the consumer repo see the gate's contract in
   loaded context. Opt-in, not default-on: it assumes a pytest suite and
   roughly doubles CI cost for the new tests in a PR; the vitest half does
