@@ -278,72 +278,97 @@ fi
 rm -rf "$TGN"
 
 # (T) #206: a mutation size decline (script exit 1) is a neutral check run, not a
-# red step. The workflow's mutation step `run:` block is extracted verbatim and
-# executed under `bash -e` (what Actions uses) against a stub check-mutation-diff
-# that exits a chosen code, a stub pip, and a stub gh that records its argv.
+# red step. The workflow's two steps (mutation, then the neutral check run) have
+# their `run:` blocks extracted verbatim, each ending at the next `- name:`, and
+# are driven in sequence under `bash -e` (what Actions uses) against a stub
+# check-mutation-diff that exits a chosen code, a stub pip, and a stub gh that
+# logs one argument per line. The second step runs only when the first wrote
+# declined=true to GITHUB_OUTPUT, as its `if:` does, and only it gets a token.
 TGW="$SCAFFOLD_DIR/.github/workflows/test-guard.yml.template"
 if grep -q 'test-guard / mutation (declined: size)' "$TGW" \
    && grep -q 'conclusion=neutral' "$TGW" \
-   && grep -q 'checks: write' "$TGW"; then
-  echo "  ✓ the workflow names the neutral check run and grants checks: write"; PASS=$((PASS + 1))
+   && grep -q 'checks: write' "$TGW" \
+   && grep -q "if: steps.mutation.outputs.declined == 'true'" "$TGW"; then
+  echo "  ✓ the workflow names the neutral check run, grants checks: write, gates it on declined"; PASS=$((PASS + 1))
 else
-  echo "  ✗ the workflow should name the neutral check run, conclusion=neutral and checks: write"; FAIL=$((FAIL + 1))
+  echo "  ✗ the workflow should name the neutral check run, conclusion=neutral, checks: write and the declined gate"; FAIL=$((FAIL + 1))
 fi
 
 TGD=$(mktemp -d)
 mkdir -p "$TGD/bin" "$TGD/w/.githooks/lib"
-python3 - "$TGW" >"$TGD/step.sh" <<'PYEOF'
+_tg_extract() { # <step name prefix> -> that step's run: block, de-indented
+  python3 - "$TGW" "$1" <<'PYEOF2'
 import re, sys
 text = open(sys.argv[1]).read()
-m = re.search(r"- name: Mutation testing \(diff-scoped, advisory\)\n.*?        run: \|\n(.*)", text, re.S)
+m = re.search(r"- name: " + re.escape(sys.argv[2]) + r".*?        run: \|\n(.*?)(?=\n      - name:|\Z)", text, re.S)
 for line in m.group(1).splitlines():
     print(line[10:] if line.startswith(" " * 10) else line)
-PYEOF
+PYEOF2
+}
+_tg_extract 'Mutation testing' >"$TGD/stepA.sh"
+_tg_extract 'Post neutral check run' >"$TGD/stepB.sh"
 printf '#!/bin/sh\nexit 0\n' >"$TGD/bin/pip"
 cat >"$TGD/bin/gh" <<'GHEOF'
 #!/bin/sh
-printf '%s\n' "$*" >>"$GH_LOG"
+printf '%s\n' "$@" >>"$GH_LOG"
 exit "${GH_RC:-0}"
 GHEOF
 chmod +x "$TGD/bin/pip" "$TGD/bin/gh"
-_tg_step() { # <script exit code> <gh exit code>; sets TGD_RC
-  printf 'import sys\nsys.exit(%s)\n' "$1" >"$TGD/w/.githooks/lib/check-mutation-diff"
-  : >"$TGD/summary"; : >"$TGD/gh.log"
-  TGD_RC=0
-  ( cd "$TGD/w" && PATH="$TGD/bin:$PATH" GH_RC="$2" GH_LOG="$TGD/gh.log" \
+_tg_step() { # <script exit code> <gh exit code>; sets TGD_RC (step A), TGD_RCB (step B, -1 if skipped)
+  printf 'import os, sys\nopen(os.environ["ENV_LOG"], "w").write(str("GH_TOKEN" in os.environ))\nsys.exit(%s)\n' "$1" >"$TGD/w/.githooks/lib/check-mutation-diff"
+  : >"$TGD/summary"; : >"$TGD/gh.log"; : >"$TGD/out"; : >"$TGD/outB"; rm -f "$TGD/env.log"
+  TGD_RC=0; TGD_RCB=-1
+  ( cd "$TGD/w" && PATH="$TGD/bin:$PATH" ENV_LOG="$TGD/env.log" \
       GITHUB_STEP_SUMMARY="$TGD/summary" GITHUB_OUTPUT="$TGD/out" GITHUB_REPOSITORY=o/r \
-      GITHUB_BASE_REF=main BASE_SHA=abc HEAD_SHA=def GH_TOKEN=x bash -e "$TGD/step.sh" ) >"$HOOK_OUT" 2>&1 || TGD_RC=$?
+      GITHUB_BASE_REF=main BASE_SHA=abc bash -e "$TGD/stepA.sh" ) >"$HOOK_OUT" 2>&1 || TGD_RC=$?
+  if grep -qxF 'declined=true' "$TGD/out"; then
+    TGD_RCB=0
+    ( cd "$TGD/w" && PATH="$TGD/bin:$PATH" GH_RC="$2" GH_LOG="$TGD/gh.log" GITHUB_REPOSITORY=o/r \
+        GH_TOKEN=x HEAD_SHA=def bash -e "$TGD/stepB.sh" ) >"$TGD/outB" 2>&1 || TGD_RCB=$?
+  fi
 }
 
 _tg_step 1 0
-if [ "$TGD_RC" -eq 0 ] && grep -q -- '--max-mutants' "$TGD/summary" \
+if [ "$TGD_RC" -eq 0 ] && [ "$TGD_RCB" -eq 0 ] && grep -q -- '--max-mutants N' "$TGD/summary" \
    && grep -q 'check-mutation-diff --base origin/main' "$TGD/summary" \
-   && grep -q 'conclusion=neutral' "$TGD/gh.log" && grep -q 'head_sha=def' "$TGD/gh.log" \
-   && grep -q 'test-guard / mutation (declined: size)' "$TGD/gh.log" \
+   && grep -q 'gh pr checkout' "$TGD/summary" \
+   && grep -qxF 'name=test-guard / mutation (declined: size)' "$TGD/gh.log" \
+   && grep -qxF 'status=completed' "$TGD/gh.log" \
+   && grep -qxF 'conclusion=neutral' "$TGD/gh.log" \
+   && grep -qxF 'head_sha=def' "$TGD/gh.log" \
+   && grep -qxF 'output[title]=Mutation check declined (size)' "$TGD/gh.log" \
    && grep -q '^::warning::' "$HOOK_OUT"; then
-  echo "  ✓ mutation exit 1 passes the step, summarises the local command, posts a neutral check run"; PASS=$((PASS + 1))
+  echo "  ✓ mutation exit 1 passes, summarises the local command, then posts a neutral check run"; PASS=$((PASS + 1))
 else
-  echo "  ✗ mutation exit 1 should pass, summarise, warn and post a neutral check run (rc $TGD_RC)"; sed 's/^/      /' "$HOOK_OUT" "$TGD/gh.log"; FAIL=$((FAIL + 1))
+  echo "  ✗ mutation exit 1 should pass, summarise, warn and post a neutral check run (rc $TGD_RC/$TGD_RCB)"; sed 's/^/      /' "$HOOK_OUT" "$TGD/gh.log"; FAIL=$((FAIL + 1))
 fi
 
-_tg_step 2 0
-if [ "$TGD_RC" -eq 2 ] && [ ! -s "$TGD/gh.log" ] && [ ! -s "$TGD/summary" ]; then
-  echo "  ✓ mutation exit 2 still fails the step and posts no check run"; PASS=$((PASS + 1))
+if [ "$(cat "$TGD/env.log")" = "False" ]; then
+  echo "  ✓ the mutation step (which runs the PR's code) has no GH_TOKEN in its environment"; PASS=$((PASS + 1))
 else
-  echo "  ✗ mutation exit 2 should fail the step with no check run (rc $TGD_RC)"; FAIL=$((FAIL + 1))
+  echo "  ✗ GH_TOKEN must not reach check-mutation-diff's environment"; FAIL=$((FAIL + 1))
 fi
+
+for _tg_rc in 2 3; do
+  _tg_step "$_tg_rc" 0
+  if [ "$TGD_RC" -eq "$_tg_rc" ] && [ "$TGD_RCB" -eq -1 ] && [ ! -s "$TGD/gh.log" ] && [ ! -s "$TGD/summary" ]; then
+    echo "  ✓ mutation exit $_tg_rc still fails the step with that code and posts no check run"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ mutation exit $_tg_rc should fail the step with no check run (rc $TGD_RC/$TGD_RCB)"; FAIL=$((FAIL + 1))
+  fi
+done
 
 _tg_step 0 0
-if [ "$TGD_RC" -eq 0 ] && [ ! -s "$TGD/gh.log" ] && [ ! -s "$TGD/summary" ]; then
+if [ "$TGD_RC" -eq 0 ] && [ "$TGD_RCB" -eq -1 ] && [ ! -s "$TGD/gh.log" ] && [ ! -s "$TGD/summary" ]; then
   echo "  ✓ mutation exit 0 passes the step untouched"; PASS=$((PASS + 1))
 else
-  echo "  ✗ mutation exit 0 should pass without a summary or check run (rc $TGD_RC)"; FAIL=$((FAIL + 1))
+  echo "  ✗ mutation exit 0 should pass without a summary or check run (rc $TGD_RC/$TGD_RCB)"; FAIL=$((FAIL + 1))
 fi
 
 _tg_step 1 1
-if [ "$TGD_RC" -eq 0 ] && [ "$(grep -c '^::warning::' "$HOOK_OUT")" -eq 2 ] && [ -s "$TGD/summary" ]; then
+if [ "$TGD_RC" -eq 0 ] && [ "$TGD_RCB" -eq 0 ] && [ "$(grep -c '^::warning::' "$HOOK_OUT" "$TGD/outB" | awk -F: '{s+=$NF} END {print s}')" -eq 2 ] && [ -s "$TGD/summary" ]; then
   echo "  ✓ a failing check-run call (fork token) degrades to a second warning and exit 0"; PASS=$((PASS + 1))
 else
-  echo "  ✗ a failing gh call should give two warnings and exit 0 (rc $TGD_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  echo "  ✗ a failing gh call should give two warnings and exit 0 (rc $TGD_RC/$TGD_RCB)"; sed 's/^/      /' "$HOOK_OUT" "$TGD/outB"; FAIL=$((FAIL + 1))
 fi
 rm -rf "$TGD"

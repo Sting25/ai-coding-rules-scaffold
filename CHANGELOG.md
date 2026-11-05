@@ -45,11 +45,13 @@ versioning follows [SemVer](https://semver.org/).
 - **test-guard: a mutation size decline is a neutral check run, not a failure
   (#206).** When the diff has more mutants than `--max-mutants`, the mutation
   step used to fail the job and look like a real finding. It now passes, writes
-  a job summary with the local command that runs the full set, warns, and posts
-  a neutral check run named `test-guard / mutation (declined: size)`. On a fork
-  PR the read-only token cannot post it, so that case falls back to a second
-  warning. Exit 2 (the check could not evaluate) still fails the step. The job
-  now declares `checks: write`.
+  a job summary with the local command that runs the full set, warns, and a
+  second step posts a neutral check run named `test-guard / mutation
+  (declined: size)`. Only that second step holds the token, so the PR's own
+  code run by the mutation step never sees it. On a fork PR the read-only token
+  cannot post it, so that case falls back to a second warning. Exit 2 (the
+  check could not evaluate) still fails the step. The job now declares
+  `checks: write`.
 
 - **`--force` no longer replaces your own configs and rules docs.** It replaced
   `coding-rules.md`, `operational-rules.md`, `eslint.config.js`, `.coveragerc`,
