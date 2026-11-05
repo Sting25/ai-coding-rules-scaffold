@@ -55,7 +55,8 @@ Before reporting a hook or check you created, confirm it exists on disk (`ls -l`
 - **Before risky multi-step work, tag a green restore point** (`git tag pre-<name>`), never a dirty checkpoint commit.
 - **Before touching a broken tree, show recent commits and tags**, propose the way back, and wait for a yes.
 - **Use `git worktree` for parallel agent sessions**, never two agents in one checkout.
-  A hook that confines file access to the repo root by path prefix will wrongly block linked worktrees, symlinked paths and home-directory caches. Resolve repo membership with `git rev-parse --git-common-dir` (and `--show-toplevel`), not a string-prefix compare.
+  A hook that confines file access to the repo root by path prefix can wrongly block linked worktrees, symlinked paths and home-directory caches.
+  Decide membership by `git -C <dir> rev-parse --path-format=absolute --git-common-dir` matching your own (that covers linked worktrees), after `realpath` on the target; caches and deliberate symlinks outside the repo need an explicit allowlist, not a prefix compare.
 
 ## Destructive actions and live data
 

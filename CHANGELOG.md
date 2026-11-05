@@ -11,7 +11,10 @@ versioning follows [SemVer](https://semver.org/).
 - **Worktree guidance now warns about path-confinement hooks (#223).** A hook that
   blocks access outside the repo root by path prefix can wrongly block linked
   worktrees, symlinks and home-directory caches. `AGENTS.md.template` and the
-  README point to `git rev-parse --git-common-dir` for repo membership.
+  README say to match `git rev-parse --path-format=absolute --git-common-dir`
+  (after `realpath`) for worktrees and to allowlist caches and deliberate
+  symlinks explicitly.
+
 - **`operational-rules.md`: two new Engineering rules (#157).** "Never pair a
   throwaway commit with a blind reset" and "Prove the setup applied before
   trusting the measurement": a failed throwaway commit turns
