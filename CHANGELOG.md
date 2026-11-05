@@ -12,6 +12,12 @@ versioning follows [SemVer](https://semver.org/).
   blocks access outside the repo root by path prefix can wrongly block linked
   worktrees, symlinks and home-directory caches. `AGENTS.md.template` and the
   README point to `git rev-parse --git-common-dir` for repo membership.
+- **`operational-rules.md`: two new Engineering rules (#157).** "Never pair a
+  throwaway commit with a blind reset" and "Prove the setup applied before
+  trusting the measurement": a failed throwaway commit turns
+  `reset --hard HEAD~1` into data loss, and a setup that silently did nothing
+  reads like a clean negative result.
+
 - **Rules can skip paths, and the print rules no longer block CLI code.** A rule
   in `.scaffold.toml` takes `exclude = ["app/cli/*"]` to stop scanning matching
   paths for that rule only. The `print()`, `fmt.Print`/`println` and
