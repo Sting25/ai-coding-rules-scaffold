@@ -124,7 +124,7 @@ CASE_FLOORS=(
   "50-ci-template-credentials.sh:6"
   "51-mutation-diff-config.sh:15"
   "52-claude-only-scope.sh:3"
-  "53-narrow-path-scripts.sh:10"
+  "53-narrow-path-scripts.sh:13"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and

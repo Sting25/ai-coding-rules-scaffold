@@ -82,12 +82,29 @@ for np_s in install.sh uninstall.sh; do
   fi
 done
 
-# (C) install.sh beyond --help is NOT run without dirname: the sourced
-# install-lib.sh:148 (_mkdir_safe "$(dirname ...)" silently becomes
-# _mkdir_safe "", skipping the symlink-parent guard) and install-manifest.sh:223
-# (dir=$(dirname ...) aborts under errexit) still call dirname(1) at run time, a
-# separate defect from this idiom. uninstall.sh has no such call and is run for
-# real in (F) below.
+# (C) install.sh beyond --help runs for real in (G) below. The two sources of
+# run-time dirname calls it once had (install-lib.sh _cp_replace, which turned
+# _mkdir_safe "$(dirname ...)" into _mkdir_safe "" and skipped the symlink-parent
+# guard, and install-manifest.sh manifest_flush) now use parameter expansion.
+
+# (G) install.sh for real, on the no-dirname PATH, into a fresh git repo, versus
+# the same install on the full PATH. Excluded from the diff: .git (hook samples,
+# index and config differ by timestamps and object ids). Nothing else.
+fixture_repo NPG1
+fixture_repo NPG2
+printf '#!/usr/bin/env bash\n' >"$NPG1/run.sh"
+printf '#!/usr/bin/env bash\n' >"$NPG2/run.sh"
+np_rc=0
+( cd "$NPG1" && "$SCAFFOLD_DIR/install.sh" --shell --no-verify ) >"$HOOK_OUT.full" 2>&1 || true
+( cd "$NPG2" && PATH="$NPNODIR" "$SCAFFOLD_DIR/install.sh" --shell --no-verify ) >"$HOOK_OUT" 2>&1 || np_rc=$?
+if [ "$np_rc" -eq 0 ] && ! grep -q 'command not found' "$HOOK_OUT" \
+   && diff -r --exclude=.git "$NPG1" "$NPG2" >/dev/null; then
+  np_ok "install.sh runs for real with no dirname on PATH, tree matches full-PATH install"
+else
+  { diff -r --exclude=.git "$NPG1" "$NPG2" || true; } >>"$HOOK_OUT" 2>&1
+  np_fail "install.sh without dirname failed or diverged (exit $np_rc)"
+fi
+rm -rf "$NPG1" "$NPG2" "$HOOK_OUT.full"
 
 # (D) scaffold-assess against a repo with one tracked file.
 fixture_repo NPA
@@ -144,5 +161,63 @@ for np_c in check-hygiene check-patterns check-size check-large-files; do
     np_fail "$np_c failed without dirname (exit $np_rc)"
   fi
 done
+
+# (H) The hook's ruff decision on the no-dirname PATH. check-patterns asks
+# `scaffold-config linter-runs`, which finds py-tool beside itself; its stderr
+# is discarded by the caller, so a missing dirname shows only as a different
+# DECISION. Compared against a run on the same PATH plus dirname.
+#   H1: ruff NOT installed. The os.path.join regex must stay on (refused), and
+#       the output must equal the full run, with no dirname error text.
+#   H2: a stub ruff on PATH. ruff "runs", so the regex defers to it (allowed).
+#       Without dirname the probe used to fail open to "no", wrongly refusing.
+np_nr() { # np_nr [withdir]: NPNODIR minus ruff/python/uv, optionally plus dirname
+  local d f tool
+  d=$(mktemp -d)
+  for f in "$NPNODIR"/*; do
+    tool=${f##*/}
+    case $tool in ruff|python|python3*|uv|pipx) continue ;; esac
+    ln -s "$(readlink "$f")" "$d/$tool"
+  done
+  if [ "${1:-}" = withdir ]; then ln -s "$(command -v dirname)" "$d/dirname"; fi
+  printf '%s' "$d"
+}
+NPRFULL=$(np_nr withdir)
+NPRNODIR=$(np_nr)
+NPRSTUB=$(mktemp -d)
+printf '#!/bin/sh\nexit 0\n' >"$NPRSTUB/ruff"
+chmod +x "$NPRSTUB/ruff"
+fixture_repo NPH
+fixture_install "$NPH" --python --no-verify
+printf '[lint]\nselect = ["PTH"]\n' >"$NPH/ruff.toml"
+printf 'import os\np = os.path.join("a", "b")\n' >"$NPH/a.py"
+git -C "$NPH" add ruff.toml a.py
+np_h() { # np_h OUTFILE PATH: run the hook, keep combined output and exit code
+  local rc=0
+  ( cd "$NPH" && PATH="$2" bash .githooks/pre-commit ) >"$1" 2>&1 || rc=$?
+  echo "exit=$rc" >>"$1"
+}
+np_h "$HOOK_OUT.full" "$NPRFULL"
+np_h "$HOOK_OUT" "$NPRNODIR"
+if ! grep -q 'dirname: command not found' "$HOOK_OUT" \
+   && grep -q 'os.path.join' "$HOOK_OUT.full" \
+   && diff "$HOOK_OUT" "$HOOK_OUT.full" >/dev/null; then
+  np_ok "pre-commit, ruff not installed: same decision with and without dirname"
+else
+  { echo "--- full PATH:"; cat "$HOOK_OUT.full"; echo "--- no dirname:"; cat "$HOOK_OUT"; } >"$HOOK_OUT.cmp"
+  mv "$HOOK_OUT.cmp" "$HOOK_OUT"
+  np_fail "ruff-not-installed decision differs without dirname"
+fi
+np_h "$HOOK_OUT.full" "$NPRSTUB:$NPRFULL"
+np_h "$HOOK_OUT" "$NPRSTUB:$NPRNODIR"
+if ! grep -q 'dirname: command not found' "$HOOK_OUT" \
+   && ! grep -q 'os.path.join' "$HOOK_OUT.full" \
+   && diff "$HOOK_OUT" "$HOOK_OUT.full" >/dev/null; then
+  np_ok "pre-commit, ruff present: same decision with and without dirname"
+else
+  { echo "--- full PATH:"; cat "$HOOK_OUT.full"; echo "--- no dirname:"; cat "$HOOK_OUT"; } >"$HOOK_OUT.cmp"
+  mv "$HOOK_OUT.cmp" "$HOOK_OUT"
+  np_fail "ruff-present decision differs without dirname"
+fi
+rm -rf "$NPH" "$NPRFULL" "$NPRNODIR" "$NPRSTUB" "$HOOK_OUT.full"
 
 rm -rf "$NPI" "$NPA" "$NPMIN" "$NPNODIR"

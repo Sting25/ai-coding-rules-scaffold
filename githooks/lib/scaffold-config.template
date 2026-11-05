@@ -132,9 +132,11 @@ if [ "$cmd" = linter-runs ]; then
       if [ "$lmode" = --ci ]; then echo yes; exit 0; fi
       # The same resolver the hook runs ruff through, so the two cannot disagree
       # about whether ruff is here. No resolver beside this script: keep the regex.
-      [ -r "$(dirname "$0")/py-tool" ] || exit 0
+      # Own dir without dirname(1): a/b -> a, /b -> /, b -> .
+      case $0 in */*) lself=${0%/*}; [ -n "$lself" ] || lself=/ ;; *) lself=. ;; esac
+      [ -r "$lself/py-tool" ] || exit 0
       # shellcheck source=githooks/lib/py-tool.template
-      . "$(dirname "$0")/py-tool"
+      . "$lself/py-tool"
       if py_tool ruff 2>/dev/null; then echo yes; fi
       ;;
     eslint:*.ts|eslint:*.tsx|eslint:*.js|eslint:*.jsx|eslint:*.cjs|eslint:*.mjs)

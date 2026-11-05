@@ -140,12 +140,15 @@ print_refused_writes_summary() {
 # leaf (`rm -f`) first, so we always write a real regular file IN the tree, never
 # THROUGH a link.
 _cp_replace() {
-  local src=$1 dst=$2
+  local src=$1 dst=$2 pdir
   # _mkdir_safe refuses a symlinked parent rather than deleting it, so this can
   # legitimately fail; propagate that so every cp_* caller skips the one file
   # (and does not print an "installed:"/"updated:" line for a write that never
   # happened) instead of aborting the whole run under errexit.
-  _mkdir_safe "$(dirname "$dst")" || return 1
+  # No dirname(1): "" would make _mkdir_safe succeed and skip its symlink guard.
+  # Parameter expansion: a/b -> a, /b -> /, b -> . (same as dirname).
+  case $dst in */*) pdir=${dst%/*}; [ -n "$pdir" ] || pdir=/ ;; *) pdir=. ;; esac
+  _mkdir_safe "$pdir" || return 1
   rm -f "$dst"
   cp "$src" "$dst"
 }
