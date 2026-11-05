@@ -103,3 +103,113 @@ if [ -f .githooks/pre-commit ] && grep -q 'py-tool' .githooks/pre-commit; then
     ok "lib/py-tool present (the hook resolves ruff through it)"
   fi
 fi
+
+# --- worktree parity (advisory) ----------------------------------------------
+# Issue #211, advisory part only. A linked worktree copies tracked files and
+# nothing else, so it can pass its own checks while running against another
+# checkout's hooks, a stale node_modules or a venv that imports the wrong copy
+# of the project. Five cheap conditions, each reported with `note` and NEVER with
+# `gap`: nothing here blocks pre-commit or pre-push or counts toward the exit
+# status. Every check is skipped quietly when its inputs are absent (no
+# node_modules, no venv, no pyproject.toml); no network, no installs.
+# OUT OF SCOPE: comparing installed tool VERSIONS against the lockfile (#211
+# stays open for it), and any blocking variant. Called from scaffold-doctor.sh as
+# doctor_worktree_parity, after the other sections.
+#   1 core.hooksPath resolves outside this worktree
+#   2 node_modules/.package-lock.json differs from package-lock.json
+#   3 the venv imports the project from outside this worktree
+#   4 a gate tool (ruff, pytest, eslint, prettier) is missing from the environment
+#     the hook would use (python via lib/py-tool, JS via node's resolver, as
+#     pre-commit's js_tool_installed does)
+#   5 the gate interpreter is older than pyproject's requires-python minimum
+doctor_worktree_parity() {
+  local top hp hpdir pyname pyproj=0 interp="" out pyver req
+  top=$(pwd -P)
+  # 1. core.hooksPath. Unset is section 1's gap, and so is a path elsewhere; this adds the note.
+  hp=$(git config --get core.hooksPath 2>/dev/null || true)
+  if [ -n "$hp" ]; then
+    case $hp in /*) ;; *) hp="$top/$hp" ;; esac
+    hpdir=$(cd "$hp" 2>/dev/null && pwd -P) || hpdir=$hp
+    case $hpdir/ in "$top"/*) ;; *)
+      note "core.hooksPath resolves to $hpdir, outside this worktree ($top): the hooks that run are another checkout's. Fix: git config core.hooksPath .githooks (in this worktree)" ;;
+    esac
+  fi
+  # 2. node_modules vs the lockfile (packages maps; the root and optional entries are not compared)
+  if [ -f package-lock.json ] && [ -f node_modules/.package-lock.json ]; then
+    local lockcmp='
+const [a,b]=process.argv.slice(1).map(f=>JSON.parse(require("fs").readFileSync(f,"utf8")).packages||{});
+let bad=0;for(const k of Object.keys(b)){if(!a[k]||a[k].version!==b[k].version)bad=1}
+for(const k of Object.keys(a)){if(k!==""&&!a[k].optional&&!a[k].link&&!b[k])bad=1}
+process.exit(bad)'
+    if command -v node >/dev/null 2>&1; then
+      node -e "$lockcmp" package-lock.json node_modules/.package-lock.json >/dev/null 2>&1 ||
+        note "installed node_modules do not match the lockfile; run npm ci"
+    elif command -v python3 >/dev/null 2>&1; then
+      python3 -c '
+import json,sys
+a=json.load(open(sys.argv[1])).get("packages",{});b=json.load(open(sys.argv[2])).get("packages",{})
+bad=any(k not in a or a[k].get("version")!=v.get("version") for k,v in b.items())
+bad=bad or any(k and not v.get("optional") and not v.get("link") and k not in b for k,v in a.items())
+sys.exit(1 if bad else 0)' package-lock.json node_modules/.package-lock.json >/dev/null 2>&1 ||
+        note "installed node_modules do not match the lockfile; run npm ci"
+    else
+      note "lockfile parity check skipped: neither node nor python3 is available to compare package-lock.json with node_modules/.package-lock.json"
+    fi
+  fi
+  # Python: the interpreter the gates would use is the venv's, else python3.
+  if [ -f pyproject.toml ]; then
+    pyproj=1
+    if [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/python" ]; then interp=$VIRTUAL_ENV/bin/python
+    elif [ -x .venv/bin/python ]; then interp=.venv/bin/python
+    elif [ -x venv/bin/python ]; then interp=venv/bin/python
+    elif command -v python3 >/dev/null 2>&1; then interp=python3; fi
+  fi
+  # 3. the venv imports the project from inside this worktree
+  pyname=$(awk '/^\[/{p=($0=="[project]")} p&&/^name[[:space:]]*=/{gsub(/^[^=]*=[[:space:]]*["'\'']|["'\''][[:space:]]*(#.*)?$/,"");print;exit}' pyproject.toml 2>/dev/null || true)
+  pyname=${pyname//-/_}
+  if [ -n "$pyname" ] && [ -x .venv/bin/python ]; then
+    if out=$(.venv/bin/python -c "import $pyname; print($pyname.__file__)" 2>/dev/null); then
+      out=$(cd "${out%/*}" 2>/dev/null && pwd -P || echo "$out")
+      case $out/ in "$top"/*) ;; *) note "the venv imports $pyname from $out, outside this worktree" ;; esac
+    else
+      note "the venv cannot import $pyname (.venv/bin/python -c 'import $pyname' fails): it is not installed there, or installed from elsewhere"
+    fi
+  fi
+  # 4. gate tools missing from the environment the gates use
+  if [ "$pyproj" -eq 1 ] || [ -f ruff.toml ]; then
+    if [ -r .githooks/lib/py-tool ]; then
+      ( . .githooks/lib/py-tool; py_tool ruff ) >/dev/null 2>&1 ||
+        note "ruff is not resolvable by the hook's lib/py-tool (venv, PATH, python3 -m): the local lint pass is skipped here"
+      if grep -q pytest pyproject.toml 2>/dev/null; then
+        ( . .githooks/lib/py-tool; py_tool pytest ) >/dev/null 2>&1 ||
+          note "pytest is not resolvable by lib/py-tool (venv, PATH, python3 -m): tests cannot run here"
+      fi
+    fi
+  fi
+  if [ -f package.json ] && command -v node >/dev/null 2>&1; then
+    local jt
+    for jt in eslint prettier; do
+      if [ "$jt" = prettier ]; then
+        local pc cfg=0
+        for pc in .prettierrc* prettier.config.*; do [ -e "$pc" ] && cfg=1; done
+        [ "$cfg" -eq 1 ] || continue
+      fi
+      node -e "require.resolve('$jt/package.json')" >/dev/null 2>&1 ||
+        note "$jt is not installed in this worktree's node_modules: the hook skips the local $jt pass"
+    done
+  fi
+  # 5. interpreter vs requires-python (>=X.Y or >=X.Y,<...; anything else is skipped)
+  req=$(sed -n 's/^requires-python[[:space:]]*=[[:space:]]*["'\'']>=[[:space:]]*\([0-9][0-9]*\.[0-9][0-9]*\)\(\.[0-9]*\)\{0,1\}\(,[^"'\'']*\)\{0,1\}["'\''].*/\1/p' pyproject.toml 2>/dev/null || true)
+  req=${req%%$'\n'*}
+  if [ -n "$req" ] && [ -n "$interp" ]; then
+    pyver=$("$interp" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true)
+    if [ -n "$pyver" ]; then
+      # pure-bash major.minor compare (no sort/head: the doctor runs under a narrowed PATH too)
+      if [ "${pyver%%.*}" -lt "${req%%.*}" ] ||
+         { [ "${pyver%%.*}" -eq "${req%%.*}" ] && [ "${pyver#*.}" -lt "${req#*.}" ]; }; then
+        note "the gate interpreter ($interp) is Python $pyver, below pyproject.toml's requires-python >=$req"
+      fi
+    fi
+  fi
+  return 0
+}

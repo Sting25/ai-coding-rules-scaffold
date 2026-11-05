@@ -466,6 +466,12 @@ else
   note "scaffold-doctor-drift.sh not found next to scaffold-doctor.sh ($DOCTOR_DIR): the AGENTS.md and coding-rules.md template-drift check is skipped; re-fetch the full scaffold bundle, not just this one file"
 fi
 
+# --- 10. worktree parity (advisory; notes only, defined in the checks module) ---
+if declare -F doctor_worktree_parity >/dev/null; then
+  section "worktree parity (advisory)"
+  doctor_worktree_parity
+fi
+
 # --- summary ----------------------------------------------------------------
 echo ""
 if [ "$GAPS" -eq 0 ]; then
