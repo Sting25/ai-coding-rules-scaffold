@@ -15,7 +15,7 @@
 # stay green. The commit that added the gate says the real behaviour was
 # verified BY HAND and never encoded; this file encodes it.
 #
-# EIGHTEEN CHECKS (seventeen pytest verdicts plus a static one; (f)-(p) are the
+# TWENTY-ONE CHECKS (twenty pytest verdicts plus a static one; (f)-(s) are the
 # moved-test exemption), on one shared fixture whose base commit ships a deliberately
 # WRONG `add(a, b) -> a - b` plus a test pinned to that wrong behaviour:
 #   (a) a new test that FAILS on base  -> exit 0. The false-positive direction,
@@ -44,8 +44,8 @@
 echo "cases/36: check-red-green's blocking verdict (#140)"
 
 if ! python3 -c 'import pytest' >/dev/null 2>&1; then
-  echo "  - SKIP: pytest not importable — check-red-green's 17 verdict assertions did NOT run (add a pinned 'pip install pytest' step to .github/workflows/test.yml to cover this in CI)"
-  SKIP=$((SKIP + 17))
+  echo "  - SKIP: pytest not importable — check-red-green's 20 verdict assertions did NOT run (add a pinned 'pip install pytest' step to .github/workflows/test.yml to cover this in CI)"
+  SKIP=$((SKIP + 20))
 else
   # A fixture repo with the --test-guard artifacts installed, one BASE commit,
   # and HEAD == base. Scenarios below add the second commit. Printed as
@@ -192,7 +192,7 @@ else
     rm -rf "$_rg_dir"
   fi
 
-  # (f)-(p): the moved-test exemption (#200). A new node ID that is green on base
+  # (f)-(s): the moved-test exemption (#200). A new node ID that is green on base
   # is exempt only when it is a TRUE MOVE: the same [Class::]name[param] tail
   # existed at base, that base node ID is gone at HEAD, the function AST is the
   # same, and every module-level name it uses is bound the same way in both
@@ -371,6 +371,40 @@ else
     _rg_commit "move into a file the predicate cannot decode"
     _rg_check "a moved test whose HEAD file is not valid UTF-8 stays an offender" 1 \
       'green-on-base: tests/test_more.py::test_add_existing' 1
+  fi
+
+  # (q) two-hop: the moved test requests fixture `val`, `val` requests `inner`, and
+  #     the new file redefines only `inner`. The name closure must reach it. Offender.
+  if _rg_new; then
+    printf 'import pytest\nfrom calc import add\n\n\n@pytest.fixture\ndef inner():\n    return add(5, 5)\n\n\n@pytest.fixture\ndef val(inner):\n    return inner\n\n\ndef test_v(val):\n    assert val == 0\n' >"$_rg_dir/tests/test_h.py"
+    _rg_rebase "base holds a two-hop fixture chain"
+    printf '# moved\n' >"$_rg_dir/tests/test_h.py"
+    printf 'import pytest\nfrom calc import add\n\n\n@pytest.fixture\ndef inner():\n    return 0\n\n\n@pytest.fixture\ndef val(inner):\n    return inner\n\n\ndef test_v(val):\n    assert val == 0\n' >"$_rg_dir/tests/test_h2.py"
+    _rg_commit "move the test into a file that redefines the inner fixture"
+    _rg_check "a moved test whose fixture's own dependency is redefined (two hops) is an offender" 1 \
+      'green-on-base: tests/test_h2.py::test_v' 1
+  fi
+
+  # (r) the fixture is named by STRING (usefixtures), not by parameter, and the new
+  #     file redefines it. Offender.
+  if _rg_new; then
+    printf 'import pytest\nfrom calc import add\n\n\n@pytest.fixture\ndef val():\n    return add(5, 5)\n\n\n@pytest.mark.usefixtures("val")\ndef test_u():\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_u.py"
+    _rg_rebase "base holds a test that names its fixture by string"
+    printf '# moved\n' >"$_rg_dir/tests/test_u.py"
+    printf 'import pytest\nfrom calc import add\n\n\n@pytest.fixture\ndef val():\n    return 0\n\n\n@pytest.mark.usefixtures("val")\ndef test_u():\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_u2.py"
+    _rg_commit "move the test into a file that redefines the string-named fixture"
+    _rg_check "a moved test whose usefixtures-named fixture is redefined is an offender" 1 \
+      'green-on-base: tests/test_u2.py::test_u' 1
+  fi
+
+  # (s) a star import added AFTER the real import of `add` could rebind it: the
+  #     name is bound in both files, so only the star check can refuse. Offender.
+  if _rg_new; then
+    printf '# moved\n' >"$_rg_dir/tests/test_calc.py"
+    printf 'from calc import add\nfrom os.path import *\n\n\ndef test_add_existing():\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_star.py"
+    _rg_commit "move into a file with a star import"
+    _rg_check "a moved test in a module with a star import stays an offender" 1 \
+      'green-on-base: tests/test_star.py::test_add_existing' 1
   fi
 
   unset _rg_dir _rg_base _rg_rc
