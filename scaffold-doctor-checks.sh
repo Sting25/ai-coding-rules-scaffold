@@ -197,7 +197,7 @@ sys.exit(1 if bad else 0)' package-lock.json node_modules/.package-lock.json >/d
   #    the cwd and PYTHON* env out of sys.path; find_spec reads the location without running the
   #    project's __init__ (a dotted name still imports its parents).
   pyname=$(awk '/^\[/{p=($0 ~ /^\[project\][[:space:]]*(#.*)?$/)} p&&/^name[[:space:]]*=/{gsub(/^[^=]*=[[:space:]]*["'\'']|["'\''][[:space:]]*(#.*)?$/,"");print;exit}' pyproject.toml 2>/dev/null || true)
-  pyname=${pyname//-/_}
+  pyname=${pyname//-/_}; pyname=${pyname%%.*}  # top-level package only: find_spec on a.b imports a
   if [ -n "$pyname" ] && [ "$interp" != python3 ] && [ -n "$interp" ] &&
      [[ $pyname =~ ^[A-Za-z_][A-Za-z0-9_.]*$ ]]; then
     out=$("$interp" -I -c 'import importlib.util as u, sys; s = u.find_spec(sys.argv[1]); print(s.origin if s and s.origin else (list(s.submodule_search_locations)[0] if s and s.submodule_search_locations else ""))' "$pyname" 2>/dev/null || true)
