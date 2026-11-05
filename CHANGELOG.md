@@ -8,6 +8,10 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+- **Two new Engineering rules.** `operational-rules.md` now covers pairing a
+  throwaway commit with a blind `reset --hard`, and proving a measurement's
+  setup applied before trusting the result.
+
 - **Rules can skip paths, and the print rules no longer block CLI code.** A rule
   in `.scaffold.toml` takes `exclude = ["app/cli/*"]` to stop scanning matching
   paths for that rule only. The `print()`, `fmt.Print`/`println` and

@@ -40,6 +40,21 @@ each branch can fail on the merge. Before syncing, build the merge tree
 merge commit.
 _Anchor:_ two branches each under a file's size cap merged into a file over it.
 
+### Never pair a throwaway commit with a blind reset
+
+A `commit-msg` hook can reject a throwaway commit, and under `-q` the failure is silent. The
+`git reset --hard HEAD~1` meant to undo it then deletes the previous real commit. Compare
+`rev-parse HEAD` before and after, or experiment on a scratch branch or with `git stash`.
+_Anchor:_ a hook rejected a "tmp" commit and the follow-up reset dropped a real commit off the
+branch; it survived only because it had been pushed.
+
+### Prove the setup applied before trusting the measurement
+
+Before reading a result, confirm the thing you changed is what ran: print the resolved path, diff
+the two inputs, check the setup step's exit status. A setup that silently no-ops reads exactly like
+a clean negative result, and clean results do not get re-examined.
+_Anchor:_ a conflict prediction measured "clean" because the edit under test was never committed.
+
 ## Process
 
 ### One durable home per kind of state
