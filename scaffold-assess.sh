@@ -40,7 +40,9 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-SCAFFOLD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# bash 5.3: cd "" is fatal; no dirname(1) needed (see scaffold-doctor.sh)
+case ${BASH_SOURCE[0]} in */*) _sd=${BASH_SOURCE[0]%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
+SCAFFOLD_DIR="$(cd "$_sd" && pwd)"
 
 if ! ROOT=$(git rev-parse --show-toplevel 2>/dev/null); then
   echo "scaffold-assess: not inside a git repository. The scanners read the git index, so there is nothing to measure here." >&2
