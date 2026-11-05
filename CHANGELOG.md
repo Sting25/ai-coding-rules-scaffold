@@ -66,7 +66,8 @@ versioning follows [SemVer](https://semver.org/).
   bypass, need the user's go-ahead.
 
 - **Dependabot groups minor and patch updates, keeps majors separate (#215).**
-  The `github-actions` group in `.github/dependabot.yml.template` now sets
+  The `github-actions` group in `.github/dependabot.yml.template` (and this
+  repo's own `.github/dependabot.yml`) now sets
   `update-types: ["minor", "patch"]`, so a major bump arrives as its own PR.
   The commented npm example carries the same `groups` block.
 
