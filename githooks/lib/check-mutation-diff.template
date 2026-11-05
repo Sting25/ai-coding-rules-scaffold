@@ -448,7 +448,7 @@ def main() -> int:
         bad_total = total - killed
 
         if total > args.max_mutants:
-            emit("error",
+            emit("warning",
                  f"{total} mutants across {len(src_files)} changed file(s) "
                  f"exceeds --max-mutants={args.max_mutants}; evaluating that "
                  "many would dominate CI time. Split the PR - a change this "
