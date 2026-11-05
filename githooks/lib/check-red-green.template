@@ -61,8 +61,9 @@ named by string too), followed transitively through the module's own bindings,
 is bound identically in both files. A copy, a new parametrize case, a changed
 helper, fixture or sibling method, a class split across files and a module with
 a star import are not exempt. NOT compared: fixtures and helpers outside the
-module (conftest), autouse fixtures, pytestmark, and module-level statements
-binding no name the test reaches. See exempt_as_unchanged_test(); fails closed.
+module (conftest), autouse fixtures, setup_* hooks, pytestmark, and module-level
+statements binding no name the test reaches. See exempt_as_unchanged_test(); fails
+closed.
 
 Exit: 0 all new tests were red on base (or explicitly exempt)
       1 one or more new tests passed on base
@@ -107,10 +108,8 @@ def emit(sev: str, msg: str, ci: bool) -> None:
 
 def collect(cwd: str) -> set[str] | None:
     """Collected node IDs, or None if collection failed."""
-    r = run(
-        [sys.executable, "-m", "pytest", "-q", "--collect-only", "-p", "no:randomly"],
-        cwd=cwd,
-    )
+    r = run([sys.executable, "-m", "pytest", "-q", "--collect-only", "-p", "no:randomly"],
+            cwd=cwd)
     if r.returncode not in (0, 5):
         return None
     return {ln.strip() for ln in r.stdout.splitlines() if "::" in ln}
@@ -226,8 +225,11 @@ def _bindings(tree):
                     out.setdefault(k, []).append(ast.dump(one) if x is s else d)
                     nodes.setdefault(k, []).append(s)
             elif isinstance(x, (*_FN, ast.ClassDef)):
-                out.setdefault(x.name, []).append(d)
-                nodes.setdefault(x.name, []).append(s)
+                for k in [x.name, *(w.value.value for c in x.decorator_list for w in ast.walk(c)
+                                    if isinstance(w, ast.keyword) and w.arg == "name"
+                                    and isinstance(getattr(w.value, "value", 0), str))]:
+                    out.setdefault(k, []).append(d)
+                    nodes.setdefault(k, []).append(s)
             elif isinstance(x, ast.Name) and isinstance(x.ctx, ast.Store):
                 out.setdefault(x.id, []).append(d)
                 nodes.setdefault(x.id, []).append(s)
@@ -250,8 +252,8 @@ def exempt_as_unchanged_test(nid: str, head_sha: str, base_sha: str,
       5. neither module has a `from x import *`.
 
     Pure AST comparison, nothing is imported or run. NOT compared: fixtures and
-    helpers outside the module (conftest), autouse fixtures, pytestmark, and
-    module-level statements binding no name the test reaches. Fails closed: an
+    helpers outside the module (conftest), autouse fixtures, setup_* hooks,
+    pytestmark, and module-level statements binding no name the test reaches. Fails closed: an
     unreadable HEAD file, a node not found, or a timeout returns False; an
     unreadable or unparsable BASE file is skipped (it only removes candidates).
     """
