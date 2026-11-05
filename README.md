@@ -244,7 +244,7 @@ No `install.sh`, no hooks, no CI — the docs are useful in isolation. The full 
 
 Root-level `AGENTS.md` is reread on every turn, so its token cost is paid for every prompt. For codebases over ~50 files, drop a nested `AGENTS.md` in each major directory (`app/api/`, `app/web/`, `lib/`) with area-specific gotchas — the standard specifies closest-file-wins, so agents read the nearest one walking up from the file being edited, keeping root-level context small and area context relevant. For Claude Code, a nested `CLAUDE.md` works the same way.
 
-For parallel agent sessions, use `git worktree add ../proj-feat-x -b feat-x` so each session has an isolated working tree on its own branch. Two agents in the same checkout will overwrite each other.
+For parallel agent sessions, use `git worktree add ../proj-feat-x -b feat-x` so each session has an isolated working tree on its own branch. Two agents in the same checkout will overwrite each other. If you add a hook that confines file access to the repo root, resolve membership with `git rev-parse --git-common-dir` rather than a path-prefix compare, or it will block linked worktrees, symlinks and home-directory caches.
 
 ## Verify it works
 

@@ -8,6 +8,10 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+- **Worktree guidance now warns about path-confinement hooks (#223).** A hook that
+  blocks access outside the repo root by path prefix can wrongly block linked
+  worktrees, symlinks and home-directory caches. `AGENTS.md.template` and the
+  README point to `git rev-parse --git-common-dir` for repo membership.
 - **Rules can skip paths, and the print rules no longer block CLI code.** A rule
   in `.scaffold.toml` takes `exclude = ["app/cli/*"]` to stop scanning matching
   paths for that rule only. The `print()`, `fmt.Print`/`println` and
