@@ -8,6 +8,10 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+- **README documents three Claude Code harness behaviors (#224).** A new "Known
+  Claude Code harness behaviors" section names subagent permission denials, long
+  CI-style waits and output-style plugins that override reply length, each with
+  a working pattern.
 - **`operational-rules.md`: five rule changes (#207).** New rules "A gate is proven
   by defeating it", "Every gate lives once, as a script that runs without the AI",
   "Fact-check a cheap model's prose before it reaches the user" and "Sort a refusal
