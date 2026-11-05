@@ -15,7 +15,7 @@
 # stay green. The commit that added the gate says the real behaviour was
 # verified BY HAND and never encoded; this file encodes it.
 #
-# FOURTEEN CHECKS (thirteen pytest verdicts plus a static one; (f)-(m) are the
+# EIGHTEEN CHECKS (seventeen pytest verdicts plus a static one; (f)-(p) are the
 # moved-test exemption), on one shared fixture whose base commit ships a deliberately
 # WRONG `add(a, b) -> a - b` plus a test pinned to that wrong behaviour:
 #   (a) a new test that FAILS on base  -> exit 0. The false-positive direction,
@@ -44,8 +44,8 @@
 echo "cases/36: check-red-green's blocking verdict (#140)"
 
 if ! python3 -c 'import pytest' >/dev/null 2>&1; then
-  echo "  - SKIP: pytest not importable — check-red-green's 13 verdict assertions did NOT run (add a pinned 'pip install pytest' step to .github/workflows/test.yml to cover this in CI)"
-  SKIP=$((SKIP + 13))
+  echo "  - SKIP: pytest not importable — check-red-green's 17 verdict assertions did NOT run (add a pinned 'pip install pytest' step to .github/workflows/test.yml to cover this in CI)"
+  SKIP=$((SKIP + 17))
 else
   # A fixture repo with the --test-guard artifacts installed, one BASE commit,
   # and HEAD == base. Scenarios below add the second commit. Printed as
@@ -192,7 +192,7 @@ else
     rm -rf "$_rg_dir"
   fi
 
-  # (f)-(m): the moved-test exemption (#200). A new node ID that is green on base
+  # (f)-(p): the moved-test exemption (#200). A new node ID that is green on base
   # is exempt only when it is a TRUE MOVE: the same [Class::]name[param] tail
   # existed at base, that base node ID is gone at HEAD, the function AST is the
   # same, and every module-level name it uses is bound the same way in both
@@ -202,9 +202,10 @@ else
   # and book one PASS/FAIL. With forbid_exempt=1 the output must also hold no
   # "exempt (moved" line. The scenario's HEAD commit is made by the caller.
   _rg_check() {
-    local label=$1 want=$2 pat=$3 forbid_exempt=$4 ok=0
+    local label=$1 want=$2 pat=$3 forbid_exempt=$4 pat2=${5:-} ok=0
     _rg_rc=$(_rg_run "$_rg_dir" "$_rg_base")
-    if [ "$_rg_rc" -eq "$want" ] && grep -q "$pat" "$HOOK_OUT"; then ok=1; fi
+    if [ "$_rg_rc" -eq "$want" ] && grep -q "$pat" "$HOOK_OUT" \
+       && { [ -z "$pat2" ] || grep -q "$pat2" "$HOOK_OUT"; }; then ok=1; fi
     if [ "$ok" -eq 1 ] && { [ "$forbid_exempt" -eq 0 ] || ! grep -q 'exempt (moved' "$HOOK_OUT"; }; then
       echo "  ✓ $label (exit $want)"
       PASS=$((PASS + 1))
@@ -320,8 +321,57 @@ else
       'green-on-base: tests/test_calc_more.py::test_add_existing' 1
   fi
 
-  # (m) the mirror of (l), a moved body whose new file imports `add` the same way,
-  #     is (f); it is not repeated here.
+  # (m) a move PLUS a new parametrize case whose table lives in ANOTHER module
+  #     (tests/data.py grows). The table is not in the moved file, so only the
+  #     tail comparison tells the new [4-4] from the moved [5-5]: [4-4] has no
+  #     base ID with that tail, so it stays an offender, while [5-5] is exempt.
+  if _rg_new; then
+    printf 'CASES = [(5, 5)]\n' >"$_rg_dir/tests/data.py"
+    : >"$_rg_dir/tests/__init__.py"
+    printf 'import pytest\nfrom calc import add\nfrom tests.data import CASES\n\n\n@pytest.mark.parametrize("a, b", CASES)\ndef test_eq(a, b):\n    assert add(a, b) == 0\n' >"$_rg_dir/tests/test_p.py"
+    _rg_rebase "base holds a parametrized test over an imported table"
+    printf 'CASES = [(5, 5), (4, 4)]\n' >"$_rg_dir/tests/data.py"
+    mv "$_rg_dir/tests/test_p.py" "$_rg_dir/tests/test_p2.py"
+    _rg_commit "move the test and grow the imported table"
+    _rg_check "a move plus a new case in an imported table: the new case is an offender, the moved one is exempt" 1 \
+      'green-on-base: tests/test_p2.py::test_eq\[4-4\]' 0 \
+      "$_rg_moved: tests/test_p2.py::test_eq\[5-5\]"
+  fi
+
+  # (n) moved test that requests a module-level FIXTURE by parameter name, and the
+  #     new file redefines that fixture: same test text, different meaning. Offender.
+  if _rg_new; then
+    printf 'import pytest\nfrom calc import add\n\n\n@pytest.fixture\ndef val():\n    return add(5, 5)\n\n\ndef test_v(val):\n    assert val == 0\n' >"$_rg_dir/tests/test_f.py"
+    _rg_rebase "base holds a fixture and a test that requests it"
+    printf '# moved\n' >"$_rg_dir/tests/test_f.py"
+    printf 'import pytest\nfrom calc import add\n\n\n@pytest.fixture\ndef val():\n    return 0\n\n\ndef test_v(val):\n    assert val == 0\n' >"$_rg_dir/tests/test_f2.py"
+    _rg_commit "move the test into a file with its own val fixture"
+    _rg_check "a moved test whose module-level fixture is redefined in the new file is an offender" 1 \
+      'green-on-base: tests/test_f2.py::test_v' 1
+  fi
+
+  # (o) moved CLASS test whose sibling method on the same class is redefined in
+  #     the new file (the class header alone is identical). Offender.
+  if _rg_new; then
+    printf 'from calc import add\n\n\nclass TestA:\n    def helper(self):\n        return add(5, 5)\n\n    def test_a(self):\n        assert self.helper() == 0\n' >"$_rg_dir/tests/test_c.py"
+    _rg_rebase "base holds a class with a helper method"
+    printf '# moved\n' >"$_rg_dir/tests/test_c.py"
+    printf 'from calc import add\n\n\nclass TestA:\n    def helper(self):\n        return 0\n\n    def test_a(self):\n        assert self.helper() == 0\n' >"$_rg_dir/tests/test_c2.py"
+    _rg_commit "move the class into a file with a different helper"
+    _rg_check "a moved class test whose sibling method is redefined in the new file is an offender" 1 \
+      'green-on-base: tests/test_c2.py::TestA::test_a' 1
+  fi
+
+  # (p) a verbatim move whose HEAD file is not valid UTF-8 (latin-1 cookie, byte
+  #     0xe9 in a comment; pytest collects it, the predicate cannot decode it):
+  #     fail closed, nothing is exempted.
+  if _rg_new; then
+    printf '# moved\n' >"$_rg_dir/tests/test_calc.py"
+    printf '# -*- coding: latin-1 -*-\n# caf\xe9\nfrom calc import add\n\n\ndef test_add_existing():\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_more.py"
+    _rg_commit "move into a file the predicate cannot decode"
+    _rg_check "a moved test whose HEAD file is not valid UTF-8 stays an offender" 1 \
+      'green-on-base: tests/test_more.py::test_add_existing' 1
+  fi
 
   unset _rg_dir _rg_base _rg_rc
   unset -f _rg_fixture _rg_new _rg_run _rg_check _rg_commit _rg_rebase

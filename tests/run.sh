@@ -107,7 +107,7 @@ CASE_FLOORS=(
   "33-harness-self-checks.sh:12"
   "34-shipped-pattern-files.sh:16"
   "35-workflow-template-validity.sh:15"
-  "36-red-green-verdict.sh:14"
+  "36-red-green-verdict.sh:18"
   "37-doctor-content-drift.sh:8"
   "38-components-catalog.sh:33"
   "39-scaffold-assess.sh:10"
