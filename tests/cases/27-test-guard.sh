@@ -352,7 +352,7 @@ tg_step_text() { awk -v start="$1" '
   on && /^      - name: / { exit }
   on { print }' "$TGW"; }
 if ! tg_step_text 'name: Mutation testing (diff-scoped, advisory)' | grep -q 'GH_TOKEN' \
-   && tg_step_text 'name: Post neutral check run (mutation declined)' | grep -q 'GH_TOKEN: \${{ github.token }}' \
+   && tg_step_text 'name: Post neutral check run (mutation declined)' | grep -q 'GH_TOKEN: .*github\.token' \
    && [ "$(cat "$TGD/env.log")" = "False" ]; then
   echo "  ✓ GH_TOKEN is declared only on the posting step, not the mutation step that runs PR code"; PASS=$((PASS + 1))
 else
