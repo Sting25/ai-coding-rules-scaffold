@@ -55,10 +55,11 @@ USAGE
 
 A second exemption needs no marker: a test that was MOVED (file split, with or
 without reformatting) is not new behaviour, only a new address. It is exempt
-when the original node ID is gone from HEAD, its body and class header are the
-same AST, and every module-level name it uses is bound identically in both
-files. A copy, a new parametrize case and a changed helper are not exempt. A
-fixture or helper defined outside the module is not compared. See
+when the original node ID is gone from HEAD, the function and enclosing class
+are the same AST, and every module-level name it uses or requests as a parameter
+is bound identically in both files. A copy, a new parametrize case and a changed
+helper, fixture or sibling method are not exempt. A fixture or helper defined
+outside the module (conftest) is not compared. See
 exempt_as_unchanged_test(); it fails closed.
 
 Exit: 0 all new tests were red on base (or explicitly exempt)
@@ -178,29 +179,25 @@ def _locate(tree, parts):
     return (cls, fns[-1]) if fns and len(parts) <= 2 else None
 
 
-def _header(cls):
-    h = copy.deepcopy(cls)
-    h.body = []
-    return h
-
-
 def _key(cls, fn):
-    return (ast.dump(_clean(_header(cls))) if cls else None, ast.dump(_clean(fn)))
+    return (ast.dump(_clean(cls)) if cls else None, ast.dump(_clean(fn)))
 
 
 def _free_names(cls, fn) -> set:
     """Names the test reads from module scope: every Name in its decorators,
-    defaults, annotations and class header, plus those in its body that are
-    not its own parameters or locals. (An Attribute chain's root is a Name.)"""
+    defaults, annotations, parameter names (a fixture is requested by name) and
+    whole enclosing class, plus those in its body that are not its own locals.
+    (An Attribute chain's root is a Name.)"""
     a = fn.args
     outer = list(fn.decorator_list) + a.defaults + [d for d in a.kw_defaults if d]
     outer += [x.annotation for x in ast.walk(a) if isinstance(x, ast.arg) and x.annotation]
     if fn.returns:
         outer.append(fn.returns)
     if cls:
-        outer.append(_header(cls))
+        outer.append(cls)
     free = {x.id for o in outer for x in ast.walk(o) if isinstance(x, ast.Name)}
-    loads, local = set(), {x.arg for x in ast.walk(a) if isinstance(x, ast.arg)}
+    free |= {x.arg for x in ast.walk(a) if isinstance(x, ast.arg)}
+    loads, local = set(), set()
     for s in fn.body:
         for x in ast.walk(s):
             if isinstance(x, ast.Name):
@@ -242,13 +239,15 @@ def exempt_as_unchanged_test(nid: str, head_sha: str, base_sha: str,
       1. a base node ID with the same `[Class::]name[param]` tail existed (so a
          new parametrize case in place is new, and so is a renamed test),
       2. that base node ID is no longer collected at HEAD (a copy is not a move),
-      3. the test's function and class header are the same AST (docstrings and
-         u'' prefixes stripped; wrapping, quoting and commas do not matter), and
-      4. every module-level name the test uses (imports, assignments, defs,
-         classes) is bound identically in both files, or unbound in both.
+      3. the test's function and enclosing class are the same AST (docstrings
+         and u'' prefixes stripped; wrapping, quoting and commas do not matter),
+      4. every module-level name the test uses or requests as a parameter
+         (imports, assignments, defs, classes, fixtures) is bound identically
+         in both files, or unbound in both.
 
+    A changed helper, fixture or sibling method in the module is not exempt.
     Pure AST comparison, nothing is imported or run. A fixture or helper defined
-    outside the module is NOT compared. Fails closed: an unreadable HEAD file, a
+    outside the module (conftest) is NOT compared. Fails closed: an unreadable HEAD file, a
     node not found, or a timeout returns False; an unreadable or unparsable BASE
     file is skipped (it can only remove candidates).
     """
