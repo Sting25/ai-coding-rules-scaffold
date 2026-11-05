@@ -125,7 +125,7 @@ CASE_FLOORS=(
   "51-mutation-diff-config.sh:15"
   "52-claude-only-scope.sh:3"
   "53-narrow-path-scripts.sh:13"
-  "54-doctor-worktree-parity.sh:4"
+  "54-doctor-worktree-parity.sh:10"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and
