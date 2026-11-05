@@ -1,7 +1,8 @@
 # Dependabot keeps the SHA-pinned GitHub Actions in this repo's workflows fresh.
 # SHA pins (supply-chain hardening) don't auto-update, so without this they rot;
 # Dependabot understands a `uses: owner/action@<sha>  # vX.Y.Z` pin natively and
-# bumps both the SHA and the trailing version comment in one grouped PR.
+# bumps both the SHA and the trailing version comment. Minor and patch updates
+# arrive as one grouped PR; majors arrive separately.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -16,5 +17,6 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
     commit-message:
       prefix: ci

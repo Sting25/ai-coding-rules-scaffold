@@ -2,7 +2,8 @@
 # Actions in your workflows (lint.yml, gitleaks.yml) fresh — SHA pins are a
 # supply-chain best practice but don't auto-update, so without this they rot.
 # Dependabot reads a `uses: owner/action@<sha>  # vX.Y.Z` pin natively and bumps
-# the SHA + the trailing version comment together in one grouped weekly PR.
+# the SHA + the trailing version comment together; minor and patch updates arrive
+# as one grouped weekly PR, majors as separate PRs so you review each on its own.
 #
 # Generates PRs — if you don't want that, don't install this file (it's the one
 # piece of the scaffold that adds outbound automation). Renovate users: enable
@@ -24,6 +25,7 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
     commit-message:
       prefix: ci
   # Example npm block with the same cooldown — uncomment if you want dependency
@@ -35,5 +37,9 @@ updates:
   #     interval: weekly
   #   cooldown:
   #     default-days: 7
+  #   groups:
+  #     npm:
+  #       patterns: ["*"]
+  #       update-types: ["minor", "patch"]
   #   commit-message:
   #     prefix: deps
