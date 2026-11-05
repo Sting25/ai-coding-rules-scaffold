@@ -12,7 +12,9 @@ versioning follows [SemVer](https://semver.org/).
   A new test node ID is exempt from green-on-base only when it is a true move:
   the same `[Class::]name[param]` existed at base and is gone at HEAD, the
   function and its enclosing class are the same AST, and every module-level name the
-  test uses is bound identically in both files. A copy, a new parametrize case,
+  test uses is bound identically in both files (names are followed through the
+  module's own helpers and fixtures, fixtures named by string count, and a star
+  import is never exempt). A copy, a new parametrize case,
   a redefined helper, fixture or sibling method stays an offender. One fail-closed predicate,
   `exempt_as_unchanged_test`, in `check-red-green`; an unreadable or unparsable
   base file is skipped, an unreadable HEAD file exempts nothing. The proposed

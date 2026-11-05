@@ -56,11 +56,13 @@ USAGE
 A second exemption needs no marker: a test that was MOVED (file split, with or
 without reformatting) is not new behaviour, only a new address. It is exempt
 when the original node ID is gone from HEAD, the function and enclosing class
-are the same AST, and every module-level name it uses or requests as a parameter
-is bound identically in both files. A copy, a new parametrize case and a changed
-helper, fixture or sibling method are not exempt. A fixture or helper defined
-outside the module (conftest) is not compared. See
-exempt_as_unchanged_test(); it fails closed.
+are the same AST, and every module-level name it uses or requests (fixtures
+named by string too), followed transitively through the module's own bindings,
+is bound identically in both files. A copy, a new parametrize case, a changed
+helper, fixture or sibling method, a class split across files and a module with
+a star import are not exempt. NOT compared: fixtures and helpers outside the
+module (conftest), autouse fixtures, pytestmark, and module-level statements
+binding no name the test reaches. See exempt_as_unchanged_test(); fails closed.
 
 Exit: 0 all new tests were red on base (or explicitly exempt)
       1 one or more new tests passed on base
@@ -118,12 +120,8 @@ NOISE_RE = re.compile(r"(^|/)(__pycache__|\.pytest_cache|node_modules)(/|$)|\.py
 
 
 def is_real_source(p: str) -> bool:
-    """Filter build artefacts that a careless `git add -A` can commit.
-
-    A tracked .pyc in the diff makes the overlay checkout fail outright, which
-    turns a working check into exit 2 for a reason that has nothing to do with
-    the tests.
-    """
+    """Filter build artefacts a careless `git add -A` can commit: a tracked .pyc
+    in the diff makes the overlay checkout fail, turning the check into exit 2."""
     return not NOISE_RE.search(p)
 
 
@@ -133,7 +131,7 @@ def is_test_path(p: str) -> bool:
 
 
 def _clean(node):
-    """Deep copy with docstrings stripped and Constant.kind (a u'' prefix) dropped."""
+    """Deep copy without docstrings and Constant.kind (a u'' prefix)."""
     n = copy.deepcopy(node)
     for x in ast.walk(n):
         if isinstance(x, ast.Constant):
@@ -152,8 +150,8 @@ _TREES: dict = {}
 
 
 def _tree(sha: str, path: str):
-    """Parsed module at sha:path, or None if it cannot be read, decoded as
-    UTF-8 or parsed. Cached, failures included, so a bad file costs one read."""
+    """Parsed module at sha:path, or None if unreadable, not UTF-8 or unparsable
+    (cached, failures included)."""
     if (sha, path) not in _TREES:
         t = None
         try:
@@ -183,25 +181,27 @@ def _key(cls, fn):
     return (ast.dump(_clean(cls)) if cls else None, ast.dump(_clean(fn)))
 
 
+def _names(node: ast.AST) -> set:
+    """Every Name id, arg name and identifier-like str constant under `node`."""
+    return {getattr(x, "id", None) or getattr(x, "arg", None) or x.value
+            for x in ast.walk(node) if isinstance(x, (ast.Name, ast.arg))
+            or (isinstance(x, ast.Constant) and isinstance(x.value, str)
+                and x.value.isidentifier())}
+
+
 def _free_names(cls, fn) -> set:
-    """Names the test reads from module scope: every Name in its decorators,
-    defaults, annotations, parameter names (a fixture is requested by name) and
-    whole enclosing class, plus those in its body that are not its own locals.
-    (An Attribute chain's root is a Name.)"""
-    a = fn.args
-    outer = list(fn.decorator_list) + a.defaults + [d for d in a.kw_defaults if d]
-    outer += [x.annotation for x in ast.walk(a) if isinstance(x, ast.arg) and x.annotation]
-    if fn.returns:
-        outer.append(fn.returns)
-    if cls:
-        outer.append(cls)
-    free = {x.id for o in outer for x in ast.walk(o) if isinstance(x, ast.Name)}
-    free |= {x.arg for x in ast.walk(a) if isinstance(x, ast.arg)}
+    """Names the test reads from module scope (see _names, so fixtures named by
+    string count): all in its decorators, parameters, annotations and whole
+    enclosing class, plus those in its body that are not its own locals."""
+    outer = [*fn.decorator_list, fn.args, fn.returns, cls]  # args: defaults, annotations
+    free = set().union(*(_names(o) for o in outer if o))
     loads, local = set(), set()
     for s in fn.body:
         for x in ast.walk(s):
             if isinstance(x, ast.Name):
                 (loads if isinstance(x.ctx, ast.Load) else local).add(x.id)
+            elif isinstance(x, ast.Constant) and isinstance(x.value, str):
+                free |= {x.value} if x.value.isidentifier() else set()
             elif isinstance(x, (*_FN, ast.ClassDef)):
                 local.add(x.name)
             elif isinstance(x, ast.ExceptHandler) and x.name:
@@ -212,9 +212,8 @@ def _free_names(cls, fn) -> set:
 
 
 def _bindings(tree):
-    """({name: [dump of each module-level binding]}, has `from x import *`)."""
-    out: dict = {}
-    star = False
+    """({name: [dump of each binding]}, has `from x import *`, {name: [stmts]})."""
+    out, nodes, star = {}, {}, False
     for s in tree.body:
         d = ast.dump(_clean(s))
         for x in ([s] if isinstance(s, (*_FN, ast.ClassDef)) else ast.walk(s)):
@@ -223,13 +222,16 @@ def _bindings(tree):
                     star = star or al.name == "*"
                     one = copy.copy(x)
                     one.names = [al]
-                    out.setdefault((al.asname or al.name).split(".")[0], []).append(
-                        ast.dump(one) if x is s else d)
+                    k = (al.asname or al.name).split(".")[0]
+                    out.setdefault(k, []).append(ast.dump(one) if x is s else d)
+                    nodes.setdefault(k, []).append(s)
             elif isinstance(x, (*_FN, ast.ClassDef)):
                 out.setdefault(x.name, []).append(d)
+                nodes.setdefault(x.name, []).append(s)
             elif isinstance(x, ast.Name) and isinstance(x.ctx, ast.Store):
                 out.setdefault(x.id, []).append(d)
-    return out, star
+                nodes.setdefault(x.id, []).append(s)
+    return out, star, nodes
 
 
 def exempt_as_unchanged_test(nid: str, head_sha: str, base_sha: str,
@@ -243,13 +245,15 @@ def exempt_as_unchanged_test(nid: str, head_sha: str, base_sha: str,
          and u'' prefixes stripped; wrapping, quoting and commas do not matter),
       4. every module-level name the test uses or requests as a parameter
          (imports, assignments, defs, classes, fixtures) is bound identically
-         in both files, or unbound in both.
+         in both files, or unbound in both. Names are followed transitively
+         through the module's own bindings; fixtures named by string count,
+      5. neither module has a `from x import *`.
 
-    A changed helper, fixture or sibling method in the module is not exempt.
-    Pure AST comparison, nothing is imported or run. A fixture or helper defined
-    outside the module (conftest) is NOT compared. Fails closed: an unreadable HEAD file, a
-    node not found, or a timeout returns False; an unreadable or unparsable BASE
-    file is skipped (it can only remove candidates).
+    Pure AST comparison, nothing is imported or run. NOT compared: fixtures and
+    helpers outside the module (conftest), autouse fixtures, pytestmark, and
+    module-level statements binding no name the test reaches. Fails closed: an
+    unreadable HEAD file, a node not found, or a timeout returns False; an
+    unreadable or unparsable BASE file is skipped (it only removes candidates).
     """
     try:
         path, *rest = nid.split("::")
@@ -260,16 +264,21 @@ def exempt_as_unchanged_test(nid: str, head_sha: str, base_sha: str,
         hloc = ht and _locate(ht, [re.sub(r"\[.*\]$", "", x) for x in rest])
         if not hloc:
             return False
-        hkey, hnames, (hbind, hstar) = _key(*hloc), _free_names(*hloc), _bindings(ht)
+        hkey, hnames, (hbind, hstar, hnodes) = _key(*hloc), _free_names(*hloc), _bindings(ht)
+        todo = set(hnames)
+        while todo:
+            for st in hnodes.get(todo.pop(), []):
+                new = _names(st)
+                todo |= new - hnames
+                hnames |= new
         for b in sorted(base_ids):
             bpath, _, btail = b.partition("::")
             bt = None if btail != tail or b in head_ids else _tree(base_sha, bpath)
             bloc = bt and _locate(bt, [re.sub(r"\[.*\]$", "", x) for x in rest])
             if not bloc or _key(*bloc) != hkey:
                 continue
-            bbind, bstar = _bindings(bt)
-            if all(hbind.get(n) == bbind.get(n)
-                   and (n in hbind or not (hstar or bstar)) for n in hnames):
+            bbind, bstar, _ = _bindings(bt)
+            if not (hstar or bstar) and all(hbind.get(n) == bbind.get(n) for n in hnames):
                 return True
         return False
     except (SyntaxError, ValueError, RecursionError, subprocess.TimeoutExpired):
@@ -308,13 +317,11 @@ def main() -> int:
         emit("error", "cannot resolve HEAD.", args.ci)
         return 2
     head_sha = head.stdout.strip()
-    # head_sha, never the literal "HEAD". Inside a linked worktree "HEAD" is the
-    # WORKTREE's head — the base commit — so `git checkout HEAD -- tests/`
-    # there silently restores the BASE tests instead of overlaying the new ones.
-    # The new tests then do not exist in the scratch tree, pytest exits 4
-    # ("file or directory not found"), the non-zero return reads as "failed on
-    # base", and the check reports green. That is a false pass on exactly the
-    # case it exists to catch, and it is why the exit-4 guard below is explicit.
+    # head_sha, never the literal "HEAD": inside a linked worktree "HEAD" is the
+    # base commit, so `git checkout HEAD -- tests/` there restores the BASE
+    # tests. The new tests then do not exist, pytest exits 4, the non-zero
+    # return reads as "failed on base", and the check reports a false green on
+    # exactly the case it exists to catch (hence the explicit exit-4 guard).
 
     here = collect(".")
     if here is None:
@@ -331,10 +338,9 @@ def main() -> int:
             emit("error", f"git worktree add failed: {r.stderr.strip()}", args.ci)
             return 2
 
-        # STEP 1 — collect the PRISTINE base, before any overlay. This is what
-        # defines "new": a node ID present at HEAD and absent here. Collecting
-        # after the overlay would return the new tests too (they collect fine,
-        # they just fail), making the difference empty and the check vacuous.
+        # STEP 1 — collect the PRISTINE base, before any overlay: it defines
+        # "new" (present at HEAD, absent here). After the overlay the new tests
+        # would collect too (and just fail), making the difference empty.
         base_pristine = collect(wt)
         if base_pristine is None:
             emit("error", "pytest collection failed on the base commit itself. "
@@ -390,13 +396,11 @@ def main() -> int:
         # would have passed. There is no way to tell them apart from outside,
         # because on base they cannot be executed at all.
         #
-        # That is a genuine gap and it is stated rather than papered over: a test
-        # for pre-existing behaviour, placed in a file that also imports new
-        # code, is invisible to this check. It is reported by file and count so
-        # it appears in the CI log instead of silently passing, and
-        # --strict-unevaluable turns it into a failure for projects that would
-        # rather pay the false-positive cost. The assertion ratchet in
-        # check-test-ratchet and the characterization marker are the partial
+        # A genuine gap, stated rather than papered over: a test for pre-existing
+        # behaviour in a file that also imports new code is invisible here. It
+        # is reported by file and count so the CI log shows it, and
+        # --strict-unevaluable turns it into a failure. The assertion ratchet in
+        # check-test-ratchet and the characterization marker are partial
         # answers; mutation testing on the diff is the real one.
         offenders: list[str] = []
         red: list[str] = []
