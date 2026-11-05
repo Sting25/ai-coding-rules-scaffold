@@ -15,7 +15,7 @@
 # stay green. The commit that added the gate says the real behaviour was
 # verified BY HAND and never encoded; this file encodes it.
 #
-# THREE VERDICTS, on one shared fixture whose base commit ships a deliberately
+# FIVE CHECKS (four pytest verdicts plus a static one), on one shared fixture whose base commit ships a deliberately
 # WRONG `add(a, b) -> a - b` plus a test pinned to that wrong behaviour:
 #   (a) a new test that FAILS on base  -> exit 0. The false-positive direction,
 #       and the one that matters most: a gate that blocks honest red-green work
@@ -34,7 +34,7 @@
 # in the base worktree.
 #
 # THE PYTEST DEPENDENCY, stated rather than hidden. check-red-green shells out
-# to `sys.executable -m pytest`, so these three assertions cannot run without
+# to `sys.executable -m pytest`, so the four pytest assertions cannot run without
 # pytest importable. .github/workflows/test.yml installs ruff and zizmor but NOT
 # pytest, so in CI today this is a counted SKIP that shows up in the driver's
 # final Result line, not a silent pass — adding a pinned `pip install pytest`
@@ -43,8 +43,8 @@
 echo "cases/36: check-red-green's blocking verdict (#140)"
 
 if ! python3 -c 'import pytest' >/dev/null 2>&1; then
-  echo "  - SKIP: pytest not importable — check-red-green's 3 verdict assertions did NOT run (add a pinned 'pip install pytest' step to .github/workflows/test.yml to cover this in CI)"
-  SKIP=$((SKIP + 3))
+  echo "  - SKIP: pytest not importable — check-red-green's 4 verdict assertions did NOT run (add a pinned 'pip install pytest' step to .github/workflows/test.yml to cover this in CI)"
+  SKIP=$((SKIP + 4))
 else
   # A fixture repo with the --test-guard artifacts installed, one BASE commit,
   # and HEAD == base. Scenarios below add the second commit. Printed as
@@ -166,6 +166,46 @@ else
     rm -rf "$_rg_dir"
   fi
 
+  # (d) A killed earlier run left a STALE worktree registration (directory gone,
+  #     .git/worktrees/<name> still there). The gate prunes before it adds
+  #     (#221), so the registration is gone afterwards and the verdict is
+  #     unaffected. Same HEAD as (a), so the gate really reaches `worktree add`.
+  if _rg_new; then
+    printf 'def add(a, b):\n    return a + b\n' >"$_rg_dir/calc.py"
+    printf 'from calc import add\n\n\ndef test_add_existing():\n    assert add(5, 5) == 10\n\n\ndef test_add_is_a_sum():\n    assert add(2, 3) == 5\n' >"$_rg_dir/tests/test_calc.py"
+    git -C "$_rg_dir" add -A && git -C "$_rg_dir" commit --quiet -m "fix add, with a red-on-base test" --no-verify  # scaffold-allow: test fixture
+    _rg_stale="$_rg_dir/stale-wt"
+    git -C "$_rg_dir" worktree add --quiet --detach "$_rg_stale" HEAD >/dev/null 2>&1
+    rm -rf "$_rg_stale"
+    _rg_pre=$(git -C "$_rg_dir" worktree list --porcelain | grep -c "stale-wt" || true)
+    _rg_rc=$(_rg_run "$_rg_dir" "$_rg_base")
+    _rg_post=$(git -C "$_rg_dir" worktree list --porcelain | grep -c "stale-wt" || true)
+    if [ "$_rg_pre" -eq 1 ] && [ "$_rg_post" -eq 0 ] && [ "$_rg_rc" -eq 0 ]; then
+      echo "  ✓ a stale worktree registration is pruned before the gate adds its own (exit 0)"
+      PASS=$((PASS + 1))
+    else
+      echo "  ✗ stale registration must exist before (got $_rg_pre), be gone after (got $_rg_post), gate exit 0 (got $_rg_rc)"
+      sed 's/^/      /' "$HOOK_OUT"
+      FAIL=$((FAIL + 1))
+    fi
+    rm -rf "$_rg_dir"
+  fi
+
   unset _rg_dir _rg_base _rg_rc
   unset -f _rg_fixture _rg_new _rg_run
 fi
+unset _rg_stale _rg_pre _rg_post
+
+# (e) check-mutation-diff cannot be driven here (it needs mutmut and a mutation
+#     run, too heavy for this suite), so cover its prune-on-start statically:
+#     the prune call must come BEFORE the `worktree add` in the shipped template.
+_rg_pl=$(grep -n '^ *run(\["git", "worktree", "prune"\])' "$SCAFFOLD_DIR/githooks/lib/check-mutation-diff.template" | head -1 | cut -d: -f1)
+_rg_al=$(grep -n '"worktree", "add"' "$SCAFFOLD_DIR/githooks/lib/check-mutation-diff.template" | head -1 | cut -d: -f1)
+if [ -n "$_rg_pl" ] && [ -n "$_rg_al" ] && [ "$_rg_pl" -lt "$_rg_al" ]; then
+  echo "  ✓ check-mutation-diff prunes worktrees before it adds one (static: line $_rg_pl < $_rg_al)"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ check-mutation-diff must call git worktree prune before git worktree add (prune: ${_rg_pl:-none}, add: ${_rg_al:-none})"
+  FAIL=$((FAIL + 1))
+fi
+unset _rg_pl _rg_al

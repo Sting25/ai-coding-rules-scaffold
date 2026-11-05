@@ -90,6 +90,11 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Fixed
 
+- **The red-green and mutation gates prune stale worktrees on start (#221, that
+  part only).** Each gate runs `git worktree prune` before adding its own
+  temporary worktree, so registrations left by killed runs stop piling up in
+  `.git/worktrees`. The prune covers every stale registration in the repo;
+  `git worktree lock` protects a worktree on a drive that is not mounted.
 - **The hooks, check scripts, assess, install and uninstall no longer need
   `dirname`.** They resolve their own directory with shell parameter expansion,
   so bash 5.3's fatal `cd ""` can no longer kill them before they start.
