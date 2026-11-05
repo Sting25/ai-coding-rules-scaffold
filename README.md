@@ -250,9 +250,9 @@ For parallel agent sessions, use `git worktree add ../proj-feat-x -b feat-x` so 
 
 Three behaviors of the Claude Code harness cost time when they surprise you. Each has a working pattern.
 
-- **Subagent permission denials.** The auto-mode permission classifier can refuse a command class to a subagent that it allows the main session, typically long-running remote operations, SSH sequences and repository-settings changes. Route those commands through the main session. A subagent that hits a denial stops and reports it verbatim (see "Sort a refusal before you act on it" in `operational-rules.md`).
-- **Long CI-style waits.** No single mechanism fits a 15 to 20 minute wait: a foreground `sleep` is blocked, and the polling primitive expires after about 5 minutes. Have the subagent finish its own work and hand the wait back to the orchestrating session, which watches CI. Never have a subagent wait out a run.
-- **Output-style plugins overriding reply length.** An output-style plugin's SessionStart hook (for example `explanatory-output-style`) can inject verbosity guidance that overrides your project's reply-length convention. When replies run long against the stated convention, check the enabled plugins and disable or override the one responsible.
+- **Subagent permission denials.** The auto-mode permission classifier can refuse a command class to a subagent that it allows the main session, typically long-running remote operations, SSH sequences and repository-settings changes. Route those commands through the main session, and have a subagent that hits a denial stop and report it verbatim (see "Sort a refusal before you act on it" in `operational-rules.md`).
+- **Long CI-style waits.** No single mechanism fits a CI-length wait: a foreground `sleep` is blocked, and the polling primitive expires before a typical CI run finishes. Have the subagent finish its own work and hand the wait back to the orchestrating session, which watches CI.
+- **Output-style plugins overriding reply length.** An output-style plugin's `SessionStart` hook (for example `explanatory-output-style`) can inject verbosity guidance that overrides your project's reply-length convention. When replies run long against the stated convention, check the enabled plugins and disable or override the one responsible.
 
 ## Verify it works
 
