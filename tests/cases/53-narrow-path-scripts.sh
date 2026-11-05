@@ -58,7 +58,10 @@ np_pat="cd \"\$(dirname"
 for np_f in install.sh uninstall.sh scaffold-assess.sh githooks/pre-commit.template \
   githooks/lib/check-hygiene.template githooks/lib/check-patterns.template \
   githooks/lib/check-size.template githooks/lib/check-large-files.template; do
-  if grep -qF "$np_pat" "$SCAFFOLD_DIR/$np_f"; then np_bad="$np_bad $np_f"; fi
+  # shellcheck disable=SC2016  # literal patterns, not expansions
+  if grep -qF -e "$np_pat" -e 'dirname "$0"' -e 'dirname "${BASH_SOURCE' "$SCAFFOLD_DIR/$np_f"; then
+    np_bad="$np_bad $np_f"
+  fi
 done
 if [ -z "$np_bad" ]; then
   np_ok "no shipped script resolves its own directory via cd \"\$(dirname ...)\""
@@ -79,9 +82,12 @@ for np_s in install.sh uninstall.sh; do
   fi
 done
 
-# (C) install.sh/uninstall.sh beyond --help are NOT run without dirname: the
-# sourced install-lib.sh and install-manifest.sh call dirname(1) at run time
-# (a separate defect, not this idiom), so those runs would fail for another reason.
+# (C) install.sh beyond --help is NOT run without dirname: the sourced
+# install-lib.sh:148 (_mkdir_safe "$(dirname ...)" silently becomes
+# _mkdir_safe "", skipping the symlink-parent guard) and install-manifest.sh:223
+# (dir=$(dirname ...) aborts under errexit) still call dirname(1) at run time, a
+# separate defect from this idiom. uninstall.sh has no such call and is run for
+# real in (F) below.
 
 # (D) scaffold-assess against a repo with one tracked file.
 fixture_repo NPA
@@ -89,7 +95,7 @@ printf 'echo hi\n' >"$NPA/a.sh"
 git -C "$NPA" add a.sh
 np_rc=0
 ( cd "$NPA" && PATH="$NPNODIR" "$SCAFFOLD_DIR/scaffold-assess.sh" ) >"$HOOK_OUT" 2>&1 || np_rc=$?
-if [ "$np_rc" -eq 0 ] && ! grep -qE 'No such file|not found|cannot' "$HOOK_OUT"; then
+if [ "$np_rc" -eq 0 ] && ! grep -qE 'line [0-9]*: .*: (No such file|command not found)' "$HOOK_OUT"; then
   np_ok "scaffold-assess.sh runs with no dirname on PATH"
 else
   np_fail "scaffold-assess.sh failed without dirname (exit $np_rc)"
@@ -110,6 +116,22 @@ if [ "$np_rc" -eq 0 ] && ! grep -qE 'No such file|command not found|cd:' "$HOOK_
 else
   np_fail "pre-commit failed without dirname (exit $np_rc)"
 fi
+# (F) uninstall.sh for real: a dry run against the installed project must print
+# the same thing on the narrowed PATH as on the full one. On a pre-5.3 bash the
+# old idiom does not die, it resolves SCAFFOLD_DIR to the caller's cwd, so the
+# sourced uninstall-drop-lang.sh is missing and the two outputs diverge.
+np_full=$(mktemp)
+( cd "$NPI" && "$SCAFFOLD_DIR/uninstall.sh" --dry-run ) >"$np_full" 2>&1 || true
+np_rc=0
+( cd "$NPI" && PATH="$NPNODIR" "$SCAFFOLD_DIR/uninstall.sh" --dry-run ) >"$HOOK_OUT" 2>&1 || np_rc=$?
+if [ "$np_rc" -eq 0 ] && [ -s "$HOOK_OUT" ] && diff "$HOOK_OUT" "$np_full" >/dev/null; then
+  np_ok "uninstall.sh --dry-run output matches with and without dirname on PATH"
+else
+  echo "  ✗ uninstall.sh --dry-run diverges without dirname (exit $np_rc)"
+  { diff "$HOOK_OUT" "$np_full" || true; } | sed 's/^/      /'
+  FAIL=$((FAIL + 1))
+fi
+rm -f "$np_full"
 for np_c in check-hygiene check-patterns check-size check-large-files; do
   cp "$SCAFFOLD_DIR/githooks/lib/$np_c.template" "$NPI/.githooks/lib/$np_c"
   chmod +x "$NPI/.githooks/lib/$np_c"

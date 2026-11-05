@@ -274,7 +274,7 @@ if [ "$MODE" = "python" ] || [ "$MODE" = "both" ]; then
     while IFS= read -r cand; do
       [ -n "$cand" ] || continue
       if grep -qs -e '\[tool.pytest.ini_options\]' -e '\[pytest\]' "$cand" 2>/dev/null; then
-        PYTEST_CFG=$(dirname "$cand")
+        PYTEST_CFG=${cand%/*}   # find . prints ./x, so a slash is always present
         break
       fi
     done <<EOF_PYCFG
