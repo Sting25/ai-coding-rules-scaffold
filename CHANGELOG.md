@@ -8,9 +8,11 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
-- **Two new Engineering rules.** `operational-rules.md` now covers pairing a
-  throwaway commit with a blind `reset --hard`, and proving a measurement's
-  setup applied before trusting the result.
+- **`operational-rules.md`: two new Engineering rules (#157).** "Never pair a
+  throwaway commit with a blind reset" and "Prove the setup applied before
+  trusting the measurement": a failed throwaway commit turns
+  `reset --hard HEAD~1` into data loss, and a setup that silently did nothing
+  reads like a clean negative result.
 
 - **Rules can skip paths, and the print rules no longer block CLI code.** A rule
   in `.scaffold.toml` takes `exclude = ["app/cli/*"]` to stop scanning matching
