@@ -216,10 +216,12 @@ sys.exit(1 if bad else 0)' package-lock.json node_modules/.package-lock.json >/d
   # 4. gate tools missing from the environment the gates use
   if [ "$pyproj" -eq 1 ] || [ -f ruff.toml ]; then
     if [ -r .githooks/lib/py-tool ]; then
+      # shellcheck source=githooks/lib/py-tool.template
       ( . .githooks/lib/py-tool; py_tool ruff ) >/dev/null 2>&1 ||
         note "ruff is not resolvable by the hook's lib/py-tool (venv, PATH, python3 -m): the local lint pass is skipped here"
       if grep -q pytest pyproject.toml 2>/dev/null; then
         # py-tool prints a BORROWED note on stderr for a main-worktree venv; keep the resolved path instead
+        # shellcheck source=githooks/lib/py-tool.template
         pt=$( . .githooks/lib/py-tool; if py_tool pytest 2>/dev/null; then printf '%s' "${PY_TOOL_CMD[0]}"; else printf '%s' '?'; fi )
         if [ "$pt" = '?' ]; then
           note "pytest is not resolvable by lib/py-tool (venv, PATH, python3 -m): tests cannot run here"
