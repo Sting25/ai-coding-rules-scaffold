@@ -15,7 +15,8 @@
 # stay green. The commit that added the gate says the real behaviour was
 # verified BY HAND and never encoded; this file encodes it.
 #
-# NINE CHECKS (eight pytest verdicts plus a static one; (f)-(i) are the unchanged-body exemption), on one shared fixture whose base commit ships a deliberately
+# FOURTEEN CHECKS (thirteen pytest verdicts plus a static one; (f)-(m) are the
+# moved-test exemption), on one shared fixture whose base commit ships a deliberately
 # WRONG `add(a, b) -> a - b` plus a test pinned to that wrong behaviour:
 #   (a) a new test that FAILS on base  -> exit 0. The false-positive direction,
 #       and the one that matters most: a gate that blocks honest red-green work
@@ -43,8 +44,8 @@
 echo "cases/36: check-red-green's blocking verdict (#140)"
 
 if ! python3 -c 'import pytest' >/dev/null 2>&1; then
-  echo "  - SKIP: pytest not importable — check-red-green's 8 verdict assertions did NOT run (add a pinned 'pip install pytest' step to .github/workflows/test.yml to cover this in CI)"
-  SKIP=$((SKIP + 8))
+  echo "  - SKIP: pytest not importable — check-red-green's 13 verdict assertions did NOT run (add a pinned 'pip install pytest' step to .github/workflows/test.yml to cover this in CI)"
+  SKIP=$((SKIP + 13))
 else
   # A fixture repo with the --test-guard artifacts installed, one BASE commit,
   # and HEAD == base. Scenarios below add the second commit. Printed as
@@ -191,16 +192,20 @@ else
     rm -rf "$_rg_dir"
   fi
 
-  # (f)-(i): the unchanged-body exemption (#200). The base's only test is
-  # test_add_existing (passes on base: add(5, 5) == 0), so a copy of it in a
-  # NEW file is a new node ID that is green on base.
-  # _rg_case <label> <expect_rc> <expect_grep> <grep_must_match 1|0>: run the gate and
-  # book one PASS/FAIL. The scenario's HEAD commit is made by the caller.
+  # (f)-(m): the moved-test exemption (#200). A new node ID that is green on base
+  # is exempt only when it is a TRUE MOVE: the same [Class::]name[param] tail
+  # existed at base, that base node ID is gone at HEAD, the function AST is the
+  # same, and every module-level name it uses is bound the same way in both
+  # files. The base's only test is test_add_existing (passes on base:
+  # add(5, 5) == 0), so a copy of it in a NEW file is a new, green-on-base ID.
+  # _rg_check <label> <want_rc> <grep_pattern> <forbid_exempt 1|0>: run the gate
+  # and book one PASS/FAIL. With forbid_exempt=1 the output must also hold no
+  # "exempt (moved" line. The scenario's HEAD commit is made by the caller.
   _rg_check() {
-    local label=$1 want=$2 pat=$3 neg=$4 ok=0
+    local label=$1 want=$2 pat=$3 forbid_exempt=$4 ok=0
     _rg_rc=$(_rg_run "$_rg_dir" "$_rg_base")
     if [ "$_rg_rc" -eq "$want" ] && grep -q "$pat" "$HOOK_OUT"; then ok=1; fi
-    if [ "$ok" -eq 1 ] && { [ "$neg" -eq 0 ] || ! grep -q 'exempt (unchanged body' "$HOOK_OUT"; }; then
+    if [ "$ok" -eq 1 ] && { [ "$forbid_exempt" -eq 0 ] || ! grep -q 'exempt (moved' "$HOOK_OUT"; }; then
       echo "  ✓ $label (exit $want)"
       PASS=$((PASS + 1))
     else
@@ -211,25 +216,31 @@ else
     rm -rf "$_rg_dir"
   }
   _rg_commit() { git -C "$_rg_dir" add -A && git -C "$_rg_dir" commit --quiet -m "$1" --no-verify; }  # scaffold-allow: test fixture
+  # _rg_rebase <msg>: commit the scenario's extra BASE files and make that commit the base.
+  _rg_rebase() { _rg_commit "$1" && _rg_base=$(git -C "$_rg_dir" rev-parse HEAD); }
+  _rg_moved='exempt (moved, body and context unchanged)'
+  # A parametrized test over a module-level table, in base.
+  _rg_table='import pytest\nfrom calc import add\n\nCASES = [(5, 5)]\n\n\n@pytest.mark.parametrize("a, b", CASES)\ndef test_add_equal_operands(a, b):\n    assert add(a, b) == 0\n'
 
-  # (f) moved verbatim into a new file, deleted from the old one: exempt.
+  # (f) moved verbatim into a new file, deleted from the old one, importing `add`
+  #     exactly as before: exempt.
   if _rg_new; then
     printf 'from calc import add  # noqa: F401\n' >"$_rg_dir/tests/test_calc.py"
     printf 'from calc import add\n\n\ndef test_add_existing():\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_calc_more.py"
     _rg_commit "split: move test_add_existing"
-    _rg_check "a test moved verbatim to a new file is exempt as unchanged-body" 0 \
-      'exempt (unchanged body: moved or reformatted): tests/test_calc_more.py::test_add_existing' 0
+    _rg_check "a test moved verbatim to a new file (same import of add) is exempt" 0 \
+      "$_rg_moved: tests/test_calc_more.py::test_add_existing" 0
   fi
 
   # (g) moved AND reformatted (quotes, trailing comma, re-wrapped call, a docstring).
   #     In place a reformat keeps the node ID, so it is never "new"; it is the
-  #     move that makes it a new ID, and the formatter-equivalence is what exempts it.
+  #     move that makes it a new ID, and the AST equivalence is what exempts it.
   if _rg_new; then
     printf 'from calc import add  # noqa: F401\n' >"$_rg_dir/tests/test_calc.py"
     printf 'from calc import add\n\n\ndef test_add_existing():\n    """A docstring, which carries no semantics."""\n    assert (\n        add(\n            5,\n            5,\n        )\n        == 0\n    )\n' >"$_rg_dir/tests/test_calc_fmt.py"
     _rg_commit "format and move"
     _rg_check "a moved test reformatted (wrapping, trailing comma, docstring) is exempt" 0 \
-      'exempt (unchanged body: moved or reformatted): tests/test_calc_fmt.py::test_add_existing' 0
+      "$_rg_moved: tests/test_calc_fmt.py::test_add_existing" 0
   fi
 
   # (h) moved with a semantic edit that STILL passes on base: add(5, 5) == 0 becomes
@@ -242,23 +253,79 @@ else
       'green-on-base: tests/test_calc_more.py::test_add_existing' 1
   fi
 
-  # (i) fail closed: the base commit carries an unparsable (but never collected)
-  #     test-dir file, so the base tests cannot all be read. Pytest never collects
-  #     it, so the gate still evaluates (not exit 2); the predicate refuses to
-  #     exempt, and the verbatim-moved test is reported as an offender (exit 1).
+  # (i) fail closed PER FILE: the base also holds an unparsable, never-collected
+  #     file. It cannot hold a candidate, so it only removes candidates; it must
+  #     not switch the exemption off for the rest of the tree.
   if _rg_new; then
     printf 'def broken(:\n' >"$_rg_dir/tests/helper_broken.py"
-    _rg_commit "base also holds an unparsable helper"
-    _rg_base=$(git -C "$_rg_dir" rev-parse HEAD)
+    _rg_rebase "base also holds an unparsable helper"
     printf 'from calc import add  # noqa: F401\n' >"$_rg_dir/tests/test_calc.py"
     printf 'from calc import add\n\n\ndef test_add_existing():\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_calc_more.py"
-    _rg_commit "move with an unparsable base"
-    _rg_check "an unparsable base test file fails closed: the moved test is an offender" 1 \
+    _rg_commit "move with an unparsable unrelated base file"
+    _rg_check "an unparsable unrelated base file does not block a legitimate move" 0 \
+      "$_rg_moved: tests/test_calc_more.py::test_add_existing" 0
+  fi
+
+  # (i2) a test whose only base copy sits in a file the predicate cannot read
+  #      (latin-1 source, byte 0xe9 in a comment; pytest honours the coding
+  #      cookie, the predicate decodes UTF-8) has no readable candidate: offender.
+  if _rg_new; then
+    printf '# -*- coding: latin-1 -*-\n# caf\351\nfrom calc import add\n\n\ndef test_legacy_check():\n    assert add(3, 3) == 0\n' >"$_rg_dir/tests/test_legacy.py"
+    _rg_rebase "base holds a latin-1 test file"
+    rm "$_rg_dir/tests/test_legacy.py"
+    printf 'from calc import add\n\n\ndef test_legacy_check():\n    assert add(3, 3) == 0\n' >"$_rg_dir/tests/test_legacy_moved.py"
+    _rg_commit "move out of the unreadable file"
+    _rg_check "a test whose only base copy is in an unreadable file stays an offender" 1 \
+      'green-on-base: tests/test_legacy_moved.py::test_legacy_check' 1
+  fi
+
+  # (j1) a NEW parametrize case added in place to a module-level table: the
+  #      table is not a new test body, but the node ID is new and green on base.
+  if _rg_new; then
+    printf '%b' "$_rg_table" >"$_rg_dir/tests/test_cases.py"
+    _rg_rebase "base holds a parametrized test"
+    _rg_old='(5, 5)]'; _rg_new_cases='(5, 5), (4, 4)]'
+    printf '%b' "${_rg_table/"$_rg_old"/$_rg_new_cases}" >"$_rg_dir/tests/test_cases.py"
+    _rg_commit "add a case to the table"
+    _rg_check "a new parametrize case added to a module-level table is an offender" 1 \
+      'green-on-base: tests/test_cases.py::test_add_equal_operands\[4-4\]' 1
+  fi
+
+  # (j2) the same parametrized test MOVED with an identical table: exempt.
+  if _rg_new; then
+    printf '%b' "$_rg_table" >"$_rg_dir/tests/test_cases.py"
+    _rg_rebase "base holds a parametrized test"
+    printf '# moved\n' >"$_rg_dir/tests/test_cases.py"
+    printf '%b' "$_rg_table" >"$_rg_dir/tests/test_cases_more.py"
+    _rg_commit "move the parametrized test"
+    _rg_check "a moved parametrized test with the same cases and table is exempt" 0 \
+      "$_rg_moved: tests/test_cases_more.py::test_add_equal_operands\[5-5\]" 0
+  fi
+
+  # (k) a verbatim COPY with the original left in place is not a move: offender.
+  if _rg_new; then
+    printf 'from calc import add\n\n\ndef test_add_existing():\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_calc_copy.py"
+    _rg_commit "copy the test, keep the original"
+    _rg_check "a verbatim copy with the original still present is an offender" 1 \
+      'green-on-base: tests/test_calc_copy.py::test_add_existing' 1
+  fi
+
+  # (l) moved body whose new file REDEFINES a helper it calls: add() now returns
+  #     0 locally, so the same text means something else. Offender.
+  if _rg_new; then
+    printf '# moved\n' >"$_rg_dir/tests/test_calc.py"
+    printf 'def add(a, b):\n    return 0\n\n\ndef test_add_existing():\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_calc_more.py"
+    _rg_commit "move into a file with its own add"
+    _rg_check "a moved test whose new file redefines the helper it calls is an offender" 1 \
       'green-on-base: tests/test_calc_more.py::test_add_existing' 1
   fi
 
+  # (m) the mirror of (l), a moved body whose new file imports `add` the same way,
+  #     is (f); it is not repeated here.
+
   unset _rg_dir _rg_base _rg_rc
-  unset -f _rg_fixture _rg_new _rg_run _rg_check _rg_commit
+  unset -f _rg_fixture _rg_new _rg_run _rg_check _rg_commit _rg_rebase
+  unset _rg_moved _rg_table _rg_old _rg_new_cases
 fi
 unset _rg_stale _rg_pre _rg_post
 
