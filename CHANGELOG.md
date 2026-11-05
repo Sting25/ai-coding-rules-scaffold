@@ -8,6 +8,13 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+- **`scaffold-doctor` gains an advisory "worktree parity" section (#211).** Notes only,
+  never a gap and never blocking: `core.hooksPath` outside the worktree, `node_modules`
+  that differs from `package-lock.json`, a venv that imports the project from another
+  path, a missing gate tool (ruff, pytest, eslint, prettier) or a pytest that runs from
+  a venv outside the worktree, and an interpreter below `requires-python`. Each check skips quietly when its inputs are absent. The blocking
+  check and the version-vs-lockfile comparison stay open. `AGENTS.md.template` points
+  at the section.
 - **README documents three Claude Code harness behaviors (#224).** A new "Known
   Claude Code harness behaviors" section names subagent permission denials, long
   CI-style waits and output-style plugins that override reply length, each with
