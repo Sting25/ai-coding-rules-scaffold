@@ -138,7 +138,7 @@ Tests run in CI by default: a plain install also drops `.github/workflows/tests.
 ./install.sh --help         # show usage
 ```
 
-A test that was only moved to another file or reformatted is exempt from the red-green gate when its body already existed at the base commit, so splitting a long test file or running a formatter does not demand a fresh failing run. "Break the source and restore it" is not evidence for such a test. The exemption is one fail-closed predicate in the CI check: if the base tests cannot be read or parsed, the test stays an offender.
+With `--test-guard`, a test that was moved to another file (with or without reformatting) is exempt from the red-green gate when its body and the module-level names it uses (imports, constants, helpers) are unchanged and the original is gone from the old location. A copy that leaves the original in place, a new parametrize case, and a test whose new file rebinds a name it uses are still checked. The exemption is one fail-closed predicate in the CI check: if the file at the PR head cannot be read or parsed, the test stays an offender. A fixture or helper defined outside the module is not compared.
 
 Before it copies anything else, every run (including the first) adds
 `*.scaffold-bak`, `*.scaffold-bak.*`, `.githooks/.scaffold-manifest.new.*` and
