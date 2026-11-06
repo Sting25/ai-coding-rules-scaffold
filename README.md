@@ -126,6 +126,7 @@ Tests run in CI by default: a plain install also drops `.github/workflows/tests.
 ./install.sh --gitleaks-ci  # also install the gitleaks CI workflow (unskippable gate)
 ./install.sh --dependency-review # also install the dependency-review CI gate (opt-in: needs GitHub Advanced Security on a private repo, or it errors)
 ./install.sh --zizmor-ci    # also install the zizmor GitHub Actions audit gate (opt-in: adds a third-party pip package)
+./install.sh --tree-lint    # also install the advisory whole-tree lint workflow (weekly and on push to the default branch; files one tracking issue, never blocks a PR)
 ./install.sh --socket-ci    # also install the Socket Firewall supply-chain gate (opt-in: adds a third-party action dependency)
 ./install.sh --test-guard   # also install the red-green test-integrity gate (a new test must fail on the PR base before it may pass), plus an advisory diff-scoped mutation layer
 ./install.sh --npm-cooldown # also install .npmrc's min-release-age package cooldown (opt-in: needs npm >= 11.10.0, older npm just warns and ignores it)
@@ -155,7 +156,7 @@ fixes. Your own configs (`ruff.toml`, `eslint.config.js`, `.scaffold.toml`,
 the rules docs, …) are left untouched, even by `--force` (a changed one gets a
 `kept (user-owned)` line; `--force-all` replaces them, backed up), and `.forbidden-patterns/*.txt` files
 and the CI workflows (`lint.yml`, `tests.yml`, `coverage.yml`, `gitleaks.yml`,
-`dependency-review.yml`, `zizmor.yml`, `socket-security.yml`, `test-guard.yml`)
+`dependency-review.yml`, `zizmor.yml`, `lint-tree.yml`, `socket-security.yml`, `test-guard.yml`)
 that you've edited are kept with a drift notice rather than overwritten (use
 `--force` to take the shipped version, backed up to `.scaffold-bak`). Any
 scaffold-owned file the installer does overwrite is backed up first, and if

@@ -341,6 +341,20 @@ minimal; turn them on per project.
   it adds a third-party pip package. Pinned to a commit SHA; bump via
   Dependabot.
 
+- **Advisory whole-tree lint (`install.sh --tree-lint` →
+  `.github/workflows/lint-tree.yml`).** `lint.yml` is diff-scoped on purpose,
+  so nothing re-checks the whole tree: a linter upgrade or a file type that
+  was never in a gate's filter lets findings pile up on the default branch
+  unseen, and a local whole-tree run then shows the backlog as if the current
+  branch caused it. This workflow runs ruff check, ruff format --check,
+  eslint, prettier --check and tsc over the tracked files (the list comes from
+  `git ls-files`, so gitignored content is never linted) weekly and on push to
+  the default branch. It has no `pull_request` trigger, so it cannot block a
+  merge. Each gate runs even if an earlier one fails; a final report job
+  (the only one holding `issues: write`) opens or edits one issue titled
+  "Lint baseline (whole-tree findings)", labelled `lint-baseline`, and comments
+  and closes it when a later run is clean. Opt-in, advisory by design.
+
 - **Red-green test-integrity gate (`install.sh --test-guard` →
   `.githooks/lib/check-red-green` + `.github/workflows/test-guard.yml`).**
   Every NEW test in a PR is run against the base commit in a scratch
@@ -551,7 +565,7 @@ trimmed one.
 
 ## Update & uninstall
 
-**Update:** re-running `install.sh` is the upgrade path. Scaffold-owned code (the hook, the `lib/check-*` scanners, the `commit-msg` hook) is refreshed whenever it differs from the shipped version (that's how you receive security fixes), and **any file it overwrites is backed up to `<file>.scaffold-bak` first, with a `backed up:` line in the output**, so an edit you made to one is recoverable rather than silently gone. The eight shipped CI workflows (`.github/workflows/lint.yml`, `tests.yml`, `coverage.yml`, `gitleaks.yml`, `dependency-review.yml`, `zizmor.yml`, `socket-security.yml`, `test-guard.yml`) and the `.forbidden-patterns/*.txt` files are scaffold-owned but commonly project-edited (local CI steps added to `lint.yml`, rows appended to a pattern file) or pre-existing under a scaffold-claimed filename (`tests.yml` especially), so they all follow a drift-preserving policy instead: `lint.yml` since #105, `tests.yml`/`coverage.yml`/`gitleaks.yml` since #110, the pattern files and the rest of the workflows since each shipped.
+**Update:** re-running `install.sh` is the upgrade path. Scaffold-owned code (the hook, the `lib/check-*` scanners, the `commit-msg` hook) is refreshed whenever it differs from the shipped version (that's how you receive security fixes), and **any file it overwrites is backed up to `<file>.scaffold-bak` first, with a `backed up:` line in the output**, so an edit you made to one is recoverable rather than silently gone. The nine shipped CI workflows (`.github/workflows/lint.yml`, `tests.yml`, `coverage.yml`, `gitleaks.yml`, `dependency-review.yml`, `zizmor.yml`, `lint-tree.yml`, `socket-security.yml`, `test-guard.yml`) and the `.forbidden-patterns/*.txt` files are scaffold-owned but commonly project-edited (local CI steps added to `lint.yml`, rows appended to a pattern file) or pre-existing under a scaffold-claimed filename (`tests.yml` especially), so they all follow a drift-preserving policy instead: `lint.yml` since #105, `tests.yml`/`coverage.yml`/`gitleaks.yml` since #110, the pattern files and the rest of the workflows since each shipped.
 
 That policy checks provenance, not just today's template: every file it writes is recorded in `.githooks/.scaffold-manifest` (sha256 + scaffold version, see [What lands in your project](#what-lands-in-your-project)), and a re-run of a drift-preserving file compares it against its **own recorded hash**, three ways:
 

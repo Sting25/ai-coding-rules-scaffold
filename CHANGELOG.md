@@ -8,6 +8,18 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+- **Opt-in advisory whole-tree lint workflow (#217).** `install.sh --tree-lint`
+  installs `.github/workflows/lint-tree.yml`, the whole-tree twin of the
+  diff-scoped `lint.yml`. It runs ruff check, ruff format --check, eslint,
+  prettier --check and tsc over the tracked files weekly and on push to the
+  default branch, never on a pull request, so it cannot block a merge. On
+  failure it opens or updates one `Lint baseline (whole-tree findings)` issue
+  (label `lint-baseline`); a later clean run comments and closes it.
+  `AGENTS.md.template` gains one line telling agents a finding in a file their
+  branch did not touch is baseline, and to check that issue first. The
+  installer wizard, uninstaller, doctor and the "not enabled" summary all know
+  the new workflow.
+
 - **`scaffold-doctor` gains an advisory "worktree parity" section (#211).** Notes only,
   never a gap and never blocking: `core.hooksPath` outside the worktree, `node_modules`
   that differs from `package-lock.json`, a venv that imports the project from another

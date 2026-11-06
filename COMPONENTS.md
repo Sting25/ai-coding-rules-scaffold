@@ -748,6 +748,10 @@ separate decision.
   actions, credential persistence, over-broad permissions).
 - `socket-security.yml`: checks a newly added package is legitimate before it
   is installed.
+- `lint-tree.yml`: advisory whole-tree lint (ruff, eslint, prettier, tsc over
+  every tracked file) weekly and on push to the default branch, never on a PR.
+  On failure it opens or updates one `Lint baseline` issue; it never blocks a
+  merge. It needs no third-party dependency beyond the linters you already use.
 
 **Blast radius:** CI only, and only on the events each workflow watches.
 
@@ -756,6 +760,7 @@ mkdir -p .github/workflows
 cp "$SCAFFOLD/.github/workflows/dependency-review.yml.template" .github/workflows/dependency-review.yml
 cp "$SCAFFOLD/.github/workflows/zizmor.yml.template"            .github/workflows/zizmor.yml
 # cp "$SCAFFOLD/.github/workflows/socket-security.yml.template" .github/workflows/socket-security.yml
+# cp "$SCAFFOLD/.github/workflows/lint-tree.yml.template"       .github/workflows/lint-tree.yml
 ```
 
 ```sh verify=supply-chain-ci
@@ -765,7 +770,7 @@ echo "verified: dependency-review and zizmor workflows present"
 ```
 
 ```sh remove=supply-chain-ci
-rm -f .github/workflows/dependency-review.yml .github/workflows/zizmor.yml .github/workflows/socket-security.yml
+rm -f .github/workflows/dependency-review.yml .github/workflows/zizmor.yml .github/workflows/socket-security.yml .github/workflows/lint-tree.yml
 ```
 
 ## 18. Test-integrity gate (red-green and mutation)
