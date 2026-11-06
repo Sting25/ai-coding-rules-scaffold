@@ -306,6 +306,22 @@ else
   rm -rf "$C56_SRC"
 fi
 
+# (vi) CDPATH=. makes `cd` print the directory it lands in, which turned a
+# gate's SELF_DIR into two lines and its gate-status path into garbage, so a
+# clean file was refused. Every installed shell gate, called by a relative path
+# with CDPATH set, must still pass a staged README.
+fixture_repo C56_CD
+fixture_install "$C56_CD" --python --no-verify --gitleaks-hook
+echo '# docs' >"$C56_CD/README.md"
+git -C "$C56_CD" add README.md
+for c56_g in "$C56_CD"/.githooks/lib/check-*; do
+  c56_n=${c56_g##*/}
+  case $c56_n in check-red-green | check-mutation-diff) continue ;; esac
+  c56_run "$C56_CD" README.md env CDPATH=. ".githooks/lib/$c56_n"
+  c56_expect "$c56_n with CDPATH=. passes a clean staged README (exit 0)" 0 "gate=${c56_n#check-} status="
+done
+rm -rf "$C56_CD"
+
 # --- (h) the workflow templates carry the strict variable ----------------------
 WF="$SCAFFOLD_DIR/.github/workflows"
 C56_STRICT='SCAFFOLD_GATE_STRICT: "1"'

@@ -127,7 +127,7 @@ CASE_FLOORS=(
   "53-narrow-path-scripts.sh:13"
   "54-doctor-worktree-parity.sh:10"
   "55-tree-lint-template.sh:8"
-  "56-fail-closed-canaries.sh:41"
+  "56-fail-closed-canaries.sh:48"
   "57-refusal-log.sh:34"
 )
 
