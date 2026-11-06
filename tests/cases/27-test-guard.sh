@@ -201,6 +201,13 @@ else
     echo "  ✗ check-red-green should exit 1 naming the green-on-base test (got exit $rg_rc)"
     sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
   fi
+  # #259: a finding (exit 1) is class (a); the trailer is the last line of the output.
+  if [ "$(tail -n 1 "$HOOK_OUT")" = "refusal class (a): this check failed on your own change. Fix the file, never the gate." ]; then
+    echo "  ✓ the green-on-base refusal ends with the class (a) trailer"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ the green-on-base refusal should end with the class (a) trailer"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
   rm -rf "$GG"
 
   # (T) THE DECLARED EXCEPTION. The same green-on-base test, but marked

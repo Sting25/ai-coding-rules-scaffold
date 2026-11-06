@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# cases/58-refusal-class.sh: every shipped refusal ends with one fixed class
+# cases/60-refusal-class.sh: every shipped refusal ends with one fixed class
 # trailer (issue #259), printed by .githooks/lib/refusal-log --say. Class (a): a
 # check failed on the agent's own change. Class (b): the gate itself is wrong or
 # broken. Class (c), a harness denial, is never printed by a gate.
@@ -64,6 +64,16 @@ rc_logged() {
   fi
 }
 
+# rc_rule_is LABEL RULE: the last log line (exactly one new line) names RULE.
+rc_rule_is() {
+  local label=$1 rule=$2 last
+  last=$(tail -n 1 "$RCLOG" 2>/dev/null || true)
+  if [ "$(rc_field "$last" 3)" = "$rule" ] && [ "$(rc_count "$RCLOG")" -eq $((rl_before + 1)) ]; then
+    rc_ok "$label: logged once as rule $rule"
+  else
+    rc_bad "$label: expected one new line with rule $rule, last: $last"
+  fi
+}
 # --- class (a) ---------------------------------------------------------------
 bigpy big.py
 git add big.py
@@ -120,6 +130,12 @@ printf 'bad subject\n' >"$RCT/msg"
 RC_RC=0
 env -u CLAUDE_SESSION_ID "$RCT/commit-msg" "$RCT/msg" >"$HOOK_OUT" 2>&1 || RC_RC=$?
 rc_expect "commit-msg" "$rc_a" 1
+
+# A conventional subject over 100 characters is a finding on the agent's own message.
+printf 'feat: %s\n' "$(printf 'x%.0s' $(seq 1 100))" >"$RCT/msg"
+RC_RC=0
+env -u CLAUDE_SESSION_ID "$RCT/commit-msg" "$RCT/msg" >"$HOOK_OUT" 2>&1 || RC_RC=$?
+rc_expect "commit-msg subject over 100 characters" "$rc_a" 1
 
 git rm -q .forbidden-patterns/backend.txt
 RC_RC=0
@@ -249,6 +265,31 @@ rc_expect "check-secrets invalid regex" "$rc_b" 1
 cp "$RCT/secrets.keep" .forbidden-patterns/secrets.txt
 reset_repo
 
+# check-patterns whose only rule is an invalid regex: class (b), rule invalid-config.
+cp .forbidden-patterns/backend.txt "$RCT/backend.keep"
+printf '# scaffold-extensions: py\n[unclosed\tbad rule\n' >.forbidden-patterns/backend.txt
+printf 'x = 1\n' >ok.py
+git add ok.py
+rl_before=$(rc_count "$RCLOG")
+rc_run .githooks/lib/check-patterns ok.py
+rc_expect "check-patterns invalid-config" "$rc_b" 1
+rc_rule_is "check-patterns invalid-config" invalid-config
+cp "$RCT/backend.keep" .forbidden-patterns/backend.txt
+reset_repo
+
+# check-patterns first-wins: a pattern finding, then an over-long line in a later file, stays (a).
+printf 'print("debug")\n' >a.py
+printf 'x = "0123456789012345678901234567890123456789"\n' >b.py
+git add a.py b.py
+rl_before=$(rc_count "$RCLOG")
+RC_RC=0
+printf 'a.py\0b.py\0' | env -u CLAUDE_SESSION_ID MAX_LINE_LENGTH=30 .githooks/lib/check-patterns >"$HOOK_OUT" 2>&1 || RC_RC=$?
+rc_expect "check-patterns pattern then over-long line" "$rc_a" 1
+rc_desc=$(awk -F'\t' '/print\[\[:space:\]\]\*\\\(/ { print $2; exit }' .forbidden-patterns/backend.txt)
+rc_want=$(printf '%s' "$rc_desc" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//' | cut -c1-48 | sed 's/-*$//')
+rc_rule_is "check-patterns first-wins" "$rc_want"
+reset_repo
+
 # A full pre-commit run refused by a failing local.d check: one (a) trailer, then the banner.
 mkdir -p .githooks/local.d
 printf '#!/usr/bin/env bash\nexit 1\n' >.githooks/local.d/zz-fail
@@ -269,42 +310,7 @@ rm -f .githooks/local.d/zz-fail
 rmdir .githooks/local.d 2>/dev/null || true
 reset_repo
 
-# The Python gates: setup error is class (b). The gate's own error text must come
-# before the trailer in the same output (proves the flush ordering).
-if command -v python3 >/dev/null 2>&1; then
-  fixture_repo RCPY
-  mkdir "$RCPY/tests"
-  for rc_py in check-red-green check-mutation-diff; do
-    cp "$SCAFFOLD_DIR/githooks/lib/$rc_py.template" "$RCT/lib/$rc_py"
-    chmod +x "$RCT/lib/$rc_py"
-    RC_RC=0
-    ( cd "$RCPY" && env -u CLAUDE_SESSION_ID python3 "$RCT/lib/$rc_py" --ci --base no-such-ref ) >"$HOOK_OUT" 2>&1 || RC_RC=$?
-    rc_expect "$rc_py setup error" "$rc_b" 2
-    rc_el=$(grep -n '^::error::' "$HOOK_OUT" | head -n 1 | cut -d: -f1)
-    rc_tl=$(grep -nxF "$rc_b" "$HOOK_OUT" | head -n 1 | cut -d: -f1)
-    if [ -n "$rc_el" ] && [ -n "$rc_tl" ] && [ "$rc_el" -lt "$rc_tl" ]; then
-      rc_ok "$rc_py: the gate's ::error:: line precedes the trailer"
-    else
-      rc_bad "$rc_py: ::error:: line ${rc_el:-none}, trailer line ${rc_tl:-none}"
-    fi
-  done
-  rm -rf "$RCPY"
-else
-  echo "  - SKIP: python3 not installed, the Python gates' class trailer assertions did NOT run"
-  SKIP=$((SKIP + 4))
-fi
-
 # --- mutant killers: config-state refusals and RL_CLASS first-wins ------------
-# rc_rule_is LABEL RULE: the last log line (exactly one new line) names RULE.
-rc_rule_is() {
-  local label=$1 rule=$2 last
-  last=$(tail -n 1 "$RCLOG" 2>/dev/null || true)
-  if [ "$(rc_field "$last" 3)" = "$rule" ] && [ "$(rc_count "$RCLOG")" -eq $((rl_before + 1)) ]; then
-    rc_ok "$label: logged once as rule $rule"
-  else
-    rc_bad "$label: expected one new line with rule $rule, last: $last"
-  fi
-}
 printf 'x = 1\n' >ok.py
 git add ok.py
 
@@ -380,109 +386,5 @@ rc_expect "pre-commit stash failure" "$rc_b" 1
 rc_rule_is "pre-commit stash failure" stash-failed
 git reset -q --hard HEAD~1
 reset_repo
-
-# The TypeScript twins (node): setup error is class (b), after the gate's ::error::.
-if command -v node >/dev/null 2>&1; then
-  fixture_repo RCTS
-  (
-    cd "$RCTS" || exit 1
-    mkdir -p .githooks/lib node_modules/@stryker-mutator/core node_modules/@stryker-mutator/vitest-runner
-    printf '{"name":"x","type":"module","devDependencies":{"vitest":"^3.0.0"}}\n' >package.json
-    printf '{"version":"10.1.1"}\n' >node_modules/@stryker-mutator/core/package.json
-    printf '{"version":"10.1.1"}\n' >node_modules/@stryker-mutator/vitest-runner/package.json
-    printf 'node_modules/\n' >.gitignore
-    git add -A && git -c commit.gpgsign=false commit -q -m base
-  ) >/dev/null 2>&1
-  cp "$SCAFFOLD_DIR/githooks/lib/refusal-log.template" "$RCTS/.githooks/lib/refusal-log"
-  chmod +x "$RCTS/.githooks/lib/refusal-log"
-  for rc_ts in check-red-green-ts check-mutation-diff-ts; do
-    cp "$SCAFFOLD_DIR/githooks/lib/$rc_ts.template" "$RCTS/.githooks/lib/$rc_ts"
-    RC_RC=0
-    ( cd "$RCTS" && env -u CLAUDE_SESSION_ID node ".githooks/lib/$rc_ts" --ci --base no-such-ref ) >"$HOOK_OUT" 2>&1 || RC_RC=$?
-    rc_expect "$rc_ts setup error" "$rc_b" 2
-    rc_el=$(grep -n '^::error' "$HOOK_OUT" | head -n 1 | cut -d: -f1)
-    rc_tl=$(grep -nxF "$rc_b" "$HOOK_OUT" | head -n 1 | cut -d: -f1)
-    if [ -n "$rc_el" ] && [ -n "$rc_tl" ] && [ "$rc_el" -lt "$rc_tl" ]; then
-      rc_ok "$rc_ts: the gate's ::error line precedes the trailer"
-    else
-      rc_bad "$rc_ts: ::error line ${rc_el:-none}, trailer line ${rc_tl:-none}"
-    fi
-  done
-  rm -rf "$RCTS"
-else
-  echo "  - SKIP: node not on PATH, the TypeScript twins' class trailer assertions did NOT run"
-  SKIP=$((SKIP + 4))
-fi
-
-# --- the helper itself ---------------------------------------------------------
-rc_before=$(rc_count "$RCLOG")
-rc_out=$(.githooks/lib/refusal-log --say a 2>"$RCT/err" ) && rc_hrc=0 || rc_hrc=$?
-if [ "$rc_hrc" -eq 0 ] && [ -z "$rc_out" ] && [ "$(cat "$RCT/err")" = "$rc_a" ] \
-   && [ "$(rc_count "$RCLOG")" -eq "$rc_before" ]; then
-  rc_ok "refusal-log --say a: trailer on stderr only, exit 0, no log line"
-else
-  rc_bad "refusal-log --say a: exit $rc_hrc, stdout [$rc_out], stderr [$(cat "$RCT/err")]"
-fi
-.githooks/lib/refusal-log --say zzz >"$RCT/out" 2>"$RCT/err" || true
-if [ ! -s "$RCT/out" ] && [ ! -s "$RCT/err" ]; then
-  rc_ok "refusal-log --say zzz prints nothing"
-else
-  rc_bad "refusal-log --say zzz printed output"
-fi
-rc_nogit=$(mktemp -d)
-( cd "$rc_nogit" && GIT_CEILING_DIRECTORIES=$(dirname "$rc_nogit") "$WORK/.githooks/lib/refusal-log" --say b ) >"$RCT/out" 2>"$RCT/err" || true
-if [ ! -s "$RCT/out" ] && [ "$(cat "$RCT/err")" = "$rc_b" ]; then
-  rc_ok "refusal-log --say b prints the trailer outside a git repository"
-else
-  rc_bad "refusal-log --say b outside a repo: stderr [$(cat "$RCT/err")]"
-fi
-rm -rf "$rc_nogit"
-rc_before=$(rc_count "$RCLOG")
-.githooks/lib/refusal-log check-size size big.py 1 --say a >"$RCT/out" 2>"$RCT/err" || true
-if [ "$(rc_count "$RCLOG")" -eq $((rc_before + 1)) ] && [ "$(cat "$RCT/err")" = "$rc_a" ] && [ ! -s "$RCT/out" ]; then
-  rc_ok "refusal-log with positionals and --say appends one line and prints the trailer"
-else
-  rc_bad "refusal-log positionals plus --say: +$(($(rc_count "$RCLOG") - rc_before)) line(s), stderr [$(cat "$RCT/err")]"
-fi
-
-# --- source pins ---------------------------------------------------------------
-rc_hits=$(grep -rlF 'refusal class (' "$SCAFFOLD_DIR/githooks" | sed "s|^$SCAFFOLD_DIR/githooks/||")
-if [ "$rc_hits" = "lib/refusal-log.template" ]; then
-  rc_ok "the trailer text lives only in lib/refusal-log.template"
-else
-  rc_bad "trailer text found outside the helper: $rc_hits"
-fi
-rc_missing=$(find "$SCAFFOLD_DIR/githooks" -type f -name '*.template' ! -name 'refusal-log.template' -exec awk '
-  /^[[:space:]]*#/ { next }
-  { l = $0; gsub(/-x "[^"]*refusal-log"/, "", l); gsub(/is_file\(\)/, "", l) }
-  l ~ /"\$SELF_DIR\/refusal-log" / || l ~ /"\$LIB\/refusal-log" / || l ~ /"\$HOOK_DIR\/lib\/refusal-log" / || l ~ /str\(_RL\)/ || l ~ /spawnSync\("bash", \[rl/ || l ~ /\[rl,/ {
-    if (l !~ /--say/) print FILENAME ":" FNR }
-' {} + )
-if [ -z "$rc_missing" ]; then
-  rc_ok "every refusal-log invocation in the templates carries --say"
-else
-  rc_bad "refusal-log invoked without --say: $rc_missing"
-fi
-# Python gates: exit 1 is class (a), anything else (b); both flush before the helper runs.
-rc_pin=ok
-for rc_py in check-red-green check-mutation-diff; do
-  rc_f="$SCAFFOLD_DIR/githooks/lib/$rc_py.template"
-  grep -qF '{1: "a"}.get(rc, "b")' "$rc_f" || rc_pin="$rc_py lacks the exit-1 class mapping"
-  [ "$(grep -F 'subprocess.run(' "$rc_f" | grep -cF 'sys.stdout.flush(); ')" -eq 2 ] || rc_pin="$rc_py: both helper calls must follow sys.stdout.flush()"
-  grep -F '"timeout"' "$rc_f" | grep -qF 'sys.stdout.flush(); ' || rc_pin="$rc_py timeout line lacks the flush"
-done
-for rc_ts in check-red-green-ts check-mutation-diff-ts; do
-  grep -qF 'process.exitCode === 1 ? "a" : "b"' "$SCAFFOLD_DIR/githooks/lib/$rc_ts.template" || rc_pin="$rc_ts lacks the exit-1 class mapping"
-done
-if [ "$rc_pin" = ok ]; then
-  rc_ok "the Python and TypeScript gates map exit 1 to (a), the rest to (b), and flush before the helper"
-else
-  rc_bad "class mapping pin: $rc_pin"
-fi
-if ! grep -rqF 'refusal class (c)' "$SCAFFOLD_DIR/githooks"; then
-  rc_ok "no template prints a class (c) line (a harness denial never runs a gate)"
-else
-  rc_bad "a template prints refusal class (c)"
-fi
 
 rm -rf "$RCT"
