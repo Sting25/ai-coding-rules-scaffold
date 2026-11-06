@@ -139,6 +139,8 @@ Tests run in CI by default: a plain install also drops `.github/workflows/tests.
 ./install.sh --help         # show usage
 ```
 
+With `--test-guard`, a test that was moved to another file (with or without reformatting) is exempt from the red-green gate when its body, its class and the module-level names it uses (imports, constants, helpers, fixtures) are unchanged and the original is gone from the old location. A copy that leaves the original in place, a new parametrize case, and a test whose new file rebinds a name it uses are still checked. Names are followed through the module's own helpers and fixtures, fixtures named by string count, and a module with a star import is never exempt. The exemption is one fail-closed predicate in the CI check: if the file at the PR head cannot be read or parsed, the test stays an offender. A fixture or helper defined outside the module is not compared.
+
 Before it copies anything else, every run (including the first) adds
 `*.scaffold-bak`, `*.scaffold-bak.*`, `.githooks/.scaffold-manifest.new.*` and
 `.githooks/.scaffold-manifest.tmp.*` to your `.gitignore`, creating the file
