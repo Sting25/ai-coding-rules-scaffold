@@ -387,9 +387,8 @@ config_usable() {
 
 FAILED=0
 INCLUDED=0; CHECKED=0
-# Auto-discover every pattern file. secrets.txt is check-secrets' domain (it
-# scans all files, not by extension), so skip it here. Then apply the optional
-# INCLUDE/EXCLUDE basename filter documented in the header.
+# Auto-discover every pattern file; skip secrets.txt (check-secrets' domain), then
+# apply the optional INCLUDE/EXCLUDE basename filter documented in the header.
 # SCAFFOLD_PATTERNS_DIR (default .forbidden-patterns) lets scaffold-assess.sh
 # run this scanner against a tree that has not adopted the scaffold, reading
 # the shipped pattern files from wherever it rendered them. The hook and CI
@@ -496,5 +495,6 @@ if [ -n "${CHECK_PATTERNS_INCLUDE:-}" ] && [ "$INCLUDED" -eq 0 ]; then
   echo "warning: CHECK_PATTERNS_INCLUDE='$CHECK_PATTERNS_INCLUDE' matched no .forbidden-patterns/*.txt, nothing was scanned" >&2
 fi
 
+if [ "$INCLUDED" -eq 0 ]; then exec "$GS" patterns skipped 0 "no pattern file selected (.forbidden-patterns/*.txt)" "$FAILED"; fi
 if [ "$CHECKED" -gt 0 ]; then exec "$GS" patterns ran "$CHECKED" "" "$FAILED"; fi
 exec "$GS" patterns empty 0 "no staged file matched a pattern file's extensions" "$FAILED"

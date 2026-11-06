@@ -42,6 +42,7 @@ case $checked$rc in *[!0-9]* | '')
   ;;
 esac
 [ -n "$checked" ] || { echo "gate-status: checked is empty" >&2; exit 2; }
+[ "$rc" -le 255 ] || { echo "gate-status: rc must be at most 255" >&2; exit 2; }
 
 reason=${reason//$'\r'/ }
 reason=${reason//$'\n'/ }

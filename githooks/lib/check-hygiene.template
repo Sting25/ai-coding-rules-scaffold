@@ -338,5 +338,4 @@ if [ "$HIDDEN_STATE" != disabled ]; then
   done
 fi
 
-if [ "$CHECKED" -gt 0 ]; then exec "$GS" hygiene ran "$CHECKED" "" "$FAILED"; fi
-exec "$GS" hygiene empty 0 "no files staged" "$FAILED"
+exec "$GS" hygiene ran "$CHECKED" "" "$FAILED"

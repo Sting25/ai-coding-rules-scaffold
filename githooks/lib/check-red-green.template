@@ -9,14 +9,11 @@ passes by construction. This is measured, not folklore: LLM test-generation
 tools DISCARD any generated test that fails against the current code, so a test
 that correctly detects a bug is thrown away for being "wrong". Share of
 generated tests that VALIDATE the bug rather than catch it: CoverAgent 59.6%,
-CoverUp 68.1% (arXiv 2412.14137). CoverAgent discarded 470 bug-revealing tests;
-CoverUp discarded 400. Independently, LLMs "generate test oracles that capture
-the actual program implementation rather than the expected one" — assertion
-correctness dropped a further 8-9 points when the code under test was buggy
-(arXiv 2410.21136), i.e. the model follows the implementation, not the intent.
+CoverUp 68.1% (arXiv 2412.14137); both discard the bug-revealing ones. LLM test
+oracles also follow the implementation, not the intent: assertion correctness
+dropped 8-9 points on buggy code (arXiv 2410.21136).
 
-A test that has never been observed to fail has never been shown to test
-anything.
+A test never seen to fail has never been shown to test anything.
 
 THE MECHANISM, and why it is not "commit the test first".
 Commit ordering is unenforceable and easy to fake — a test committed first can
@@ -29,17 +26,16 @@ This checks the property that actually matters, which needs no discipline at all
 If a new test passes against the base branch, one of three things is true:
   - it tests behaviour that already worked, so it is not evidence for this PR
   - it asserts nothing (the assertion-free test a coverage gate rewards)
-  - it was written to match the implementation rather than the requirement
-All three are worth stopping, and none of them require reading a diff to judge.
+  - it was written to match the implementation, not the requirement
+All three are worth stopping, with no diff-reading needed.
 
-A test that fails on base because its import does not exist yet counts as RED.
-That is honest: the code it tests genuinely did not exist.
+A test that fails on base because its import does not exist yet counts as RED
+(honest: the code it tests did not exist).
 
 THE LEGITIMATE EXCEPTION, made explicit rather than assumed.
 Some new tests SHOULD pass against base: characterization tests pinning
-behaviour before a refactor, and coverage backfill for code that was already
-correct but untested. Both are good practice and both are green-on-base by
-definition. They are allowed, but only when SAID OUT LOUD:
+behaviour before a refactor, and coverage backfill for correct but untested
+code. Both are green-on-base by definition; allowed only when SAID OUT LOUD:
 
     @pytest.mark.characterization(reason="pinning invoice rounding before refactor")
 
@@ -71,9 +67,8 @@ Exit: 0 all new tests were red on base (or explicitly exempt)
       1 one or more new tests passed on base, or tests changed but 0 collected
       2 could not evaluate (no base, collection broken, git failure)
 
-Exit 2 is a FAILURE, not a skip: a check that cannot run must never report the
-same green as one that ran and passed. Every other end goes through gate-status
-(ran/empty plus a count). NOT overridable via .scaffold.toml.
+Exit 2 is a FAILURE, not a skip: a check that cannot run never reports green.
+Every other end goes through gate-status. NOT overridable via .scaffold.toml.
 """
 
 from __future__ import annotations
@@ -100,7 +95,11 @@ def run(cmd: list[str], cwd: str | None = None, timeout: int = 900):
 
 def gate(status: str, n: int, reason: str, rc: int = 0) -> int:
     helper = pathlib.Path(__file__).resolve().parent / "gate-status"
-    return subprocess.call([str(helper), "red-green", status, str(n), reason, str(rc)])
+    try:
+        return subprocess.call([str(helper), "red-green", status, str(n), reason, str(rc)])
+    except OSError as e:  # not executable / missing: exit 2, never a traceback's 1
+        print(f"::error::gate-status unusable: {e}")
+        return 2
 
 
 def emit(sev: str, msg: str, ci: bool) -> None:
@@ -320,10 +319,8 @@ def main() -> int:
         return 2
     head_sha = head.stdout.strip()
     # head_sha, never the literal "HEAD": inside a linked worktree "HEAD" is the
-    # base commit, so `git checkout HEAD -- tests/` there restores the BASE
-    # tests. The new tests then do not exist, pytest exits 4, the non-zero
-    # return reads as "failed on base", and the check reports a false green on
-    # exactly the case it exists to catch (hence the explicit exit-4 guard).
+    # base commit, so `git checkout HEAD -- tests/` restores the BASE tests and
+    # the check reports a false green (hence the explicit exit-4 guard).
 
     here = collect(".")
     if here is None:
@@ -331,12 +328,16 @@ def main() -> int:
                       "identified. Fix collection first.", args.ci)
         return 2
 
-    changed = run(
-        ["git", "diff", "--name-only", "--diff-filter=d", f"{base_sha}...HEAD"]
-    ).stdout.split()
+    d = run(["git", "diff", "--name-only", "--diff-filter=d", f"{base_sha}...HEAD"])
+    if d.returncode != 0:
+        emit("error", f"git diff {base_sha!r}...HEAD failed: {d.stderr.strip()}", args.ci)
+        return 2
+    changed = d.stdout.split()
     test_paths = [p for p in changed if is_test_path(p) and is_real_source(p)]
     if not test_paths:
         return gate("empty", 0, "no test files changed in this diff")
+    if not any(p.endswith(".py") for p in test_paths):
+        return gate("empty", 0, "no changed .py test files")
     if not here:
         return gate("ran", 0, f"{len(test_paths)} test file(s) changed, pytest collected 0")
 
@@ -367,8 +368,7 @@ def main() -> int:
             emit("warning",
                  f"{len(new_ids)} new tests exceeds --max-new={args.max_new}; "
                  "re-running that many against base would dominate CI time. "
-                 "Split the PR — a change adding this many tests at once is not "
-                 "reviewable by any means available to you.", args.ci)
+                 "Split the PR.", args.ci)
             return 1
 
         # STEP 2 — overlay HEAD's test files onto the base source tree.

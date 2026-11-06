@@ -183,6 +183,7 @@ trap cleanup EXIT
 # them so one summary line can name every gate that skipped.
 SCAFFOLD_GATE_LOG=$(mktemp); export SCAFFOLD_GATE_LOG
 GS="$LIB/gate-status"
+[ -x "$GS" ] || { echo "error: .githooks/lib/gate-status is missing; re-run install.sh (or copy githooks/lib/gate-status.template)" >&2; exit 1; }
 
 FAILED=0
 # Run every scanner that is PRESENT in lib/, not a fixed list. Each scanner is
@@ -408,7 +409,7 @@ fi
 
 # ONE line for every gate that skipped, however many did (the per-gate lines
 # stay in the log, which cleanup() removes).
-skipped_note=$(awk '/^gate=[^ ]+ status=skipped /{ g=$1; sub(/^gate=/, "", g); r=substr($0, index($0, " reason=") + 8); n++; out = out (n > 1 ? "; " : "") g " (" r ")" } END { if (n) printf "%d gate(s) skipped: %s", n, out }' "$SCAFFOLD_GATE_LOG")
+skipped_note=$(awk '/^gate=[^ ]+ status=skipped /{ g=$1; sub(/^gate=/, "", g); r=substr($0, index($0, " reason=") + 8); n++; out = out (n > 1 ? " | " : "") g " (" r ")" } END { if (n) printf "%d gate(s) skipped: %s", n, out }' "$SCAFFOLD_GATE_LOG")
 [ -z "$skipped_note" ] || echo "note: $skipped_note" >&2
 
 if [ "$FAILED" -ne 0 ]; then
