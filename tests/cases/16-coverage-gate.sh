@@ -57,6 +57,8 @@ _run_step_with_fake() {
   case "$files" in
     py) mkdir -p "$d/tests"; echo 'def test_x(): pass' >"$d/tests/test_x.py"; git -C "$d" add tests ;;
     js) echo 'test("x", () => {})' >"$d/x.test.ts"; git -C "$d" add x.test.ts ;;
+    src) mkdir -p "$d/src/pkg"; echo 'def test_x(): pass' >"$d/src/pkg/test_a.py"; git -C "$d" add src ;;
+    jsonly) mkdir -p "$d/tests"; echo 'test("x", () => {})' >"$d/tests/app.test.ts"; git -C "$d" add tests ;;
   esac
   printf '#!/bin/sh\nexit %s\n' "$code" >"$d/$tool"
   chmod +x "$d/$tool"
@@ -108,6 +110,22 @@ else
     echo "  ✓ pytest exit 5 with a test file present fails (collected 0 of N files)"; PASS=$((PASS + 1))
   else
     echo "  ✗ exit 5 with a test file present passed: a vanished suite reads green"; FAIL=$((FAIL + 1))
+  fi
+
+  # (T) The count is name-based and tree-wide (#210): colocated tests under src/
+  #     count, so a vanished suite there still fails; and a non-Python file under
+  #     tests/ is not a Python test file, so exit 5 stays `empty`.
+  R=$(_run_step_with_fake "$PYBODY" pytest 5 src)
+  if [ "$R" -ne 0 ]; then
+    echo "  ✓ pytest exit 5 with a colocated src/pkg/test_a.py fails (not root-anchored)"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ pytest exit 5 with a colocated test file passed: the count is root-anchored"; FAIL=$((FAIL + 1))
+  fi
+  R=$(_run_step_with_fake "$PYBODY" pytest 5 jsonly)
+  if [ "$R" -eq 0 ]; then
+    echo "  ✓ pytest exit 5 with only tests/app.test.ts is empty and passes (Python files only)"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ pytest exit 5 failed on a tree whose only test file is tests/app.test.ts (rc=$R)"; FAIL=$((FAIL + 1))
   fi
 
   # (T) A clean run stays clean, so diff-cover gets its say.

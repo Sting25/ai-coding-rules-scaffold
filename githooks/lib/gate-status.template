@@ -8,8 +8,8 @@
 #   reason   free text (newlines and CRs become spaces); may be empty
 #   rc       the gate's own exit code when the verdict passes (default 0)
 #
-# Gates end with `exec gate-status ...`, so a missing helper exits 127, which
-# blocks: a gate that cannot report cannot pass. Bad usage exits 2.
+# Gates end with `exec gate-status ...`, so a missing helper exits non-zero (127 on
+# bash 5, 1 on bash 3.2), which blocks: a gate that cannot report cannot pass. Bad usage exits 2.
 #
 # Output: LINE="gate=<gate> status=<status> checked=<n> reason=<text>". When
 # SCAFFOLD_GATE_LOG names a file the line is appended there and nothing is

@@ -105,7 +105,7 @@ jobs:
           pip install pytest==9.1.1
           rc=0
           pytest || rc=$?
-          n=$(git ls-files -z -- 'test_*.py' '*_test.py' 'tests/**' 'test/**' | tr -cd '\0' | wc -c | tr -d ' ')
+          n=$(git ls-files -z | tr '\0' '\n' | grep -cE '(^|/)(test_[^/]*\.py|[^/]*_test\.py|tests?/.*\.py)$' || true)
           if [ "$rc" -eq 5 ] && [ "$n" -eq 0 ]; then
             exec .githooks/lib/gate-status pytest empty 0 "no test files in the tree"
           elif [ "$rc" -eq 5 ]; then
@@ -163,7 +163,7 @@ jobs:
         run: |
           chmod +x .githooks/lib/gate-status 2>/dev/null || true
           [ -x .githooks/lib/gate-status ] || { echo "::error::.githooks/lib/gate-status is missing; re-run install.sh"; exit 1; }
-          n=$(git ls-files -z -- '*.test.*' '*.spec.*' '__tests__/**' | tr -cd '\0' | wc -c | tr -d ' ')
+          n=$(git ls-files -z | tr '\0' '\n' | grep -cE '\.(test|spec)\.(js|jsx|ts|tsx|mjs|cjs)$|(^|/)__tests__/.*\.(js|jsx|ts|tsx|mjs|cjs)$' || true)
           if [ "$n" -eq 0 ]; then
             npx --no-install vitest run --passWithNoTests
             exec .githooks/lib/gate-status vitest empty 0 "no test files in the tree"

@@ -9,9 +9,9 @@ passes by construction. This is measured, not folklore: LLM test-generation
 tools DISCARD any generated test that fails against the current code, so a test
 that correctly detects a bug is thrown away for being "wrong". Share of
 generated tests that VALIDATE the bug rather than catch it: CoverAgent 59.6%,
-CoverUp 68.1% (arXiv 2412.14137); both discard the bug-revealing ones. LLM test
-oracles also follow the implementation, not the intent: assertion correctness
-dropped 8-9 points on buggy code (arXiv 2410.21136).
+CoverUp 68.1% (arXiv 2412.14137); CoverAgent discarded 470 bug-revealing tests,
+CoverUp 400. LLM test oracles also follow the implementation, not the intent:
+assertion correctness dropped 8-9 points on buggy code (arXiv 2410.21136).
 
 A test never seen to fail has never been shown to test anything.
 
@@ -303,9 +303,6 @@ def main() -> int:
                     help="refuse to re-run more than this many new tests (guards CI time)")
     args = ap.parse_args()
 
-    if not pathlib.Path("tests").exists() and not pathlib.Path("test").exists():
-        return gate("empty", 0, "no tests/ directory")
-
     base = run(["git", "rev-parse", "--verify", f"{args.base}^{{commit}}"])
     if base.returncode != 0:
         emit("error", f"cannot resolve base ref {args.base!r}. In CI make sure the "
@@ -319,14 +316,9 @@ def main() -> int:
         return 2
     head_sha = head.stdout.strip()
     # head_sha, never the literal "HEAD": inside a linked worktree "HEAD" is the
-    # base commit, so `git checkout HEAD -- tests/` restores the BASE tests and
-    # the check reports a false green (hence the explicit exit-4 guard).
-
-    here = collect(".")
-    if here is None:
-        emit("error", "pytest collection failed on HEAD, so new tests cannot be "
-                      "identified. Fix collection first.", args.ci)
-        return 2
+    # base commit, so `git checkout HEAD -- tests/` there restores the BASE tests,
+    # pytest exits 4, "failed on base" reads as red and the check reports a false
+    # green on the case it exists to catch (hence the explicit exit-4 guard).
 
     d = run(["git", "diff", "--name-only", "--diff-filter=d", f"{base_sha}...HEAD"])
     if d.returncode != 0:
@@ -338,6 +330,12 @@ def main() -> int:
         return gate("empty", 0, "no test files changed in this diff")
     if not any(p.endswith(".py") for p in test_paths):
         return gate("empty", 0, "no changed .py test files")
+
+    here = collect(".")
+    if here is None:
+        emit("error", "pytest collection failed on HEAD, so new tests cannot be "
+                      "identified. Fix collection first.", args.ci)
+        return 2
     if not here:
         return gate("ran", 0, f"{len(test_paths)} test file(s) changed, pytest collected 0")
 
@@ -368,7 +366,7 @@ def main() -> int:
             emit("warning",
                  f"{len(new_ids)} new tests exceeds --max-new={args.max_new}; "
                  "re-running that many against base would dominate CI time. "
-                 "Split the PR.", args.ci)
+                 "Split the PR: that many tests at once is not reviewable.", args.ci)
             return 1
 
         # STEP 2 — overlay HEAD's test files onto the base source tree.

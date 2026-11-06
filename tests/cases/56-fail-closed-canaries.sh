@@ -279,6 +279,33 @@ c56_run "$C56_NG" - .githooks/pre-commit
 c56_expect "pre-commit without .githooks/lib/gate-status exits 1, naming it" 1 "gate-status is missing"
 rm -rf "$C56_NG"
 
+# (v) colocated tests (src/pkg/test_a.py, no tests/ dir) emptied at HEAD: the old
+# "no tests/ directory" early return reported empty here and passed.
+if ! python3 -c 'import pytest' >/dev/null 2>&1; then
+  echo "  - SKIP: pytest not importable, so the colocated-tests red-green assertion did NOT run"
+  SKIP=$((SKIP + 1))
+else
+  C56_SRC=$(mktemp -d)
+  (
+    cd "$C56_SRC" || exit 1
+    git init --quiet
+    git config user.email "test@test.local"
+    git config user.name "Scaffold Test"
+    printf '[project]\nname = "c56src"\nversion = "0"\n' >pyproject.toml
+    mkdir -p src/pkg
+    printf 'def test_a():\n    assert 1 == 1\n' >src/pkg/test_a.py
+    "$SCAFFOLD_DIR/install.sh" --python --no-verify --test-guard
+    git add -A
+    git commit --quiet -m base --no-verify  # scaffold-allow: test fixture
+    printf 'X = 1\n' >src/pkg/test_a.py
+    git commit --quiet -am "empty the colocated test" --no-verify  # scaffold-allow: test fixture
+  ) >"$HOOK_OUT" 2>&1 || c56_bad "could not build the colocated-tests fixture"
+  c56_run "$C56_SRC" - python3 .githooks/lib/check-red-green --base HEAD~1
+  c56_expect "red-green: colocated tests emptied (no tests/ dir) fail as ran 0" 1 \
+    "gate=red-green status=ran checked=0" "evaluated 0 items"
+  rm -rf "$C56_SRC"
+fi
+
 # --- (h) the workflow templates carry the strict variable ----------------------
 WF="$SCAFFOLD_DIR/.github/workflows"
 C56_STRICT='SCAFFOLD_GATE_STRICT: "1"'

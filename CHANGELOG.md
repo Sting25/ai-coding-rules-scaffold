@@ -87,6 +87,15 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Changed
 
+- **CI is stricter about gates that skip or check nothing (#210).** Three
+  behaviours consumers will see: pytest exit 5 in `tests.yml` and `coverage.yml`
+  now fails when the tree has Python test files (it is still a pass when it has
+  none); `check-patterns` with no selected pattern file (no
+  `.forbidden-patterns/*.txt`, or `CHECK_PATTERNS_INCLUDE` matching none) is a
+  `skipped` gate and so fails in CI; and `SCAFFOLD_GATE_STRICT=1` in the four
+  workflows makes any gate skipped for a missing tool fail the job. Locally
+  nothing blocks: the hook still passes a skipped gate and prints one summary
+  line. Reason `disabled:` from `.scaffold.toml` still passes.
 - **test-guard: a mutation size decline is a neutral check run, not a failure
   (#206).** When the diff has more mutants than `--max-mutants`, the mutation
   step used to fail the job and look like a real finding. It now passes, writes

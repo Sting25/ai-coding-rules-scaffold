@@ -155,7 +155,7 @@ jobs:
           pip install pytest==9.1.1 pytest-cov==7.1.0
           rc=0
           pytest --cov --cov-report=xml || rc=$?
-          n=$(git ls-files -z -- 'test_*.py' '*_test.py' 'tests/**' 'test/**' | tr -cd '\0' | wc -c | tr -d ' ')
+          n=$(git ls-files -z | tr '\0' '\n' | grep -cE '(^|/)(test_[^/]*\.py|[^/]*_test\.py|tests?/.*\.py)$' || true)
           if [ "$rc" -eq 5 ] && [ "$n" -eq 0 ]; then
             exec .githooks/lib/gate-status pytest empty 0 "no test files in the tree"
           elif [ "$rc" -eq 5 ]; then
@@ -193,7 +193,7 @@ jobs:
           else
             npm install --ignore-scripts
           fi
-          n=$(git ls-files -z -- '*.test.*' '*.spec.*' '__tests__/**' | tr -cd '\0' | wc -c | tr -d ' ')
+          n=$(git ls-files -z | tr '\0' '\n' | grep -cE '\.(test|spec)\.(js|jsx|ts|tsx|mjs|cjs)$|(^|/)__tests__/.*\.(js|jsx|ts|tsx|mjs|cjs)$' || true)
           if [ "$n" -eq 0 ]; then
             npx --no-install vitest run --coverage --passWithNoTests
             exec .githooks/lib/gate-status vitest empty 0 "no test files in the tree"
