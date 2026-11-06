@@ -35,7 +35,7 @@ if [ "${#subject}" -gt 100 ]; then
     echo "    ${subject}"
     echo "  100 matches commitlint's config-conventional header-max-length."
   } >&2
-  [ ! -x "$HOOK_DIR/lib/refusal-log" ] || "$HOOK_DIR/lib/refusal-log" commit-msg subject-too-long "" 1 || true
+  [ ! -x "$HOOK_DIR/lib/refusal-log" ] || "$HOOK_DIR/lib/refusal-log" commit-msg subject-too-long "" 1 --say a || true
   exit 1
 fi
 
@@ -53,5 +53,5 @@ fi
   echo "  Types: feat fix docs style refactor perf test build ci chore revert"
   echo "  See https://www.conventionalcommits.org/"
 } >&2
-[ ! -x "$HOOK_DIR/lib/refusal-log" ] || "$HOOK_DIR/lib/refusal-log" commit-msg not-conventional "" 1 || true
+[ ! -x "$HOOK_DIR/lib/refusal-log" ] || "$HOOK_DIR/lib/refusal-log" commit-msg not-conventional "" 1 --say a || true
 exit 1

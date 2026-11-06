@@ -54,6 +54,7 @@ RLT=$(mktemp -d)
 mkdir -p "$RLT/lib"
 cp .githooks/lib/refusal-log "$RLT/lib/refusal-log"
 chmod +x "$RLT/lib/refusal-log"
+rl_trailer_a="refusal class (a): this check failed on your own change. Fix the file, never the gate."
 akia="AKIA""IOSFODNN7EXAMPLE"   # split so this file carries no real-looking key
 bigpy() { seq 1 501 | sed 's/^/x = /' >"$1"; }
 
@@ -298,13 +299,16 @@ rl_before=$(rl_count "$RLLOG")
 rl_run .githooks/lib/check-size big.py
 rl_rc_with=$RL_RC
 cp "$HOOK_OUT" "$RLT/with.out"
+# The class trailer (#259) comes from the helper, so only the helper-run output ends with it.
+sed '$d' "$RLT/with.out" >"$RLT/with.body"
+rl_last_with=$(tail -n 1 "$RLT/with.out")
 mv .githooks/lib/refusal-log "$RLT/refusal-log.away"
 rl_run .githooks/lib/check-size big.py
 rl_rc_without=$RL_RC
 mv "$RLT/refusal-log.away" .githooks/lib/refusal-log
-if [ "$rl_rc_with" -eq 1 ] && [ "$rl_rc_without" -eq 1 ] && cmp -s "$RLT/with.out" "$HOOK_OUT" \
+if [ "$rl_rc_with" -eq 1 ] && [ "$rl_rc_without" -eq 1 ] && [ "$rl_last_with" = "$rl_trailer_a" ] && cmp -s "$RLT/with.body" "$HOOK_OUT" \
    && [ "$(rl_count "$RLLOG")" -eq $((rl_before + 1)) ]; then
-  rl_ok "without the helper check-size still refuses (exit 1), output identical, nothing logged"
+  rl_ok "without the helper check-size still refuses (exit 1), output equals the helper run minus its trailer, nothing logged"
 else
   rl_bad "fail-open: rc with=$rl_rc_with without=$rl_rc_without, lines +$(($(rl_count "$RLLOG") - rl_before)) (expected +1 from the with-helper run only)"
 fi
@@ -318,8 +322,8 @@ rl_before=$(rl_count "$RLLOG")
 chmod -x .githooks/lib/refusal-log
 rl_run .githooks/lib/check-size big.py
 chmod +x .githooks/lib/refusal-log
-if [ "$RL_RC" -eq 1 ] && cmp -s "$RLT/with.out" "$HOOK_OUT" && [ "$(rl_count "$RLLOG")" -eq "$rl_before" ]; then
-  rl_ok "with a non-executable helper check-size still refuses (exit 1), output identical, nothing logged"
+if [ "$RL_RC" -eq 1 ] && cmp -s "$RLT/with.body" "$HOOK_OUT" && [ "$(rl_count "$RLLOG")" -eq "$rl_before" ]; then
+  rl_ok "with a non-executable helper check-size still refuses (exit 1), output equals the helper run minus its trailer, nothing logged"
 else
   rl_bad "non-executable helper: rc $RL_RC, +$(($(rl_count "$RLLOG") - rl_before)) line(s)"
 fi

@@ -523,10 +523,25 @@ ids, rule descriptions and paths. Past 1 MiB it rotates to
 run. Logging is record-only: nothing reads the log to decide anything, and a
 missing helper (an older install) is silent (the shell gates also skip a
 helper that is not executable; the two Python gates run it through
-`bash`). One thing is not logged: a
-gate's own configuration error (a non-numeric `MAX_LINES`, `MAX_BYTES` or
-`MAX_LINE_LENGTH` exits 2 before any finding). The timeout exits of
-`check-red-green` and `check-mutation-diff` are logged as rule `timeout`.
+`bash`). A gate's own configuration error (a non-numeric or zero `MAX_LINES`,
+`MAX_BYTES` or `MAX_LINE_LENGTH`) is logged too, with exit 2 and rule
+`invalid-max-lines`, `invalid-max-bytes` or `invalid-max-line-length`. The
+timeout exits of `check-red-green` and `check-mutation-diff` are logged as rule
+`timeout`.
+
+Refusal class: every refusal message ends with one fixed trailer line printed by
+`refusal-log --say a|b` (it prints first, so it works without git or a writable
+log). Class (a), a check failing on the agent's own change, says to fix the file,
+never the gate: findings, the agent pre-check, `commit-msg`, the pre-commit
+hook's config-deletion guards and linter failures. Class (b), a gate that is
+itself wrong or broken, says to stop and report the message verbatim: a gate's
+configuration error, an unreadable, missing, empty or invalid pattern config, an
+over-long line the gate cannot scan, a stash failure, a Python gate's setup error
+or timeout. Class (c), a harness or permission denial, is never printed (a denial
+does not run the gate), so a refusal without the line is a harness or permission
+denial, or comes from an older or broken install (the helper missing or a gate
+crashing). The trailer text lives only in `refusal-log`; a missing helper prints
+none.
 
 ### Paired artifacts (half-installed guardrails)
 

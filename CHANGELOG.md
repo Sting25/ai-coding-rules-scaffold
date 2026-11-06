@@ -24,12 +24,27 @@ versioning follows [SemVer](https://semver.org/).
   (also `npx ai-coding-rules-scaffold blocks`) prints the count per gate, per
   gate and rule, and the longest run of the same refusal repeated back to
   back. The doctor notes where the log is, and the installer and uninstaller
-  handle the helper. Gate behaviour and refusal messages are unchanged: the
-  log is written after the gate has decided, nothing reads it, and a missing
-  helper is silent. Not logged: a gate's own configuration error (a
-  non-numeric `MAX_LINES`, `MAX_BYTES` or `MAX_LINE_LENGTH` exits 2 before any
-  finding). The two Python gates also log their timeout exit, as rule
-  `timeout`.
+  handle the helper. Gate behaviour is unchanged: the log is written after the
+  gate has decided, nothing reads it, and a missing helper is silent. A gate's
+  own configuration error (a non-numeric or zero `MAX_LINES`, `MAX_BYTES` or
+  `MAX_LINE_LENGTH`) is logged too, with exit 2 and rule `invalid-max-lines`,
+  `invalid-max-bytes` or `invalid-max-line-length`. The two Python gates also
+  log their timeout exit, as rule `timeout`.
+- **Every refusal names its class (#259).** Each shipped refusal message now ends
+  with one fixed trailer line, printed by `.githooks/lib/refusal-log --say`, so
+  an agent can tell what kind of refusal it hit. Class (a) prints
+  `refusal class (a): this check failed on your own change. Fix the file, never the gate.`
+  and class (b) prints
+  `refusal class (b): this gate is itself wrong or broken. Stop and report this message to the user verbatim.`
+  Class (a) covers findings, the agent pre-check's blocks, `commit-msg`, the
+  pre-commit hook's config-deletion guards and linter failures. Class (b)
+  covers a gate's own configuration error, an unreadable, missing, empty or
+  invalid pattern config, an over-long line the gate cannot scan, a stash
+  failure, and a Python gate's setup error or timeout. Class (c), a harness or
+  permission denial, is never printed by a gate (a denial does not run the
+  gate), so a refusal without the line is a harness or permission denial, or
+  comes from an older or broken install (the helper missing or a gate
+  crashing); report it verbatim, never reword or split it.
 - **Opt-in advisory whole-tree lint workflow (#217).** `install.sh --tree-lint`
   installs `.github/workflows/lint-tree.yml`, the whole-tree twin of the
   diff-scoped `lint.yml`. It runs ruff check, ruff format --check, eslint,

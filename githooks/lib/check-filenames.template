@@ -96,5 +96,5 @@ while IFS= read -r -d '' file; do
   esac
 done
 
-[ "$FAILED" -eq 0 ] || [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-filenames "${RL_RULE:-unknown}" "${RL_FILE:-}" 1 || true
+[ "$FAILED" -eq 0 ] || [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-filenames "${RL_RULE:-unknown}" "${RL_FILE:-}" 1 --say a || true
 exit $FAILED

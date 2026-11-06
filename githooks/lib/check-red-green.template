@@ -490,9 +490,9 @@ def main() -> int:
 
 if __name__ == "__main__":
     try:
-        _RL = pathlib.Path(__file__).with_name("refusal-log"); _B = shutil.which("bash"); rc = main(); rc and _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-red-green", {1: "green-on-base-or-cap", 2: "setup-error"}.get(rc, "error"), "", str(rc)], check=False, stderr=subprocess.DEVNULL); raise SystemExit(rc)
+        _RL = pathlib.Path(__file__).with_name("refusal-log"); _B = shutil.which("bash"); rc = main(); sys.stdout.flush(); rc and _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-red-green", {1: "green-on-base-or-cap", 2: "setup-error"}.get(rc, "error"), "", str(rc), "--say", {1: "a"}.get(rc, "b")], check=False); raise SystemExit(rc)
     except subprocess.TimeoutExpired:
         print("::error::red-green check timed out. A suite too slow to run twice "
               "is a suite too slow to trust as a gate; split it or scope this "
               "check to a subset.")
-        _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-red-green", "timeout", "", "2"], check=False, stderr=subprocess.DEVNULL); raise SystemExit(2)
+        sys.stdout.flush(); _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-red-green", "timeout", "", "2", "--say", "b"], check=False); raise SystemExit(2)
