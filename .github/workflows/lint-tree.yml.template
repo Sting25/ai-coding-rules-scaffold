@@ -1,0 +1,324 @@
+name: lint-tree
+
+# OPT-IN advisory whole-tree lint. Install via `install.sh --tree-lint`, which
+# copies this in as `.github/workflows/lint-tree.yml`. Off by default.
+#
+# Why this exists:
+#   lint.yml is diff-scoped on purpose: ruff, eslint and prettier check only the
+#   files a PR or push changed, so installing the scaffold never fails an
+#   existing tree retroactively. The side effect is that nothing ever checks the
+#   whole tree again. A linter upgrade that adds rules, or a file type that was
+#   never in a gate's filter, accumulates findings on the default branch that no
+#   CI run can see. Meanwhile a whole-tree command run locally (`ruff check .`,
+#   `npx eslint .`) shows that backlog, and an agent mistakes it for its own
+#   branch's fault.
+#
+# What it does:
+#   Runs the cheap gates over every TRACKED file: ruff check, ruff format
+#   --check, eslint, prettier --check and tsc --noEmit. It runs weekly and on each
+#   push to the default branch, and never on pull_request, so it can never block
+#   a PR. On failure it opens, or updates, ONE issue titled "Lint baseline
+#   (whole-tree findings)" (label `lint-baseline`) listing the findings, so the
+#   backlog lives in one place. When a later run is clean it comments and closes
+#   that issue.
+#
+# Advisory by design: a red run here is a to-do list, not a merge gate. Clearing
+# it is a separate change, never a side effect of an unrelated branch.
+#
+# Scope notes:
+#   - The file list comes from `git ls-files`, never a directory walk, so
+#     gitignored content (node_modules, .venv, build output) is never linted.
+#   - Project config is honoured: ruff's exclude (--force-exclude) and
+#     .prettierignore still apply to the tracked files passed in.
+#   - Only ruff, eslint, prettier and tsc are covered. The php job and the
+#     commented-out linters in lint.yml are not mirrored here.
+#   - Each gate runs even if an earlier one found problems; the job fails at the
+#     end if any did.
+#
+# Permissions: the lint jobs only read the repo. Only the report job holds
+# `issues: write`, and it checks out nothing. The GitHub-provided token is
+# passed through `env:`, never interpolated into a script.
+#
+# Actions are pinned to a full commit SHA (supply-chain hardening); the trailing
+# comment records the human-readable tag. Bump via Dependabot. The ruff pin is
+# NOT Dependabot-tracked: keep it equal to lint.yml's.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+# One run at a time: a push and the weekly schedule must not race to create the
+# tracking issue twice.
+concurrency:
+  group: lint-tree
+  cancel-in-progress: false
+
+jobs:
+  python:
+    # Detection runs as a step (after checkout), NOT a job-level `if:`: see the
+    # same note in lint.yml. The job always starts; its tool steps no-op when the
+    # configs are absent.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      status: ${{ steps.lint.outputs.status }}
+      findings: ${{ steps.lint.outputs.findings }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false  # don't leave GITHUB_TOKEN in .git/config
+      - id: detect
+        run: |
+          if [ -f ruff.toml ] || [ -f pyproject.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.detect.outputs.present == 'true'
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - if: steps.detect.outputs.present == 'true'
+        # Keep in lockstep with lint.yml. Bump manually on upgrades.
+        run: pip install ruff==0.15.22
+      - name: ruff check and format check (whole tree)
+        id: lint
+        if: steps.detect.outputs.present == 'true'
+        run: |
+          fail=0
+          out="$RUNNER_TEMP/findings.txt"
+          : >"$out"
+          # NUL list of tracked Python files. Portable read (bash 3.2-safe).
+          : >"$RUNNER_TEMP/py.nul"
+          while IFS= read -r -d '' f; do
+            case "$f" in *.py) printf '%s\0' "$f" >>"$RUNNER_TEMP/py.nul" ;; esac
+          done < <(git -c core.quotepath=off ls-files -z)
+          if [ ! -s "$RUNNER_TEMP/py.nul" ]; then
+            echo "no tracked Python files, skipping ruff"
+            echo "status=pass" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # run_gate NAME CMD...: run one gate, keep going whatever it returns.
+          run_gate() {
+            local name=$1
+            shift
+            if "$@" >"$RUNNER_TEMP/gate.out" 2>&1; then
+              echo "ok: $name"
+            else
+              fail=1
+              echo "FINDINGS: $name"
+              cat "$RUNNER_TEMP/gate.out"
+              { printf '## %s\n' "$name"; cat "$RUNNER_TEMP/gate.out"; echo; } >>"$out"
+            fi
+          }
+          run_gate "ruff check" xargs -0 -r ruff check --force-exclude --output-format=concise -- <"$RUNNER_TEMP/py.nul"
+          run_gate "ruff format --check" xargs -0 -r ruff format --check --force-exclude -- <"$RUNNER_TEMP/py.nul"
+          if [ "$fail" -eq 1 ]; then
+            echo "status=fail" >> "$GITHUB_OUTPUT"
+            d="END_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+            { echo "findings<<$d"; head -n 300 "$out" | head -c 25000; echo; echo "$d"; } >> "$GITHUB_OUTPUT"
+            { echo "### ruff (whole tree)"; echo '```'; head -n 300 "$out" | head -c 25000; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "status=pass" >> "$GITHUB_OUTPUT"
+
+  frontend:
+    # Same detect-in-a-step pattern as `python`.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      status: ${{ steps.lint.outputs.status }}
+      findings: ${{ steps.lint.outputs.findings }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false  # don't leave GITHUB_TOKEN in .git/config
+      - id: detect
+        run: |
+          if [ -f eslint.config.js ] || [ -f package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.detect.outputs.present == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        if: steps.detect.outputs.present == 'true'
+        # Frozen-lockfile install when a lockfile exists; --ignore-scripts so no
+        # dependency install hook runs on a runner that holds a token. See the
+        # same step in lint.yml for the escape hatch.
+        run: |
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            npm ci --ignore-scripts
+          else
+            echo "no package-lock.json, using npm install (add a lockfile for reproducible CI)"
+            npm install --ignore-scripts
+          fi
+      - name: eslint, prettier and tsc (whole tree)
+        id: lint
+        if: steps.detect.outputs.present == 'true'
+        run: |
+          fail=0
+          out="$RUNNER_TEMP/findings.txt"
+          : >"$out"
+          # NUL lists of tracked files: JS/TS for eslint, everything for prettier
+          # (--ignore-unknown skips the types it cannot format).
+          : >"$RUNNER_TEMP/js.nul"
+          : >"$RUNNER_TEMP/all.nul"
+          while IFS= read -r -d '' f; do
+            printf '%s\0' "$f" >>"$RUNNER_TEMP/all.nul"
+            case "$f" in *.ts|*.tsx|*.js|*.jsx|*.cjs|*.mjs|*.vue) printf '%s\0' "$f" >>"$RUNNER_TEMP/js.nul" ;; esac
+          done < <(git -c core.quotepath=off ls-files -z)
+          # run_gate NAME CMD...: run one gate, keep going whatever it returns.
+          run_gate() {
+            local name=$1
+            shift
+            if "$@" >"$RUNNER_TEMP/gate.out" 2>&1; then
+              echo "ok: $name"
+            else
+              fail=1
+              echo "FINDINGS: $name"
+              cat "$RUNNER_TEMP/gate.out"
+              { printf '## %s\n' "$name"; cat "$RUNNER_TEMP/gate.out"; echo; } >>"$out"
+            fi
+          }
+          # Same predicate as lint.yml: one definition of "a prettier project".
+          prettier_config_present() {
+            local c
+            for c in .prettierrc .prettierrc.json .prettierrc.json5 .prettierrc.yaml \
+                     .prettierrc.yml .prettierrc.toml .prettierrc.js .prettierrc.mjs \
+                     .prettierrc.cjs .prettierrc.ts .prettierrc.mts .prettierrc.cts \
+                     prettier.config.js prettier.config.mjs prettier.config.cjs \
+                     prettier.config.ts prettier.config.mts prettier.config.cts; do
+              if [ -f "$c" ]; then
+                return 0
+              fi
+            done
+            if [ -f package.json ] \
+               && node -e 'process.exit(Object.prototype.hasOwnProperty.call(require("./package.json"), "prettier") ? 0 : 1)' >/dev/null 2>&1; then
+              return 0
+            fi
+            return 1
+          }
+          # eslint: "installed" means resolvable from the project's node_modules.
+          if node -e "require.resolve('eslint/package.json')" >/dev/null 2>&1; then
+            if [ -s "$RUNNER_TEMP/js.nul" ]; then
+              run_gate "eslint" xargs -0 -r npx --no-install eslint -- <"$RUNNER_TEMP/js.nul"
+            else
+              echo "no tracked JS/TS files, skipping eslint"
+            fi
+          elif [ -f eslint.config.js ]; then
+            fail=1
+            echo "eslint is not installed but eslint.config.js exists" | tee -a "$out"
+          else
+            echo "eslint not installed in this project: skipping eslint"
+          fi
+          # prettier: only when configured AND installed.
+          if prettier_config_present && node -e "require.resolve('prettier/package.json')" >/dev/null 2>&1; then
+            run_gate "prettier --check" xargs -0 -r npx --no-install prettier --check --ignore-unknown -- <"$RUNNER_TEMP/all.nul"
+          else
+            echo "no prettier config or prettier not installed: skipping format check"
+          fi
+          # tsc: whole-program by nature; only with a tsconfig and typescript.
+          if [ -f tsconfig.json ] && node -e "require.resolve('typescript/package.json')" >/dev/null 2>&1; then
+            run_gate "tsc --noEmit" npx --no-install tsc --noEmit
+          else
+            echo "tsconfig.json or typescript missing: skipping tsc"
+          fi
+          if [ "$fail" -eq 1 ]; then
+            echo "status=fail" >> "$GITHUB_OUTPUT"
+            d="END_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+            { echo "findings<<$d"; head -n 300 "$out" | head -c 25000; echo; echo "$d"; } >> "$GITHUB_OUTPUT"
+            { echo "### eslint, prettier, tsc (whole tree)"; echo '```'; head -n 300 "$out" | head -c 25000; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "status=pass" >> "$GITHUB_OUTPUT"
+
+  report:
+    # Files, updates or closes the one tracking issue. `if: always()` so a
+    # failed lint job still reaches it. The only job with `issues: write`; it
+    # checks nothing out and runs no repo code. Every value arrives through
+    # `env:`, never spliced into the script.
+    needs: [python, frontend]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      PY_RESULT: ${{ needs.python.result }}
+      PY_STATUS: ${{ needs.python.outputs.status }}
+      PY_FINDINGS: ${{ needs.python.outputs.findings }}
+      FE_RESULT: ${{ needs.frontend.result }}
+      FE_STATUS: ${{ needs.frontend.outputs.status }}
+      FE_FINDINGS: ${{ needs.frontend.outputs.findings }}
+    steps:
+      - name: Open, update or close the tracking issue
+        run: |
+          title="Lint baseline (whole-tree findings)"
+          if [ "$PY_RESULT" = cancelled ] || [ "$FE_RESULT" = cancelled ]; then
+            echo "run cancelled: leaving the tracking issue as it is"
+            exit 0
+          fi
+          failed=0
+          for v in "$PY_STATUS" "$FE_STATUS"; do
+            if [ "$v" = fail ]; then failed=1; fi
+          done
+          # A job that failed before its gates ran (npm ci, setup) has no status.
+          for v in "$PY_RESULT" "$FE_RESULT"; do
+            if [ "$v" = failure ]; then failed=1; fi
+          done
+          num=$(gh issue list --label lint-baseline --state open --limit 1 --json number --jq '.[0].number // empty')
+          if [ "$failed" -eq 0 ]; then
+            echo "whole tree is clean"
+            if [ -n "$num" ]; then
+              gh issue comment "$num" --body "Whole-tree lint is clean as of $RUN_URL. Closing."
+              gh issue close "$num"
+            fi
+            exit 0
+          fi
+          body="$RUNNER_TEMP/body.md"
+          {
+            echo "Advisory whole-tree lint found problems on the default branch. This issue is the one place the backlog is tracked; the next run edits it, and a clean run closes it."
+            echo ""
+            echo "- Run: $RUN_URL"
+            echo "- Date: $(date -u +%Y-%m-%d)"
+            echo "- Commit: $GITHUB_SHA"
+            echo "- Job results: python=$PY_RESULT, frontend=$FE_RESULT"
+            echo ""
+            echo "A finding in a file your branch did not touch is baseline, not yours."
+            if [ -n "$PY_FINDINGS" ]; then
+              echo ""
+              echo "### Python (ruff)"
+              echo ""
+              echo "~~~~~~"
+              printf '%s\n' "$PY_FINDINGS"
+              echo "~~~~~~"
+            fi
+            if [ -n "$FE_FINDINGS" ]; then
+              echo ""
+              echo "### Frontend (eslint, prettier, tsc)"
+              echo ""
+              echo "~~~~~~"
+              printf '%s\n' "$FE_FINDINGS"
+              echo "~~~~~~"
+            fi
+            if [ -z "$PY_FINDINGS" ] && [ -z "$FE_FINDINGS" ]; then
+              echo ""
+              echo "No findings were captured: a lint job failed before its gates ran. See the run log."
+            fi
+          } >"$body"
+          gh label create lint-baseline --color FBCA04 --description "Whole-tree lint findings (lint-tree.yml)" --force
+          if [ -z "$num" ]; then
+            gh issue create --title "$title" --label lint-baseline --body-file "$body"
+          else
+            gh issue edit "$num" --body-file "$body"
+          fi

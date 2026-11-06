@@ -75,6 +75,8 @@ run_interactive() {
   DEPENDENCY_REVIEW=$_ASK_ANS
   _ask "Install the zizmor GitHub Actions audit gate (--zizmor-ci)?" N
   ZIZMOR_CI=$_ASK_ANS
+  _ask "Install the advisory whole-tree lint workflow (--tree-lint; weekly, files one tracking issue)?" N
+  TREE_LINT=$_ASK_ANS
   _ask "Install the Socket Firewall supply-chain gate (--socket-ci)?" N
   SOCKET_CI=$_ASK_ANS
   _ask "Install the red-green test-integrity gate (--test-guard; a new test must fail on the PR base before it may pass)?" N
