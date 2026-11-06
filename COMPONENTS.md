@@ -67,6 +67,9 @@ commit. `scaffold-config` is an optional sibling that reads `.scaffold.toml`
 overrides (entry 13); without it every rule runs at its default. `py-tool` is
 the resolver the hook uses to find `ruff` (a project venv, a linked worktree's
 main `.venv`, PATH); without it the local ruff pass is skipped with a note.
+`refusal-log` records each refusal in `scaffold-blocks.log` under the git
+common directory (summarise it with `scaffold-blocks.sh`); without it
+refusals are simply not recorded.
 
 **Prerequisites:** bash, git. No other tool.
 
@@ -75,7 +78,8 @@ mkdir -p .githooks/lib
 cp "$SCAFFOLD/githooks/pre-commit.template" .githooks/pre-commit
 cp "$SCAFFOLD/githooks/lib/scaffold-config.template" .githooks/lib/scaffold-config
 cp "$SCAFFOLD/githooks/lib/py-tool.template" .githooks/lib/py-tool
-chmod +x .githooks/pre-commit .githooks/lib/scaffold-config .githooks/lib/py-tool
+cp "$SCAFFOLD/githooks/lib/refusal-log.template" .githooks/lib/refusal-log
+chmod +x .githooks/pre-commit .githooks/lib/scaffold-config .githooks/lib/py-tool .githooks/lib/refusal-log
 git config core.hooksPath .githooks
 ```
 

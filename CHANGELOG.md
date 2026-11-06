@@ -23,6 +23,28 @@ versioning follows [SemVer](https://semver.org/).
   size decline from either posts its own neutral check run
   (`test-guard / mutation-ts (declined: size)` for TypeScript) and the token
   still exists in that step only.
+- **Durable refusal log (#218).** Every finding-driven refusal the scaffold ships
+  (`check-size`, `check-large-files`, `check-patterns`, `check-filenames`,
+  `check-secrets`, `check-hygiene`, `check-gitleaks`, `check-red-green`,
+  `check-mutation-diff`, `commit-msg`, the pre-commit hook's own refusals and
+  the agent pre-check) now appends one tab-separated line to
+  `<git common dir>/scaffold-blocks.log` through the new
+  `.githooks/lib/refusal-log` helper: UTC time, gate, rule, file when there
+  is one, exit code, `CLAUDE_SESSION_ID` when set, and a 12-character hash of
+  the normalised command for an agent Bash call. The log is untracked,
+  shared by every worktree of the repository, and survives session end and
+  worktree removal. It never records the command text or any matched
+  content, so a secret cannot reach it. A log over 1 MiB rotates to
+  `scaffold-blocks.log.1` (one older generation is kept). `scaffold-blocks.sh`
+  (also `npx ai-coding-rules-scaffold blocks`) prints the count per gate, per
+  gate and rule, and the longest run of the same refusal repeated back to
+  back. The doctor notes where the log is, and the installer and uninstaller
+  handle the helper. Gate behaviour and refusal messages are unchanged: the
+  log is written after the gate has decided, nothing reads it, and a missing
+  helper is silent. Not logged: a gate's own configuration error (a
+  non-numeric `MAX_LINES`, `MAX_BYTES` or `MAX_LINE_LENGTH` exits 2 before any
+  finding). The two Python gates also log their timeout exit, as rule
+  `timeout`.
 - **Opt-in advisory whole-tree lint workflow (#217).** `install.sh --tree-lint`
   installs `.github/workflows/lint-tree.yml`, the whole-tree twin of the
   diff-scoped `lint.yml`. It runs ruff check, ruff format --check, eslint,

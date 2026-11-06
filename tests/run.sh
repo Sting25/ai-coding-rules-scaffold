@@ -127,6 +127,7 @@ CASE_FLOORS=(
   "53-narrow-path-scripts.sh:13"
   "54-doctor-worktree-parity.sh:10"
   "55-tree-lint-template.sh:8"
+  "57-refusal-log.sh:34"
   "58-ts-test-guard.sh:43"
   "59-ts-test-guard-real.sh:14"
 )
