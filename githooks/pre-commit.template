@@ -102,6 +102,7 @@ EOF_DELCFG
     echo "error: this commit deletes forbidden-pattern config, disabling the scanner:" >&2
     printf '%s' "$GONE_CONFIG" | sed 's/^/       /' >&2
     echo "       Refusing — re-add it, or use 'git commit --no-verify' if intended." >&2
+    [ ! -x "$LIB/refusal-log" ] || "$LIB/refusal-log" pre-commit config-deleted "$(printf '%s' "$GONE_CONFIG" | head -n1)" 1 || true
     exit 1
   fi
   # Split the untracked configs by whether the CI scanner fails closed on their
@@ -122,6 +123,7 @@ EOF_UNTRACKED
     echo "error: this commit untracks forbidden-pattern config that nothing enforces server-side — check-patterns cannot tell a removed optional config from a language this project never installed, so these rules stop running in every fresh clone and in CI:" >&2
     printf '%s' "$STRICT_CONFIG" | sed 's/^/       /' >&2
     echo "       Refusing — re-add it, or use 'git commit --no-verify' if intended." >&2
+    [ ! -x "$LIB/refusal-log" ] || "$LIB/refusal-log" pre-commit config-untracked "$(printf '%s' "$STRICT_CONFIG" | head -n1)" 1 || true
     exit 1
   fi
   echo "note: forbidden-pattern config untracked but still present on disk — local scanning stays active:" >&2
@@ -156,6 +158,7 @@ if [ ! -e "$GIT_DIR/MERGE_HEAD" ] && [ ! -e "$GIT_DIR/REBASE_HEAD" ]; then
       echo "error: pre-commit hook could not stash unstaged changes." >&2
       echo "       Refusing to proceed — commit or stash your changes manually first." >&2
       rm -f "$STAGED_LIST"
+      [ ! -x "$LIB/refusal-log" ] || "$LIB/refusal-log" pre-commit stash-failed "" 1 || true
       exit 1
     fi
   fi
@@ -185,7 +188,7 @@ SCAFFOLD_GATE_LOG=$(mktemp); export SCAFFOLD_GATE_LOG
 GS="$LIB/gate-status"
 [ -x "$GS" ] || { echo "error: .githooks/lib/gate-status is missing; re-run install.sh (or copy githooks/lib/gate-status.template)" >&2; exit 1; }
 
-FAILED=0
+FAILED=0; unset RL_RULE RL_FILE
 # Run every scanner that is PRESENT in lib/, not a fixed list. Each scanner is
 # a separate component (COMPONENTS.md entries 1a to 1f): a project that copied
 # only check-secrets gets exactly that check, and a missing scanner is "not
@@ -223,7 +226,7 @@ if [ -d "$HOOK_DIR/local.d" ]; then
     if [ ! -f "$lc" ] || [ ! -x "$lc" ]; then
       continue
     fi
-    "$lc" <"$STAGED_LIST" || FAILED=1
+    "$lc" <"$STAGED_LIST" || { FAILED=1; : "${RL_RULE:=local-check-${lc##*/}}"; }
   done
 fi
 
@@ -308,7 +311,7 @@ done <"$STAGED_LIST"
 # hook fires in the same projects where CI does.
 if [ ${#STAGED_PY[@]} -gt 0 ] && { [ -f ruff.toml ] || [ -f pyproject.toml ]; }; then
   if py_tool ruff; then
-    "${PY_TOOL_CMD[@]}" check -- "${STAGED_PY[@]}" || FAILED=1
+    "${PY_TOOL_CMD[@]}" check -- "${STAGED_PY[@]}" || { FAILED=1; : "${RL_RULE:=ruff}"; }
     "$GS" ruff ran "${#STAGED_PY[@]}" "" || FAILED=1
   else
     "$GS" ruff skipped 0 "ruff not installed (looked in \$VIRTUAL_ENV, .venv, venv, the main worktree's .venv, PATH, python3 -m ruff); CI's lint job is the authoritative gate" || FAILED=1
@@ -317,7 +320,7 @@ fi
 
 if [ ${#STAGED_JS[@]} -gt 0 ] && { [ -f eslint.config.js ] || [ -f package.json ]; }; then
   if js_tool_installed eslint; then
-    npx --no-install eslint -- "${STAGED_JS[@]}" || FAILED=1
+    npx --no-install eslint -- "${STAGED_JS[@]}" || { FAILED=1; : "${RL_RULE:=eslint}"; }
     "$GS" eslint ran "${#STAGED_JS[@]}" "" || FAILED=1
   else
     "$GS" eslint skipped 0 "eslint not installed in this project's node_modules (run npm install); CI's lint job is the authoritative gate" || FAILED=1
@@ -331,7 +334,7 @@ fi
 # the linter above. `prettier --write` is the fix.
 if [ ${#STAGED_JS[@]} -gt 0 ] && prettier_config_present; then
   if js_tool_installed prettier; then
-    npx --no-install prettier --check -- "${STAGED_JS[@]}" || FAILED=1
+    npx --no-install prettier --check -- "${STAGED_JS[@]}" || { FAILED=1; : "${RL_RULE:=prettier}"; }
     "$GS" prettier ran "${#STAGED_JS[@]}" "" || FAILED=1
   else
     "$GS" prettier skipped 0 "prettier not installed in this project's node_modules (run npm install); CI's lint job is the authoritative gate" || FAILED=1
@@ -361,7 +364,7 @@ if [ ${#STAGED_JS[@]} -gt 0 ] && [ -f tsconfig.json ] && [ "$TSC_STATE" != disab
   if js_tool_installed typescript; then
     if ! npx --no-install tsc --noEmit; then
       if [ "$TSC_STATE" = error ]; then
-        FAILED=1
+        FAILED=1; : "${RL_RULE:=tsc}"
       else
         echo "! tsc --noEmit reported errors (warning locally; the lint workflow fails the PR on them)" >&2
       fi
@@ -381,7 +384,7 @@ fi
 if [ ${#STAGED_PHP[@]} -gt 0 ]; then
   if command -v php >/dev/null 2>&1; then
     for f in "${STAGED_PHP[@]}"; do
-      php -l "$f" >/dev/null 2>&1 || { echo "✗ $f: PHP syntax error (php -l)"; FAILED=1; }
+      php -l "$f" >/dev/null 2>&1 || { echo "✗ $f: PHP syntax error (php -l)"; FAILED=1; : "${RL_RULE:=php-lint}"; }
     done
     "$GS" php ran "${#STAGED_PHP[@]}" "" || FAILED=1
   else
@@ -400,7 +403,7 @@ if [ ${#STAGED_PHP[@]} -gt 0 ] && { [ -f phpcs.xml ] || [ -f phpcs.xml.dist ] ||
     PHPCS_CMD=phpcs
   fi
   if [ -n "$PHPCS_CMD" ]; then
-    "$PHPCS_CMD" -- "${STAGED_PHP[@]}" || FAILED=1
+    "$PHPCS_CMD" -- "${STAGED_PHP[@]}" || { FAILED=1; : "${RL_RULE:=phpcs}"; }
     "$GS" phpcs ran "${#STAGED_PHP[@]}" "" || FAILED=1
   else
     "$GS" phpcs skipped 0 "phpcs not installed (looked in vendor/bin and PATH); CI's lint job is the authoritative gate" || FAILED=1
@@ -413,6 +416,7 @@ skipped_note=$(awk '/^gate=[^ ]+ status=skipped /{ g=$1; sub(/^gate=/, "", g); r
 [ -z "$skipped_note" ] || echo "note: $skipped_note" >&2
 
 if [ "$FAILED" -ne 0 ]; then
+  [ -z "${RL_RULE:-}" ] || [ ! -x "$LIB/refusal-log" ] || "$LIB/refusal-log" pre-commit "$RL_RULE" "" 1 || true
   echo ""
   echo "Pre-commit failed. Fix the cause of each issue above. If a check is wrong, fix the check. If you cannot resolve a refusal, report it to the user rather than bypassing it."
   exit 1

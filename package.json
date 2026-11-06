@@ -18,6 +18,7 @@
     "uninstall-drop-lang.sh",
     "scaffold-doctor.sh",
     "scaffold-assess.sh",
+    "scaffold-blocks.sh",
     "scaffold-doctor-gates.sh",
     "scaffold-doctor-checks.sh",
     "scaffold-doctor-drift.sh",

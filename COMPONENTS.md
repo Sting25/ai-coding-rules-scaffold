@@ -69,6 +69,9 @@ the resolver the hook uses to find `ruff` (a project venv, a linked worktree's
 main `.venv`, PATH); without it the local ruff pass is skipped with a note.
 `gate-status` is the line every gate ends with (`ran`, `skipped` or `empty`, with a
 count); a gate that ran on input but evaluated nothing fails.
+`refusal-log` records each refusal in `scaffold-blocks.log` under the git
+common directory (summarise it with `scaffold-blocks.sh`); without it
+refusals are simply not recorded.
 
 **Prerequisites:** bash, git. No other tool.
 
@@ -78,7 +81,8 @@ cp "$SCAFFOLD/githooks/pre-commit.template" .githooks/pre-commit
 cp "$SCAFFOLD/githooks/lib/scaffold-config.template" .githooks/lib/scaffold-config
 cp "$SCAFFOLD/githooks/lib/py-tool.template" .githooks/lib/py-tool
 cp "$SCAFFOLD/githooks/lib/gate-status.template" .githooks/lib/gate-status
-chmod +x .githooks/pre-commit .githooks/lib/scaffold-config .githooks/lib/py-tool .githooks/lib/gate-status
+cp "$SCAFFOLD/githooks/lib/refusal-log.template" .githooks/lib/refusal-log
+chmod +x .githooks/pre-commit .githooks/lib/scaffold-config .githooks/lib/py-tool .githooks/lib/gate-status .githooks/lib/refusal-log
 git config core.hooksPath .githooks
 ```
 

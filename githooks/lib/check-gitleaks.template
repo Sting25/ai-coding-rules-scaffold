@@ -25,6 +25,12 @@ case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
 SELF_DIR="$(cd "$_sd" && pwd)"
 GS="$SELF_DIR/gate-status"
 
+# bash 5.3: cd "" is fatal; no dirname(1) needed (see scaffold-doctor.sh)
+# CDPATH makes cd echo the directory it lands in; see check-size
+unset CDPATH
+case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
+SELF_DIR="$(cd "$_sd" && pwd)"
+
 # The orchestrator pipes the NUL-delimited staged-file list to every check on
 # stdin. gitleaks discovers the staged changes itself; the entries are only
 # counted, so the status line says how many paths were in play.
@@ -47,6 +53,7 @@ if ! gitleaks git --pre-commit --staged --redact --no-banner; then
   echo "✗ gitleaks flagged a potential secret in the staged changes (value redacted above)." >&2
   echo "  Remove it (and rotate it if it ever hit disk), then re-commit." >&2
   echo "  'git commit --no-verify' overrides — don't, unless the user has confirmed it is a false positive." >&2
+  [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-gitleaks gitleaks "" 1 || true
   exit 1
 fi
 

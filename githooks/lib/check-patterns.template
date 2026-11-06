@@ -98,9 +98,8 @@ ghesc() {
   printf '%s' "$s"
 }
 
-# Per-project overrides (.scaffold.toml via the sibling scaffold-config helper).
-# `cfg` fails open to empty output when the helper is missing (older install);
-# the caller then treats every rule as fully enforced (fail safe).
+# Per-project overrides (.scaffold.toml via the sibling scaffold-config helper): `cfg`
+# fails open to empty when it is missing (older install); every rule is then enforced.
 case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
 SELF_DIR="$(cd "$_sd" && pwd)"
 GS="$SELF_DIR/gate-status"
@@ -128,7 +127,7 @@ report() {
       echo "✗ $file: $desc"
       printf '%s\n' "$matches" | head -3 | sed 's/^/    /' || true
     fi
-    FAILED=1
+    FAILED=1; : "${RL_RULE:=$desc}" "${RL_FILE:=$file}"
   fi
 }
 
@@ -220,7 +219,7 @@ scan() {
   if [ ${#raw_patterns[@]} -eq 0 ]; then
     local emsg="$config has no patterns, the forbidden-pattern scan for $stem is disabled. Restore its patterns (use 'git commit --no-verify' or delete the file if intended)."
     if [ "$CI_MODE" -eq 1 ]; then echo "::error::$emsg"; else echo "✗ $emsg" >&2; fi
-    FAILED=1
+    FAILED=1; : "${RL_RULE:=empty-config}" "${RL_FILE:=$config}"
     return 0
   fi
 
@@ -250,7 +249,7 @@ scan() {
   if [ ${#patterns[@]} -eq 0 ]; then
     local vmsg="$config has no valid patterns (all were invalid regexes), the forbidden-pattern scan for $stem is disabled. Fix the patterns."
     if [ "$CI_MODE" -eq 1 ]; then echo "::error::$vmsg"; else echo "✗ $vmsg" >&2; fi
-    FAILED=1
+    FAILED=1; : "${RL_RULE:=invalid-config}" "${RL_FILE:=$config}"
     return 0
   fi
 
@@ -302,7 +301,7 @@ scan() {
       else
         echo "✗ $file: $over"
       fi
-      FAILED=1
+      FAILED=1; : "${RL_RULE:=line-too-long}" "${RL_FILE:=$file}"
     fi
     [ -n "$content" ] || continue
 
@@ -385,7 +384,7 @@ config_usable() {
   return 0
 }
 
-FAILED=0
+FAILED=0; unset RL_RULE RL_FILE
 INCLUDED=0; CHECKED=0
 # Auto-discover every pattern file; skip secrets.txt (check-secrets' domain), then
 # apply the optional INCLUDE/EXCLUDE basename filter documented in the header.
@@ -411,7 +410,7 @@ for cfg in "${SCAFFOLD_PATTERNS_DIR:-.forbidden-patterns}"/*.txt; do
   # yields nothing, and a header-less-looking config falls through to the
   # "skipped" warning and exit 0, the fail-OPEN path this guard replaces.
   if ! config_usable "$cfg"; then
-    FAILED=1
+    FAILED=1; : "${RL_RULE:=config-unreadable}" "${RL_FILE:=$cfg}"
     continue
   fi
   cfg_exts=$(exts_for "$cfg")
@@ -483,7 +482,7 @@ if [ ${#FILES[@]} -gt 0 ] && [ -f "$SCAFFOLD_MANIFEST" ] && [ -r "$SCAFFOLD_MANI
     mname=${mbase%.txt}
     mmsg="$recorded is missing but $SCAFFOLD_MANIFEST records the scaffold installing it here, so it was removed and every forbidden-pattern rule it carries has stopped running, in CI and in every fresh clone. Restore it, or — if this project dropped that language on purpose — run 'uninstall.sh --drop-lang=$mname' from your scaffold checkout, which removes the file and its manifest entry together; do not hand-edit $SCAFFOLD_MANIFEST (use 'git commit --no-verify' if intended)."
     if [ "$CI_MODE" -eq 1 ]; then echo "::error::$mmsg"; else echo "✗ $mmsg" >&2; fi
-    FAILED=1
+    FAILED=1; : "${RL_RULE:=config-removed}" "${RL_FILE:=$recorded}"
   done <<EOF_MANIFEST
 $(awk 'substr($0, 1, 1) == "#" { next }
        NF == 3 && $3 ~ "^\\.forbidden-patterns/[^/]+\\.txt$" { print $3 }' \
@@ -495,6 +494,7 @@ if [ -n "${CHECK_PATTERNS_INCLUDE:-}" ] && [ "$INCLUDED" -eq 0 ]; then
   echo "warning: CHECK_PATTERNS_INCLUDE='$CHECK_PATTERNS_INCLUDE' matched no .forbidden-patterns/*.txt, nothing was scanned" >&2
 fi
 
+[ "$FAILED" -eq 0 ] || [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-patterns "${RL_RULE:-unknown}" "${RL_FILE:-}" 1 || true
 if [ "$INCLUDED" -eq 0 ]; then exec "$GS" patterns skipped 0 "no pattern file selected (.forbidden-patterns/*.txt)" "$FAILED"; fi
 if [ "$CHECKED" -gt 0 ]; then exec "$GS" patterns ran "$CHECKED" "" "$FAILED"; fi
 exec "$GS" patterns empty 0 "no staged file matched a pattern file's extensions" "$FAILED"

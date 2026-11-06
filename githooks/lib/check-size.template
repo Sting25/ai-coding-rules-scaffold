@@ -65,7 +65,7 @@ CHECKED=0
 
 # Emit a finding at the resolved severity. `warn` prints but does not fail the
 # build (a deliberate, audited downgrade); `error` fails as usual.
-FAILED=0
+FAILED=0; unset RL_RULE RL_FILE
 emit() {
   local file=$1 message=$2
   if [ "$SIZE_STATE" = warn ]; then
@@ -74,7 +74,7 @@ emit() {
   else
     if [ "$CI_MODE" -eq 1 ]; then echo "::error file=$(ghesc prop "$file")::$(ghesc data "$message")"
     else echo "✗ $file: $message"; fi
-    FAILED=1
+    FAILED=1; : "${RL_RULE:=size}" "${RL_FILE:=$file}"
   fi
 }
 
@@ -98,5 +98,6 @@ while IFS= read -r -d '' file; do
   fi
 done
 
+[ "$FAILED" -eq 0 ] || [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-size "${RL_RULE:-size}" "${RL_FILE:-}" 1 || true
 if [ "$CHECKED" -gt 0 ]; then exec "$GS" size ran "$CHECKED" "" "$FAILED"; fi
 exec "$GS" size empty 0 "no source files staged (docs, data and images are exempt)" "$FAILED"

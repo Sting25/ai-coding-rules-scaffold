@@ -11,6 +11,12 @@ set -euo pipefail
 
 MSG_FILE=${1:?commit-msg hook expects the message file path as $1}
 
+# bash 5.3: cd "" is fatal; no dirname(1) needed (see scaffold-doctor.sh)
+case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
+# CDPATH would make cd echo the directory; see pre-commit
+unset CDPATH
+HOOK_DIR="$(cd "$_sd" && pwd)"
+
 # First non-blank, non-comment line is the subject. `[[:space:]]` (not `\s`) so
 # this works under BSD grep on macOS as well as GNU grep.
 subject=$(grep -vE '^[[:space:]]*#' "$MSG_FILE" | grep -vE '^[[:space:]]*$' | head -1 || true)
@@ -29,6 +35,7 @@ if [ "${#subject}" -gt 100 ]; then
     echo "    ${subject}"
     echo "  100 matches commitlint's config-conventional header-max-length."
   } >&2
+  [ ! -x "$HOOK_DIR/lib/refusal-log" ] || "$HOOK_DIR/lib/refusal-log" commit-msg subject-too-long "" 1 || true
   exit 1
 fi
 
@@ -46,4 +53,5 @@ fi
   echo "  Types: feat fix docs style refactor perf test build ci chore revert"
   echo "  See https://www.conventionalcommits.org/"
 } >&2
+[ ! -x "$HOOK_DIR/lib/refusal-log" ] || "$HOOK_DIR/lib/refusal-log" commit-msg not-conventional "" 1 || true
 exit 1
