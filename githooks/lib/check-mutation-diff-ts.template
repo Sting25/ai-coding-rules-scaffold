@@ -1,0 +1,383 @@
+#!/usr/bin/env node
+/*
+ * .githooks/lib/check-mutation-diff-ts: the Vitest/Stryker twin of
+ * check-mutation-diff, the advisory mutation layer of the test-guard family.
+ * The full rationale (red-green cannot prove a test constrains behaviour;
+ * a survivor in a file red-green reported unevaluable is the highest-signal
+ * finding) lives in check-mutation-diff, read that header first.
+ *
+ * MECHANISM. Stryker (pinned, see STRYKER_PIN) runs in a scratch copy of
+ * HEAD (checked out through a throwaway index, node_modules symlinked to the
+ * project's own) with a
+ * config this script writes: `mutate` carries one `path:start-end` entry per
+ * added or modified hunk of every changed non-test source file (a file new
+ * relative to the base gets the bare path, so the whole file), the test
+ * runner is vitest, the reporter is the JSON report. Scoping is therefore by
+ * changed LINE range, as in the Python twin. A stryker.config.* the project
+ * ships is not merged; the diff run uses the scaffold's own config (a note
+ * says so). The config sets vitest.related=false: with Stryker's default
+ * (run only tests related to the mutated files) an untested-only PR makes the
+ * initial run fail with "No tests were executed" and no report; unrelated
+ * tests are then simply run, every mutant is NoCoverage or survives, and the
+ * advisory verdict stays exit 0.
+ *
+ * Stryker's process exit code is NOT the verdict (on 10.1.1 a `mutate` that
+ * matches nothing only warns "did not result in any files", writes a report
+ * with empty `files` and exits 0). The verdict is read from the report file
+ * only: absent or unparsable means exit 2. Every mutate entry is a glob, so
+ * glob metacharacters in a changed path are escaped (globEscape), and output
+ * containing "did not result in any files" is also exit 2, because a pattern
+ * that matched nothing must never read as "0 mutants, OK".
+ *
+ * Status mapping: Killed and Timeout count as killed; Survived is survived;
+ * NoCoverage is "no tests"; Ignored and Pending are "not checked"; anything
+ * else (RuntimeError, CompileError) is "other".
+ *
+ * KNOWN LIMITATION: no dry-run mutant count exists, so --max-mutants is
+ * enforced AFTER the full run completes, not as a fast preflight (the Python
+ * twin records the same limit).
+ *
+ * Requires Node 20.16 or newer when the project is an ES module ("type":
+ * "module"): the script then loads its built-ins via process.getBuiltinModule.
+ *
+ * USAGE
+ *   check-mutation-diff-ts --base <ref> [--ci] [--max-mutants N]
+ *
+ * Exit: 0 evaluated (survivors are advisory only), or nothing to mutate
+ *       1 declined: more mutants than --max-mutants (a size limit, not a finding)
+ *       2 could not evaluate (Stryker missing or the wrong version, no report,
+ *         git failure, timeout, or an internal crash: a crash is never exit 1)
+ * Exit 2 is a FAILURE, not a skip.
+ */
+"use strict";
+
+// An extensionless file takes its module type from the nearest package.json,
+// so in a project with "type": "module" this runs as ESM and a bare require
+// is undefined. Resolve built-ins in a way that works under both.
+const CI = process.argv.includes("--ci"); // known before parseArgs, for the crash handler
+const load = typeof require === "function" ? require : process.getBuiltinModule;
+if (typeof load !== "function") {
+  console.error(`::error::check-mutation-diff-ts needs Node 20.16 or newer when the project is an ES module ("type": "module"), because the script loads its built-ins through process.getBuiltinModule`);
+  process.exit(2);
+}
+const cp = load("child_process");
+const fs = load("fs");
+const os = load("os");
+const path = load("path");
+
+const STRYKER_PIN = "10.1.1";
+const INSTALL_CMD = `npm install --no-save @stryker-mutator/core@${STRYKER_PIN} ` +
+  `@stryker-mutator/vitest-runner@${STRYKER_PIN}`;
+const TIMEOUT_MS = 1800000;
+const TEST_RE = /\.(test|spec)\.[cm]?[jt]sx?$/;
+const SRC_RE = /\.[cm]?[jt]sx?$/;
+const NOISE_RE = /(^|\/)(node_modules|dist|build|coverage)\//;
+
+class Timeout extends Error {}
+
+function run(cmd, args, opts) {
+  const r = cp.spawnSync(cmd, args, Object.assign(
+    { encoding: "utf8", timeout: TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 }, opts || {}));
+  if (r.error && r.error.code === "ETIMEDOUT") throw new Timeout();
+  if (r.error) return { status: 127, stdout: "", stderr: String(r.error.message) };
+  return { status: r.status === null ? 1 : r.status, stdout: r.stdout || "", stderr: r.stderr || "" };
+}
+
+function emit(sev, msg, ci) {
+  if (ci) console.log(`::${sev}::${msg}`);
+  else console.error(`  ${sev}: ${msg}`);
+}
+
+function isSource(p) {
+  const base = path.posix.basename(p);
+  return SRC_RE.test(p) && !NOISE_RE.test(p) && !TEST_RE.test(p) &&
+    !/(^|\/)__tests__\//.test(p) && !/\.d\.[cm]?ts$/.test(p) && !/\.config\./.test(base);
+}
+
+function parseArgs(argv) {
+  const a = { base: null, ci: false, maxMutants: 400 };
+  for (let i = 0; i < argv.length; i++) {
+    const v = argv[i];
+    if (v === "--base") a.base = argv[++i];
+    else if (v === "--ci") a.ci = true;
+    else if (v === "--max-mutants") a.maxMutants = parseInt(argv[++i], 10);
+    else { console.error(`unknown argument: ${v}`); process.exit(2); }
+  }
+  if (!a.base || Number.isNaN(a.maxMutants)) {
+    console.error("usage: check-mutation-diff-ts --base <ref> [--ci] [--max-mutants N]");
+    process.exit(2);
+  }
+  return a;
+}
+
+// Both Stryker packages must be installed at exactly the pinned version.
+function verifyStryker(ci) {
+  for (const name of ["core", "vitest-runner"]) {
+    let v = null;
+    try {
+      v = JSON.parse(fs.readFileSync(
+        path.join("node_modules", "@stryker-mutator", name, "package.json"), "utf8")).version;
+    } catch (e) { /* not installed */ }
+    if (v !== STRYKER_PIN) {
+      emit("error", `@stryker-mutator/${name} ${v === null ? "is not installed" :
+        `is ${v}, expected ${STRYKER_PIN}`}. This check is validated against the ` +
+        `pinned version only. Install it with: ${INSTALL_CMD}`, ci);
+      return 2;
+    }
+  }
+  return 0;
+}
+
+// Added/modified line ranges of one file at HEAD, as Stryker `path:a-b`
+// entries. A file absent from the base is mutated whole (bare path). A hunk
+// with no new lines (pure deletion) contributes nothing; a file whose only
+// change is deletions then yields no entry, and is dropped by the caller.
+// Stryker treats each mutate entry as a glob (minimatch-style). A bracket
+// class per metacharacter is the form it honours ("[" -> "[[]"); backslash
+// escapes are NOT honoured. Without this `src/[id]/page.ts` matches nothing.
+// Measured on 10.1.1: [ ] * ? ( ) escape correctly; a mid-path "!" is already
+// literal, a LEADING "!" is an exclusion (silently 0 mutants) and "{" "}"
+// (brace expansion) cannot be escaped at all, so those paths are refused in
+// mutateEntries() (exit 2); the "did not result in any files" guard in main()
+// is the second line of defence for anything else that matches nothing.
+function globEscape(p) {
+  return p.replace(/[[\]*?()]/g, (c) => `[${c}]`);
+}
+
+function mutateEntries(baseSha, headSha, rel, ci) {
+  // A leading "!" is an EXCLUSION pattern to Stryker (no warning, 0 mutants,
+  // exit 0) and braces are brace expansion; neither has a literal form, so
+  // refuse them up front rather than let a no-match read as "0 mutants, OK".
+  if (rel.startsWith("!") || /[{}]/.test(rel)) {
+    emit("error", `${rel}: a path starting with "!" or containing "{" or "}" has no ` +
+                  "literal Stryker mutate pattern; rename the file or mutate it by hand.", ci);
+    return null;
+  }
+  const g = globEscape(rel);
+  const inBase = run("git", ["cat-file", "-e", `${baseSha}:${rel}`]).status === 0;
+  if (!inBase) return [g];
+  const d = run("git", ["diff", "-U0", "--no-color", `${baseSha}...${headSha}`, "--", rel]);
+  if (d.status !== 0) {
+    emit("error", `git diff failed for ${rel}: ${d.stderr.trim()}`, ci);
+    return null;
+  }
+  const out = [];
+  for (const line of d.stdout.split("\n")) {
+    const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(line);
+    if (!m) continue;
+    const start = parseInt(m[1], 10);
+    const len = m[2] === undefined ? 1 : parseInt(m[2], 10);
+    if (len > 0) out.push(`${g}:${start}-${start + len - 1}`);
+  }
+  return out;
+}
+
+function main() {
+  const args = parseArgs(process.argv.slice(2));
+
+  let pkg = "";
+  try { pkg = fs.readFileSync("package.json", "utf8"); } catch (e) { /* none */ }
+  // Same detection as test-guard.yml's detect_ts: vitest declared anywhere, or
+  // named in the test script.
+  if (!/"vitest"/.test(pkg) && !/"test"\s*:\s*"[^"]*vitest/.test(pkg)) {
+    console.log("no Vitest project detected, nothing to mutate.");
+    return 0;
+  }
+  const v = verifyStryker(args.ci);
+  if (v) return v;
+
+  const base = run("git", ["rev-parse", "--verify", `${args.base}^{commit}`]);
+  const head = run("git", ["rev-parse", "--verify", "HEAD"]);
+  if (base.status !== 0) {
+    emit("error", `cannot resolve base ref '${args.base}'. In CI make sure the ` +
+      "checkout has fetch-depth: 0.", args.ci);
+    return 2;
+  }
+  if (head.status !== 0) {
+    emit("error", "cannot resolve HEAD.", args.ci);
+    return 2;
+  }
+  const baseSha = base.stdout.trim();
+  const headSha = head.stdout.trim();
+
+  const diff = run("git", ["diff", "-z", "--name-only", "--diff-filter=d", `${baseSha}...${headSha}`]);
+  if (diff.status !== 0) {
+    emit("error", `git diff failed: ${diff.stderr.trim()}`, args.ci);
+    return 2;
+  }
+  const srcFiles = diff.stdout.split("\0").filter((p) => p && isSource(p)).sort();
+  if (srcFiles.length === 0) {
+    console.log("nothing to mutate, no changed non-test TypeScript source files in this diff.");
+    return 0;
+  }
+  if (!fs.existsSync("node_modules")) {
+    emit("error", "node_modules is missing; install the project's dependencies " +
+      "first (npm ci).", args.ci);
+    return 2;
+  }
+  const mutate = [];
+  for (const rel of srcFiles) {
+    const e = mutateEntries(baseSha, headSha, rel, args.ci);
+    if (e === null) return 2;
+    mutate.push(...e);
+  }
+  if (mutate.length === 0) {
+    console.log("nothing to mutate, the changed source files only had lines removed.");
+    return 0;
+  }
+  console.log(`  mutating: ${mutate.join(" ")}`);
+  const carried = fs.readdirSync(".").filter((f) => /^stryker\.(conf|config)\.(js|cjs|mjs|ts|cts|mts|json)$/.test(f));
+  if (carried.length) {
+    console.error(`note: ${carried[0]} is not used by this diff run; the scaffold's own ` +
+      "config scopes it to the changed files (line-range scoping).");
+  }
+
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "mutdiff-ts-"));
+  const wt = path.join(tmp, "wt");
+  try {
+    fs.mkdirSync(wt);
+    // Not `git archive`: export-ignore in .gitattributes would silently drop
+    // files from the copy and change what the mutants are tested against.
+    const idx = { env: Object.assign({}, process.env, { GIT_INDEX_FILE: path.join(tmp, "idx") }) };
+    let r = run("git", ["read-tree", headSha], idx);
+    if (r.status === 0) r = run("git", ["checkout-index", "-a", "-f", `--prefix=${wt}/`], idx);
+    if (r.status !== 0) {
+      emit("error", `git could not export HEAD: ${r.stderr.trim()}`, args.ci);
+      return 2;
+    }
+    // A repo that tracks node_modules/.gitkeep has the directory already.
+    fs.rmSync(path.join(wt, "node_modules"), { recursive: true, force: true });
+    fs.symlinkSync(path.resolve("node_modules"), path.join(wt, "node_modules"), "dir");
+
+    const reportRel = ".scaffold-mutation/report.json";
+    fs.writeFileSync(path.join(wt, ".scaffold-stryker.json"), JSON.stringify({
+      testRunner: "vitest",
+      mutate,
+      // Both the option and the fallback below exist on purpose: the option
+      // keeps an untested-only PR from failing Stryker's initial run; the
+      // fallback is a belt for a Stryker that still reports "No tests were
+      // executed" without writing a report.
+      vitest: { related: false },
+      reporters: ["json"],
+      jsonReporter: { fileName: reportRel },
+      tempDirName: ".scaffold-stryker-tmp",
+      incremental: false,
+      cleanTempDir: true,
+    }, null, 2));
+
+    r = run("npx", ["--no-install", "stryker", "run", ".scaffold-stryker.json"], { cwd: wt });
+    const outText = r.stdout + r.stderr;
+    let files = null;
+    try {
+      const rep = JSON.parse(fs.readFileSync(path.join(wt, reportRel), "utf8"));
+      if (rep && rep.files && typeof rep.files === "object") files = rep.files;
+    } catch (e) { /* no report */ }
+    const noMatch = outText.split("\n").filter((l) => l.includes("did not result in any files"));
+    if (noMatch.length > 0) {
+      emit("error", "stryker matched no files for these mutate pattern(s); treating as " +
+        "unable to evaluate, not as 0 mutants: " + noMatch.map((l) => l.replace(/\x1b\[[0-9;]*m/g, "").trim()).join(" | "), args.ci);
+      return 2;
+    }
+    if (files === null && outText.includes("No tests were executed")) {
+      console.log("mutation notice: no related tests, the changed source files " +
+        "have no tests that run them (source: stryker output, no report).");
+      emit("notice", "mutation summary: 0 killed, 0 not killed (0 total) across " +
+        `${srcFiles.length} changed file(s), source: stryker output. Advisory only: ` +
+        "no test covers these files.", args.ci);
+      return 0;
+    }
+    if (files === null) {
+      emit("error", "stryker run produced no readable report (initial test run " +
+        "failed, a config error, or a crash); treating as unable to evaluate.", args.ci);
+      console.log("--- last 40 line(s) of stryker output ---");
+      console.log(outText.split("\n").slice(-40).join("\n"));
+      return 2;
+    }
+
+    const perFile = {};
+    for (const rel of Object.keys(files).sort()) {
+      const s = { killed: 0, survived: 0, no_tests: 0, not_checked: 0, other: 0, total: 0 };
+      // A null/missing entry in the report counts as 0 mutants for that file.
+      for (const m of (files[rel] && files[rel].mutants) || []) {
+        s.total++;
+        if (m.status === "Killed" || m.status === "Timeout") s.killed++;
+        else if (m.status === "Survived") s.survived++;
+        else if (m.status === "NoCoverage") s.no_tests++;
+        else if (m.status === "Ignored" || m.status === "Pending") s.not_checked++;
+        else s.other++;
+      }
+      perFile[rel] = s;
+    }
+    const sum = (k) => Object.values(perFile).reduce((a, s) => a + s[k], 0);
+    const total = sum("total");
+    const killed = sum("killed");
+    const badTotal = total - killed;
+    const src = "stryker json report";
+
+    if (total > args.maxMutants) {
+      emit("warning", `${total} mutants across ${srcFiles.length} changed file(s) ` +
+        `exceeds --max-mutants=${args.maxMutants}; evaluating that ` +
+        "many would dominate CI time. Split the PR - a change this " +
+        "large is not reviewable by any means available to you, " +
+        "mutation testing included.", args.ci);
+      return 1;
+    }
+    if (total === 0) {
+      console.log("mutation OK: 0 mutants generated for the changed lines " +
+        `(source: ${src}); nothing to evaluate.`);
+      return 0;
+    }
+    if (badTotal === 0) {
+      console.log(`mutation OK: ${total} mutants, all killed across ` +
+        `${srcFiles.length} changed file(s) (source: ${src}).`);
+      return 0;
+    }
+    for (const [rel, s] of Object.entries(perFile)) {
+      if (s.survived + s.no_tests + s.not_checked + s.other) {
+        emit("warning", `${rel}: ${s.survived} survived, ${s.no_tests} no ` +
+          `tests, ${s.not_checked} not checked, ${s.other} ` +
+          `other mutant(s) out of ${s.total} on this diff. A ` +
+          "surviving or uncovered mutant means some changed line " +
+          "has no test that actually constrains it.", args.ci);
+      }
+    }
+    emit("notice", `mutation summary: ${killed} killed, ${badTotal} not killed ` +
+      `(${total} total) across ${srcFiles.length} changed file(s), ` +
+      `source: ${src}. Advisory only for this release ` +
+      "(#145 point 4): none of this fails the build yet. A survivor " +
+      "in a file check-red-green reported unevaluable is the " +
+      "highest-signal finding above.", args.ci);
+    return 0;
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+let RL_RULE = ""; // refusal-log rule slug when the exit code alone cannot name it
+try {
+  process.exitCode = main();
+} catch (e) {
+  if (e instanceof Timeout) {
+    RL_RULE = "timeout";
+    console.log("::error::mutation-diff check timed out. A mutation run too " +
+      "slow to complete in CI is too slow to trust as a gate; scope " +
+      "it to fewer files or raise the timeout deliberately.");
+    process.exitCode = 2;
+  } else {
+    // A crash is a failure to evaluate, never the exit 1 a thrown error gives.
+    emit("error", `check-mutation-diff-ts internal error, ${e && e.name}: ${e && e.message}`, CI);
+    process.exitCode = 2;
+  }
+}
+
+// Refusal log: a non-zero exit is recorded next to the Python pair's entries by
+// the sibling refusal-log script when it is installed. Fail open: logging can
+// never change the exit code, and the script's directory comes from argv so
+// this works whether the file runs as CommonJS or as an ES module.
+if (process.exitCode) {
+  try {
+    const rl = path.join(path.dirname(process.argv[1]), "refusal-log");
+    const rule = RL_RULE || ({ 1: "max-mutants", 2: "setup-error" })[process.exitCode] || "error";
+    if (fs.existsSync(rl)) cp.spawnSync("bash", [rl, "check-mutation-diff-ts", rule, "", String(process.exitCode)], { stdio: "ignore" });
+  } catch (e) { /* never let logging change the verdict */ }
+}

@@ -327,7 +327,7 @@ _tg_step() { # <script exit code> <gh exit code>; sets TGD_RC (step A), TGD_RCB 
   if grep -qxF 'declined=true' "$TGD/out"; then
     TGD_RCB=0
     ( cd "$TGD/w" && PATH="$TGD/bin:$PATH" GH_RC="$2" GH_LOG="$TGD/gh.log" GITHUB_REPOSITORY=o/r \
-        GH_TOKEN=x HEAD_SHA=def bash -e "$TGD/stepB.sh" ) >"$TGD/outB" 2>&1 || TGD_RCB=$?
+        GH_TOKEN=x HEAD_SHA=def DECLINED_PY=true bash -e "$TGD/stepB.sh" ) >"$TGD/outB" 2>&1 || TGD_RCB=$?
   fi
 }
 
