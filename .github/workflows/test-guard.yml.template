@@ -141,6 +141,7 @@ jobs:
       - name: Red-green (new tests must fail against base)
         if: steps.detect.outputs.present == 'true'
         env:
+          SCAFFOLD_GATE_STRICT: "1"  # a gate that skips or checks nothing fails
           BASE_SHA: ${{ steps.base.outputs.sha }}
         run: python3 .githooks/lib/check-red-green --base "$BASE_SHA" --ci
 
@@ -165,6 +166,7 @@ jobs:
         id: mutation
         if: steps.detect.outputs.present == 'true'
         env:
+          SCAFFOLD_GATE_STRICT: "1"  # a gate that skips or checks nothing fails
           BASE_SHA: ${{ steps.base.outputs.sha }}
         run: |
           pip install mutmut==3.7.0

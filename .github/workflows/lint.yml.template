@@ -373,6 +373,8 @@ jobs:
     #      checkout below and scan the smudged working tree for those paths.
     runs-on: ubuntu-latest
     env:
+      # A scanner that skips for a missing tool or input fails here; `disabled:` reasons from .scaffold.toml still pass.
+      SCAFFOLD_GATE_STRICT: "1"
       EVENT: ${{ github.event_name }}
       PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
       PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
