@@ -17,7 +17,7 @@
 #   install.sh --gitleaks-ci # also install the gitleaks CI workflow (unskippable gate)
 #   install.sh --dependency-review # also install the dependency-review CI gate (opt-in: needs GitHub Advanced Security on a private repo, or it errors, so never default-on)
 #   install.sh --zizmor-ci   # also install the zizmor GitHub Actions audit gate
-#   install.sh --tree-lint   # also install the advisory whole-tree lint workflow (weekly + push to default branch; files one tracking issue)
+#   install.sh --tree-lint   # also install the advisory whole-tree lint workflow (weekly + push to main/master; files one tracking issue)
 #   install.sh --socket-ci   # also install the Socket Firewall supply-chain gate
 #   install.sh --test-guard  # also install the red-green test-integrity gate (a new test must fail on the PR base before it may pass)
 #   install.sh --npm-cooldown # also install .npmrc's min-release-age (delays newly published npm versions, needs npm >=11.10)
@@ -411,7 +411,8 @@ if [ "$DEPENDENCY_REVIEW" -eq 1 ]; then
   echo "note: dependency-review.yml needs GitHub's Dependency Graph (on by default for public repos; needs GitHub Advanced Security for private repos, or it errors)."
 fi
 
-# Opt-in zizmor / Socket Firewall CI gates (--zizmor-ci, --socket-ci), npm
+# Opt-in zizmor / Socket Firewall CI gates (--zizmor-ci, --socket-ci), the
+# whole-tree lint workflow (--tree-lint, #217), npm
 # install-layer cooldown (--npm-cooldown, #117), Claude Skill packaging
 # (--claude-skill, #118), and the red-green test-integrity gate
 # (--test-guard, #140); function bodies live in install-optin.sh to keep this

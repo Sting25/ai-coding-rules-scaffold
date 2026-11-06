@@ -349,7 +349,7 @@ minimal; turn them on per project.
   branch caused it. This workflow runs ruff check, ruff format --check,
   eslint, prettier --check and tsc over the tracked files (the list comes from
   `git ls-files`, so gitignored content is never linted) weekly and on push to
-  the default branch. It has no `pull_request` trigger, so it cannot block a
+  main or master. It has no `pull_request` trigger, so it cannot block a
   merge. Each gate runs even if an earlier one fails; a final report job
   (the only one holding `issues: write`) opens or edits one issue titled
   "Lint baseline (whole-tree findings)", labelled `lint-baseline`, and comments

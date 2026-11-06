@@ -38,7 +38,7 @@ install_opt_in_zizmor_ci() {
 install_opt_in_tree_lint() {
   if [ "$TREE_LINT" -eq 1 ]; then
     cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/lint-tree.yml.template" ".github/workflows/lint-tree.yml"
-    echo "note: lint-tree.yml is advisory (weekly and on push to the default branch, never on a PR). It files or updates one \"Lint baseline\" issue; it never blocks a merge."
+    echo "note: lint-tree.yml is advisory (weekly and on push to main or master, never on a PR). It files or updates one \"Lint baseline\" issue; it never blocks a merge."
   fi
 }
 

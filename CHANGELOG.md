@@ -11,8 +11,8 @@ versioning follows [SemVer](https://semver.org/).
 - **Opt-in advisory whole-tree lint workflow (#217).** `install.sh --tree-lint`
   installs `.github/workflows/lint-tree.yml`, the whole-tree twin of the
   diff-scoped `lint.yml`. It runs ruff check, ruff format --check, eslint,
-  prettier --check and tsc over the tracked files weekly and on push to the
-  default branch, never on a pull request, so it cannot block a merge. On
+  prettier --check and tsc over the tracked files weekly and on push to
+  main or master, never on a pull request, so it cannot block a merge. On
   failure it opens or updates one `Lint baseline (whole-tree findings)` issue
   (label `lint-baseline`); a later clean run comments and closes it.
   `AGENTS.md.template` gains one line telling agents a finding in a file their

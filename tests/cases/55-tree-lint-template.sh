@@ -41,8 +41,8 @@ fi
 
 # (c) whole-tree file list from git ls-files; label-based issue lookup
 if printf '%s\n' "$TL_CODE" | grep -q 'git -c core.quotepath=off ls-files -z' \
-   && printf '%s\n' "$TL_CODE" | grep -q 'lint-baseline'; then
-  tl_ok "the file list comes from git ls-files and the tracking issue is found by the lint-baseline label"
+   && printf '%s\n' "$TL_CODE" | grep -q 'issue list --label lint-baseline'; then
+  tl_ok "the file list comes from git ls-files and the tracking issue is looked up by `issue list --label lint-baseline`"
 else
   tl_bad "expected 'git -c core.quotepath=off ls-files -z' and the lint-baseline label in the template"
 fi
@@ -52,6 +52,20 @@ if ! printf '%s\n' "$TL_CODE" | grep -q 'github\.event\.'; then
   tl_ok "no github.event.* expression is interpolated anywhere"
 else
   tl_bad "lint-tree.yml.template must not reference github.event.*"
+fi
+
+# (c2) the report job leaves the issue alone on a cancelled run
+if printf '%s\n' "$TL_CODE" | grep -q 'if \[ "\$PY_RESULT" = cancelled \] || \[ "\$FE_RESULT" = cancelled \]'; then
+  tl_ok "the report job guards on a cancelled run before touching the issue"
+else
+  tl_bad "the report job must guard on PY_RESULT/FE_RESULT = cancelled"
+fi
+
+# (c3) a clean run closes the tracking issue
+if printf '%s\n' "$TL_CODE" | grep -q 'gh issue close'; then
+  tl_ok "a clean run closes the tracking issue (gh issue close)"
+else
+  tl_bad "the report job must run gh issue close on a clean run"
 fi
 
 # (e) a plain install does not create it; --tree-lint does

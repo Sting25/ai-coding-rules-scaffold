@@ -16,7 +16,7 @@ name: lint-tree
 # What it does:
 #   Runs the cheap gates over every TRACKED file: ruff check, ruff format
 #   --check, eslint, prettier --check and tsc --noEmit. It runs weekly and on each
-#   push to the default branch, and never on pull_request, so it can never block
+#   push to main or master, and never on pull_request, so it can never block
 #   a PR. On failure it opens, or updates, ONE issue titled "Lint baseline
 #   (whole-tree findings)" (label `lint-baseline`) listing the findings, so the
 #   backlog lives in one place. When a later run is clean it comments and closes
@@ -119,9 +119,11 @@ jobs:
           run_gate "ruff format --check" xargs -0 -r ruff format --check --force-exclude -- <"$RUNNER_TEMP/py.nul"
           if [ "$fail" -eq 1 ]; then
             echo "status=fail" >> "$GITHUB_OUTPUT"
+            head -n 300 "$out" >"$RUNNER_TEMP/f300"
+            head -c 25000 "$RUNNER_TEMP/f300" >"$RUNNER_TEMP/trunc"
             d="END_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
-            { echo "findings<<$d"; head -n 300 "$out" | head -c 25000; echo; echo "$d"; } >> "$GITHUB_OUTPUT"
-            { echo "### ruff (whole tree)"; echo '```'; head -n 300 "$out" | head -c 25000; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+            { echo "findings<<$d"; cat "$RUNNER_TEMP/trunc"; echo; echo "$d"; } >> "$GITHUB_OUTPUT"
+            { echo "### ruff (whole tree)"; echo '```'; cat "$RUNNER_TEMP/trunc"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
           echo "status=pass" >> "$GITHUB_OUTPUT"
@@ -232,9 +234,11 @@ jobs:
           fi
           if [ "$fail" -eq 1 ]; then
             echo "status=fail" >> "$GITHUB_OUTPUT"
+            head -n 300 "$out" >"$RUNNER_TEMP/f300"
+            head -c 25000 "$RUNNER_TEMP/f300" >"$RUNNER_TEMP/trunc"
             d="END_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
-            { echo "findings<<$d"; head -n 300 "$out" | head -c 25000; echo; echo "$d"; } >> "$GITHUB_OUTPUT"
-            { echo "### eslint, prettier, tsc (whole tree)"; echo '```'; head -n 300 "$out" | head -c 25000; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+            { echo "findings<<$d"; cat "$RUNNER_TEMP/trunc"; echo; echo "$d"; } >> "$GITHUB_OUTPUT"
+            { echo "### eslint, prettier, tsc (whole tree)"; echo '```'; cat "$RUNNER_TEMP/trunc"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
           echo "status=pass" >> "$GITHUB_OUTPUT"

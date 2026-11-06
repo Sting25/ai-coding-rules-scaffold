@@ -126,7 +126,7 @@ Tests run in CI by default: a plain install also drops `.github/workflows/tests.
 ./install.sh --gitleaks-ci  # also install the gitleaks CI workflow (unskippable gate)
 ./install.sh --dependency-review # also install the dependency-review CI gate (opt-in: needs GitHub Advanced Security on a private repo, or it errors)
 ./install.sh --zizmor-ci    # also install the zizmor GitHub Actions audit gate (opt-in: adds a third-party pip package)
-./install.sh --tree-lint    # also install the advisory whole-tree lint workflow (weekly and on push to the default branch; files one tracking issue, never blocks a PR)
+./install.sh --tree-lint    # also install the advisory whole-tree lint workflow (weekly and on push to main or master; files one tracking issue, never blocks a PR)
 ./install.sh --socket-ci    # also install the Socket Firewall supply-chain gate (opt-in: adds a third-party action dependency)
 ./install.sh --test-guard   # also install the red-green test-integrity gate (a new test must fail on the PR base before it may pass), plus an advisory diff-scoped mutation layer
 ./install.sh --npm-cooldown # also install .npmrc's min-release-age package cooldown (opt-in: needs npm >= 11.10.0, older npm just warns and ignores it)

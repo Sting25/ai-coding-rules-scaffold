@@ -749,7 +749,7 @@ separate decision.
 - `socket-security.yml`: checks a newly added package is legitimate before it
   is installed.
 - `lint-tree.yml`: advisory whole-tree lint (ruff, eslint, prettier, tsc over
-  every tracked file) weekly and on push to the default branch, never on a PR.
+  every tracked file) weekly and on push to main or master, never on a PR.
   On failure it opens or updates one `Lint baseline` issue; it never blocks a
   merge. It needs no third-party dependency beyond the linters you already use.
 
