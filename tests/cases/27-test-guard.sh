@@ -134,7 +134,11 @@ rm -rf "$U"
 # assumption is re-checked live rather than assumed, and a missing pytest skips
 # loudly instead of quietly reporting green.
 if ! python3 -c 'import pytest' >/dev/null 2>&1; then
-  echo "  - skipped check-red-green detection tests (pytest not importable)"
+  # Counted, so the case's floor holds without pytest: the block below runs 5
+  # assertions (accept red, --max-new, reject green-on-base, its class trailer,
+  # and the characterization exemption).
+  echo "  - SKIP: pytest not importable, so check-red-green's 5 detection assertions did NOT run"
+  SKIP=$((SKIP + 5))
 else
   # Base commit: calc.add(), one existing test, and a pytest.ini registering the
   # characterization marker (the scaffold documents registering it there).
