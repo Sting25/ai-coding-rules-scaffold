@@ -60,10 +60,12 @@ are the same AST, and every module-level name it uses or requests (fixtures
 named by string too), followed transitively through the module's own bindings,
 is bound identically in both files. A copy, a new parametrize case, a changed
 helper, fixture or sibling method, a class split across files and a module with
-a star import are not exempt. NOT compared: fixtures and helpers outside the
-module (conftest), autouse fixtures, setup_* hooks, pytestmark, and module-level
-statements binding no name the test reaches. See exempt_as_unchanged_test(); fails
-closed.
+a star import or a fixture name= that is not a string literal are not exempt.
+NOT compared: fixtures and helpers outside the module (conftest), autouse
+fixtures, setup_* hooks, pytestmark, a fixture registered by calling
+pytest.fixture outside a decorator (fx = pytest.fixture(name="val"),
+pytest.fixture(**kw)), and module-level statements binding no name the test
+reaches. See exempt_as_unchanged_test(); fails closed.
 
 Exit: 0 all new tests were red on base (or explicitly exempt)
       1 one or more new tests passed on base
@@ -225,9 +227,11 @@ def _bindings(tree):
                     out.setdefault(k, []).append(ast.dump(one) if x is s else d)
                     nodes.setdefault(k, []).append(s)
             elif isinstance(x, (*_FN, ast.ClassDef)):
-                for k in [x.name, *(w.value.value for c in x.decorator_list for w in ast.walk(c)
-                                    if isinstance(w, ast.keyword) and w.arg == "name"
-                                    and isinstance(getattr(w.value, "value", 0), str))]:
+                nm = [w.value for c in x.decorator_list for w in ast.walk(c)
+                      if isinstance(w, ast.keyword) and w.arg == "name"]
+                lit = [v.value for v in nm if isinstance(getattr(v, "value", 0), str)]
+                star = star or len(lit) < len(nm)  # opaque name=
+                for k in [x.name, *lit]:
                     out.setdefault(k, []).append(d)
                     nodes.setdefault(k, []).append(s)
             elif isinstance(x, ast.Name) and isinstance(x.ctx, ast.Store):
@@ -249,11 +253,12 @@ def exempt_as_unchanged_test(nid: str, head_sha: str, base_sha: str,
          (imports, assignments, defs, classes, fixtures) is bound identically
          in both files, or unbound in both. Names are followed transitively
          through the module's own bindings; fixtures named by string count,
-      5. neither module has a `from x import *`.
+      5. neither module has a `from x import *` or a non-literal fixture name=.
 
     Pure AST comparison, nothing is imported or run. NOT compared: fixtures and
     helpers outside the module (conftest), autouse fixtures, setup_* hooks,
-    pytestmark, and module-level statements binding no name the test reaches. Fails closed: an
+    pytestmark, fixtures built by calling pytest.fixture outside a decorator, and
+    module-level statements binding no name the test reaches. Fails closed: an
     unreadable HEAD file, a node not found, or a timeout returns False; an
     unreadable or unparsable BASE file is skipped (it only removes candidates).
     """
@@ -291,17 +296,10 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", required=True, help="base ref to compare against")
     ap.add_argument("--ci", action="store_true")
-    ap.add_argument(
-        "--strict-unevaluable",
-        action="store_true",
-        help="fail when a new test cannot be executed against base at all",
-    )
-    ap.add_argument(
-        "--max-new",
-        type=int,
-        default=200,
-        help="refuse to re-run more than this many new tests (guards CI time)",
-    )
+    ap.add_argument("--strict-unevaluable", action="store_true",
+                    help="fail when a new test cannot be executed against base at all")
+    ap.add_argument("--max-new", type=int, default=200,
+                    help="refuse to re-run more than this many new tests (guards CI time)")
     args = ap.parse_args()
 
     if not pathlib.Path("tests").exists() and not pathlib.Path("test").exists():

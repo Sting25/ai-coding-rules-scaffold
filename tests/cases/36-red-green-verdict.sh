@@ -15,7 +15,7 @@
 # stay green. The commit that added the gate says the real behaviour was
 # verified BY HAND and never encoded; this file encodes it.
 #
-# TWENTY-TWO CHECKS (twenty-one pytest verdicts plus a static one; (f)-(t) are the
+# TWENTY-THREE CHECKS (twenty-two pytest verdicts plus a static one; (f)-(u) are the
 # moved-test exemption), on one shared fixture whose base commit ships a deliberately
 # WRONG `add(a, b) -> a - b` plus a test pinned to that wrong behaviour:
 #   (a) a new test that FAILS on base  -> exit 0. The false-positive direction,
@@ -44,8 +44,8 @@
 echo "cases/36: check-red-green's blocking verdict (#140)"
 
 if ! python3 -c 'import pytest' >/dev/null 2>&1; then
-  echo "  - SKIP: pytest not importable — check-red-green's 21 verdict assertions did NOT run (add a pinned 'pip install pytest' step to .github/workflows/test.yml to cover this in CI)"
-  SKIP=$((SKIP + 21))
+  echo "  - SKIP: pytest not importable — check-red-green's 22 verdict assertions did NOT run (add a pinned 'pip install pytest' step to .github/workflows/test.yml to cover this in CI)"
+  SKIP=$((SKIP + 22))
 else
   # A fixture repo with the --test-guard artifacts installed, one BASE commit,
   # and HEAD == base. Scenarios below add the second commit. Printed as
@@ -417,6 +417,18 @@ else
     _rg_commit "move the test into a file that defines the fixture under a name= alias"
     _rg_check "a moved test whose fixture is redefined via name= is an offender" 1 \
       'green-on-base: tests/test_v2.py::test_v' 1
+  fi
+
+  # (u) the fixture alias is name=N with N a module constant, in both files, with a
+  #     different value in the new one: `val` is bound in neither module. Offender.
+  if _rg_new; then
+    printf 'import pytest\nfrom calc import add\n\nN = "val"\n\n\n@pytest.fixture(name=N)\ndef fixture_val():\n    return 5\n\n\ndef test_n(val):\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_n.py"
+    _rg_rebase "base holds a test that requests a fixture registered via name=N"
+    printf '# moved\n' >"$_rg_dir/tests/test_n.py"
+    printf 'import pytest\nfrom calc import add\n\nN = "val"\n\n\n@pytest.fixture(name=N)\ndef fixture_val():\n    return 0\n\n\ndef test_n(val):\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_n2.py"
+    _rg_commit "move the test into a file that defines the fixture under a name=N alias"
+    _rg_check "a moved test whose fixture is redefined via a non-literal name= is an offender" 1 \
+      'green-on-base: tests/test_n2.py::test_n' 1
   fi
 
   unset _rg_dir _rg_base _rg_rc
