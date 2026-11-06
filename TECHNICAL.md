@@ -399,8 +399,9 @@ minimal; turn them on per project.
   (`check-red-green-ts`, `check-mutation-diff-ts`, Node scripts using only
   built-in modules) with the same flags, the same exit-code contract and the
   same wording, so the workflow sorts their results with one set of rules.
-  Instead of a git worktree each script exports the commit it needs with
-  `git archive` into a scratch directory and symlinks the project's own
+  Instead of a git worktree each script materialises the commit it needs
+  (`git read-tree` into a throwaway index, then `git checkout-index`, so
+  `export-ignore` attributes cannot drop files) into a scratch directory and symlinks the project's own
   `node_modules` into it: base code runs against today's dependencies, and
   `package.json` is deliberately not overlaid. Red-green collects test IDs
   with `vitest list --json` on both trees, overlays HEAD's changed test files

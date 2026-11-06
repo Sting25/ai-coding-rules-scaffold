@@ -7,21 +7,28 @@
  * check-red-green, read that header first. Only the differences are here.
  *
  * MECHANISM. Collect test IDs on HEAD with `vitest list --json`, collect them
- * again on a PRISTINE scratch copy of the base commit (git archive, not a
- * worktree), and the difference is the set of NEW tests. HEAD's versions of
+ * again on a PRISTINE scratch copy of the base commit (checked out through a
+ * throwaway index, not a worktree), and the difference is the multiset of NEW
+ * tests (Vitest allows two tests with the same full name, so IDs are counted:
+ * an ID is new when HEAD has more instances of it than the base does). HEAD's versions of
  * the changed test files (and of the config that governs collection:
  * vitest/vite config, vitest workspace, tsconfig.json) are then overlaid onto
  * the base copy and the new tests are run once there. node_modules is a
  * symlink to the project's own, so base code runs against today's
  * dependencies; package.json is deliberately not overlaid for that reason.
  *
+ * Requires Node 20.16 or newer when the project is an ES module ("type":
+ * "module"): the script then loads its built-ins via process.getBuiltinModule.
+ *
  * Test ID: "<file relative to the repo>::<describe titles and test title
  * joined by ' > '>", e.g. "src/calc.test.ts::calc > adds".
  *
- * Classification of each new test on base:
- *   failed                       RED, what we want
- *   passed/skipped/todo          OFFENDER (a test that did not fail is not red)
- *   its file failed to load      UNEVALUABLE (a missing import fails the whole
+ * Classification of each new test ID on base (all its new instances together):
+ *   every instance failed        RED, what we want
+ *   any instance passed/skipped/todo   OFFENDER (a test that did not fail is
+ *                                not red)
+ *   its file failed to load, or fewer results than instances
+ *                                UNEVALUABLE (a missing import fails the whole
  *                                file, so every test in it is invisible)
  *
  * THE EXEMPTION. A new test that passes on base by design must say so in its
@@ -38,7 +45,7 @@
  *         to verify
  *       1 one or more new tests passed on base, or the diff is too large
  *       2 could not evaluate (no base, collection broken, no report, git
- *         failure, timeout)
+ *         failure, timeout, or an internal crash: a crash is never exit 1)
  * Exit 2 is a FAILURE, not a skip. A check that cannot run must never report
  * the same green as a check that ran and passed.
  *
@@ -49,7 +56,12 @@
 // An extensionless file takes its module type from the nearest package.json,
 // so in a project with "type": "module" this runs as ESM and a bare require
 // is undefined. Resolve built-ins in a way that works under both.
+const CI = process.argv.includes("--ci"); // known before parseArgs, for the crash handler
 const load = typeof require === "function" ? require : process.getBuiltinModule;
+if (typeof load !== "function") {
+  console.error(`::error::check-red-green-ts needs Node 20.16 or newer when the project is an ES module ("type": "module"), because the script loads its built-ins through process.getBuiltinModule`);
+  process.exit(2);
+}
 const cp = load("child_process");
 const fs = load("fs");
 const os = load("os");
@@ -83,9 +95,10 @@ function real(p) {
   try { return fs.realpathSync(p); } catch (e) { return path.resolve(p); }
 }
 
-// Test IDs from `vitest list --json` run in cwd, or null if collection failed.
+// Test ID -> number of instances, from `vitest list --json` run in cwd, or
+// null if collection failed.
 function collect(cwd, files) {
-  if (files.length === 0) return new Set();
+  if (files.length === 0) return new Map();
   // --json LAST: it takes an optional output path, so a file placed after it
   // would be consumed as that path and overwritten with the JSON.
   const r = run("npx", ["--no-install", "vitest", "list", ...files, "--json"], { cwd });
@@ -99,9 +112,10 @@ function collect(cwd, files) {
   }
   if (!Array.isArray(rows)) return null;
   const root = real(cwd);
-  const ids = new Set();
+  const ids = new Map();
   for (const t of rows) {
-    ids.add(`${path.relative(root, real(t.file)).split(path.sep).join("/")}::${t.name}`);
+    const id = `${path.relative(root, real(t.file)).split(path.sep).join("/")}::${t.name}`;
+    ids.set(id, (ids.get(id) || 0) + 1);
   }
   return ids;
 }
@@ -126,10 +140,11 @@ function parseArgs(argv) {
 function main() {
   const args = parseArgs(process.argv.slice(2));
 
-  // Same detection as tests.yml: vitest must be DECLARED, not just a package.json.
+  // Same detection as test-guard.yml's detect_ts: vitest declared anywhere, or
+  // named in the test script.
   let pkg = "";
   try { pkg = fs.readFileSync("package.json", "utf8"); } catch (e) { /* none */ }
-  if (!/"vitest"/.test(pkg)) {
+  if (!/"vitest"/.test(pkg) && !/"test"\s*:\s*"[^"]*vitest/.test(pkg)) {
     console.log("no Vitest project detected, nothing to verify.");
     return 0;
   }
@@ -175,14 +190,17 @@ function main() {
   const wt = path.join(tmp, "wt");
   try {
     fs.mkdirSync(wt);
-    const tar = path.join(tmp, "base.tar");
-    let r = run("git", ["archive", "--format=tar", "-o", tar, baseSha]);
-    if (r.status === 0) r = run("tar", ["-xf", tar, "-C", wt]);
+    // Not `git archive`: export-ignore in .gitattributes would silently drop
+    // files from the "pristine" base and give a false verdict.
+    const idx = { env: Object.assign({}, process.env, { GIT_INDEX_FILE: path.join(tmp, "idx") }) };
+    let r = run("git", ["read-tree", baseSha], idx);
+    if (r.status === 0) r = run("git", ["checkout-index", "-a", "-f", `--prefix=${wt}/`], idx);
     if (r.status !== 0) {
-      emit("error", `could not export the base commit: ${r.stderr.trim()}`, args.ci);
+      emit("error", `git could not export the base commit: ${r.stderr.trim()}`, args.ci);
       return 2;
     }
-    fs.rmSync(tar, { force: true });
+    // A repo that tracks node_modules/.gitkeep has the directory already.
+    fs.rmSync(path.join(wt, "node_modules"), { recursive: true, force: true });
     fs.symlinkSync(path.resolve("node_modules"), path.join(wt, "node_modules"), "dir");
 
     // STEP 1: the PRISTINE base defines "new" (present at HEAD, absent here).
@@ -193,13 +211,19 @@ function main() {
         "base is broken, so nothing can be measured against it.", args.ci);
       return 2;
     }
-    const newIds = [...here].filter((id) => !pristine.has(id)).sort();
-    if (newIds.length === 0) {
+    // A new instance is one HEAD has beyond what base has of the same ID.
+    const news = [];
+    let newTotal = 0;
+    for (const id of [...here.keys()].sort()) {
+      const n = here.get(id) - (pristine.get(id) || 0);
+      if (n > 0) { news.push({ id, n }); newTotal += n; }
+    }
+    if (newTotal === 0) {
       console.log("no new test IDs in this diff — nothing to verify.");
       return 0;
     }
-    if (newIds.length > args.maxNew) {
-      emit("warning", `${newIds.length} new tests exceeds --max-new=${args.maxNew}; ` +
+    if (newTotal > args.maxNew) {
+      emit("warning", `${newTotal} new tests exceeds --max-new=${args.maxNew}; ` +
         "re-running that many against base would dominate CI time. " +
         "Split the PR — a change adding this many tests at once is not " +
         "reviewable by any means available to you.", args.ci);
@@ -209,6 +233,10 @@ function main() {
     // STEP 2: overlay HEAD's test files, then the config that governs
     // collection (or a new test in a new directory is silently not collected).
     const ls = run("git", ["ls-tree", "-r", "-z", "--name-only", headSha]);
+    if (ls.status !== 0) {
+      emit("error", `git ls-tree failed: ${ls.stderr.trim()}`, args.ci);
+      return 2;
+    }
     const cfgs = ls.stdout.split("\0").filter((p) => p && !NOISE_RE.test(p) &&
       CONFIG_RE.test(path.posix.basename(p)));
     for (const p of [...testFiles, ...cfgs]) {
@@ -220,8 +248,17 @@ function main() {
         }
         continue;
       }
-      fs.mkdirSync(path.dirname(path.join(wt, p)), { recursive: true });
-      fs.writeFileSync(path.join(wt, p), s.stdout);
+      const dst = path.join(wt, p);
+      // HEAD's shape wins: a file on base where HEAD has a directory (or the
+      // reverse) would make mkdir/write throw.
+      for (let d = path.dirname(dst); d.length > wt.length; d = path.dirname(d)) {
+        let st = null;
+        try { st = fs.lstatSync(d); } catch (e) { continue; }
+        if (!st.isDirectory()) fs.rmSync(d, { force: true });
+      }
+      fs.rmSync(dst, { recursive: true, force: true });
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.writeFileSync(dst, s.stdout);
     }
 
     // STEP 3: one run on base, classified per test ID from the JSON report.
@@ -236,40 +273,41 @@ function main() {
       return 2;
     }
     const root = real(wt);
-    const status = new Map();
+    const status = new Map(); // ID -> one status per instance
     for (const f of report.testResults) {
       const rel = path.relative(root, real(f.name)).split(path.sep).join("/");
       for (const a of f.assertionResults || []) {
         const titles = (a.ancestorTitles || []).concat([a.title]);
-        status.set(`${rel}::${titles.join(" > ")}`, a.status);
+        const id = `${rel}::${titles.join(" > ")}`;
+        status.set(id, (status.get(id) || []).concat([a.status]));
       }
     }
 
     // THE HONEST LIMIT (see check-red-green): a file whose import fails on
     // base fails to load as a whole, so its tests cannot be told apart. They
     // are reported by file and count; --strict-unevaluable turns it into a failure.
-    const red = [];
+    let red = 0;
     const offenders = [];
     const unevaluable = {};
-    for (const id of newIds) {
-      const st = status.get(id);
-      if (st === "failed") red.push(id);
-      else if (st !== undefined) offenders.push(id);
-      else {
+    for (const { id, n } of news) {
+      const sts = status.get(id) || [];
+      if (sts.length < here.get(id)) {
         const f = id.split("::", 1)[0];
-        unevaluable[f] = (unevaluable[f] || 0) + 1;
-      }
+        unevaluable[f] = (unevaluable[f] || 0) + n;
+      } else if (sts.every((x) => x === "failed")) red += n;
+      else offenders.push({ id, n });
     }
 
-    const exempt = [];
+    let exempt = 0;
     const stillOffending = [];
-    for (const id of offenders) {
-      const last = id.slice(id.indexOf("::") + 2).split(" > ").pop();
-      if (/^characterization:\s*\S/.test(last)) exempt.push(id);
-      else stillOffending.push(id);
+    for (const o of offenders) {
+      const last = o.id.slice(o.id.indexOf("::") + 2).split(" > ").pop();
+      if (/^characterization:\s*\S/.test(last)) {
+        exempt += o.n;
+        console.log(`  exempt (characterization): ${o.id}`);
+      } else stillOffending.push(o);
     }
-    for (const id of exempt) console.log(`  exempt (characterization): ${id}`);
-    if (red.length) console.log(`  red on base, as required: ${red.length} test(s)`);
+    if (red) console.log(`  red on base, as required: ${red} test(s)`);
 
     let failed = false;
     const unevalTotal = Object.values(unevaluable).reduce((a, b) => a + b, 0);
@@ -291,19 +329,19 @@ function main() {
       }
     }
     if (stillOffending.length) {
-      emit("error", `${stillOffending.length} new test(s) PASS against ` +
+      emit("error", `${stillOffending.reduce((a, o) => a + o.n, 0)} new test(s) PASS against ` +
         `${args.base.slice(0, 12)}. A test that passes without the change it ` +
         "accompanies is not evidence that the change works — it tests " +
         "behaviour that already existed, or it asserts nothing. Make " +
         "each one fail on base first, or give it a title starting with " +
         "\"characterization: <reason>\" if it is " +
         "deliberately pinning existing behaviour.", args.ci);
-      for (const id of stillOffending) emit("error", `green-on-base: ${id}`, args.ci);
+      for (const o of stillOffending) emit("error", `green-on-base: ${o.id}`, args.ci);
       failed = true;
     }
     if (!failed) {
-      console.log(`red-green OK: ${newIds.length} new test(s) accounted for ` +
-        `(${red.length} red, ${exempt.length} characterization, ` +
+      console.log(`red-green OK: ${newTotal} new test(s) accounted for ` +
+        `(${red} red, ${exempt} characterization, ` +
         `0 moved-unchanged, ${unevalTotal} unevaluable).`);
     }
     return failed ? 1 : 0;
@@ -321,6 +359,8 @@ try {
       "check to a subset.");
     process.exitCode = 2;
   } else {
-    throw e;
+    // A crash is a failure to evaluate, never the exit 1 a thrown error gives.
+    emit("error", `check-red-green-ts internal error, ${e && e.name}: ${e && e.message}`, CI);
+    process.exitCode = 2;
   }
 }

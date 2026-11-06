@@ -103,8 +103,8 @@ install_opt_in_test_guard() {
     echo "          markers ="
     echo "              characterization: passes against the base branch by design; give a reason"
     echo "      It also runs check-mutation-diff, an advisory mutation-testing layer scoped to the PR's changed lines: surviving mutants print a warning but never fail the job (advisory-first, issue #145). CI installs mutmut==3.7.0 itself, nothing to add locally."
-    echo "      Vitest projects get the same two checks (check-red-green-ts, check-mutation-diff-ts): a Vitest test that passes on base by design starts its title with 'characterization: <reason>'; CI installs Stryker itself."
     echo "      and make test-guard a REQUIRED status check on the default branch: an advisory check on a repo where the agent can also merge is a check the agent can route around."
+    echo "      Vitest projects get the same two checks (check-red-green-ts, check-mutation-diff-ts): a Vitest test that passes on base by design starts its title with 'characterization: <reason>'; CI installs Stryker itself."
   fi
   # Deliberately OUTSIDE the flag check: see ensure_test_guard_rules_section.
   ensure_test_guard_rules_section

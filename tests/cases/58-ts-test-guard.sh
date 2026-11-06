@@ -11,7 +11,10 @@
 #       step, run as shell against stubs (posting step always; mutation step
 #       needs node for its stub check)
 #   (D) both scripts' verdict logic, driven through a bash `npx` shim that
-#       returns canned vitest/stryker output (needs node)
+#       returns canned vitest/stryker output (needs node). The fixture project
+#       is "type": "module" and the scripts run from its .githooks/lib as
+#       extensionless files, which is the shape that exercises the ES-module
+#       built-in loader fallback.
 #
 # THERE IS NO REAL-TOOL SECTION ON PURPOSE. This suite never npm-installs
 # anything, so real Vitest and Stryker runs are not part of the committed
@@ -158,6 +161,20 @@ else
   echo "  ✗ the workflow should run both TypeScript checks with node"; FAIL=$((FAIL + 1))
 fi
 
+# The pre-commit hook loops over .githooks/lib/check-* and would run a twin with
+# no arguments (exit 2) unless it is named in the skip case; lint.yml does the same.
+ts58_skip_ok=1
+for _f in "$SCAFFOLD_DIR/githooks/pre-commit.template" "$SCAFFOLD_DIR/.github/workflows/lint.yml.template"; do
+  for _n in check-red-green-ts check-mutation-diff-ts; do
+    grep -E 'check-red-green\|' "$_f" | grep -qF "$_n" || ts58_skip_ok=0
+  done
+done
+if [ "$ts58_skip_ok" -eq 1 ]; then
+  echo "  ✓ the pre-commit hook and lint.yml skip lines name both TypeScript twins"; PASS=$((PASS + 1))
+else
+  echo "  ✗ pre-commit.template and lint.yml.template should name check-red-green-ts and check-mutation-diff-ts in their skip case"; FAIL=$((FAIL + 1))
+fi
+
 # --- (C) posting step and TypeScript mutation step, run as shell -------------
 TC=$(mktemp -d)
 mkdir -p "$TC/bin" "$TC/w/.githooks/lib"
@@ -248,13 +265,13 @@ rm -rf "$TC"
 
 # --- (D) script behaviour against a stubbed npx -----------------------------
 if ! command -v node >/dev/null 2>&1; then
-  echo "  - SKIP: node not on PATH, check-red-green-ts / check-mutation-diff-ts behaviour (15 assertions)"; SKIP=$((SKIP + 15))
+  echo "  - SKIP: node not on PATH, check-red-green-ts / check-mutation-diff-ts behaviour (21 assertions)"; SKIP=$((SKIP + 21))
 else
   TD=$(mktemp -d)
   mkdir -p "$TD/bin"
   # The shim stands in for `npx --no-install vitest|stryker ...`. Its canned
   # answers: `list` reports calc > adds (and calc > adds again once the file
-  # contains that marker), plus sq > $STUB_SQ_TITLE; `run` reports per
+  # contains that marker; twice, once more, with a DUP marker), plus sq > $STUB_SQ_TITLE; `run` reports per
   # $STUB_SCENARIO; `stryker run` writes a report per $STUB_MUTANTS.
   cat >"$TD/bin/npx" <<'SHIM'
 #!/usr/bin/env bash
@@ -264,6 +281,7 @@ tool=$1; shift
 if [ "$tool" = vitest ] && [ "$1" = list ]; then
   shift
   echo "list $*" >>"$STUB_LOG"
+  [ -n "${STUB_LIST_FAIL:-}" ] && exit 1
   rows=""
   for f in "$@"; do
     [ "$f" = --json ] && continue
@@ -271,7 +289,8 @@ if [ "$tool" = vitest ] && [ "$1" = list ]; then
     case "$f" in
       *calc.test.ts)
         rows="$rows{\"name\":\"calc > adds\",\"file\":\"$here/$f\"},"
-        if grep -q 'adds again' "$here/$f"; then rows="$rows{\"name\":\"calc > adds again\",\"file\":\"$here/$f\"},"; fi ;;
+        if grep -q 'adds again' "$here/$f"; then rows="$rows{\"name\":\"calc > adds again\",\"file\":\"$here/$f\"},"; fi
+        if grep -q DUP "$here/$f"; then rows="$rows{\"name\":\"calc > adds\",\"file\":\"$here/$f\"},"; fi ;;
       *sq.test.ts) rows="$rows{\"name\":\"sq > ${STUB_SQ_TITLE:-squares}\",\"file\":\"$here/$f\"}," ;;
     esac
   done
@@ -288,6 +307,8 @@ elif [ "$tool" = vitest ] && [ "$1" = run ]; then
     red) again=failed; sq=failed ;;
     unevaluable) again=failed; sq=none ;;
     char) again=failed; sq=passed ;;
+    noreport) exit 1 ;;
+    badshape) printf '{"testResults":[null]}\n' >"$out"; exit 1 ;;
   esac
   res=""
   for f in "${files[@]}"; do
@@ -296,6 +317,8 @@ elif [ "$tool" = vitest ] && [ "$1" = run ]; then
       *calc.test.ts)
         a="{\"ancestorTitles\":[\"calc\"],\"title\":\"adds\",\"status\":\"passed\"}"
         if grep -q 'adds again' "$here/$f"; then a="$a,{\"ancestorTitles\":[\"calc\"],\"title\":\"adds again\",\"status\":\"$again\"}"; fi
+        # a duplicate title: the first instance passes, the second fails
+        if grep -q DUP "$here/$f"; then a="$a,{\"ancestorTitles\":[\"calc\"],\"title\":\"adds\",\"status\":\"failed\"}"; fi
         res="$res{\"name\":\"$here/$f\",\"assertionResults\":[$a]}," ;;
       *sq.test.ts)
         if [ "$sq" = none ]; then res="$res{\"name\":\"$here/$f\",\"status\":\"failed\",\"assertionResults\":[]},"
@@ -328,7 +351,7 @@ SHIM
   (
     cd "$R" || exit 1
     mkdir -p src node_modules/@stryker-mutator/core node_modules/@stryker-mutator/vitest-runner
-    printf '{"name":"x","devDependencies":{"vitest":"^3.0.0"}}\n' >package.json
+    printf '{"name":"x","type":"module","devDependencies":{"vitest":"^3.0.0"}}\n' >package.json
     printf 'node_modules/\n' >.gitignore
     printf '{"version":"10.1.1"}\n' >node_modules/@stryker-mutator/core/package.json
     printf '{"version":"10.1.1"}\n' >node_modules/@stryker-mutator/vitest-runner/package.json
@@ -339,7 +362,13 @@ SHIM
     printf 'describe("calc", () => { it("adds", () => {}); it("adds again", () => {}); });\n' >src/calc.test.ts
     printf 'describe("sq", () => { it("squares", () => {}); });\n' >src/sq.test.ts
     git add -A && git -c commit.gpgsign=false commit -q -m head
+    # The scripts as installed: extensionless, inside the "type": "module" project.
+    mkdir -p .githooks/lib
+    cp "$_ts58_rg" .githooks/lib/check-red-green-ts
+    cp "$_ts58_md" .githooks/lib/check-mutation-diff-ts
   ) >/dev/null 2>&1
+  _ts58_rgx="$R/.githooks/lib/check-red-green-ts"
+  _ts58_mdx="$R/.githooks/lib/check-mutation-diff-ts"
 
   ts58_log="$TD/npx.log"
   _ts58_go() { # <script> <scenario> <mutants> <sq title> args...; sets TD_RC, output in HOOK_OUT
@@ -350,64 +379,68 @@ SHIM
         STUB_SQ_TITLE="$title" node "$script" "$@" ) >"$HOOK_OUT" 2>&1 || TD_RC=$?
   }
   : >"$ts58_log"
+  _ts58_expect() { # <rc> <fixed string in output> <ok text> <failure text>; reads TD_RC
+    if [ "$TD_RC" -eq "$1" ] && grep -qF -- "$2" "$HOOK_OUT"; then
+      echo "  ✓ $3"; PASS=$((PASS + 1))
+    else
+      echo "  ✗ $4 (rc $TD_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+    fi
+  }
 
-  _ts58_go "$_ts58_rg" offender x squares --base HEAD~1
-  if [ "$TD_RC" -eq 1 ] && grep -qF 'green-on-base: src/calc.test.ts::calc > adds again' "$HOOK_OUT"; then
-    echo "  ✓ check-red-green-ts rejects a new test that passes on base, naming its ID"; PASS=$((PASS + 1))
-  else
-    echo "  ✗ check-red-green-ts should exit 1 naming the green-on-base test (rc $TD_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
-  fi
+  _ts58_go "$_ts58_rgx" offender x squares --base HEAD~1
+  _ts58_expect 1 'green-on-base: src/calc.test.ts::calc > adds again' "check-red-green-ts rejects a new test that passes on base, naming its ID" "check-red-green-ts should exit 1 naming the green-on-base test"
 
-  _ts58_go "$_ts58_rg" red x squares --base HEAD~1
-  if [ "$TD_RC" -eq 0 ] && grep -qF 'red-green OK: 2 new test(s)' "$HOOK_OUT"; then
+  _ts58_go "$_ts58_rgx" red x squares --base HEAD~1
+  if [ "$TD_RC" -eq 0 ] && grep -qF 'red-green OK: 2 new test(s)' "$HOOK_OUT" \
+     && grep -qF '(2 red, 0 characterization' "$HOOK_OUT"; then
     echo "  ✓ check-red-green-ts accepts new tests that fail on base, with the accounting line"; PASS=$((PASS + 1))
   else
-    echo "  ✗ check-red-green-ts should exit 0 with 'red-green OK: 2 new test(s)' (rc $TD_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+    echo "  ✗ check-red-green-ts should exit 0 with 'red-green OK: 2 new test(s) ... (2 red, 0 characterization' (rc $TD_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
   fi
 
-  _ts58_go "$_ts58_rg" unevaluable x squares --base HEAD~1 --strict-unevaluable
-  if [ "$TD_RC" -eq 1 ] && grep -qF 'src/sq.test.ts (1)' "$HOOK_OUT"; then
-    echo "  ✓ --strict-unevaluable fails on a file that does not load on base"; PASS=$((PASS + 1))
+  _ts58_go "$_ts58_rgx" unevaluable x squares --base HEAD~1 --strict-unevaluable
+  _ts58_expect 1 'src/sq.test.ts (1)' "--strict-unevaluable fails on a file that does not load on base" "--strict-unevaluable should exit 1 naming src/sq.test.ts"
+
+  _ts58_go "$_ts58_rgx" unevaluable x squares --base HEAD~1
+  _ts58_expect 0 'could not be executed against base' "without --strict-unevaluable the same file is a notice and exit 0" "an unevaluable file should be a notice with exit 0 by default"
+
+  _ts58_go "$_ts58_rgx" char x 'characterization: pins squares' --base HEAD~1
+  _ts58_expect 0 'exempt (characterization): src/sq.test.ts::sq > characterization: pins squares' "a title starting 'characterization: <reason>' is exempt" "a characterization-titled green test should be exempt"
+
+  _ts58_go "$_ts58_rgx" red x squares --base HEAD~1 --max-new 0
+  _ts58_expect 1 'exceeds --max-new=0' "a diff with more new tests than --max-new is declined with exit 1" "--max-new 0 should decline with exit 1"
+
+  _ts58_go "$_ts58_rgx" red x squares --base nope
+  _ts58_expect 2 "cannot resolve base ref 'nope'" "an unresolvable base is exit 2, not a pass" "--base nope should exit 2"
+
+  _ts58_go "$_ts58_rgx" noreport x squares --base HEAD~1
+  _ts58_expect 2 'no readable JSON report' "a vitest run that writes no report is exit 2" "a missing vitest report should exit 2 with 'no readable JSON report'"
+
+  STUB_LIST_FAIL=1 _ts58_go "$_ts58_rgx" red x squares --base HEAD~1
+  _ts58_expect 2 'collection failed on HEAD' "a failing vitest list is exit 2, not a pass" "a failing 'vitest list' should exit 2 with 'collection failed on HEAD'"
+
+  _ts58_go "$_ts58_rgx" red x squares --base HEAD~1 --max-new 2
+  ts58_rc_new=$TD_RC
+  _ts58_go "$_ts58_mdx" x many squares --base HEAD~1 --max-mutants 5
+  if [ "$ts58_rc_new" -eq 0 ] && [ "$TD_RC" -eq 0 ]; then
+    echo "  ✓ the size limits are inclusive: --max-new 2 with 2 new tests, --max-mutants 5 with 5 mutants"; PASS=$((PASS + 1))
   else
-    echo "  ✗ --strict-unevaluable should exit 1 naming src/sq.test.ts (rc $TD_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+    echo "  ✗ exactly at the limit should pass (--max-new rc $ts58_rc_new, --max-mutants rc $TD_RC)"; FAIL=$((FAIL + 1))
   fi
 
-  _ts58_go "$_ts58_rg" unevaluable x squares --base HEAD~1
-  if [ "$TD_RC" -eq 0 ] && grep -qF 'could not be executed against base' "$HOOK_OUT"; then
-    echo "  ✓ without --strict-unevaluable the same file is a notice and exit 0"; PASS=$((PASS + 1))
+  # A report with a shape the script does not expect makes it throw; a crash
+  # must be exit 2 with the error form, never the exit 1 of an uncaught throw.
+  _ts58_go "$_ts58_rgx" badshape x squares --base HEAD~1 --ci
+  if [ "$TD_RC" -eq 2 ] && grep -q '^::error::check-red-green-ts internal error, TypeError' "$HOOK_OUT"; then
+    echo "  ✓ an internal crash is exit 2 with an ::error:: line, never exit 1"; PASS=$((PASS + 1))
   else
-    echo "  ✗ an unevaluable file should be a notice with exit 0 by default (rc $TD_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
-  fi
-
-  _ts58_go "$_ts58_rg" char x 'characterization: pins squares' --base HEAD~1
-  if [ "$TD_RC" -eq 0 ] && grep -qF 'exempt (characterization): src/sq.test.ts::sq > characterization: pins squares' "$HOOK_OUT"; then
-    echo "  ✓ a title starting 'characterization: <reason>' is exempt"; PASS=$((PASS + 1))
-  else
-    echo "  ✗ a characterization-titled green test should be exempt (rc $TD_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
-  fi
-
-  _ts58_go "$_ts58_rg" red x squares --base HEAD~1 --max-new 0
-  if [ "$TD_RC" -eq 1 ] && grep -qF 'exceeds --max-new=0' "$HOOK_OUT"; then
-    echo "  ✓ a diff with more new tests than --max-new is declined with exit 1"; PASS=$((PASS + 1))
-  else
-    echo "  ✗ --max-new 0 should decline with exit 1 (rc $TD_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
-  fi
-
-  _ts58_go "$_ts58_rg" red x squares --base nope
-  if [ "$TD_RC" -eq 2 ] && grep -qF "cannot resolve base ref 'nope'" "$HOOK_OUT"; then
-    echo "  ✓ an unresolvable base is exit 2, not a pass"; PASS=$((PASS + 1))
-  else
-    echo "  ✗ --base nope should exit 2 (rc $TD_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+    echo "  ✗ a malformed report should crash to exit 2 with '::error::... internal error' (rc $TD_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
   fi
 
   cp "$R/package.json" "$TD/package.json.keep"
   printf '{"name":"x"}\n' >"$R/package.json"
-  _ts58_go "$_ts58_rg" red x squares --base HEAD~1
-  if [ "$TD_RC" -eq 0 ] && grep -qF 'no Vitest project detected' "$HOOK_OUT"; then
-    echo "  ✓ a project that does not declare vitest is skipped with exit 0"; PASS=$((PASS + 1))
-  else
-    echo "  ✗ a non-Vitest project should exit 0 with the detection line (rc $TD_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
-  fi
+  _ts58_go "$_ts58_rgx" red x squares --base HEAD~1
+  _ts58_expect 0 'no Vitest project detected' "a project that does not declare vitest is skipped with exit 0" "a non-Vitest project should exit 0 with the detection line"
   cp "$TD/package.json.keep" "$R/package.json"
 
   ts58_runs=$(awk '/^run /{n++; if ($0 !~ /--reporter=json/) bad++} END{print n+0, bad+0}' "$ts58_log")
@@ -423,41 +456,31 @@ SHIM
     echo "  ✗ every vitest list call should end with --json (calls/bad: $ts58_lists)"; FAIL=$((FAIL + 1))
   fi
 
-  _ts58_go "$_ts58_md" x allkilled squares --base HEAD~1
-  if [ "$TD_RC" -eq 0 ] && grep -qF 'mutation OK: 3 mutants, all killed' "$HOOK_OUT"; then
-    echo "  ✓ check-mutation-diff-ts reports all-killed as mutation OK, exit 0"; PASS=$((PASS + 1))
-  else
-    echo "  ✗ all-killed should exit 0 with 'mutation OK' (rc $TD_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
-  fi
+  _ts58_go "$_ts58_mdx" x allkilled squares --base HEAD~1
+  _ts58_expect 0 'mutation OK: 3 mutants, all killed' "check-mutation-diff-ts reports all-killed as mutation OK, exit 0" "all-killed should exit 0 with 'mutation OK'"
 
-  _ts58_go "$_ts58_md" x survivors squares --base HEAD~1
-  if [ "$TD_RC" -eq 0 ] && grep -qF 'src/calc.ts: 1 survived, 1 no tests' "$HOOK_OUT" && grep -qF 'mutation summary:' "$HOOK_OUT"; then
-    echo "  ✓ survivors warn per file and keep exit 0 (advisory)"; PASS=$((PASS + 1))
-  else
-    echo "  ✗ survivors should warn per file with a summary and exit 0 (rc $TD_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
-  fi
+  _ts58_go "$_ts58_mdx" x survivors squares --base HEAD~1
+  _ts58_expect 0 'src/calc.ts: 1 survived, 1 no tests' "$HOOK_OUT" && grep -qF 'mutation summary:' "survivors warn per file and keep exit 0 (advisory)" "survivors should warn per file with a summary and exit 0"
 
-  _ts58_go "$_ts58_md" x many squares --base HEAD~1 --max-mutants 1
-  if [ "$TD_RC" -eq 1 ] && grep -qF 'exceeds --max-mutants=1' "$HOOK_OUT"; then
-    echo "  ✓ more mutants than --max-mutants is a decline, exit 1"; PASS=$((PASS + 1))
-  else
-    echo "  ✗ 5 mutants with --max-mutants 1 should exit 1 (rc $TD_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
-  fi
+  _ts58_go "$_ts58_mdx" x many squares --base HEAD~1 --max-mutants 1
+  _ts58_expect 1 'exceeds --max-mutants=1' "more mutants than --max-mutants is a decline, exit 1" "5 mutants with --max-mutants 1 should exit 1"
 
   printf '{"version":"9.0.0"}\n' >"$R/node_modules/@stryker-mutator/core/package.json"
-  _ts58_go "$_ts58_md" x allkilled squares --base HEAD~1
-  if [ "$TD_RC" -eq 2 ] && grep -qF 'expected 10.1.1' "$HOOK_OUT"; then
-    echo "  ✓ a Stryker version other than the pin is exit 2"; PASS=$((PASS + 1))
-  else
-    echo "  ✗ Stryker 9.0.0 should exit 2 naming the expected version (rc $TD_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
-  fi
+  _ts58_go "$_ts58_mdx" x allkilled squares --base HEAD~1
+  _ts58_expect 2 'expected 10.1.1' "a Stryker version other than the pin is exit 2" "Stryker 9.0.0 should exit 2 naming the expected version"
   printf '{"version":"10.1.1"}\n' >"$R/node_modules/@stryker-mutator/core/package.json"
 
-  _ts58_go "$_ts58_md" x none squares --base HEAD~1
-  if [ "$TD_RC" -eq 2 ] && grep -qF 'no readable report' "$HOOK_OUT"; then
-    echo "  ✓ a Stryker run that writes no report is exit 2, never a pass"; PASS=$((PASS + 1))
-  else
-    echo "  ✗ a missing report should exit 2 with 'no readable report' (rc $TD_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
-  fi
+  _ts58_go "$_ts58_mdx" x none squares --base HEAD~1
+  _ts58_expect 2 'no readable report' "a Stryker run that writes no report is exit 2, never a pass" "a missing report should exit 2 with 'no readable report'"
+  # Duplicate titles: base has one "calc > adds", head has two; the shim reports
+  # the first instance passed and the second failed. A set-based diff would see
+  # no new ID at all and miss it.
+  (
+    cd "$R" || exit 1
+    printf 'describe("calc", () => { it("adds", () => {}); it("adds", () => {}); /* DUP */ });\n' >src/calc.test.ts
+    git add src/calc.test.ts && git -c commit.gpgsign=false commit -q -m dup
+  ) >/dev/null 2>&1
+  _ts58_go "$_ts58_rgx" red x squares --base HEAD~1
+  _ts58_expect 1 'green-on-base: src/calc.test.ts::calc > adds' "a duplicate title added at HEAD is counted as new and judged per instance" "a duplicated test title with one passing instance should exit 1 naming the ID"
   rm -rf "$TD" "$R"
 fi
