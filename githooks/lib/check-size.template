@@ -59,7 +59,9 @@ cfg() { [ -x "$CONFIG_BIN" ] || return 0; "$CONFIG_BIN" "$@" 2>/dev/null || true
 # Whole-check state: `disabled` skips the size cap, `warn` reports without
 # failing. Default `error`.
 SIZE_STATE=$(cfg rule-state size); [ -n "$SIZE_STATE" ] || SIZE_STATE=error
-[ "$SIZE_STATE" = disabled ] && exit 0
+GS="$SELF_DIR/gate-status"
+CHECKED=0
+[ "$SIZE_STATE" != disabled ] || exec "$GS" size skipped 0 "disabled: .scaffold.toml [rules.size]"
 
 # Emit a finding at the resolved severity. `warn` prints but does not fail the
 # build (a deliberate, audited downgrade); `error` fails as usual.
@@ -84,6 +86,7 @@ while IFS= read -r -d '' file; do
   esac
   # Per-path cap from .scaffold.toml [size], else the global MAX_LINES. A junk
   # value can't slip through: scaffold-config only emits an integer.
+  CHECKED=$((CHECKED + 1))
   cap=$(cfg size-cap "$file")
   case "$cap" in ''|*[!0-9]*) cap=$MAX_LINES ;; esac
   # `grep -c ''` counts every line, including a trailing line without a
@@ -95,5 +98,8 @@ while IFS= read -r -d '' file; do
   fi
 done
 
+if [ "$CHECKED" -gt 0 ]; then set -- ran "$CHECKED" ""; else set -- empty 0 "no source files staged (docs, data and images are exempt)"; fi
+# The status line comes BEFORE the refusal log's class trailer, which must stay the last line.
+rc=0; "$GS" size "$@" "$FAILED" || rc=$?
 [ "$FAILED" -eq 0 ] || [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-size "${RL_RULE:-size}" "${RL_FILE:-}" 1 --say a || true
-exit $FAILED
+exit "$rc"

@@ -8,6 +8,21 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+- **Gates fail closed when they skip or check nothing (#210).** New
+  `.githooks/lib/gate-status` is the one line every gate ends with:
+  `gate=<name> status=ran|skipped|empty checked=<n> reason=<text>`. A gate that
+  ran but evaluated 0 items fails. The four workflows that run gates
+  (`lint.yml`'s guardrails job, `test-guard.yml`, and the pytest and vitest steps
+  of `tests.yml` and `coverage.yml`) set `SCAFFOLD_GATE_STRICT=1`, under which a
+  `skipped` gate fails unless its reason starts `disabled:` (a decision recorded
+  in `.scaffold.toml`). The pre-commit hook collects the lines and prints one
+  summary line, `note: N gate(s) skipped: ...`, instead of a note per tool; a
+  skip stays a pass locally. pytest exit 5 is no longer a blanket pass in
+  `tests.yml` and `coverage.yml`: it is `empty` only when the tree has no test
+  files, and a failure when test files exist but none were collected; vitest
+  uses `--passWithNoTests` only for a tree with no test files. Case 56 hands
+  each gate an input it must refuse and one it must report as empty, and covers
+  the skip, strict and summary paths.
 - **TypeScript/Vitest twin of the test-guard checks (#205).**
   `install.sh --test-guard` now also installs `check-red-green-ts` and
   `check-mutation-diff-ts`, Node scripts with the same flags, exit codes and
@@ -126,6 +141,19 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Changed
 
+- **CI is stricter about gates that skip or check nothing (#210).** Three
+  behaviours consumers will see: pytest exit 5 in `tests.yml` and `coverage.yml`
+  now fails when the tree has Python test files (it is still a pass when it has
+  none); `check-patterns` with no selected pattern file (no
+  `.forbidden-patterns/*.txt`, or `CHECK_PATTERNS_INCLUDE` matching none) is a
+  `skipped` gate and so fails in CI; and `SCAFFOLD_GATE_STRICT=1` in the four
+  workflows makes any gate skipped for a missing tool fail the job. Locally
+  nothing blocks: the hook still passes a skipped gate and prints one summary
+  line. Reason `disabled:` from `.scaffold.toml` still passes. Two edge cases:
+  a project with colocated `test_*.py` files and no importable pytest now exits
+  2 from `check-red-green` where it used to pass; and a tree whose only Python
+  test files are `tests/conftest.py` or `tests/__init__.py` counts as having
+  test files for the pytest exit-5 rule.
 - **test-guard: a mutation size decline is a neutral check run, not a failure
   (#206).** When the diff has more mutants than `--max-mutants`, the mutation
   step used to fail the job and look like a real finding. It now passes, writes

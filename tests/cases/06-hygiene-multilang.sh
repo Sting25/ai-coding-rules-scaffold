@@ -417,7 +417,7 @@ printf '<?xml version="1.0"?>\n<ruleset name="t"></ruleset>\n' >phpcs.xml
 printf '<?php\nclass Ok {}\n' >standards.php
 git add phpcs.xml standards.php
 if PATH="$NOPHPCS_PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1 \
-   && grep -qF "note: phpcs not installed" "$HOOK_OUT"; then
+   && grep -qF "phpcs (phpcs not installed" "$HOOK_OUT"; then
   echo "  ✓ phpcs-unavailable skip prints a notice and still exits 0"
   PASS=$((PASS + 1))
 else

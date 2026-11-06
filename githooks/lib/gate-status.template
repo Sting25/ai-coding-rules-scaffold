@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# .githooks/lib/gate-status: the one status line every gate ends with (#210).
+#
+#   gate-status <gate> <status> <checked> <reason> [rc]
+#
+#   status   ran | skipped | empty
+#   checked  non-negative integer: how many input items the gate evaluated
+#   reason   free text (newlines and CRs become spaces); may be empty
+#   rc       the gate's own exit code when the verdict passes (default 0)
+#
+# Gates end with `exec gate-status ...`, so a missing helper exits non-zero (127 on
+# bash 5, 1 on bash 3.2), which blocks: a gate that cannot report cannot pass. Bad usage exits 2.
+#
+# Output: LINE="gate=<gate> status=<status> checked=<n> reason=<text>". When
+# SCAFFOLD_GATE_LOG names a file the line is appended there and nothing is
+# printed (the pre-commit hook sets it and prints one summary line); otherwise
+# the line goes to stdout.
+#
+# Verdict, always applied:
+#   ran with checked=0   FAILS (exit 1): input was non-empty but nothing was
+#                        evaluated (a test file changed, zero tests collected).
+#   skipped              with SCAFFOLD_GATE_STRICT=1 (CI sets it; hooks do not)
+#                        FAILS unless the reason starts "disabled:", which is a
+#                        recorded decision in .scaffold.toml that scaffold-audit
+#                        prints in the same job. Without strict it exits rc.
+#   empty, ran>0         exit rc.
+set -euo pipefail
+
+if [ "$#" -lt 4 ] || [ "$#" -gt 5 ]; then
+  echo "usage: gate-status <gate> <ran|skipped|empty> <checked> <reason> [rc]" >&2
+  exit 2
+fi
+gate=$1 status=$2 checked=$3 reason=$4 rc=${5:-0}
+case $status in ran | skipped | empty) ;; *)
+  echo "gate-status: bad status '$status' (ran|skipped|empty)" >&2
+  exit 2
+  ;;
+esac
+case $checked$rc in *[!0-9]* | '')
+  echo "gate-status: checked and rc must be non-negative integers" >&2
+  exit 2
+  ;;
+esac
+[ -n "$checked" ] || { echo "gate-status: checked is empty" >&2; exit 2; }
+[ "$rc" -le 255 ] || { echo "gate-status: rc must be at most 255" >&2; exit 2; }
+
+reason=${reason//$'\r'/ }
+reason=${reason//$'\n'/ }
+LINE="gate=$gate status=$status checked=$checked reason=$reason"
+if [ -n "${SCAFFOLD_GATE_LOG:-}" ]; then
+  printf '%s\n' "$LINE" >>"$SCAFFOLD_GATE_LOG"
+else
+  printf '%s\n' "$LINE"
+fi
+
+strict=${SCAFFOLD_GATE_STRICT:-}
+if [ "$status" = ran ] && [ "$checked" -eq 0 ]; then
+  msg="gate=$gate ran but evaluated 0 items: $reason"
+  if [ "$strict" = 1 ]; then echo "::error::$msg"; else echo "✗ $msg" >&2; fi
+  exit 1
+fi
+if [ "$status" = skipped ] && [ "$strict" = 1 ]; then
+  case $reason in disabled:*) ;; *)
+    echo "::error::gate=$gate skipped: $reason (SCAFFOLD_GATE_STRICT=1: a gate that cannot run fails)"
+    exit 1
+    ;;
+  esac
+fi
+exit "$rc"

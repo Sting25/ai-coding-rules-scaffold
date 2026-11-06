@@ -16,11 +16,9 @@ one that does not has proven the opposite, regardless of whether it passes.
 
 INTERPLAY WITH check-red-green. red-green documents its own honest limit: a
 new test in a file whose imports do not resolve on base cannot be executed
-there, so every test in that file is reported "unevaluable", not "offending".
-That is where a vacuous test is most likely to hide. A surviving or
-uncovered mutant in a file red-green reported unevaluable is therefore the
-single highest-signal finding this check can produce, and the per-file
-warning below calls it out as such.
+there, so every test in that file is "unevaluable", not "offending". That is
+where a vacuous test is most likely to hide: a surviving or uncovered mutant
+in such a file is the highest-signal finding this check can produce.
 
 MECHANISM, verified against mutmut 3.7.0 (pinned; see MUTMUT_PIN below) on
 2026-09-01, ground truth in the U0 fact sheet, not from memory of older
@@ -41,21 +39,17 @@ mutmut majors, whose CLI and config surface differ substantially:
     script still builds an isolated `git worktree` copy of HEAD so the
     synthesized config never touches the real checkout and so a crashed
     or slow run cannot leave stray mutants/ artifacts in the repo.
-  - mutmut's own process exit code is NOT the verdict. A run with
-    surviving mutants exits 0, identically to a run where everything was
-    killed. The only reliable exit-code signal is a NONZERO code paired
-    with one of the strings in HARD_FAILURES below (baseline suite failed,
-    clean run failed, bad test-selection args, no test hit matches a
-    mutant). Everything else must be read from the artifacts mutmut writes
-    under mutants/, never from $?.
+  - mutmut's own process exit code is NOT the verdict: surviving mutants
+    exit 0, like a clean kill. The only reliable signal is a NONZERO code
+    paired with one of the HARD_FAILURES strings below (baseline or clean
+    run failed, bad test-selection args, no test hit matches a mutant).
+    Everything else is read from the artifacts under mutants/, never $?.
   - A bad/nonexistent source_paths entry produces NO distinct error: 0
-    files get mutated, the baseline suite runs and passes, and mutmut
-    then exits 1 with "Stopping early, because we could not find any test
-    case for any mutant", the exact same code and a near-identical
-    message as "your tests genuinely do not cover the changed lines".
-    Since this is ambiguous from mutmut's own output, this script
-    verifies every source path it writes into the config actually exists
-    in the worktree BEFORE invoking mutmut.
+    files get mutated and mutmut exits 1 with "Stopping early, because we
+    could not find any test case for any mutant", the same as "your tests
+    genuinely do not cover the changed lines". So this script verifies
+    every source path it writes into the config exists in the worktree
+    BEFORE invoking mutmut.
   - Per-mutant status lives in mutants/<path>/<file>.py.meta as
     exit_code_by_key, mapped through mutmut's own status table (copied
     verbatim below, from mutmut/__main__.py::status_by_exit_code). This is
@@ -77,11 +71,9 @@ WHAT COUNTS AS "COULD NOT EVALUATE" (exit 2) VS ADVISORY (exit 0).
 Per #145's design: advisory first, strict later. Exit 2 is reserved for
 infrastructure failure: mutmut missing or the wrong pinned version, a
 broken baseline suite, a bad worktree/config/path, or a timeout. It is
-NEVER used for "the tests did not kill enough mutants": that is exactly
-what the advisory warnings below report, at exit 0, so this check can be
-turned on everywhere without becoming a second red-green. A source path
-that resolves to zero mutants (a comment-only or already-fully-tested
-diff) is not a failure either; it prints the positive line.
+NEVER used for "the tests did not kill enough mutants": that is what the
+advisory warnings report, at exit 0. Every exit-0 end goes through
+gate-status (ran/empty plus a count); mutants all "not checked" is `ran 0`.
 
 KNOWN LIMITATIONS, stated rather than silently absorbed:
   - No dry-run mutant count exists in this mutmut major, so --max-mutants
@@ -106,9 +98,8 @@ Exit: 0 evaluated cleanly (killed-clean, or advisory warnings emitted)
       2 could not evaluate: mutmut missing/wrong version, broken baseline,
         config/path failure, or timeout
 
-Exit 2 is a FAILURE, not a skip, same boundary as check-red-green and
-check-secrets. CI-only / PR-only by design (#145 point 1): mutation runs
-are minutes, not the seconds a pre-commit hook budgets for.
+Exit 2 is a FAILURE, not a skip (as in check-red-green). CI-only / PR-only by
+design (#145 point 1): mutation runs take minutes, not a hook's seconds.
 """
 
 from __future__ import annotations
@@ -150,6 +141,17 @@ def run(cmd: list[str], cwd: str | None = None, timeout: int = RUN_TIMEOUT):
     return subprocess.run(
         cmd, cwd=cwd, capture_output=True, text=True, check=False, timeout=timeout
     )
+
+
+def gate(status: str, n: int, reason: str, rc: int = 0) -> int:
+    # Exit codes here are 0/1/2; a helper failure (missing = 127) must read as 2.
+    helper = pathlib.Path(__file__).resolve().parent / "gate-status"
+    try:
+        r = subprocess.call([str(helper), "mutation-diff", status, str(n), reason, str(rc)])
+    except OSError as e:  # not executable / missing: exit 2, never a traceback's 1
+        print(f"::error::gate-status unusable: {e}")
+        return 2
+    return r if r == rc else 2
 
 
 def emit(sev: str, msg: str, ci: bool) -> None:
@@ -393,13 +395,14 @@ def main() -> int:
         return 2
     base_sha, head_sha = base.stdout.strip(), head.stdout.strip()
 
-    changed = run(
-        ["git", "diff", "--name-only", "--diff-filter=d", f"{base_sha}...HEAD"]
-    ).stdout.split()
+    d = run(["git", "diff", "--name-only", "--diff-filter=d", f"{base_sha}...HEAD"])
+    if d.returncode != 0:
+        emit("error", f"git diff {base_sha!r}...HEAD failed: {d.stderr.strip()}", args.ci)
+        return 2
+    changed = d.stdout.split()
     src_files = sorted(p for p in changed if is_python_source(p))
     if not src_files:
-        print("nothing to mutate, no changed non-test Python source files in this diff.")
-        return 0
+        return gate("empty", 0, "no changed non-test Python source files")
 
     tmp = tempfile.mkdtemp(prefix="mutdiff-")
     wt = os.path.join(tmp, "wt")
@@ -458,14 +461,10 @@ def main() -> int:
             return 1
 
         if total == 0:
-            print("mutation OK: 0 mutants generated for the changed lines "
-                  f"(source: {stats_source}); nothing to evaluate.")
-            return 0
+            return gate("empty", 0, f"mutmut generated no mutants for {len(src_files)} changed file(s)")
 
         if bad_total == 0:
-            print(f"mutation OK: {total} mutants, all killed across "
-                  f"{len(src_files)} changed file(s) (source: {stats_source}).")
-            return 0
+            return gate("ran", total, f"{total} mutants, all killed ({stats_source})")
 
         for rel, s in sorted(per_file.items()):
             bad = s["survived"] + s["no_tests"] + s["not_checked"] + s["other"]
@@ -483,7 +482,8 @@ def main() -> int:
              "(#145 point 4): none of this fails the build yet. A survivor "
              "in a file check-red-green reported unevaluable is the "
              "highest-signal finding above.", args.ci)
-        return 0
+        evaluated = total - sum(s["not_checked"] for s in per_file.values())
+        return gate("ran", evaluated, f"{total} mutants, {evaluated} evaluated")
 
     finally:
         run(["git", "worktree", "remove", "--force", wt])

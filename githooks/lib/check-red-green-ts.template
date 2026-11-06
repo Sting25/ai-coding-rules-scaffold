@@ -88,6 +88,19 @@ function run(cmd, args, opts) {
   return { status: r.status === null ? 1 : r.status, stdout: r.stdout || "", stderr: r.stderr || "" };
 }
 
+// The shared status line (gate-status), run from this script's own directory.
+// A helper that cannot run is a failure to evaluate (2), never a pass.
+function gate(status, n, reason, rc = 0) {
+  const helper = path.join(path.dirname(process.argv[1]), "gate-status");
+  if (!fs.existsSync(helper)) { console.error(`::error::gate-status unusable: ${helper} is missing`); return 2; }
+  const r = cp.spawnSync("bash", [helper, "red-green-ts", status, String(n), reason, String(rc)], { stdio: "inherit" });
+  if (r.error || r.status === null || r.status > 1) {
+    console.error(`::error::gate-status unusable: ${r.error ? r.error.message : `exit ${r.status}`}`);
+    return 2;
+  }
+  return r.status;
+}
+
 function emit(sev, msg, ci) {
   if (ci) console.log(`::${sev}::${msg}`);
   else console.error(`  ${sev}: ${msg}`);
@@ -151,8 +164,7 @@ function main() {
   let pkg = "";
   try { pkg = fs.readFileSync("package.json", "utf8"); } catch (e) { /* none */ }
   if (!/"vitest"/.test(pkg) && !/"test"\s*:\s*"[^"]*vitest/.test(pkg)) {
-    console.log("no Vitest project detected, nothing to verify.");
-    return 0;
+    return gate("empty", 0, "no Vitest project detected");
   }
 
   const base = run("git", ["rev-parse", "--verify", `${args.base}^{commit}`]);
@@ -176,8 +188,7 @@ function main() {
   }
   const testFiles = diff.stdout.split("\0").filter((p) => p && isTestPath(p));
   if (testFiles.length === 0) {
-    console.log("no test files changed in this diff — nothing to verify.");
-    return 0;
+    return gate("empty", 0, "no changed test files in this diff");
   }
 
   if (!fs.existsSync("node_modules")) {
@@ -192,6 +203,7 @@ function main() {
       "identified. Fix collection first.", args.ci);
     return 2;
   }
+  if (here.size === 0) return gate("ran", 0, `${testFiles.length} test file(s) changed, vitest listed 0 tests`);
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "redgreen-ts-"));
   const wt = path.join(tmp, "wt");
   try {
@@ -225,8 +237,7 @@ function main() {
       if (n > 0) { news.push({ id, n }); newTotal += n; }
     }
     if (newTotal === 0) {
-      console.log("no new test IDs in this diff — nothing to verify.");
-      return 0;
+      return gate("empty", 0, `no new test IDs (${here.size} collected)`);
     }
     if (newTotal > args.maxNew) {
       emit("warning", `${newTotal} new tests exceeds --max-new=${args.maxNew}; ` +
@@ -350,7 +361,7 @@ function main() {
         `(${red} red, ${exempt} characterization, ` +
         `0 moved-unchanged, ${unevalTotal} unevaluable).`);
     }
-    return failed ? 1 : 0;
+    return gate("ran", newTotal, "", failed ? 1 : 0);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

@@ -9,14 +9,11 @@ passes by construction. This is measured, not folklore: LLM test-generation
 tools DISCARD any generated test that fails against the current code, so a test
 that correctly detects a bug is thrown away for being "wrong". Share of
 generated tests that VALIDATE the bug rather than catch it: CoverAgent 59.6%,
-CoverUp 68.1% (arXiv 2412.14137). CoverAgent discarded 470 bug-revealing tests;
-CoverUp discarded 400. Independently, LLMs "generate test oracles that capture
-the actual program implementation rather than the expected one" — assertion
-correctness dropped a further 8-9 points when the code under test was buggy
-(arXiv 2410.21136), i.e. the model follows the implementation, not the intent.
+CoverUp 68.1% (arXiv 2412.14137); CoverAgent discarded 470 bug-revealing tests,
+CoverUp 400. LLM test oracles also follow the implementation, not the intent:
+assertion correctness dropped 8-9 points on buggy code (arXiv 2410.21136).
 
-A test that has never been observed to fail has never been shown to test
-anything.
+A test never seen to fail has never been shown to test anything.
 
 THE MECHANISM, and why it is not "commit the test first".
 Commit ordering is unenforceable and easy to fake — a test committed first can
@@ -29,17 +26,16 @@ This checks the property that actually matters, which needs no discipline at all
 If a new test passes against the base branch, one of three things is true:
   - it tests behaviour that already worked, so it is not evidence for this PR
   - it asserts nothing (the assertion-free test a coverage gate rewards)
-  - it was written to match the implementation rather than the requirement
-All three are worth stopping, and none of them require reading a diff to judge.
+  - it was written to match the implementation, not the requirement
+All three are worth stopping, with no diff-reading needed.
 
-A test that fails on base because its import does not exist yet counts as RED.
-That is honest: the code it tests genuinely did not exist.
+A test that fails on base because its import does not exist yet counts as RED
+(honest: the code it tests did not exist).
 
 THE LEGITIMATE EXCEPTION, made explicit rather than assumed.
 Some new tests SHOULD pass against base: characterization tests pinning
-behaviour before a refactor, and coverage backfill for code that was already
-correct but untested. Both are good practice and both are green-on-base by
-definition. They are allowed, but only when SAID OUT LOUD:
+behaviour before a refactor, and coverage backfill for correct but untested
+code. Both are green-on-base by definition; allowed only when SAID OUT LOUD:
 
     @pytest.mark.characterization(reason="pinning invoice rounding before refactor")
 
@@ -68,15 +64,11 @@ pytest.fixture(**kw)), and module-level statements binding no name the test
 reaches. See exempt_as_unchanged_test(); fails closed.
 
 Exit: 0 all new tests were red on base (or explicitly exempt)
-      1 one or more new tests passed on base
+      1 one or more new tests passed on base, or tests changed but 0 collected
       2 could not evaluate (no base, collection broken, git failure)
 
-Exit 2 is a FAILURE, not a skip. A check that cannot run must never report the
-same green as a check that ran and passed — that equivalence is how a guardrail
-quietly stops guarding.
-
-NOT overridable via .scaffold.toml, same boundary as check-secrets and the test
-ratchets.
+Exit 2 is a FAILURE, not a skip: a check that cannot run never reports green.
+Every other end goes through gate-status. NOT overridable via .scaffold.toml.
 """
 
 from __future__ import annotations
@@ -99,6 +91,15 @@ def run(cmd: list[str], cwd: str | None = None, timeout: int = 900):
     return subprocess.run(
         cmd, cwd=cwd, capture_output=True, text=True, check=False, timeout=timeout
     )
+
+
+def gate(status: str, n: int, reason: str, rc: int = 0) -> int:
+    helper = pathlib.Path(__file__).resolve().parent / "gate-status"
+    try:
+        return subprocess.call([str(helper), "red-green", status, str(n), reason, str(rc)])
+    except OSError as e:  # not executable / missing: exit 2, never a traceback's 1
+        print(f"::error::gate-status unusable: {e}")
+        return 2
 
 
 def emit(sev: str, msg: str, ci: bool) -> None:
@@ -302,9 +303,6 @@ def main() -> int:
                     help="refuse to re-run more than this many new tests (guards CI time)")
     args = ap.parse_args()
 
-    if not pathlib.Path("tests").exists() and not pathlib.Path("test").exists():
-        return 0
-
     base = run(["git", "rev-parse", "--verify", f"{args.base}^{{commit}}"])
     if base.returncode != 0:
         emit("error", f"cannot resolve base ref {args.base!r}. In CI make sure the "
@@ -318,16 +316,28 @@ def main() -> int:
         return 2
     head_sha = head.stdout.strip()
     # head_sha, never the literal "HEAD": inside a linked worktree "HEAD" is the
-    # base commit, so `git checkout HEAD -- tests/` there restores the BASE
-    # tests. The new tests then do not exist, pytest exits 4, the non-zero
-    # return reads as "failed on base", and the check reports a false green on
-    # exactly the case it exists to catch (hence the explicit exit-4 guard).
+    # base commit, so `git checkout HEAD -- tests/` there restores the BASE tests,
+    # pytest exits 4, "failed on base" reads as red and the check reports a false
+    # green on the case it exists to catch (hence the explicit exit-4 guard).
+
+    d = run(["git", "diff", "--name-only", "--diff-filter=d", f"{base_sha}...HEAD"])
+    if d.returncode != 0:
+        emit("error", f"git diff {base_sha!r}...HEAD failed: {d.stderr.strip()}", args.ci)
+        return 2
+    changed = d.stdout.split()
+    test_paths = [p for p in changed if is_test_path(p) and is_real_source(p)]
+    if not test_paths:
+        return gate("empty", 0, "no test files changed in this diff")
+    if not any(p.endswith(".py") for p in test_paths):
+        return gate("empty", 0, "no changed .py test files")
 
     here = collect(".")
     if here is None:
         emit("error", "pytest collection failed on HEAD, so new tests cannot be "
                       "identified. Fix collection first.", args.ci)
         return 2
+    if not here:
+        return gate("ran", 0, f"{len(test_paths)} test file(s) changed, pytest collected 0")
 
     tmp = tempfile.mkdtemp(prefix="redgreen-")
     wt = os.path.join(tmp, "wt")
@@ -350,26 +360,16 @@ def main() -> int:
 
         new_ids = sorted(here - base_pristine)
         if not new_ids:
-            print("no new test node IDs in this diff — nothing to verify.")
-            return 0
+            return gate("empty", 0, f"no new test node IDs ({len(here)} collected)")
 
         if len(new_ids) > args.max_new:
             emit("warning",
                  f"{len(new_ids)} new tests exceeds --max-new={args.max_new}; "
                  "re-running that many against base would dominate CI time. "
-                 "Split the PR — a change adding this many tests at once is not "
-                 "reviewable by any means available to you.", args.ci)
+                 "Split the PR: that many tests at once is not reviewable.", args.ci)
             return 1
 
         # STEP 2 — overlay HEAD's test files onto the base source tree.
-        changed = run(
-            ["git", "diff", "--name-only", "--diff-filter=d", f"{base_sha}...HEAD"]
-        ).stdout.split()
-        test_paths = [p for p in changed if is_test_path(p) and is_real_source(p)]
-        if not test_paths:
-            print("no test files changed in this diff — nothing to verify.")
-            return 0
-
         r = run(["git", "checkout", head_sha, "--", *test_paths], cwd=wt)
         if r.returncode != 0:
             emit("error", f"could not overlay test files onto base: "
@@ -481,7 +481,7 @@ def main() -> int:
                   f"({len(red)} red, {len(exempt)} characterization, "
                   f"{len(unchanged)} moved-unchanged, "
                   f"{sum(unevaluable.values())} unevaluable).")
-        return 1 if failed else 0
+        return gate("ran", len(new_ids), "", 1 if failed else 0)
 
     finally:
         run(["git", "worktree", "remove", "--force", wt])

@@ -104,6 +104,7 @@ ghesc() {
 # bash 5.3: cd "" is fatal; no dirname(1) needed (see scaffold-doctor.sh)
 case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
 SELF_DIR="$(cd "$_sd" && pwd)"
+GS="$SELF_DIR/gate-status"
 cfg_refuse() { echo "error: $1" >&2; [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-hygiene "$2" "" 2 --say b || true; exit 2; }
 CONFIG_BIN="$SELF_DIR/scaffold-config"
 cfg() { [ -x "$CONFIG_BIN" ] || return 0; "$CONFIG_BIN" "$@" 2>/dev/null || true; }
@@ -146,9 +147,10 @@ while IFS= read -r -d '' f; do
   [ -n "$f" ] && FILES+=("$f")
 done
 
-[ ${#FILES[@]} -eq 0 ] && exit 0
+[ ${#FILES[@]} -gt 0 ] || exec "$GS" hygiene empty 0 "no files staged"
 
 FAILED=0; unset RL_RULE RL_FILE RL_CLASS
+CHECKED=${#FILES[@]}
 
 # --- 1. merge-conflict markers ---------------------------------------------
 CONFLICT_STATE=$(cfg rule-state conflict-marker); [ -n "$CONFLICT_STATE" ] || CONFLICT_STATE=error
@@ -337,5 +339,8 @@ if [ "$HIDDEN_STATE" != disabled ]; then
   done
 fi
 
+set -- ran "$CHECKED" ""
+# The status line comes BEFORE the refusal log's class trailer, which must stay the last line.
+rc=0; "$GS" hygiene "$@" "$FAILED" || rc=$?
 [ "$FAILED" -eq 0 ] || [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-hygiene "${RL_RULE:-unknown}" "${RL_FILE:-}" 1 --say "${RL_CLASS:-a}" || true
-exit $FAILED
+exit "$rc"

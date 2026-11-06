@@ -41,9 +41,12 @@ emit() {
   fi
 }
 
+GS="$SELF_DIR/gate-status"
 FAILED=0; unset RL_RULE RL_FILE
+CHECKED=0
 while IFS= read -r -d '' file; do
   [ -z "$file" ] && continue
+  CHECKED=$((CHECKED + 1))
   # Match case-INSENSITIVELY. macOS/Windows filesystems are case-insensitive, so
   # `cert.PEM` / `.ENV` / `ID_RSA` are the SAME files as their lowercase forms and
   # must not slip past a byte-exact glob. bash 3.2 has no ${var,,}, so fold with
@@ -96,5 +99,8 @@ while IFS= read -r -d '' file; do
   esac
 done
 
+if [ "$CHECKED" -gt 0 ]; then set -- ran "$CHECKED" ""; else set -- empty 0 "no paths staged"; fi
+# The status line comes BEFORE the refusal log's class trailer, which must stay the last line.
+rc=0; "$GS" filenames "$@" "$FAILED" || rc=$?
 [ "$FAILED" -eq 0 ] || [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-filenames "${RL_RULE:-unknown}" "${RL_FILE:-}" 1 --say a || true
-exit $FAILED
+exit "$rc"

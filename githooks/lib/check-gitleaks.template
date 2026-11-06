@@ -15,8 +15,9 @@
 # BROAD entropy + ~150-rule backstop. Running both locally is belt-and-braces;
 # check-secrets stays the one that every clone always runs.
 #
-# Exit: 0 = clean (or gitleaks absent — fail-OPEN so a missing binary never
-# bricks commits; CI is the real gate), 1 = a secret was found / gitleaks errored.
+# Exit: 0 = clean (or gitleaks absent: reported as `skipped` by gate-status, so a
+# missing binary never bricks local commits but fails CI under
+# SCAFFOLD_GATE_STRICT=1), 1 = a secret was found / gitleaks errored.
 
 set -euo pipefail
 
@@ -25,16 +26,19 @@ set -euo pipefail
 unset CDPATH
 case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
 SELF_DIR="$(cd "$_sd" && pwd)"
+GS="$SELF_DIR/gate-status"
 
 # The orchestrator pipes the NUL-delimited staged-file list to every check on
-# stdin. gitleaks discovers the staged changes itself, so just drain it.
-cat >/dev/null 2>&1 || true
+# stdin. gitleaks discovers the staged changes itself; the entries are only
+# counted, so the status line says how many paths were in play.
+n=$(tr -cd '\0' </dev/stdin | wc -c | tr -d ' ')
 
 if ! command -v gitleaks >/dev/null 2>&1; then
-  echo "note: gitleaks not installed — skipping local secret scan." >&2
-  echo "      The CI gitleaks job is the authoritative gate; install the binary" >&2
-  echo "      for local feedback: https://github.com/gitleaks/gitleaks#installing" >&2
-  exit 0
+  exec "$GS" gitleaks skipped 0 "gitleaks not installed; the CI gitleaks job is the authoritative gate"
+fi
+
+if [ "$n" -eq 0 ]; then
+  exec "$GS" gitleaks empty 0 "no staged paths"
 fi
 
 # Scan ONLY the staged changes — this is the invocation gitleaks ships in its
@@ -50,4 +54,4 @@ if ! gitleaks git --pre-commit --staged --redact --no-banner; then
   exit 1
 fi
 
-exit 0
+exec "$GS" gitleaks ran "$n" "staged changes scanned"

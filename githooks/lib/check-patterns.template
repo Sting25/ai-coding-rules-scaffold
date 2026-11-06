@@ -98,16 +98,15 @@ ghesc() {
   printf '%s' "$s"
 }
 
-# Per-project overrides (.scaffold.toml via the sibling scaffold-config helper).
-# `cfg` fails open to empty output when the helper is missing (older install);
-# the caller then treats every rule as fully enforced (fail safe).
+# Per-project overrides (.scaffold.toml via the sibling scaffold-config helper): `cfg`
+# fails open to empty when it is missing (older install); every rule is then enforced.
 case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
 SELF_DIR="$(cd "$_sd" && pwd)"
+GS="$SELF_DIR/gate-status"
 cfg_refuse() { echo "error: $1" >&2; [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-patterns "$2" "" 2 --say b || true; exit 2; }
 CONFIG_BIN="$SELF_DIR/scaffold-config"
 cfg() { [ -x "$CONFIG_BIN" ] || return 0; "$CONFIG_BIN" "$@" 2>/dev/null || true; }
-# path_excluded <rule-id> <file> <default-globs>: the shared matcher in
-# scaffold-config (check-hygiene calls the same one). No helper, not excluded.
+# path_excluded <rule-id> <file> <globs>: scaffold-config's shared matcher; no helper, not excluded.
 path_excluded() { [ -x "$CONFIG_BIN" ] && "$CONFIG_BIN" path-excluded "$@" 2>/dev/null; }
 
 # Emit one finding at the resolved severity. `warn` reports without failing the
@@ -283,7 +282,7 @@ scan() {
     for ext in "${exts_lc[@]}"; do
       case "$file_lc" in *."$ext") keep=1; break ;; esac
     done
-    [ "$keep" -eq 1 ] || continue
+    if [ "$keep" -eq 1 ]; then CHECKED=$((CHECKED + 1)); else continue; fi
 
     # Scan the staged blob, not the working-tree path (see header). Strip NUL
     # bytes FIRST: a C-string awk (macOS/BSD) truncates a record at an embedded
@@ -386,18 +385,15 @@ config_usable() {
 }
 
 FAILED=0; unset RL_RULE RL_FILE RL_CLASS
-INCLUDED=0
-# Auto-discover every pattern file. secrets.txt is check-secrets' domain (it
-# scans all files, not by extension), so skip it here. Then apply the optional
-# INCLUDE/EXCLUDE basename filter documented in the header.
-# SCAFFOLD_PATTERNS_DIR (default .forbidden-patterns) lets scaffold-assess.sh
-# run this scanner against a tree that has not adopted the scaffold, reading
-# the shipped pattern files from wherever it rendered them. The hook and CI
-# never set it, so their behavior is unchanged.
+INCLUDED=0; CHECKED=0
+# Auto-discover every pattern file; skip secrets.txt (check-secrets' domain), then
+# apply the optional INCLUDE/EXCLUDE basename filter documented in the header.
+# SCAFFOLD_PATTERNS_DIR (default .forbidden-patterns) lets scaffold-assess.sh run
+# this scanner against a tree that has not adopted the scaffold, reading the
+# shipped pattern files from where it rendered them; hook and CI never set it.
 for cfg in "${SCAFFOLD_PATTERNS_DIR:-.forbidden-patterns}"/*.txt; do
-  # `-e` alone is not enough: a DANGLING symlink is not -e, so a config swapped
-  # for one would be skipped here and never reach the config_usable() guard.
-  # Both false still means "no glob match → literal string", which is skipped.
+  # `-e` alone misses a DANGLING symlink (a swapped config), which must reach the
+  # config_usable() guard; both false means "no glob match → literal string": skip.
   if [ ! -e "$cfg" ] && [ ! -h "$cfg" ]; then continue; fi
   base=$(basename "$cfg")
   case "$base" in secrets.txt) continue ;; esac
@@ -496,5 +492,9 @@ if [ -n "${CHECK_PATTERNS_INCLUDE:-}" ] && [ "$INCLUDED" -eq 0 ]; then
   echo "warning: CHECK_PATTERNS_INCLUDE='$CHECK_PATTERNS_INCLUDE' matched no .forbidden-patterns/*.txt, nothing was scanned" >&2
 fi
 
+if [ "$INCLUDED" -eq 0 ]; then set -- skipped 0 "no pattern file selected (.forbidden-patterns/*.txt)"
+elif [ "$CHECKED" -gt 0 ]; then set -- ran "$CHECKED" ""
+else set -- empty 0 "no staged file matched a pattern file's extensions"; fi
+rc=0; "$GS" patterns "$@" "$FAILED" || rc=$?
 [ "$FAILED" -eq 0 ] || [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-patterns "${RL_RULE:-unknown}" "${RL_FILE:-}" 1 --say "${RL_CLASS:-a}" || true
-exit $FAILED
+exit "$rc"

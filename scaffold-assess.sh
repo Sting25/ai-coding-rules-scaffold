@@ -58,7 +58,7 @@ fi
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/lib" "$WORK/patterns"
-for t in "$SCAFFOLD_DIR"/githooks/lib/check-*.template "$SCAFFOLD_DIR"/githooks/lib/scaffold-config.template "$SCAFFOLD_DIR"/githooks/lib/py-tool.template; do
+for t in "$SCAFFOLD_DIR"/githooks/lib/check-*.template "$SCAFFOLD_DIR"/githooks/lib/scaffold-config.template "$SCAFFOLD_DIR"/githooks/lib/py-tool.template "$SCAFFOLD_DIR"/githooks/lib/gate-status.template; do
   n=$(basename "$t" .template)
   cp "$t" "$WORK/lib/$n" && chmod +x "$WORK/lib/$n"
 done

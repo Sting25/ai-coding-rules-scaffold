@@ -61,13 +61,16 @@ else
   echo "  ✗ --test-guard should install both checks + workflow + appended rules section"; FAIL=$((FAIL + 1))
 fi
 
-# (T) the installed check is runnable python3 and exits 0 in a repo with no
-# tests/ directory (its documented nothing-to-verify path): the positive
-# assertion that the artifact executes, not just that no error appeared.
-if ( cd "$T" && python3 .githooks/lib/check-red-green --base HEAD ) >"$HOOK_OUT" 2>&1; then
-  echo "  ✓ installed check-red-green runs and exits 0 with no tests directory"; PASS=$((PASS + 1))
+# (T) the installed check is runnable python3 and, with a resolvable base and no
+# test files changed, exits 0 reporting `empty`: the positive assertion that the
+# artifact executes, not just that no error appeared. HEAD must resolve (an
+# unresolvable base is exit 2), so the fixture gets an empty initial commit.
+git -C "$T" commit -q --allow-empty --no-verify -m init  # scaffold-allow: test fixture
+if ( cd "$T" && python3 .githooks/lib/check-red-green --base HEAD ) >"$HOOK_OUT" 2>&1 \
+   && grep -qF "gate=red-green status=empty" "$HOOK_OUT"; then
+  echo "  ✓ installed check-red-green runs and exits 0 as empty when no test files changed"; PASS=$((PASS + 1))
 else
-  echo "  ✗ installed check-red-green should exit 0 with no tests directory"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  echo "  ✗ installed check-red-green should exit 0 with status=empty when no test files changed"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 
 # (T) the installed check-mutation-diff is runnable python3 and honors its
@@ -131,7 +134,11 @@ rm -rf "$U"
 # assumption is re-checked live rather than assumed, and a missing pytest skips
 # loudly instead of quietly reporting green.
 if ! python3 -c 'import pytest' >/dev/null 2>&1; then
-  echo "  - skipped check-red-green detection tests (pytest not importable)"
+  # Counted, so the case's floor holds without pytest: the block below runs 5
+  # assertions (accept red, --max-new, reject green-on-base, its class trailer,
+  # and the characterization exemption).
+  echo "  - SKIP: pytest not importable, so check-red-green's 5 detection assertions did NOT run"
+  SKIP=$((SKIP + 5))
 else
   # Base commit: calc.add(), one existing test, and a pytest.ini registering the
   # characterization marker (the scaffold documents registering it there).

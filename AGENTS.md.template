@@ -10,6 +10,8 @@ Rules about the code: [`coding-rules.md`](./coding-rules.md), `ruff.toml`, `esli
 
 CI runs the same checks. Run them on **staged** content; the hook scans the index, not the working tree.
 
+Every check ends with `gate=<name> status=ran|skipped|empty checked=<n>`; a `skipped` check fails in CI, and `ran` with 0 checked is a failure, not a pass. Install the missing tool; never silence the line.
+
 ```sh
 ruff check .                       # Python  (when ruff.toml / pyproject.toml present)
 npx eslint . && npx tsc --noEmit   # TS/JS   (tsc when tsconfig.json present)

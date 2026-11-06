@@ -67,6 +67,8 @@ commit. `scaffold-config` is an optional sibling that reads `.scaffold.toml`
 overrides (entry 13); without it every rule runs at its default. `py-tool` is
 the resolver the hook uses to find `ruff` (a project venv, a linked worktree's
 main `.venv`, PATH); without it the local ruff pass is skipped with a note.
+`gate-status` is the line every gate ends with (`ran`, `skipped` or `empty`, with a
+count); a gate that ran on input but evaluated nothing fails.
 `refusal-log` records each refusal in `scaffold-blocks.log` under the git
 common directory (summarise it with `scaffold-blocks.sh`); without it
 refusals are simply not recorded.
@@ -78,8 +80,9 @@ mkdir -p .githooks/lib
 cp "$SCAFFOLD/githooks/pre-commit.template" .githooks/pre-commit
 cp "$SCAFFOLD/githooks/lib/scaffold-config.template" .githooks/lib/scaffold-config
 cp "$SCAFFOLD/githooks/lib/py-tool.template" .githooks/lib/py-tool
+cp "$SCAFFOLD/githooks/lib/gate-status.template" .githooks/lib/gate-status
 cp "$SCAFFOLD/githooks/lib/refusal-log.template" .githooks/lib/refusal-log
-chmod +x .githooks/pre-commit .githooks/lib/scaffold-config .githooks/lib/py-tool .githooks/lib/refusal-log
+chmod +x .githooks/pre-commit .githooks/lib/scaffold-config .githooks/lib/py-tool .githooks/lib/gate-status .githooks/lib/refusal-log
 git config core.hooksPath .githooks
 ```
 
@@ -114,7 +117,8 @@ scanned itself, so a secret parked in the pattern file is caught too.
 mkdir -p .githooks/lib .forbidden-patterns
 cp "$SCAFFOLD/githooks/lib/check-secrets.template" .githooks/lib/check-secrets
 cp "$SCAFFOLD/forbidden-patterns/secrets.txt.template" .forbidden-patterns/secrets.txt
-chmod +x .githooks/lib/check-secrets
+cp "$SCAFFOLD/githooks/lib/gate-status.template" .githooks/lib/gate-status
+chmod +x .githooks/lib/check-secrets .githooks/lib/gate-status
 ```
 
 The verify step assembles an AWS-shaped key at run time so that this
@@ -144,7 +148,8 @@ keys, `*.pem`, `*.key`, `.p12`, `.pfx`, `.jks`, `.ppk`. `.env.example` and
 ```sh adopt=scanner-filenames
 mkdir -p .githooks/lib
 cp "$SCAFFOLD/githooks/lib/check-filenames.template" .githooks/lib/check-filenames
-chmod +x .githooks/lib/check-filenames
+cp "$SCAFFOLD/githooks/lib/gate-status.template" .githooks/lib/gate-status
+chmod +x .githooks/lib/check-filenames .githooks/lib/gate-status
 ```
 
 ```sh verify=scanner-filenames
@@ -172,7 +177,8 @@ present it scans nothing; adopt at least one. The adopt block below takes
 ```sh adopt=scanner-patterns
 mkdir -p .githooks/lib .forbidden-patterns
 cp "$SCAFFOLD/githooks/lib/check-patterns.template" .githooks/lib/check-patterns
-chmod +x .githooks/lib/check-patterns
+cp "$SCAFFOLD/githooks/lib/gate-status.template" .githooks/lib/gate-status
+chmod +x .githooks/lib/check-patterns .githooks/lib/gate-status
 cp "$SCAFFOLD/forbidden-patterns/backend.txt.template" .forbidden-patterns/backend.txt
 ```
 
@@ -199,7 +205,8 @@ merge-conflict markers, and case-only filename collisions.
 ```sh adopt=scanner-hygiene
 mkdir -p .githooks/lib
 cp "$SCAFFOLD/githooks/lib/check-hygiene.template" .githooks/lib/check-hygiene
-chmod +x .githooks/lib/check-hygiene
+cp "$SCAFFOLD/githooks/lib/gate-status.template" .githooks/lib/gate-status
+chmod +x .githooks/lib/check-hygiene .githooks/lib/gate-status
 ```
 
 The verify step writes a right-to-left override byte sequence at run time.
@@ -227,7 +234,8 @@ Blocks any staged file over 512,000 bytes (raise or lower it per path in
 ```sh adopt=scanner-large-files
 mkdir -p .githooks/lib
 cp "$SCAFFOLD/githooks/lib/check-large-files.template" .githooks/lib/check-large-files
-chmod +x .githooks/lib/check-large-files
+cp "$SCAFFOLD/githooks/lib/gate-status.template" .githooks/lib/gate-status
+chmod +x .githooks/lib/check-large-files .githooks/lib/gate-status
 ```
 
 ```sh verify=scanner-large-files
@@ -253,7 +261,8 @@ inside an agent's context window (override per path in `.scaffold.toml`).
 ```sh adopt=scanner-size
 mkdir -p .githooks/lib
 cp "$SCAFFOLD/githooks/lib/check-size.template" .githooks/lib/check-size
-chmod +x .githooks/lib/check-size
+cp "$SCAFFOLD/githooks/lib/gate-status.template" .githooks/lib/gate-status
+chmod +x .githooks/lib/check-size .githooks/lib/gate-status
 ```
 
 ```sh verify=scanner-size
@@ -726,7 +735,8 @@ absent); GitHub Actions for the CI gate.
 
 ```sh adopt=gitleaks
 cp "$SCAFFOLD/githooks/lib/check-gitleaks.template" .githooks/lib/check-gitleaks
-chmod +x .githooks/lib/check-gitleaks
+cp "$SCAFFOLD/githooks/lib/gate-status.template" .githooks/lib/gate-status
+chmod +x .githooks/lib/check-gitleaks .githooks/lib/gate-status
 mkdir -p .github/workflows
 cp "$SCAFFOLD/.github/workflows/gitleaks.yml.template" .github/workflows/gitleaks.yml
 ```
@@ -797,9 +807,10 @@ check, or an agent that can merge will route around it.
 ```sh adopt=test-guard
 cp "$SCAFFOLD/githooks/lib/check-red-green.template"     .githooks/lib/check-red-green
 cp "$SCAFFOLD/githooks/lib/check-mutation-diff.template" .githooks/lib/check-mutation-diff
+cp "$SCAFFOLD/githooks/lib/gate-status.template" .githooks/lib/gate-status
 cp "$SCAFFOLD/githooks/lib/check-red-green-ts.template"     .githooks/lib/check-red-green-ts
 cp "$SCAFFOLD/githooks/lib/check-mutation-diff-ts.template" .githooks/lib/check-mutation-diff-ts
-chmod +x .githooks/lib/check-red-green .githooks/lib/check-mutation-diff
+chmod +x .githooks/lib/check-red-green .githooks/lib/check-mutation-diff .githooks/lib/gate-status
 chmod +x .githooks/lib/check-red-green-ts .githooks/lib/check-mutation-diff-ts
 mkdir -p .github/workflows
 cp "$SCAFFOLD/.github/workflows/test-guard.yml.template" .github/workflows/test-guard.yml

@@ -38,15 +38,28 @@ _run_block() {
 }
 
 # Run a step body under `bash -e` — the default shell GitHub gives a `run:` step
-# — with a fake $2 on PATH exiting $3. Echoes the body's exit status.
+# — with a fake $2 on PATH exiting $3. Echoes the body's exit status. $4 is the
+# test file the tree holds: "py" (tests/test_x.py), "js" (x.test.ts) or none. The
+# body counts them with `git ls-files` and ends through .githooks/lib/gate-status
+# (#210), so the dir is a git repo carrying the real helper.
 #
 # `bash -e` is load-bearing, not incidental: under -e the obvious `pytest …;
 # rc=$?` never reaches the assignment, so a fix written that way fails the job on
 # exit 5 and undoes the tolerance the block exists to provide. Running the body
 # under any other shell would hide that.
 _run_step_with_fake() {
-  local body=$1 tool=$2 code=$3
+  local body=$1 tool=$2 code=$3 files=${4:-}
   local d; d=$(mktemp -d)
+  mkdir -p "$d/.githooks/lib"
+  cp "$SCAFFOLD_DIR/githooks/lib/gate-status.template" "$d/.githooks/lib/gate-status"
+  chmod +x "$d/.githooks/lib/gate-status"
+  git -C "$d" init -q
+  case "$files" in
+    py) mkdir -p "$d/tests"; echo 'def test_x(): pass' >"$d/tests/test_x.py"; git -C "$d" add tests ;;
+    js) echo 'test("x", () => {})' >"$d/x.test.ts"; git -C "$d" add x.test.ts ;;
+    src) mkdir -p "$d/src/pkg"; echo 'def test_x(): pass' >"$d/src/pkg/test_a.py"; git -C "$d" add src ;;
+    jsonly) mkdir -p "$d/tests"; echo 'test("x", () => {})' >"$d/tests/app.test.ts"; git -C "$d" add tests ;;
+  esac
   printf '#!/bin/sh\nexit %s\n' "$code" >"$d/$tool"
   chmod +x "$d/$tool"
   # npx is invoked as `npx --no-install vitest …`; fake it as a shim that runs
@@ -76,35 +89,66 @@ if [ -z "$PYBODY" ] || [ -z "$JSBODY" ]; then
 else
   # (T) THE BUG: pytest exit 1 (tests FAILED) must fail the job. Under the old
   #     `|| true` this was 0 and the PR went green.
-  R=$(_run_step_with_fake "$PYBODY" pytest 1)
+  R=$(_run_step_with_fake "$PYBODY" pytest 1 py)
   if [ "$R" -ne 0 ]; then
     echo "  ✓ pytest exit 1 (failing tests) fails the coverage job"; PASS=$((PASS + 1))
   else
     echo "  ✗ failing pytest still produced a green coverage job (#71)"; FAIL=$((FAIL + 1))
   fi
 
-  # (T) ...while exit 5 (no tests collected) is still tolerated, which is the
-  #     entire reason the original `|| true` was there. A fix that gates on
-  #     failure by ALSO failing here would have traded one bug for another.
+  # (T) ...exit 5 (no tests collected) is tolerated ONLY when the tree has no
+  #     test files (reported `empty`). With a test file present it is the #221
+  #     shape (a suite that silently stopped running), so it fails (#210).
   R=$(_run_step_with_fake "$PYBODY" pytest 5)
   if [ "$R" -eq 0 ]; then
-    echo "  ✓ pytest exit 5 (no tests collected) is still tolerated"; PASS=$((PASS + 1))
+    echo "  ✓ pytest exit 5 with no test files in the tree is tolerated (empty)"; PASS=$((PASS + 1))
   else
-    echo "  ✗ exit 5 now fails the job — the no-tests tolerance regressed (rc=$R)"; FAIL=$((FAIL + 1))
+    echo "  ✗ exit 5 with no test files fails the job (rc=$R)"; FAIL=$((FAIL + 1))
+  fi
+  R=$(_run_step_with_fake "$PYBODY" pytest 5 py)
+  if [ "$R" -ne 0 ]; then
+    echo "  ✓ pytest exit 5 with a test file present fails (collected 0 of N files)"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ exit 5 with a test file present passed: a vanished suite reads green"; FAIL=$((FAIL + 1))
+  fi
+
+  # (T) The count is name-based and tree-wide (#210): colocated tests under src/
+  #     count, so a vanished suite there still fails; and a non-Python file under
+  #     tests/ is not a Python test file, so exit 5 stays `empty`.
+  R=$(_run_step_with_fake "$PYBODY" pytest 5 src)
+  if [ "$R" -ne 0 ]; then
+    echo "  ✓ pytest exit 5 with a colocated src/pkg/test_a.py fails (not root-anchored)"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ pytest exit 5 with a colocated test file passed: the count is root-anchored"; FAIL=$((FAIL + 1))
+  fi
+  R=$(_run_step_with_fake "$PYBODY" pytest 5 jsonly)
+  if [ "$R" -eq 0 ]; then
+    echo "  ✓ pytest exit 5 with only tests/app.test.ts is empty and passes (Python files only)"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ pytest exit 5 failed on a tree whose only test file is tests/app.test.ts (rc=$R)"; FAIL=$((FAIL + 1))
   fi
 
   # (T) A clean run stays clean, so diff-cover gets its say.
-  R=$(_run_step_with_fake "$PYBODY" pytest 0)
+  R=$(_run_step_with_fake "$PYBODY" pytest 0 py)
   if [ "$R" -eq 0 ]; then
     echo "  ✓ pytest exit 0 passes through to the diff-cover gate"; PASS=$((PASS + 1))
   else
     echo "  ✗ a passing pytest failed the step (rc=$R)"; FAIL=$((FAIL + 1))
   fi
 
+  # (T) rc 0 proves tests ran (pytest exits 5, not 0, on an empty collection), so
+  #     a passing run is green even when no file matches the default patterns.
+  R=$(_run_step_with_fake "$PYBODY" pytest 0)
+  if [ "$R" -eq 0 ]; then
+    echo "  ✓ pytest exit 0 with no file matching the default patterns passes"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ pytest exit 0 failed when no test file matched the patterns (rc=$R)"; FAIL=$((FAIL + 1))
+  fi
+
   # (T) Every other non-zero code fails too — 2 interrupted, 3 internal error,
   #     4 usage. 4 is the one that matters most in practice: a typo'd pytest
   #     invocation collecting nothing would otherwise look like an empty suite.
-  R=$(_run_step_with_fake "$PYBODY" pytest 4)
+  R=$(_run_step_with_fake "$PYBODY" pytest 4 py)
   if [ "$R" -ne 0 ]; then
     echo "  ✓ pytest exit 4 (usage error) fails rather than reading as 'no tests'"; PASS=$((PASS + 1))
   else
@@ -114,7 +158,7 @@ else
   # (T) The frontend half: a failing vitest run must fail the job as well.
   #     vitest has no distinct no-tests-collected code, so there is nothing to
   #     tolerate here — --passWithNoTests covers the empty case by exiting 0.
-  R=$(_run_step_with_fake "$JSBODY" vitest 1)
+  R=$(_run_step_with_fake "$JSBODY" vitest 1 js)
   if [ "$R" -ne 0 ]; then
     echo "  ✓ vitest exit 1 (failing tests) fails the coverage job"; PASS=$((PASS + 1))
   else

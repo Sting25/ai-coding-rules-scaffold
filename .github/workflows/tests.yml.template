@@ -90,20 +90,33 @@ jobs:
           done
       - name: Run pytest
         if: steps.detect.outputs.present == 'true'
-        # Same tolerance as coverage.yml: only pytest's exit 5 (no tests
-        # collected) is swallowed, so an empty suite doesn't fail a fresh
-        # install, but a real failure (1), interruption (2), internal error
-        # (3), or usage error (4) fails the job. `|| rc=$?`, not `; rc=$?`:
-        # the default shell for a `run:` step is `bash -e`, under which
-        # `pytest …; rc=$?` never reaches the assignment (see coverage.yml).
+        # Exit 5 (no tests collected) is no longer a blanket pass (#210): it is
+        # `empty` only when the tree has no test files at all. With test files
+        # present, collecting nothing is the #221 shape (a suite that silently
+        # stopped running) and gate-status fails it. Any other non-zero code
+        # (1 failed, 2 interrupted, 3 internal error, 4 usage) fails the job.
+        # `|| rc=$?`, not `; rc=$?`: the default shell for a `run:` step is
+        # `bash -e`, under which `pytest …; rc=$?` never reaches the assignment.
+        env:
+          SCAFFOLD_GATE_STRICT: "1"  # a gate that skips or checks nothing fails
         run: |
+          chmod +x .githooks/lib/gate-status 2>/dev/null || true
+          [ -x .githooks/lib/gate-status ] || { echo "::error::.githooks/lib/gate-status is missing; re-run install.sh"; exit 1; }
           pip install pytest==9.1.1
           rc=0
           pytest || rc=$?
-          if [ "$rc" -ne 0 ] && [ "$rc" -ne 5 ]; then
-            echo "pytest exited $rc, failing the job (only 5 = no tests collected is tolerated)."
+          n=$(git ls-files -z | tr '\0' '\n' | grep -cE '(^|/)(test_[^/]*\.py|[^/]*_test\.py|tests?/.*\.py)$' || true)
+          if [ "$rc" -eq 5 ] && [ "$n" -eq 0 ]; then
+            exec .githooks/lib/gate-status pytest empty 0 "no test files in the tree"
+          elif [ "$rc" -eq 5 ]; then
+            exec .githooks/lib/gate-status pytest ran 0 "$n test file(s) present but pytest collected 0 tests"
+          elif [ "$rc" -ne 0 ]; then
+            echo "pytest exited $rc, failing the job."
             exit "$rc"
           fi
+          # rc 0 proves tests ran (pytest exits 5, not 0, when it collects nothing).
+          if [ "$n" -gt 0 ]; then exec .githooks/lib/gate-status pytest ran "$n" ""; fi
+          exec .githooks/lib/gate-status pytest ran 1 "exit 0: tests ran, none matched the default file patterns"
 
   vitest:
     runs-on: ubuntu-latest
@@ -143,6 +156,17 @@ jobs:
       - name: Run vitest
         if: steps.detect.outputs.present == 'true'
         # No `|| true` (see coverage.yml #71): a failing suite must fail the
-        # job. --passWithNoTests exits 0 for a genuinely empty suite instead of
-        # swallowing a real failure the way `|| true` did.
-        run: npx --no-install vitest run --passWithNoTests
+        # job. --passWithNoTests is used ONLY when the tree has no test files;
+        # with test files present vitest fails on its own if it finds nothing.
+        env:
+          SCAFFOLD_GATE_STRICT: "1"  # a gate that skips or checks nothing fails
+        run: |
+          chmod +x .githooks/lib/gate-status 2>/dev/null || true
+          [ -x .githooks/lib/gate-status ] || { echo "::error::.githooks/lib/gate-status is missing; re-run install.sh"; exit 1; }
+          n=$(git ls-files -z | tr '\0' '\n' | grep -cE '\.(test|spec)\.(js|jsx|ts|tsx|mjs|cjs)$|(^|/)__tests__/.*\.(js|jsx|ts|tsx|mjs|cjs)$' || true)
+          if [ "$n" -eq 0 ]; then
+            npx --no-install vitest run --passWithNoTests
+            exec .githooks/lib/gate-status vitest empty 0 "no test files in the tree"
+          fi
+          npx --no-install vitest run
+          exec .githooks/lib/gate-status vitest ran "$n" ""

@@ -86,8 +86,15 @@ when their configs are present and the tool is on PATH — plus, for
 TypeScript, `tsc --noEmit` (against the shipped strict `tsconfig.json`) and
 `prettier --check` when a prettier config is present — so most of the
 build-breaking rules below also fire at commit time, not only in CI.
-Linters, the type-checker, and the formatter are silently skipped if not
-installed; CI is the authoritative backstop. The `tsc` run is the exception to
+Every gate ends with one status line, `gate=<name> status=ran|skipped|empty
+checked=<n> reason=<text>` (`.githooks/lib/gate-status`). Locally, a linter, the
+type-checker or the formatter that is not installed is recorded as `skipped`
+and the hook prints ONE summary line naming every skipped gate and why; the
+commit is still allowed, and CI is the authoritative backstop. In CI the
+workflows set `SCAFFOLD_GATE_STRICT=1`, so a `skipped` gate fails the job, and a
+gate that ran but evaluated 0 items fails everywhere. The one exemption is a
+reason beginning `disabled:`, which records a decision made in `.scaffold.toml`
+(`scaffold-audit` prints it in the same job). The `tsc` run is the exception to
 "fires at commit time as a failure": it is project-wide, so locally it only
 WARNS (output printed, commit allowed) and `lint.yml` fails the PR on it. Set
 `[rules.tsc]` `severity = "error"` in `.scaffold.toml` to block the commit.
