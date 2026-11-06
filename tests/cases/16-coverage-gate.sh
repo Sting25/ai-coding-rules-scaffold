@@ -118,6 +118,15 @@ else
     echo "  ✗ a passing pytest failed the step (rc=$R)"; FAIL=$((FAIL + 1))
   fi
 
+  # (T) rc 0 proves tests ran (pytest exits 5, not 0, on an empty collection), so
+  #     a passing run is green even when no file matches the default patterns.
+  R=$(_run_step_with_fake "$PYBODY" pytest 0)
+  if [ "$R" -eq 0 ]; then
+    echo "  ✓ pytest exit 0 with no file matching the default patterns passes"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ pytest exit 0 failed when no test file matched the patterns (rc=$R)"; FAIL=$((FAIL + 1))
+  fi
+
   # (T) Every other non-zero code fails too — 2 interrupted, 3 internal error,
   #     4 usage. 4 is the one that matters most in practice: a typo'd pytest
   #     invocation collecting nothing would otherwise look like an empty suite.

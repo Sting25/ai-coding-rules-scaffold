@@ -164,7 +164,9 @@ jobs:
             echo "pytest exited $rc, failing the job."
             exit "$rc"
           fi
-          exec .githooks/lib/gate-status pytest ran "$n" ""
+          # rc 0 proves tests ran (pytest exits 5, not 0, when it collects nothing).
+          if [ "$n" -gt 0 ]; then exec .githooks/lib/gate-status pytest ran "$n" ""; fi
+          exec .githooks/lib/gate-status pytest ran 1 "exit 0: tests ran, none matched the default file patterns"
 
       # ── Frontend: vitest V8 coverage → coverage/cobertura-coverage.xml ────
       - if: steps.detect.outputs.frontend == 'true'
