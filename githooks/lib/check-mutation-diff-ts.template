@@ -88,9 +88,10 @@ function run(cmd, args, opts) {
 // failure reads as 2.
 function gate(status, n, reason, rc = 0) {
   const helper = path.join(path.dirname(process.argv[1]), "gate-status");
+  if (!fs.existsSync(helper)) { console.error(`::error::gate-status unusable: ${helper} is missing`); return 2; }
   const r = cp.spawnSync("bash", [helper, "mutation-diff-ts", status, String(n), reason, String(rc)], { stdio: "inherit" });
-  if (r.error || r.status === null) {
-    console.log(`::error::gate-status unusable: ${r.error ? r.error.message : "killed by signal"}`);
+  if (r.error || r.status === null || r.status > 1) {
+    console.error(`::error::gate-status unusable: ${r.error ? r.error.message : `exit ${r.status}`}`);
     return 2;
   }
   return r.status === rc ? rc : 2;

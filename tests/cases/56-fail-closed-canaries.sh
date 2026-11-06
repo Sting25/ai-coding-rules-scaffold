@@ -352,6 +352,21 @@ else
   rm -rf "$C56_STUB"
 fi
 
+# (viii) a missing gate-status is exit 2 with a named cause, for both TypeScript
+# twins (not bash's bare 127, and never mutation-diff's 1 = "declined for size").
+# A directory with no vitest project reaches the helper on the first branch.
+for c56_t in check-red-green-ts check-mutation-diff-ts; do
+  if ! command -v node >/dev/null 2>&1; then
+    echo "  - SKIP: node not on PATH, so $c56_t without gate-status did NOT run"
+    SKIP=$((SKIP + 1)); continue
+  fi
+  C56_NH=$(mktemp -d)
+  cp "$SCAFFOLD_DIR/githooks/lib/$c56_t.template" "$C56_NH/$c56_t"
+  c56_run "$C56_NH" - node "$c56_t" --base HEAD
+  c56_expect "$c56_t without gate-status exits 2 naming it unusable" 2 "gate-status unusable"
+  rm -rf "$C56_NH"
+done
+
 # --- (h) the workflow templates carry the strict variable ----------------------
 WF="$SCAFFOLD_DIR/.github/workflows"
 C56_STRICT='SCAFFOLD_GATE_STRICT: "1"'
