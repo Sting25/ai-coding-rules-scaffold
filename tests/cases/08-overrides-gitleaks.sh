@@ -141,10 +141,15 @@ reset_repo
 # 60-62. check-gitleaks — opt-in local gitleaks pass (install.sh --gitleaks-hook).
 #     Exercised with a FAKE gitleaks on an isolated PATH so the suite needs no
 #     real binary and stays deterministic. The dirs are symlinked with the few
-#     externals the script needs (bash to launch it, cat to drain stdin) so a
-#     PATH-scoped run can't accidentally find a system gitleaks.
-CG="$SCAFFOLD_DIR/githooks/lib/check-gitleaks.template"
-mk_glbin() { local d=$1; ln -sf "$(command -v bash)" "$d/bash"; ln -sf "$(command -v cat)" "$d/cat"; }
+#     externals the script needs (bash and env to launch it and gate-status, tr
+#     and wc to count stdin) so a PATH-scoped run can't find a system gitleaks.
+# Run an installed-shaped copy: check-gitleaks ends through its sibling gate-status.
+CGD=$(mktemp -d)
+cp "$SCAFFOLD_DIR/githooks/lib/check-gitleaks.template" "$CGD/check-gitleaks"
+cp "$SCAFFOLD_DIR/githooks/lib/gate-status.template" "$CGD/gate-status"
+chmod +x "$CGD/check-gitleaks" "$CGD/gate-status"
+CG="$CGD/check-gitleaks"
+mk_glbin() { local d=$1; ln -sf "$(command -v bash)" "$d/bash"; local t; for t in cat env tr wc; do ln -sf "$(command -v $t)" "$d/$t"; done; }
 # (60) gitleaks absent → fail-OPEN: exit 0 with a "not installed" note.
 NOGL=$(mktemp -d); mk_glbin "$NOGL"
 if PATH="$NOGL" bash "$CG" </dev/null >"$HOOK_OUT" 2>&1 && grep -qF "gitleaks not installed" "$HOOK_OUT"; then
@@ -166,7 +171,8 @@ else
 fi
 # (62) gitleaks present and clean (exit 0) → check-gitleaks allows.
 printf '#!/bin/sh\nexit 0\n' >"$GLBIN/gitleaks"
-if PATH="$GLBIN" bash "$CG" </dev/null >"$HOOK_OUT" 2>&1; then
+# One staged path on stdin: a clean scan of zero paths is `ran 0`, which fails.
+if printf 'a.txt\0' | PATH="$GLBIN" bash "$CG" >"$HOOK_OUT" 2>&1; then
   echo "  ✓ check-gitleaks allows a clean staged scan"; PASS=$((PASS + 1))
 else
   echo "  ✗ check-gitleaks — blocked a clean scan, expected allow"

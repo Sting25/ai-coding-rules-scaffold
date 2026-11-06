@@ -79,7 +79,9 @@ cfg() { [ -x "$CONFIG_BIN" ] || return 0; "$CONFIG_BIN" "$@" 2>/dev/null || true
 # Whole-check state: `disabled` skips this check entirely, `warn` reports
 # without failing. Default `error`.
 LARGE_FILES_STATE=$(cfg rule-state large-files); [ -n "$LARGE_FILES_STATE" ] || LARGE_FILES_STATE=error
-[ "$LARGE_FILES_STATE" = disabled ] && exit 0
+GS="$SELF_DIR/gate-status"
+CHECKED=0
+[ "$LARGE_FILES_STATE" != disabled ] || exec "$GS" large-files skipped 0 "disabled: .scaffold.toml [rules.large-files]"
 
 # Read the project-wide byte cap override straight out of .scaffold.toml's
 # `[large-files]` table (see the header comment for why this isn't delegated
@@ -138,9 +140,11 @@ while IFS= read -r -d '' file; do
   # yields no output, treated as 0 bytes and skipped.
   bytes=$(git cat-file -s ":0:$file" 2>/dev/null || true)
   case "$bytes" in ''|*[!0-9]*) continue ;; esac
+  CHECKED=$((CHECKED + 1))
   if [ "$bytes" -gt "$MAX_BYTES" ]; then
     emit "$file" "is $(human_size "$bytes"), over the $(human_size "$MAX_BYTES") limit. Large binary files like this permanently bloat this repository's history once committed, and removing them later needs history-rewrite tools (git-lfs, git-filter-repo, or BFG), not a normal commit. Track this kind of file with git-lfs instead, or keep it out of the repository entirely."
   fi
 done
 
-exit $FAILED
+if [ "$CHECKED" -gt 0 ]; then exec "$GS" large-files ran "$CHECKED" "" "$FAILED"; fi
+exec "$GS" large-files empty 0 "no blobs with a size to check" "$FAILED"

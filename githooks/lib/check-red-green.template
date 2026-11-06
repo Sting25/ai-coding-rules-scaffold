@@ -68,15 +68,12 @@ pytest.fixture(**kw)), and module-level statements binding no name the test
 reaches. See exempt_as_unchanged_test(); fails closed.
 
 Exit: 0 all new tests were red on base (or explicitly exempt)
-      1 one or more new tests passed on base
+      1 one or more new tests passed on base, or tests changed but 0 collected
       2 could not evaluate (no base, collection broken, git failure)
 
-Exit 2 is a FAILURE, not a skip. A check that cannot run must never report the
-same green as a check that ran and passed — that equivalence is how a guardrail
-quietly stops guarding.
-
-NOT overridable via .scaffold.toml, same boundary as check-secrets and the test
-ratchets.
+Exit 2 is a FAILURE, not a skip: a check that cannot run must never report the
+same green as one that ran and passed. Every other end goes through gate-status
+(ran/empty plus a count). NOT overridable via .scaffold.toml.
 """
 
 from __future__ import annotations
@@ -99,6 +96,11 @@ def run(cmd: list[str], cwd: str | None = None, timeout: int = 900):
     return subprocess.run(
         cmd, cwd=cwd, capture_output=True, text=True, check=False, timeout=timeout
     )
+
+
+def gate(status: str, n: int, reason: str, rc: int = 0) -> int:
+    helper = pathlib.Path(__file__).resolve().parent / "gate-status"
+    return subprocess.call([str(helper), "red-green", status, str(n), reason, str(rc)])
 
 
 def emit(sev: str, msg: str, ci: bool) -> None:
@@ -303,7 +305,7 @@ def main() -> int:
     args = ap.parse_args()
 
     if not pathlib.Path("tests").exists() and not pathlib.Path("test").exists():
-        return 0
+        return gate("empty", 0, "no tests/ directory")
 
     base = run(["git", "rev-parse", "--verify", f"{args.base}^{{commit}}"])
     if base.returncode != 0:
@@ -329,6 +331,15 @@ def main() -> int:
                       "identified. Fix collection first.", args.ci)
         return 2
 
+    changed = run(
+        ["git", "diff", "--name-only", "--diff-filter=d", f"{base_sha}...HEAD"]
+    ).stdout.split()
+    test_paths = [p for p in changed if is_test_path(p) and is_real_source(p)]
+    if not test_paths:
+        return gate("empty", 0, "no test files changed in this diff")
+    if not here:
+        return gate("ran", 0, f"{len(test_paths)} test file(s) changed, pytest collected 0")
+
     tmp = tempfile.mkdtemp(prefix="redgreen-")
     wt = os.path.join(tmp, "wt")
     try:
@@ -350,8 +361,7 @@ def main() -> int:
 
         new_ids = sorted(here - base_pristine)
         if not new_ids:
-            print("no new test node IDs in this diff — nothing to verify.")
-            return 0
+            return gate("empty", 0, f"no new test node IDs ({len(here)} collected)")
 
         if len(new_ids) > args.max_new:
             emit("warning",
@@ -362,14 +372,6 @@ def main() -> int:
             return 1
 
         # STEP 2 — overlay HEAD's test files onto the base source tree.
-        changed = run(
-            ["git", "diff", "--name-only", "--diff-filter=d", f"{base_sha}...HEAD"]
-        ).stdout.split()
-        test_paths = [p for p in changed if is_test_path(p) and is_real_source(p)]
-        if not test_paths:
-            print("no test files changed in this diff — nothing to verify.")
-            return 0
-
         r = run(["git", "checkout", head_sha, "--", *test_paths], cwd=wt)
         if r.returncode != 0:
             emit("error", f"could not overlay test files onto base: "
@@ -481,7 +483,7 @@ def main() -> int:
                   f"({len(red)} red, {len(exempt)} characterization, "
                   f"{len(unchanged)} moved-unchanged, "
                   f"{sum(unevaluable.values())} unevaluable).")
-        return 1 if failed else 0
+        return gate("ran", len(new_ids), "", 1 if failed else 0)
 
     finally:
         run(["git", "worktree", "remove", "--force", wt])

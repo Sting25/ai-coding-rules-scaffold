@@ -142,7 +142,7 @@ mkdir -p src
 echo 'export const added = 1;' >src/new.ts
 git add tsconfig.json src/new.ts
 if tsw_run "$TSW_BIN" && grep -qF 'TypeScript not installed in this project' "$HOOK_OUT" \
-   && grep -qF 'skipping the local tsc type check' "$HOOK_OUT" && ! grep -qF 'FAKE TSC' "$HOOK_OUT"; then
+   && grep -qF 'typescript (TypeScript not installed' "$HOOK_OUT" && ! grep -qF 'FAKE TSC' "$HOOK_OUT"; then
   tsw_ok "typescript not installed: the skipping note is printed and tsc is not run"
 else
   tsw_bad "typescript not installed: expected the skipping note"

@@ -77,11 +77,9 @@ WHAT COUNTS AS "COULD NOT EVALUATE" (exit 2) VS ADVISORY (exit 0).
 Per #145's design: advisory first, strict later. Exit 2 is reserved for
 infrastructure failure: mutmut missing or the wrong pinned version, a
 broken baseline suite, a bad worktree/config/path, or a timeout. It is
-NEVER used for "the tests did not kill enough mutants": that is exactly
-what the advisory warnings below report, at exit 0, so this check can be
-turned on everywhere without becoming a second red-green. A source path
-that resolves to zero mutants (a comment-only or already-fully-tested
-diff) is not a failure either; it prints the positive line.
+NEVER used for "the tests did not kill enough mutants": that is what the
+advisory warnings report, at exit 0. Every exit-0 end goes through
+gate-status (ran/empty plus a count); mutants all "not checked" is `ran 0`.
 
 KNOWN LIMITATIONS, stated rather than silently absorbed:
   - No dry-run mutant count exists in this mutmut major, so --max-mutants
@@ -106,9 +104,8 @@ Exit: 0 evaluated cleanly (killed-clean, or advisory warnings emitted)
       2 could not evaluate: mutmut missing/wrong version, broken baseline,
         config/path failure, or timeout
 
-Exit 2 is a FAILURE, not a skip, same boundary as check-red-green and
-check-secrets. CI-only / PR-only by design (#145 point 1): mutation runs
-are minutes, not the seconds a pre-commit hook budgets for.
+Exit 2 is a FAILURE, not a skip (as in check-red-green). CI-only / PR-only by
+design (#145 point 1): mutation runs take minutes, not a hook's seconds.
 """
 
 from __future__ import annotations
@@ -150,6 +147,13 @@ def run(cmd: list[str], cwd: str | None = None, timeout: int = RUN_TIMEOUT):
     return subprocess.run(
         cmd, cwd=cwd, capture_output=True, text=True, check=False, timeout=timeout
     )
+
+
+def gate(status: str, n: int, reason: str, rc: int = 0) -> int:
+    # Exit codes here are 0/1/2; a helper failure (missing = 127) must read as 2.
+    helper = pathlib.Path(__file__).resolve().parent / "gate-status"
+    r = subprocess.call([str(helper), "mutation-diff", status, str(n), reason, str(rc)])
+    return r if r == rc else 2
 
 
 def emit(sev: str, msg: str, ci: bool) -> None:
@@ -398,8 +402,7 @@ def main() -> int:
     ).stdout.split()
     src_files = sorted(p for p in changed if is_python_source(p))
     if not src_files:
-        print("nothing to mutate, no changed non-test Python source files in this diff.")
-        return 0
+        return gate("empty", 0, "no changed non-test Python source files")
 
     tmp = tempfile.mkdtemp(prefix="mutdiff-")
     wt = os.path.join(tmp, "wt")
@@ -458,14 +461,11 @@ def main() -> int:
             return 1
 
         if total == 0:
-            print("mutation OK: 0 mutants generated for the changed lines "
-                  f"(source: {stats_source}); nothing to evaluate.")
-            return 0
+            return gate("empty", 0, f"mutmut generated no mutants for {len(src_files)} changed file(s)")
 
         if bad_total == 0:
-            print(f"mutation OK: {total} mutants, all killed across "
-                  f"{len(src_files)} changed file(s) (source: {stats_source}).")
-            return 0
+            print(f"mutation OK: {total} mutants, all killed ({stats_source}).")
+            return gate("ran", total, "")
 
         for rel, s in sorted(per_file.items()):
             bad = s["survived"] + s["no_tests"] + s["not_checked"] + s["other"]
@@ -483,7 +483,7 @@ def main() -> int:
              "(#145 point 4): none of this fails the build yet. A survivor "
              "in a file check-red-green reported unevaluable is the "
              "highest-signal finding above.", args.ci)
-        return 0
+        return gate("ran", total - sum(s["not_checked"] for s in per_file.values()), "")
 
     finally:
         run(["git", "worktree", "remove", "--force", wt])

@@ -156,7 +156,7 @@ reset_repo
 echo 'const z = 1' >cachedonly.js
 git add cachedonly.js
 if PATH="$ESB:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1 \
-   && grep -qF "note: eslint not installed" "$HOOK_OUT"; then
+   && grep -qF "eslint (eslint not installed" "$HOOK_OUT"; then
   echo "  ✓ npx-resolvable but not project-local eslint is skipped, not run"; PASS=$((PASS + 1))
 else
   echo "  ✗ npx-resolvable but not project-local eslint: expected skip notice and exit 0"
@@ -179,7 +179,7 @@ chmod +x "$NPXFAIL/npx"
 echo 'const y = 1' >noeslint.js
 git add noeslint.js
 if PATH="$NPXFAIL:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1 \
-   && grep -qF "note: eslint not installed" "$HOOK_OUT"; then
+   && grep -qF "eslint (eslint not installed" "$HOOK_OUT"; then
   echo "  ✓ eslint-unresolvable skip prints a notice and still exits 0"
   PASS=$((PASS + 1))
 else
@@ -199,7 +199,7 @@ echo '# just docs' >readme-notes.md
 git add readme-notes.md
 .githooks/pre-commit >"$HOOK_OUT" 2>&1
 rc=$?
-if [ "$rc" -eq 0 ] && ! grep -qE "note: (ruff|eslint|prettier|TypeScript|php|phpcs)" "$HOOK_OUT"; then
+if [ "$rc" -eq 0 ] && ! grep -qE "gate\(s\) skipped" "$HOOK_OUT"; then
   echo "  ✓ no matching staged files produces no lint-skip notices"
   PASS=$((PASS + 1))
 else
@@ -311,7 +311,7 @@ echo '{"name":"test","devDependencies":{"prettier":"^3.0.0"}}' >package.json
 echo 'const c = 1' >fmtdep.js
 git add package.json fmtdep.js
 if PATH="$PRB:$PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1 \
-   && grep -qF "note: eslint not installed" "$HOOK_OUT"; then
+   && grep -qF "eslint (eslint not installed" "$HOOK_OUT"; then
   echo "  ✓ a prettier devDependency alone is not treated as a prettier config"
   PASS=$((PASS + 1))
 else

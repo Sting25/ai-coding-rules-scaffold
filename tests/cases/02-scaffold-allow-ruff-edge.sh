@@ -128,7 +128,7 @@ chmod +x "$NORUFF/python3"
 echo 'ok = True' >noruff.py
 git add noruff.py
 if PATH="$NORUFF:$NOTOOL_PATH" .githooks/pre-commit >"$HOOK_OUT" 2>&1 \
-   && grep -qF "note: ruff not installed" "$HOOK_OUT"; then
+   && grep -qF "ruff (ruff not installed" "$HOOK_OUT"; then
   echo "  ✓ ruff-unavailable skip prints a notice and still exits 0"
   PASS=$((PASS + 1))
 else
