@@ -507,6 +507,27 @@ broken). Notes never affect the exit status. Exit `0` means no gaps, `1`
 means at least one guardrail is installed but not running, `2` means a usage
 error or "not a git repository".
 
+### Refusal log
+
+Every finding-driven refusal appends one line to `scaffold-blocks.log` in the git
+common directory (`.git/` of the main checkout, so all worktrees share it;
+untracked). The helper is `.githooks/lib/refusal-log`, called by each check,
+`commit-msg`, the pre-commit hook for its own refusals and the agent
+pre-check. A line has seven tab-separated fields: UTC time, gate, rule slug,
+file (or `-`), exit code, session id (or `-`) and a 12-character command hash
+(or `-`). One line is written per gate per refusing run, naming the first rule
+and file. The log never holds the command text or matched content, only rule
+ids, rule descriptions and paths. Past 1 MiB it rotates to
+`scaffold-blocks.log.1`, replacing any older one. `scaffold-blocks.sh` (or
+`npx ai-coding-rules-scaffold blocks`) summarises both files: counts per gate and per rule, and the longest retry
+run. Logging is record-only: nothing reads the log to decide anything, and a
+missing helper (an older install) is silent (the shell gates also skip a
+helper that is not executable; the two Python gates run it through
+`bash`). One thing is not logged: a
+gate's own configuration error (a non-numeric `MAX_LINES`, `MAX_BYTES` or
+`MAX_LINE_LENGTH` exits 2 before any finding). The timeout exits of
+`check-red-green` and `check-mutation-diff` are logged as rule `timeout`.
+
 ### Paired artifacts (half-installed guardrails)
 
 Some guardrails ship as two halves that only do anything together: a config

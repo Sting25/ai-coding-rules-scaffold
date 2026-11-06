@@ -16,6 +16,12 @@ set -euo pipefail
 CI_MODE=0
 [ "${1:-}" = "--ci" ] && CI_MODE=1
 
+# bash 5.3: cd "" is fatal; no dirname(1) needed (see scaffold-doctor.sh)
+# CDPATH makes cd echo the directory it lands in; see check-size
+unset CDPATH
+case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
+SELF_DIR="$(cd "$_sd" && pwd)"
+
 # Escape a value for a GitHub workflow command (see check-secrets): %, CR, LF
 # always; : and , for property values (file=). A filename is attacker-controlled
 # in a PR, so escaping it stops a crafted name forging/truncating the annotation.
@@ -35,7 +41,7 @@ emit() {
   fi
 }
 
-FAILED=0
+FAILED=0; unset RL_RULE RL_FILE
 while IFS= read -r -d '' file; do
   [ -z "$file" ] && continue
   # Match case-INSENSITIVELY. macOS/Windows filesystems are case-insensitive, so
@@ -46,7 +52,7 @@ while IFS= read -r -d '' file; do
   case "$lfile" in
     *.pem)
       emit "$file" "PEM file (likely private key) — rotate and use a secret manager"
-      FAILED=1
+      FAILED=1; : "${RL_RULE:=pem}" "${RL_FILE:=$file}"
       continue
       ;;
     # Binary private-key / keystore blobs (DER, PKCS#12, Java/PuTTY stores) carry
@@ -57,7 +63,7 @@ while IFS= read -r -d '' file; do
     # since fail-closed on possible key material beats leaking one.
     *.key|*.p12|*.pfx|*.jks|*.ppk)
       emit "$file" "private key / keystore — rotate it and use a secret manager"
-      FAILED=1
+      FAILED=1; : "${RL_RULE:=keystore}" "${RL_FILE:=$file}"
       continue
       ;;
   esac
@@ -81,13 +87,14 @@ while IFS= read -r -d '' file; do
     # fall-through.
     .env|.env.*|*.env)
       emit "$file" "environment file: use .env.example for shared config, keep secrets in env vars. Only .env.development and .env.test are allowed (local values, content still scanned); other .env files usually hold unquoted secrets the content scan cannot see"
-      FAILED=1
+      FAILED=1; : "${RL_RULE:=env-file}" "${RL_FILE:=$file}"
       ;;
     id_rsa|id_ed25519|id_ecdsa|id_dsa)
       emit "$file" "SSH private key — rotate it and use a secret manager"
-      FAILED=1
+      FAILED=1; : "${RL_RULE:=ssh-key}" "${RL_FILE:=$file}"
       ;;
   esac
 done
 
+[ "$FAILED" -eq 0 ] || [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-filenames "${RL_RULE:-unknown}" "${RL_FILE:-}" 1 || true
 exit $FAILED

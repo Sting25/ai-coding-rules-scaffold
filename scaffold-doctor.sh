@@ -466,6 +466,18 @@ else
   note "scaffold-doctor-drift.sh not found next to scaffold-doctor.sh ($DOCTOR_DIR): the AGENTS.md and coding-rules.md template-drift check is skipped; re-fetch the full scaffold bundle, not just this one file"
 fi
 
+# --- refusal log (issue #218; notes only, never a gap) -------------------------
+section "refusal log"
+if [ ! -x .githooks/lib/refusal-log ]; then
+  note "lib/refusal-log not installed: refusals are not recorded (re-run install.sh)"
+else
+  RL_DIR=$(git rev-parse --git-common-dir 2>/dev/null || echo .git)
+  case $RL_DIR in /*) ;; *) RL_DIR=$PWD/$RL_DIR ;; esac
+  RL_N=0
+  [ ! -f "$RL_DIR/scaffold-blocks.log" ] || RL_N=$(wc -l <"$RL_DIR/scaffold-blocks.log" | tr -d ' ')
+  note "refusals are recorded in $RL_DIR/scaffold-blocks.log ($RL_N line(s)); summarise with \`npx ai-coding-rules-scaffold blocks\` (or scaffold-blocks.sh from your scaffold checkout)"
+fi
+
 # --- 10. worktree parity (advisory; notes only, defined in the checks module) ---
 if declare -F doctor_worktree_parity >/dev/null; then
   section "worktree parity (advisory)"
