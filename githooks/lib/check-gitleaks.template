@@ -34,6 +34,10 @@ if ! command -v gitleaks >/dev/null 2>&1; then
   exec "$GS" gitleaks skipped 0 "gitleaks not installed; the CI gitleaks job is the authoritative gate"
 fi
 
+if [ "$n" -eq 0 ]; then
+  exec "$GS" gitleaks empty 0 "no staged paths"
+fi
+
 # Scan ONLY the staged changes — this is the invocation gitleaks ships in its
 # own official pre-commit hook (.pre-commit-hooks.yaml): `git --pre-commit
 # --staged`. --redact keeps the secret out of the terminal/log; --no-banner

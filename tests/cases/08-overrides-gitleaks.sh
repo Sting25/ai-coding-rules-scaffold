@@ -161,7 +161,13 @@ fi
 # (61) gitleaks present and reports a leak (exit 1) → check-gitleaks blocks.
 GLBIN=$(mktemp -d); mk_glbin "$GLBIN"
 printf '#!/bin/sh\nexit 1\n' >"$GLBIN/gitleaks"; chmod +x "$GLBIN/gitleaks"
-if PATH="$GLBIN" bash "$CG" </dev/null >"$HOOK_OUT" 2>&1; then
+# No staged paths: reported `empty`, gitleaks is not run, exit 0.
+if PATH="$GLBIN" bash "$CG" </dev/null >"$HOOK_OUT" 2>&1 && grep -qF "status=empty" "$HOOK_OUT"; then
+  echo "  ✓ check-gitleaks reports empty (exit 0) when no paths arrive"; PASS=$((PASS + 1))
+else
+  echo "  ✗ check-gitleaks — expected empty and exit 0 with no staged paths"; FAIL=$((FAIL + 1))
+fi
+if printf 'a.txt\0' | PATH="$GLBIN" bash "$CG" >"$HOOK_OUT" 2>&1; then
   echo "  ✗ check-gitleaks — allowed a commit when gitleaks reported a leak"; FAIL=$((FAIL + 1))
 elif grep -qF "gitleaks flagged a potential secret" "$HOOK_OUT"; then
   echo "  ✓ check-gitleaks blocks when gitleaks reports a leak"; PASS=$((PASS + 1))
