@@ -92,7 +92,7 @@ CASE_FLOORS=(
   "18-doctor.sh:34"
   "19-test-workflow.sh:17"
   "20-paired-artifacts.sh:19"
-  "21-ci-workflow-drift.sh:25"
+  "21-ci-workflow-drift.sh:28"
   "22-large-file-guard.sh:6"
   "23-npm-cooldown.sh:5"
   "24-claude-skill.sh:5"
@@ -106,7 +106,7 @@ CASE_FLOORS=(
   "32-uninstall-report.sh:6"
   "33-harness-self-checks.sh:12"
   "34-shipped-pattern-files.sh:16"
-  "35-workflow-template-validity.sh:15"
+  "35-workflow-template-validity.sh:16"
   "36-red-green-verdict.sh:5"
   "37-doctor-content-drift.sh:8"
   "38-components-catalog.sh:33"
@@ -126,6 +126,7 @@ CASE_FLOORS=(
   "52-claude-only-scope.sh:3"
   "53-narrow-path-scripts.sh:13"
   "54-doctor-worktree-parity.sh:10"
+  "55-tree-lint-template.sh:5"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and

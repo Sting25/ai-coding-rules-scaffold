@@ -39,6 +39,7 @@
 # headers, but no install.sh call site. Wired up identically: --zizmor-ci and
 # --socket-ci each install their workflow via cp_scaffold_preserve, so they
 # get the same _wd_case slot as every other opt-in CI workflow here.
+# lint-tree.yml (#217, advisory whole-tree lint) takes the same slot behind --tree-lint.
 
 echo "cases/21: CI workflow drift-preserving install policy (lint.yml #105, tests/coverage/gitleaks.yml #110, dependency-review.yml #113, zizmor/socket-security P-19)"
 
@@ -137,6 +138,7 @@ _wd_case "coverage.yml" ".github/workflows/coverage.yml" "$SCAFFOLD_DIR/.github/
 _wd_case "gitleaks.yml" ".github/workflows/gitleaks.yml" "$SCAFFOLD_DIR/.github/workflows/gitleaks.yml.template" "--gitleaks-ci"
 _wd_case "dependency-review.yml" ".github/workflows/dependency-review.yml" "$SCAFFOLD_DIR/.github/workflows/dependency-review.yml.template" "--dependency-review"
 _wd_case "zizmor.yml" ".github/workflows/zizmor.yml" "$SCAFFOLD_DIR/.github/workflows/zizmor.yml.template" "--zizmor-ci"
+_wd_case "lint-tree.yml" ".github/workflows/lint-tree.yml" "$SCAFFOLD_DIR/.github/workflows/lint-tree.yml.template" "--tree-lint"
 _wd_case "socket-security.yml" ".github/workflows/socket-security.yml" "$SCAFFOLD_DIR/.github/workflows/socket-security.yml.template" "--socket-ci"
 _wd_case "test-guard.yml" ".github/workflows/test-guard.yml" "$SCAFFOLD_DIR/.github/workflows/test-guard.yml.template" "--test-guard"
 
