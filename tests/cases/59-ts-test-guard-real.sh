@@ -60,6 +60,9 @@ else
     cp "$SCAFFOLD_DIR/githooks/lib/$_ts59_s.template" "$_ts59_d/.githooks/lib/$_ts59_s"
     chmod +x "$_ts59_d/.githooks/lib/$_ts59_s"
   done
+  # Both twins end through the sibling gate-status (#210); without it they exit 2.
+  cp "$SCAFFOLD_DIR/githooks/lib/gate-status.template" "$_ts59_d/.githooks/lib/gate-status"
+  chmod +x "$_ts59_d/.githooks/lib/gate-status"
   cat >"$_ts59_d/src/calc.ts" <<'TS'
 export function add(a: number, b: number): number {
   return a + b;
@@ -98,7 +101,7 @@ TS
   _ts59_check "(a) red-green counts it as 1 red, 0 characterization" "$(printf '%s' "$_ts59_out" | grep -q '(1 red, 0 characterization' && echo 1 || echo 0)"
   _ts59_run check-mutation-diff-ts --base "$_ts59_base"
   _ts59_check "(a) mutation layer evaluates the change and exits 0" "$([ "$_ts59_rc" = 0 ] && echo 1 || echo 0)"
-  _ts59_check "(a) mutation layer prints a verdict (mutation OK or mutation summary)" "$(printf '%s' "$_ts59_out" | grep -Eq 'mutation (OK|summary):' && echo 1 || echo 0)"
+  _ts59_check "(a) mutation layer prints a verdict (mutation OK or mutation summary)" "$(printf '%s' "$_ts59_out" | grep -Eq 'mutation (OK|summary):|gate=mutation-diff-ts status=ran' && echo 1 || echo 0)"
 
   # --- (b) green on base ---------------------------------------------------
   _ts59_g checkout -q -B scen-b "$_ts59_base"
@@ -115,7 +118,7 @@ TS
   _ts59_commit "add untested neg"
   _ts59_run check-mutation-diff-ts --base "$_ts59_base"
   _ts59_check "(c) an untested-only PR stays advisory (exit 0, not 2)" "$([ "$_ts59_rc" = 0 ] && echo 1 || echo 0)"
-  _ts59_check "(c) the output still carries a verdict for src/neg.ts, not a crash" "$(printf '%s' "$_ts59_out" | grep -Eq 'mutating: src/neg.ts$' && printf '%s' "$_ts59_out" | grep -Eq 'mutation (summary|notice):|mutation OK:' && echo 1 || echo 0)"
+  _ts59_check "(c) the output still carries a verdict for src/neg.ts, not a crash" "$(printf '%s' "$_ts59_out" | grep -Eq 'mutating: src/neg.ts$' && printf '%s' "$_ts59_out" | grep -Eq 'mutation (summary|notice):|mutation OK:|gate=mutation-diff-ts status=(ran|empty)' && echo 1 || echo 0)"
 
   # --- (d) line-range scoping ----------------------------------------------
   _ts59_g checkout -q -B scen-d "$_ts59_base"
@@ -133,7 +136,7 @@ TS
   _ts59_commit "add bracket path"
   _ts59_run check-mutation-diff-ts --base "$_ts59_base"
   _ts59_check "(e) a [id] path evaluates and exits 0" "$([ "$_ts59_rc" = 0 ] && echo 1 || echo 0)"
-  _ts59_check "(e) at least 1 mutant was generated for the [id] path (escape works)" "$(printf '%s' "$_ts59_out" | grep -Eq 'mutation OK: [1-9][0-9]* mutants|mutation summary: [0-9]+ killed, [0-9]+ not killed \(([1-9][0-9]*) total' && echo 1 || echo 0)"
+  _ts59_check "(e) at least 1 mutant was generated for the [id] path (escape works)" "$(printf '%s' "$_ts59_out" | grep -Eq 'gate=mutation-diff-ts status=ran checked=[1-9]|mutation summary: [0-9]+ killed, [0-9]+ not killed \(([1-9][0-9]*) total' && echo 1 || echo 0)"
 
   # --- (f) a leading "!" is an exclusion pattern: refused, never 0-mutants-OK --
   _ts59_g checkout -q -B scen-f "$_ts59_base"
