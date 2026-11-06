@@ -353,10 +353,12 @@ function main() {
   }
 }
 
+let RL_RULE = ""; // refusal-log rule slug when the exit code alone cannot name it
 try {
   process.exitCode = main();
 } catch (e) {
   if (e instanceof Timeout) {
+    RL_RULE = "timeout";
     console.log("::error::mutation-diff check timed out. A mutation run too " +
       "slow to complete in CI is too slow to trust as a gate; scope " +
       "it to fewer files or raise the timeout deliberately.");
@@ -375,7 +377,7 @@ try {
 if (process.exitCode) {
   try {
     const rl = path.join(path.dirname(process.argv[1]), "refusal-log");
-    const rule = ({ 1: "max-mutants", 2: "setup-error" })[process.exitCode] || "error";
+    const rule = RL_RULE || ({ 1: "max-mutants", 2: "setup-error" })[process.exitCode] || "error";
     if (fs.existsSync(rl)) cp.spawnSync("bash", [rl, "check-mutation-diff-ts", rule, "", String(process.exitCode)], { stdio: "ignore" });
   } catch (e) { /* never let logging change the verdict */ }
 }

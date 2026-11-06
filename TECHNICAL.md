@@ -540,11 +540,12 @@ ids, rule descriptions and paths. Past 1 MiB it rotates to
 `npx ai-coding-rules-scaffold blocks`) summarises both files: counts per gate and per rule, and the longest retry
 run. Logging is record-only: nothing reads the log to decide anything, and a
 missing helper (an older install) is silent (the shell gates also skip a
-helper that is not executable; the two Python gates run it through
-`bash`). One thing is not logged: a
+helper that is not executable; the two Python gates and their TypeScript
+twins run it through `bash`). One thing is not logged: a
 gate's own configuration error (a non-numeric `MAX_LINES`, `MAX_BYTES` or
 `MAX_LINE_LENGTH` exits 2 before any finding). The timeout exits of
-`check-red-green` and `check-mutation-diff` are logged as rule `timeout`.
+`check-red-green`, `check-mutation-diff` and their `-ts` twins are logged as
+rule `timeout`.
 
 ### Paired artifacts (half-installed guardrails)
 

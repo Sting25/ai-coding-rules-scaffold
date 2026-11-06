@@ -356,10 +356,12 @@ function main() {
   }
 }
 
+let RL_RULE = ""; // refusal-log rule slug when the exit code alone cannot name it
 try {
   process.exitCode = main();
 } catch (e) {
   if (e instanceof Timeout) {
+    RL_RULE = "timeout";
     console.log("::error::red-green check timed out. A suite too slow to run twice " +
       "is a suite too slow to trust as a gate; split it or scope this " +
       "check to a subset.");
@@ -378,7 +380,7 @@ try {
 if (process.exitCode) {
   try {
     const rl = path.join(path.dirname(process.argv[1]), "refusal-log");
-    const rule = ({ 1: "green-on-base-or-cap", 2: "setup-error" })[process.exitCode] || "error";
+    const rule = RL_RULE || ({ 1: "green-on-base-or-cap", 2: "setup-error" })[process.exitCode] || "error";
     if (fs.existsSync(rl)) cp.spawnSync("bash", [rl, "check-red-green-ts", rule, "", String(process.exitCode)], { stdio: "ignore" });
   } catch (e) { /* never let logging change the verdict */ }
 }

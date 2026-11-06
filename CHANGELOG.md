@@ -26,7 +26,7 @@ versioning follows [SemVer](https://semver.org/).
 - **Durable refusal log (#218).** Every finding-driven refusal the scaffold ships
   (`check-size`, `check-large-files`, `check-patterns`, `check-filenames`,
   `check-secrets`, `check-hygiene`, `check-gitleaks`, `check-red-green`,
-  `check-mutation-diff`, `commit-msg`, the pre-commit hook's own refusals and
+  `check-mutation-diff`, their `-ts` twins, `commit-msg`, the pre-commit hook's own refusals and
   the agent pre-check) now appends one tab-separated line to
   `<git common dir>/scaffold-blocks.log` through the new
   `.githooks/lib/refusal-log` helper: UTC time, gate, rule, file when there

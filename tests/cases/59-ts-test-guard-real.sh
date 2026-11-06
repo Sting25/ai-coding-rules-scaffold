@@ -28,7 +28,7 @@
 
 echo "cases/59: TypeScript test-guard twin against real Vitest and Stryker (#205)"
 
-_ts59_n=14
+_ts59_n=16
 _ts59_t="${SCAFFOLD_TS_TOOLS:-}"
 if [ -z "$_ts59_t" ] \
    || ! command -v node >/dev/null 2>&1 \
@@ -143,6 +143,18 @@ TS
   _ts59_run check-mutation-diff-ts --base "$_ts59_base"
   _ts59_check "(f) a path starting with ! is exit 2, not a silent 0-mutant pass" "$([ "$_ts59_rc" = 2 ] && echo 1 || echo 0)"
   _ts59_check "(f) the refusal names the path" "$(printf '%s' "$_ts59_out" | grep -q '!x.ts: a path starting with' && echo 1 || echo 0)"
+
+  # --- (g) refusal log: the offender run writes one line; a missing logger
+  #         never changes the verdict (fail open) -------------------------
+  _ts59_g checkout -q scen-b
+  cp "$SCAFFOLD_DIR/githooks/lib/refusal-log.template" "$_ts59_d/.githooks/lib/refusal-log"
+  chmod +x "$_ts59_d/.githooks/lib/refusal-log"
+  rm -f "$_ts59_d/.git/scaffold-blocks.log"
+  _ts59_run check-red-green-ts --base "$_ts59_base"
+  _ts59_check "(g) an offender run logs one check-red-green-ts green-on-base-or-cap line" "$([ "$_ts59_rc" = 1 ] && [ "$(grep -c "$(printf 'check-red-green-ts\tgreen-on-base-or-cap\t-\t1')" "$_ts59_d/.git/scaffold-blocks.log" 2>/dev/null)" = 1 ] && echo 1 || echo 0)"
+  rm -f "$_ts59_d/.githooks/lib/refusal-log" "$_ts59_d/.git/scaffold-blocks.log"
+  _ts59_run check-red-green-ts --base "$_ts59_base"
+  _ts59_check "(g) without the logger the verdict is unchanged: exit 1, nothing written" "$([ "$_ts59_rc" = 1 ] && [ ! -e "$_ts59_d/.git/scaffold-blocks.log" ] && echo 1 || echo 0)"
 
   rm -rf "$_ts59_d"
 fi
