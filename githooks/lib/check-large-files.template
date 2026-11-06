@@ -42,17 +42,20 @@ set -euo pipefail
 # developer with CDPATH='.' in their shell profile hit this on every commit.
 # Unset rather than `CDPATH= cd` so any later cd in this file is safe too.
 unset CDPATH
+# bash 5.3: cd "" is fatal; no dirname(1) needed (see scaffold-doctor.sh)
+case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
+SELF_DIR="$(cd "$_sd" && pwd)"
+cfg_refuse() { echo "error: $1" >&2; [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-large-files "$2" "" 2 --say b || true; exit 2; }
 
 # 500 KB (500 * 1024 bytes), the default the wider pre-commit ecosystem's
 # check-added-large-files hook ships with.
 MAX_BYTES=${MAX_BYTES:-512000}
 case "$MAX_BYTES" in
   ''|*[!0-9]*)
-    echo "error: MAX_BYTES must be a positive integer, got: $MAX_BYTES" >&2
-    exit 2
+    cfg_refuse "MAX_BYTES must be a positive integer, got: $MAX_BYTES" invalid-max-bytes
     ;;
 esac
-[ "$MAX_BYTES" -gt 0 ] || { echo "error: MAX_BYTES must be > 0" >&2; exit 2; }
+[ "$MAX_BYTES" -gt 0 ] || cfg_refuse "MAX_BYTES must be > 0" invalid-max-bytes
 
 CI_MODE=0
 [ "${1:-}" = "--ci" ] && CI_MODE=1
@@ -70,9 +73,6 @@ ghesc() {
 # Per-project rule state lives in .scaffold.toml, read via the sibling
 # scaffold-config helper. `cfg` fails open to empty output if the helper is
 # missing (older install), callers then fall back to the built-in defaults.
-# bash 5.3: cd "" is fatal; no dirname(1) needed (see scaffold-doctor.sh)
-case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
-SELF_DIR="$(cd "$_sd" && pwd)"
 CONFIG_BIN="$SELF_DIR/scaffold-config"
 cfg() { [ -x "$CONFIG_BIN" ] || return 0; "$CONFIG_BIN" "$@" 2>/dev/null || true; }
 
@@ -146,6 +146,8 @@ while IFS= read -r -d '' file; do
   fi
 done
 
-[ "$FAILED" -eq 0 ] || [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-large-files "${RL_RULE:-large-files}" "${RL_FILE:-}" 1 || true
-if [ "$CHECKED" -gt 0 ]; then exec "$GS" large-files ran "$CHECKED" "" "$FAILED"; fi
-exec "$GS" large-files empty 0 "no blobs with a size to check" "$FAILED"
+if [ "$CHECKED" -gt 0 ]; then set -- ran "$CHECKED" ""; else set -- empty 0 "no blobs with a size to check"; fi
+# The status line comes BEFORE the refusal log's class trailer, which must stay the last line.
+rc=0; "$GS" large-files "$@" "$FAILED" || rc=$?
+[ "$FAILED" -eq 0 ] || [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-large-files "${RL_RULE:-large-files}" "${RL_FILE:-}" 1 --say a || true
+exit "$rc"

@@ -105,6 +105,7 @@ ghesc() {
 case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
 SELF_DIR="$(cd "$_sd" && pwd)"
 GS="$SELF_DIR/gate-status"
+cfg_refuse() { echo "error: $1" >&2; [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-hygiene "$2" "" 2 --say b || true; exit 2; }
 CONFIG_BIN="$SELF_DIR/scaffold-config"
 cfg() { [ -x "$CONFIG_BIN" ] || return 0; "$CONFIG_BIN" "$@" 2>/dev/null || true; }
 
@@ -128,7 +129,7 @@ emit() {
     else
       echo "✗ $file: $message"
     fi
-    FAILED=1; : "${RL_RULE:=$rule}" "${RL_FILE:=$file}"
+    FAILED=1; : "${RL_RULE:=$rule}" "${RL_FILE:=$file}" "${RL_CLASS:=$([ "$rule" = line-too-long ] && echo b || echo a)}"
   fi
 }
 
@@ -137,9 +138,9 @@ emit() {
 # anchored and linear.
 MAX_LINE_LENGTH=${MAX_LINE_LENGTH:-50000}
 case "$MAX_LINE_LENGTH" in
-  ''|*[!0-9]*) echo "error: MAX_LINE_LENGTH must be a positive integer, got: $MAX_LINE_LENGTH" >&2; exit 2 ;;
+  ''|*[!0-9]*) cfg_refuse "MAX_LINE_LENGTH must be a positive integer, got: $MAX_LINE_LENGTH" invalid-max-line-length ;;
 esac
-[ "$MAX_LINE_LENGTH" -gt 0 ] || { echo "error: MAX_LINE_LENGTH must be > 0" >&2; exit 2; }
+[ "$MAX_LINE_LENGTH" -gt 0 ] || cfg_refuse "MAX_LINE_LENGTH must be > 0" invalid-max-line-length
 
 FILES=()
 while IFS= read -r -d '' f; do
@@ -148,7 +149,7 @@ done
 
 [ ${#FILES[@]} -gt 0 ] || exec "$GS" hygiene empty 0 "no files staged"
 
-FAILED=0; unset RL_RULE RL_FILE
+FAILED=0; unset RL_RULE RL_FILE RL_CLASS
 CHECKED=${#FILES[@]}
 
 # --- 1. merge-conflict markers ---------------------------------------------
@@ -338,5 +339,8 @@ if [ "$HIDDEN_STATE" != disabled ]; then
   done
 fi
 
-[ "$FAILED" -eq 0 ] || [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-hygiene "${RL_RULE:-unknown}" "${RL_FILE:-}" 1 || true
-exec "$GS" hygiene ran "$CHECKED" "" "$FAILED"
+set -- ran "$CHECKED" ""
+# The status line comes BEFORE the refusal log's class trailer, which must stay the last line.
+rc=0; "$GS" hygiene "$@" "$FAILED" || rc=$?
+[ "$FAILED" -eq 0 ] || [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-hygiene "${RL_RULE:-unknown}" "${RL_FILE:-}" 1 --say "${RL_CLASS:-a}" || true
+exit "$rc"

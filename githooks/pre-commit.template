@@ -102,7 +102,7 @@ EOF_DELCFG
     echo "error: this commit deletes forbidden-pattern config, disabling the scanner:" >&2
     printf '%s' "$GONE_CONFIG" | sed 's/^/       /' >&2
     echo "       Refusing — re-add it, or use 'git commit --no-verify' if intended." >&2
-    [ ! -x "$LIB/refusal-log" ] || "$LIB/refusal-log" pre-commit config-deleted "$(printf '%s' "$GONE_CONFIG" | head -n1)" 1 || true
+    [ ! -x "$LIB/refusal-log" ] || "$LIB/refusal-log" pre-commit config-deleted "$(printf '%s' "$GONE_CONFIG" | head -n1)" 1 --say a || true
     exit 1
   fi
   # Split the untracked configs by whether the CI scanner fails closed on their
@@ -123,7 +123,7 @@ EOF_UNTRACKED
     echo "error: this commit untracks forbidden-pattern config that nothing enforces server-side — check-patterns cannot tell a removed optional config from a language this project never installed, so these rules stop running in every fresh clone and in CI:" >&2
     printf '%s' "$STRICT_CONFIG" | sed 's/^/       /' >&2
     echo "       Refusing — re-add it, or use 'git commit --no-verify' if intended." >&2
-    [ ! -x "$LIB/refusal-log" ] || "$LIB/refusal-log" pre-commit config-untracked "$(printf '%s' "$STRICT_CONFIG" | head -n1)" 1 || true
+    [ ! -x "$LIB/refusal-log" ] || "$LIB/refusal-log" pre-commit config-untracked "$(printf '%s' "$STRICT_CONFIG" | head -n1)" 1 --say a || true
     exit 1
   fi
   echo "note: forbidden-pattern config untracked but still present on disk — local scanning stays active:" >&2
@@ -158,7 +158,7 @@ if [ ! -e "$GIT_DIR/MERGE_HEAD" ] && [ ! -e "$GIT_DIR/REBASE_HEAD" ]; then
       echo "error: pre-commit hook could not stash unstaged changes." >&2
       echo "       Refusing to proceed — commit or stash your changes manually first." >&2
       rm -f "$STAGED_LIST"
-      [ ! -x "$LIB/refusal-log" ] || "$LIB/refusal-log" pre-commit stash-failed "" 1 || true
+      [ ! -x "$LIB/refusal-log" ] || "$LIB/refusal-log" pre-commit stash-failed "" 1 --say b || true
       exit 1
     fi
   fi
@@ -416,7 +416,7 @@ skipped_note=$(awk '/^gate=[^ ]+ status=skipped /{ g=$1; sub(/^gate=/, "", g); r
 [ -z "$skipped_note" ] || echo "note: $skipped_note" >&2
 
 if [ "$FAILED" -ne 0 ]; then
-  [ -z "${RL_RULE:-}" ] || [ ! -x "$LIB/refusal-log" ] || "$LIB/refusal-log" pre-commit "$RL_RULE" "" 1 || true
+  [ -z "${RL_RULE:-}" ] || [ ! -x "$LIB/refusal-log" ] || "$LIB/refusal-log" pre-commit "$RL_RULE" "" 1 --say a || true
   echo ""
   echo "Pre-commit failed. Fix the cause of each issue above. If a check is wrong, fix the check. If you cannot resolve a refusal, report it to the user rather than bypassing it."
   exit 1

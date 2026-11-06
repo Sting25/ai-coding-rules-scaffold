@@ -98,7 +98,7 @@ CASE_FLOORS=(
   "24-claude-skill.sh:5"
   "25-interactive-install.sh:6"
   "26-repo-adaptation-warn.sh:6"
-  "27-test-guard.sh:16"
+  "27-test-guard.sh:21"
   "28-check-patterns-scope.sh:26"
   "29-install-symlink-dirs.sh:4"
   "30-install-manifest.sh:15"
@@ -130,7 +130,9 @@ CASE_FLOORS=(
   "56-fail-closed-canaries.sh:53"
   "57-refusal-log.sh:34"
   "58-ts-test-guard.sh:43"
-  "59-ts-test-guard-real.sh:16"
+  "59-ts-test-guard-real.sh:17"
+  "60-refusal-class.sh:55"
+  "61-refusal-class-helper.sh:17"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and

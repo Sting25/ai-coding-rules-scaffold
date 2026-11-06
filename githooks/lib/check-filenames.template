@@ -99,6 +99,8 @@ while IFS= read -r -d '' file; do
   esac
 done
 
-[ "$FAILED" -eq 0 ] || [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-filenames "${RL_RULE:-unknown}" "${RL_FILE:-}" 1 || true
-if [ "$CHECKED" -gt 0 ]; then exec "$GS" filenames ran "$CHECKED" "" "$FAILED"; fi
-exec "$GS" filenames empty 0 "no paths staged" "$FAILED"
+if [ "$CHECKED" -gt 0 ]; then set -- ran "$CHECKED" ""; else set -- empty 0 "no paths staged"; fi
+# The status line comes BEFORE the refusal log's class trailer, which must stay the last line.
+rc=0; "$GS" filenames "$@" "$FAILED" || rc=$?
+[ "$FAILED" -eq 0 ] || [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-filenames "${RL_RULE:-unknown}" "${RL_FILE:-}" 1 --say a || true
+exit "$rc"

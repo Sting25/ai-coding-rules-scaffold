@@ -50,7 +50,7 @@ if ! gitleaks git --pre-commit --staged --redact --no-banner; then
   echo "✗ gitleaks flagged a potential secret in the staged changes (value redacted above)." >&2
   echo "  Remove it (and rotate it if it ever hit disk), then re-commit." >&2
   echo "  'git commit --no-verify' overrides — don't, unless the user has confirmed it is a false positive." >&2
-  [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-gitleaks gitleaks "" 1 || true
+  [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-gitleaks gitleaks "" 1 --say a || true
   exit 1
 fi
 
