@@ -294,6 +294,126 @@ else
   SKIP=$((SKIP + 4))
 fi
 
+# --- mutant killers: config-state refusals and RL_CLASS first-wins ------------
+# rc_rule_is LABEL RULE: the last log line (exactly one new line) names RULE.
+rc_rule_is() {
+  local label=$1 rule=$2 last
+  last=$(tail -n 1 "$RCLOG" 2>/dev/null || true)
+  if [ "$(rc_field "$last" 3)" = "$rule" ] && [ "$(rc_count "$RCLOG")" -eq $((rl_before + 1)) ]; then
+    rc_ok "$label: logged once as rule $rule"
+  else
+    rc_bad "$label: expected one new line with rule $rule, last: $last"
+  fi
+}
+printf 'x = 1\n' >ok.py
+git add ok.py
+
+cp .forbidden-patterns/secrets.txt "$RCT/secrets.keep"
+rm -f .forbidden-patterns/secrets.txt
+rl_before=$(rc_count "$RCLOG")
+RC_RC=0
+printf '%s\0' ok.py | env -u CLAUDE_SESSION_ID .githooks/lib/check-secrets --ci >"$HOOK_OUT" 2>&1 || RC_RC=$?
+rc_expect "check-secrets --ci with secrets.txt missing" "$rc_b" 1
+rc_rule_is "check-secrets --ci with secrets.txt missing" config-missing
+cp "$RCT/secrets.keep" .forbidden-patterns/secrets.txt
+
+rm -f .forbidden-patterns/secrets.txt
+mkdir .forbidden-patterns/secrets.txt
+rl_before=$(rc_count "$RCLOG")
+rc_run .githooks/lib/check-secrets ok.py
+rc_expect "check-secrets with secrets.txt a directory" "$rc_b" 1
+rc_rule_is "check-secrets with secrets.txt a directory" config-unreadable
+rmdir .forbidden-patterns/secrets.txt
+cp "$RCT/secrets.keep" .forbidden-patterns/secrets.txt
+
+chmod 000 .forbidden-patterns/backend.txt
+rl_before=$(rc_count "$RCLOG")
+rc_run .githooks/lib/check-patterns ok.py
+chmod 644 .forbidden-patterns/backend.txt
+rc_expect "check-patterns with an unreadable backend.txt" "$rc_b" 1
+rc_rule_is "check-patterns with an unreadable backend.txt" config-unreadable
+
+cp .forbidden-patterns/backend.txt "$RCT/backend.keep"
+rm -f .forbidden-patterns/backend.txt
+rl_before=$(rc_count "$RCLOG")
+RC_RC=0
+printf '%s\0' ok.py | env -u CLAUDE_SESSION_ID .githooks/lib/check-patterns --ci >"$HOOK_OUT" 2>&1 || RC_RC=$?
+rc_expect "check-patterns with a manifest-recorded backend.txt removed" "$rc_b" 1
+rc_rule_is "check-patterns with a manifest-recorded backend.txt removed" config-removed
+cp "$RCT/backend.keep" .forbidden-patterns/backend.txt
+reset_repo
+
+# pre-commit: an untracked but present strict config is class (a).
+git rm -q --cached .forbidden-patterns/backend.txt
+rl_before=$(rc_count "$RCLOG")
+RC_RC=0
+env -u CLAUDE_SESSION_ID .githooks/pre-commit >"$HOOK_OUT" 2>&1 || RC_RC=$?
+rc_expect "pre-commit config-untracked guard" "$rc_a" 1
+rc_rule_is "pre-commit config-untracked guard" config-untracked
+reset_repo
+
+# RL_CLASS=b in the environment must not turn other gates' findings into (b).
+printf 'AWS=%s\n' "$akia" >cfg.txt
+git add cfg.txt
+rc_run .githooks/lib/check-secrets cfg.txt RL_CLASS=b
+rc_expect "check-secrets finding with RL_CLASS=b in the environment" "$rc_a" 1
+reset_repo
+{ printf '%s HEAD\n' '<<<<<<<'; printf 'x\n=======\ny\n'; printf '%s b\n' '>>>>>>>'; } >conf.py
+git add conf.py
+rc_run .githooks/lib/check-hygiene conf.py RL_CLASS=b
+rc_expect "check-hygiene finding with RL_CLASS=b in the environment" "$rc_a" 1
+reset_repo
+
+# pre-commit stash failure is class (b): an unstaged change plus a read-only refs dir.
+printf 'y = 2\n' >st.py
+git add st.py
+git -c commit.gpgsign=false commit -q -m st
+printf 'y = 3\n' >st.py
+printf 'z = 1\n' >st2.py
+git add st2.py
+chmod a-w "$(git rev-parse --git-dir)/refs"
+rl_before=$(rc_count "$RCLOG")
+RC_RC=0
+env -u CLAUDE_SESSION_ID .githooks/pre-commit >"$HOOK_OUT" 2>&1 || RC_RC=$?
+chmod u+w "$(git rev-parse --git-dir)/refs"
+rc_expect "pre-commit stash failure" "$rc_b" 1
+rc_rule_is "pre-commit stash failure" stash-failed
+git reset -q --hard HEAD~1
+reset_repo
+
+# The TypeScript twins (node): setup error is class (b), after the gate's ::error::.
+if command -v node >/dev/null 2>&1; then
+  fixture_repo RCTS
+  (
+    cd "$RCTS" || exit 1
+    mkdir -p .githooks/lib node_modules/@stryker-mutator/core node_modules/@stryker-mutator/vitest-runner
+    printf '{"name":"x","type":"module","devDependencies":{"vitest":"^3.0.0"}}\n' >package.json
+    printf '{"version":"10.1.1"}\n' >node_modules/@stryker-mutator/core/package.json
+    printf '{"version":"10.1.1"}\n' >node_modules/@stryker-mutator/vitest-runner/package.json
+    printf 'node_modules/\n' >.gitignore
+    git add -A && git -c commit.gpgsign=false commit -q -m base
+  ) >/dev/null 2>&1
+  cp "$SCAFFOLD_DIR/githooks/lib/refusal-log.template" "$RCTS/.githooks/lib/refusal-log"
+  chmod +x "$RCTS/.githooks/lib/refusal-log"
+  for rc_ts in check-red-green-ts check-mutation-diff-ts; do
+    cp "$SCAFFOLD_DIR/githooks/lib/$rc_ts.template" "$RCTS/.githooks/lib/$rc_ts"
+    RC_RC=0
+    ( cd "$RCTS" && env -u CLAUDE_SESSION_ID node ".githooks/lib/$rc_ts" --ci --base no-such-ref ) >"$HOOK_OUT" 2>&1 || RC_RC=$?
+    rc_expect "$rc_ts setup error" "$rc_b" 2
+    rc_el=$(grep -n '^::error' "$HOOK_OUT" | head -n 1 | cut -d: -f1)
+    rc_tl=$(grep -nxF "$rc_b" "$HOOK_OUT" | head -n 1 | cut -d: -f1)
+    if [ -n "$rc_el" ] && [ -n "$rc_tl" ] && [ "$rc_el" -lt "$rc_tl" ]; then
+      rc_ok "$rc_ts: the gate's ::error line precedes the trailer"
+    else
+      rc_bad "$rc_ts: ::error line ${rc_el:-none}, trailer line ${rc_tl:-none}"
+    fi
+  done
+  rm -rf "$RCTS"
+else
+  echo "  - SKIP: node not on PATH, the TypeScript twins' class trailer assertions did NOT run"
+  SKIP=$((SKIP + 4))
+fi
+
 # --- the helper itself ---------------------------------------------------------
 rc_before=$(rc_count "$RCLOG")
 rc_out=$(.githooks/lib/refusal-log --say a 2>"$RCT/err" ) && rc_hrc=0 || rc_hrc=$?
@@ -335,13 +455,29 @@ fi
 rc_missing=$(find "$SCAFFOLD_DIR/githooks" -type f -name '*.template' ! -name 'refusal-log.template' -exec awk '
   /^[[:space:]]*#/ { next }
   { l = $0; gsub(/-x "[^"]*refusal-log"/, "", l); gsub(/is_file\(\)/, "", l) }
-  l ~ /"\$SELF_DIR\/refusal-log" / || l ~ /"\$LIB\/refusal-log" / || l ~ /"\$HOOK_DIR\/lib\/refusal-log" / || l ~ /str\(_RL\)/ {
+  l ~ /"\$SELF_DIR\/refusal-log" / || l ~ /"\$LIB\/refusal-log" / || l ~ /"\$HOOK_DIR\/lib\/refusal-log" / || l ~ /str\(_RL\)/ || l ~ /spawnSync\("bash", \[rl/ || l ~ /\[rl,/ {
     if (l !~ /--say/) print FILENAME ":" FNR }
 ' {} + )
 if [ -z "$rc_missing" ]; then
   rc_ok "every refusal-log invocation in the templates carries --say"
 else
   rc_bad "refusal-log invoked without --say: $rc_missing"
+fi
+# Python gates: exit 1 is class (a), anything else (b); both flush before the helper runs.
+rc_pin=ok
+for rc_py in check-red-green check-mutation-diff; do
+  rc_f="$SCAFFOLD_DIR/githooks/lib/$rc_py.template"
+  grep -qF '{1: "a"}.get(rc, "b")' "$rc_f" || rc_pin="$rc_py lacks the exit-1 class mapping"
+  [ "$(grep -F 'subprocess.run(' "$rc_f" | grep -cF 'sys.stdout.flush(); ')" -eq 2 ] || rc_pin="$rc_py: both helper calls must follow sys.stdout.flush()"
+  grep -F '"timeout"' "$rc_f" | grep -qF 'sys.stdout.flush(); ' || rc_pin="$rc_py timeout line lacks the flush"
+done
+for rc_ts in check-red-green-ts check-mutation-diff-ts; do
+  grep -qF 'process.exitCode === 1 ? "a" : "b"' "$SCAFFOLD_DIR/githooks/lib/$rc_ts.template" || rc_pin="$rc_ts lacks the exit-1 class mapping"
+done
+if [ "$rc_pin" = ok ]; then
+  rc_ok "the Python and TypeScript gates map exit 1 to (a), the rest to (b), and flush before the helper"
+else
+  rc_bad "class mapping pin: $rc_pin"
 fi
 if ! grep -rqF 'refusal class (c)' "$SCAFFOLD_DIR/githooks"; then
   rc_ok "no template prints a class (c) line (a harness denial never runs a gate)"

@@ -377,10 +377,15 @@ try {
 // the sibling refusal-log script when it is installed. Fail open: logging can
 // never change the exit code, and the script's directory comes from argv so
 // this works whether the file runs as CommonJS or as an ES module.
+// The helper's class trailer (--say, issue #259) is captured and written through
+// node's own stderr, after the gate's messages, never by bash on an inherited fd.
 if (process.exitCode) {
   try {
     const rl = path.join(path.dirname(process.argv[1]), "refusal-log");
     const rule = RL_RULE || ({ 1: "green-on-base-or-cap", 2: "setup-error" })[process.exitCode] || "error";
-    if (fs.existsSync(rl)) cp.spawnSync("bash", [rl, "check-red-green-ts", rule, "", String(process.exitCode)], { stdio: "ignore" });
+    if (fs.existsSync(rl)) {
+      const r = cp.spawnSync("bash", [rl, "check-red-green-ts", rule, "", String(process.exitCode), "--say", process.exitCode === 1 ? "a" : "b"], { stdio: ["ignore", "ignore", "pipe"], encoding: "utf8" });
+      if (r.stderr) process.stderr.write(r.stderr);
+    }
   } catch (e) { /* never let logging change the verdict */ }
 }

@@ -45,21 +45,23 @@ versioning follows [SemVer](https://semver.org/).
   `MAX_LINE_LENGTH`) is logged too, with exit 2 and rule `invalid-max-lines`,
   `invalid-max-bytes` or `invalid-max-line-length`. The two Python gates also
   log their timeout exit, as rule `timeout`.
-- **Every refusal names its class (#259).** Each shipped refusal message now ends
-  with one fixed trailer line, printed by `.githooks/lib/refusal-log --say`, so
+- **Every refusal names its class (#259).** Each gate's refusal message now ends
+  with one fixed trailer line (in a full pre-commit run the hook's own
+  "Pre-commit failed" banner follows the last gate's trailer), printed by `.githooks/lib/refusal-log --say`, so
   an agent can tell what kind of refusal it hit. Class (a) prints
   `refusal class (a): this check failed on your own change. Fix the file, never the gate.`
   and class (b) prints
   `refusal class (b): this gate is itself wrong or broken. Stop and report this message to the user verbatim.`
   Class (a) covers findings, the agent pre-check's blocks, `commit-msg`, the
-  pre-commit hook's config-deletion guards and linter failures. Class (b)
-  covers a gate's own configuration error, an unreadable, missing, empty or
-  invalid pattern config, an over-long line the gate cannot scan, a stash
-  failure, and a Python gate's setup error or timeout. Class (c), a harness or
+  pre-commit hook's config-deletion guards, linter failures and failing
+  `local.d` checks. Class (b) covers a gate's own configuration error, an
+  unreadable, missing, empty or invalid pattern config, an over-long line the
+  gate cannot scan, a stash failure, and a setup error or timeout of the Python
+  gates and their `-ts` twins. Class (c), a harness or
   permission denial, is never printed by a gate (a denial does not run the
-  gate), so a refusal without the line is a harness or permission denial, or
-  comes from an older or broken install (the helper missing or a gate
-  crashing); report it verbatim, never reword or split it.
+  gate), so a refusal without the line never reached a gate's refusal path: a
+  harness or permission denial, an older or broken install, or a usage error or
+  crash before the gate decided. Report it verbatim, never reword or split it.
 - **Opt-in advisory whole-tree lint workflow (#217).** `install.sh --tree-lint`
   installs `.github/workflows/lint-tree.yml`, the whole-tree twin of the
   diff-scoped `lint.yml`. It runs ruff check, ruff format --check, eslint,
