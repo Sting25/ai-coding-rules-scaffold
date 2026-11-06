@@ -20,6 +20,7 @@ git hook run pre-commit            # size / pattern / secret / hygiene / filenam
 - If another hook manager owns `core.hooksPath`, run `.githooks/pre-commit` directly; the doctor says which case applies.
 - These commands see everything on disk, gitignored code included. If one flags code you did not write, extend the config's ignores; never narrow the command.
 - In a monorepo, run `pytest` from the directory holding its config.
+- A finding in a file your branch did not touch is baseline, not yours: check the open `Lint baseline` issue (from `lint-tree.yml`, when installed) before reporting it.
 - **Fix the file, not the check.** A `scaffold-allow` marker, a `.scaffold.toml` disable or downgrade, an ignore list widened over code you wrote, a skipped test, or a deleted test or workflow turns red green without fixing anything. Use one only for a genuine false positive you cannot fix, with the user's go-ahead, scoped narrowly with a recorded reason, and name it in the change summary. Never delete a test in the same change as the code it covered.
 
 ## Session start
@@ -57,6 +58,7 @@ Before reporting a hook or check you created, confirm it exists on disk (`ls -l`
 - **Use `git worktree` for parallel agent sessions**, never two agents in one checkout.
   A hook that confines file access to the repo root by path prefix can wrongly block linked worktrees, symlinked paths and home-directory caches.
   Decide membership by `git -C <dir> rev-parse --path-format=absolute --git-common-dir` matching your own (that covers linked worktrees), after `realpath` on the target; caches and deliberate symlinks outside the repo need an explicit allowlist, not a prefix compare.
+  A worktree copies tracked files only: `scaffold-doctor` has an advisory "worktree parity" section (hooks path, node_modules, venv, gate tools).
 
 ## Destructive actions and live data
 

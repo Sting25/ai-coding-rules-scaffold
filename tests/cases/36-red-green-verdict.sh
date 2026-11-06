@@ -15,7 +15,8 @@
 # stay green. The commit that added the gate says the real behaviour was
 # verified BY HAND and never encoded; this file encodes it.
 #
-# THREE VERDICTS, on one shared fixture whose base commit ships a deliberately
+# TWENTY-THREE CHECKS (twenty-two pytest verdicts plus a static one; (f)-(u) are the
+# moved-test exemption), on one shared fixture whose base commit ships a deliberately
 # WRONG `add(a, b) -> a - b` plus a test pinned to that wrong behaviour:
 #   (a) a new test that FAILS on base  -> exit 0. The false-positive direction,
 #       and the one that matters most: a gate that blocks honest red-green work
@@ -34,7 +35,7 @@
 # in the base worktree.
 #
 # THE PYTEST DEPENDENCY, stated rather than hidden. check-red-green shells out
-# to `sys.executable -m pytest`, so these three assertions cannot run without
+# to `sys.executable -m pytest`, so the four pytest assertions cannot run without
 # pytest importable. .github/workflows/test.yml installs ruff and zizmor but NOT
 # pytest, so in CI today this is a counted SKIP that shows up in the driver's
 # final Result line, not a silent pass — adding a pinned `pip install pytest`
@@ -43,8 +44,8 @@
 echo "cases/36: check-red-green's blocking verdict (#140)"
 
 if ! python3 -c 'import pytest' >/dev/null 2>&1; then
-  echo "  - SKIP: pytest not importable — check-red-green's 3 verdict assertions did NOT run (add a pinned 'pip install pytest' step to .github/workflows/test.yml to cover this in CI)"
-  SKIP=$((SKIP + 3))
+  echo "  - SKIP: pytest not importable — check-red-green's 22 verdict assertions did NOT run (add a pinned 'pip install pytest' step to .github/workflows/test.yml to cover this in CI)"
+  SKIP=$((SKIP + 22))
 else
   # A fixture repo with the --test-guard artifacts installed, one BASE commit,
   # and HEAD == base. Scenarios below add the second commit. Printed as
@@ -166,6 +167,286 @@ else
     rm -rf "$_rg_dir"
   fi
 
+  # (d) A killed earlier run left a STALE worktree registration (directory gone,
+  #     .git/worktrees/<name> still there). The gate prunes before it adds
+  #     (#221), so the registration is gone afterwards and the verdict is
+  #     unaffected. Same HEAD as (a), so the gate really reaches `worktree add`.
+  if _rg_new; then
+    printf 'def add(a, b):\n    return a + b\n' >"$_rg_dir/calc.py"
+    printf 'from calc import add\n\n\ndef test_add_existing():\n    assert add(5, 5) == 10\n\n\ndef test_add_is_a_sum():\n    assert add(2, 3) == 5\n' >"$_rg_dir/tests/test_calc.py"
+    git -C "$_rg_dir" add -A && git -C "$_rg_dir" commit --quiet -m "fix add, with a red-on-base test" --no-verify  # scaffold-allow: test fixture
+    _rg_stale="$_rg_dir/stale-wt"
+    git -C "$_rg_dir" worktree add --quiet --detach "$_rg_stale" HEAD >/dev/null 2>&1
+    rm -rf "$_rg_stale"
+    _rg_pre=$(git -C "$_rg_dir" worktree list --porcelain | grep -c "stale-wt" || true)
+    _rg_rc=$(_rg_run "$_rg_dir" "$_rg_base")
+    _rg_post=$(git -C "$_rg_dir" worktree list --porcelain | grep -c "stale-wt" || true)
+    if [ "$_rg_pre" -eq 1 ] && [ "$_rg_post" -eq 0 ] && [ "$_rg_rc" -eq 0 ]; then
+      echo "  ✓ a stale worktree registration is pruned before the gate adds its own (exit 0)"
+      PASS=$((PASS + 1))
+    else
+      echo "  ✗ stale registration must exist before (got $_rg_pre), be gone after (got $_rg_post), gate exit 0 (got $_rg_rc)"
+      sed 's/^/      /' "$HOOK_OUT"
+      FAIL=$((FAIL + 1))
+    fi
+    rm -rf "$_rg_dir"
+  fi
+
+  # (f)-(s): the moved-test exemption (#200). A new node ID that is green on base
+  # is exempt only when it is a TRUE MOVE: the same [Class::]name[param] tail
+  # existed at base, that base node ID is gone at HEAD, the function AST is the
+  # same, and every module-level name it uses is bound the same way in both
+  # files. The base's only test is test_add_existing (passes on base:
+  # add(5, 5) == 0), so a copy of it in a NEW file is a new, green-on-base ID.
+  # _rg_check <label> <want_rc> <grep_pattern> <forbid_exempt 1|0>: run the gate
+  # and book one PASS/FAIL. With forbid_exempt=1 the output must also hold no
+  # "exempt (moved" line. The scenario's HEAD commit is made by the caller.
+  _rg_check() {
+    local label=$1 want=$2 pat=$3 forbid_exempt=$4 pat2=${5:-} ok=0
+    _rg_rc=$(_rg_run "$_rg_dir" "$_rg_base")
+    if [ "$_rg_rc" -eq "$want" ] && grep -q "$pat" "$HOOK_OUT" \
+       && { [ -z "$pat2" ] || grep -q "$pat2" "$HOOK_OUT"; }; then ok=1; fi
+    if [ "$ok" -eq 1 ] && { [ "$forbid_exempt" -eq 0 ] || ! grep -q 'exempt (moved' "$HOOK_OUT"; }; then
+      echo "  ✓ $label (exit $want)"
+      PASS=$((PASS + 1))
+    else
+      echo "  ✗ $label: want exit $want matching '$pat', got exit $_rg_rc"
+      sed 's/^/      /' "$HOOK_OUT"
+      FAIL=$((FAIL + 1))
+    fi
+    rm -rf "$_rg_dir"
+  }
+  _rg_commit() { git -C "$_rg_dir" add -A && git -C "$_rg_dir" commit --quiet -m "$1" --no-verify; }  # scaffold-allow: test fixture
+  # _rg_rebase <msg>: commit the scenario's extra BASE files and make that commit the base.
+  _rg_rebase() { _rg_commit "$1" && _rg_base=$(git -C "$_rg_dir" rev-parse HEAD); }
+  _rg_moved='exempt (moved, body and context unchanged)'
+  # A parametrized test over a module-level table, in base.
+  _rg_table='import pytest\nfrom calc import add\n\nCASES = [(5, 5)]\n\n\n@pytest.mark.parametrize("a, b", CASES)\ndef test_add_equal_operands(a, b):\n    assert add(a, b) == 0\n'
+
+  # (f) moved verbatim into a new file, deleted from the old one, importing `add`
+  #     exactly as before: exempt.
+  if _rg_new; then
+    printf 'from calc import add  # noqa: F401\n' >"$_rg_dir/tests/test_calc.py"
+    printf 'from calc import add\n\n\ndef test_add_existing():\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_calc_more.py"
+    _rg_commit "split: move test_add_existing"
+    _rg_check "a test moved verbatim to a new file (same import of add) is exempt" 0 \
+      "$_rg_moved: tests/test_calc_more.py::test_add_existing" 0
+  fi
+
+  # (g) moved AND reformatted (quotes, trailing comma, re-wrapped call, a docstring).
+  #     In place a reformat keeps the node ID, so it is never "new"; it is the
+  #     move that makes it a new ID, and the AST equivalence is what exempts it.
+  if _rg_new; then
+    printf 'from calc import add  # noqa: F401\n' >"$_rg_dir/tests/test_calc.py"
+    printf 'from calc import add\n\n\ndef test_add_existing():\n    """A docstring, which carries no semantics."""\n    assert (\n        add(\n            5,\n            5,\n        )\n        == 0\n    )\n' >"$_rg_dir/tests/test_calc_fmt.py"
+    _rg_commit "format and move"
+    _rg_check "a moved test reformatted (wrapping, trailing comma, docstring) is exempt" 0 \
+      "$_rg_moved: tests/test_calc_fmt.py::test_add_existing" 0
+  fi
+
+  # (h) moved with a semantic edit that STILL passes on base: add(5, 5) == 0 becomes
+  #     add(4, 4) == 0 (a - b is 0 for equal operands). Body differs: offender.
+  if _rg_new; then
+    printf 'from calc import add  # noqa: F401\n' >"$_rg_dir/tests/test_calc.py"
+    printf 'from calc import add\n\n\ndef test_add_existing():\n    assert add(4, 4) == 0\n' >"$_rg_dir/tests/test_calc_more.py"
+    _rg_commit "move with an edit"
+    _rg_check "a moved test with a changed assertion stays an offender" 1 \
+      'green-on-base: tests/test_calc_more.py::test_add_existing' 1
+  fi
+
+  # (i) fail closed PER FILE: the base also holds an unparsable, never-collected
+  #     file. It cannot hold a candidate, so it only removes candidates; it must
+  #     not switch the exemption off for the rest of the tree.
+  if _rg_new; then
+    printf 'def broken(:\n' >"$_rg_dir/tests/helper_broken.py"
+    _rg_rebase "base also holds an unparsable helper"
+    printf 'from calc import add  # noqa: F401\n' >"$_rg_dir/tests/test_calc.py"
+    printf 'from calc import add\n\n\ndef test_add_existing():\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_calc_more.py"
+    _rg_commit "move with an unparsable unrelated base file"
+    _rg_check "an unparsable unrelated base file does not block a legitimate move" 0 \
+      "$_rg_moved: tests/test_calc_more.py::test_add_existing" 0
+  fi
+
+  # (i2) a test whose only base copy sits in a file the predicate cannot read
+  #      (latin-1 source, byte 0xe9 in a comment; pytest honours the coding
+  #      cookie, the predicate decodes UTF-8) has no readable candidate: offender.
+  if _rg_new; then
+    printf '# -*- coding: latin-1 -*-\n# caf\351\nfrom calc import add\n\n\ndef test_legacy_check():\n    assert add(3, 3) == 0\n' >"$_rg_dir/tests/test_legacy.py"
+    _rg_rebase "base holds a latin-1 test file"
+    rm "$_rg_dir/tests/test_legacy.py"
+    printf 'from calc import add\n\n\ndef test_legacy_check():\n    assert add(3, 3) == 0\n' >"$_rg_dir/tests/test_legacy_moved.py"
+    _rg_commit "move out of the unreadable file"
+    _rg_check "a test whose only base copy is in an unreadable file stays an offender" 1 \
+      'green-on-base: tests/test_legacy_moved.py::test_legacy_check' 1
+  fi
+
+  # (j1) a NEW parametrize case added in place to a module-level table: the
+  #      table is not a new test body, but the node ID is new and green on base.
+  if _rg_new; then
+    printf '%b' "$_rg_table" >"$_rg_dir/tests/test_cases.py"
+    _rg_rebase "base holds a parametrized test"
+    _rg_old='(5, 5)]'; _rg_new_cases='(5, 5), (4, 4)]'
+    printf '%b' "${_rg_table/"$_rg_old"/$_rg_new_cases}" >"$_rg_dir/tests/test_cases.py"
+    _rg_commit "add a case to the table"
+    _rg_check "a new parametrize case added to a module-level table is an offender" 1 \
+      'green-on-base: tests/test_cases.py::test_add_equal_operands\[4-4\]' 1
+  fi
+
+  # (j2) the same parametrized test MOVED with an identical table: exempt.
+  if _rg_new; then
+    printf '%b' "$_rg_table" >"$_rg_dir/tests/test_cases.py"
+    _rg_rebase "base holds a parametrized test"
+    printf '# moved\n' >"$_rg_dir/tests/test_cases.py"
+    printf '%b' "$_rg_table" >"$_rg_dir/tests/test_cases_more.py"
+    _rg_commit "move the parametrized test"
+    _rg_check "a moved parametrized test with the same cases and table is exempt" 0 \
+      "$_rg_moved: tests/test_cases_more.py::test_add_equal_operands\[5-5\]" 0
+  fi
+
+  # (k) a verbatim COPY with the original left in place is not a move: offender.
+  if _rg_new; then
+    printf 'from calc import add\n\n\ndef test_add_existing():\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_calc_copy.py"
+    _rg_commit "copy the test, keep the original"
+    _rg_check "a verbatim copy with the original still present is an offender" 1 \
+      'green-on-base: tests/test_calc_copy.py::test_add_existing' 1
+  fi
+
+  # (l) moved body whose new file REDEFINES a helper it calls: add() now returns
+  #     0 locally, so the same text means something else. Offender.
+  if _rg_new; then
+    printf '# moved\n' >"$_rg_dir/tests/test_calc.py"
+    printf 'def add(a, b):\n    return 0\n\n\ndef test_add_existing():\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_calc_more.py"
+    _rg_commit "move into a file with its own add"
+    _rg_check "a moved test whose new file redefines the helper it calls is an offender" 1 \
+      'green-on-base: tests/test_calc_more.py::test_add_existing' 1
+  fi
+
+  # (m) a move PLUS a new parametrize case whose table lives in ANOTHER module
+  #     (tests/data.py grows). The table is not in the moved file, so only the
+  #     tail comparison tells the new [4-4] from the moved [5-5]: [4-4] has no
+  #     base ID with that tail, so it stays an offender, while [5-5] is exempt.
+  if _rg_new; then
+    printf 'CASES = [(5, 5)]\n' >"$_rg_dir/tests/data.py"
+    : >"$_rg_dir/tests/__init__.py"
+    printf 'import pytest\nfrom calc import add\nfrom tests.data import CASES\n\n\n@pytest.mark.parametrize("a, b", CASES)\ndef test_eq(a, b):\n    assert add(a, b) == 0\n' >"$_rg_dir/tests/test_p.py"
+    _rg_rebase "base holds a parametrized test over an imported table"
+    printf 'CASES = [(5, 5), (4, 4)]\n' >"$_rg_dir/tests/data.py"
+    mv "$_rg_dir/tests/test_p.py" "$_rg_dir/tests/test_p2.py"
+    _rg_commit "move the test and grow the imported table"
+    _rg_check "a move plus a new case in an imported table: the new case is an offender, the moved one is exempt" 1 \
+      'green-on-base: tests/test_p2.py::test_eq\[4-4\]' 0 \
+      "$_rg_moved: tests/test_p2.py::test_eq\[5-5\]"
+  fi
+
+  # (n) moved test that requests a module-level FIXTURE by parameter name, and the
+  #     new file redefines that fixture: same test text, different meaning. Offender.
+  if _rg_new; then
+    printf 'import pytest\nfrom calc import add\n\n\n@pytest.fixture\ndef val():\n    return add(5, 5)\n\n\ndef test_v(val):\n    assert val == 0\n' >"$_rg_dir/tests/test_f.py"
+    _rg_rebase "base holds a fixture and a test that requests it"
+    printf '# moved\n' >"$_rg_dir/tests/test_f.py"
+    printf 'import pytest\nfrom calc import add\n\n\n@pytest.fixture\ndef val():\n    return 0\n\n\ndef test_v(val):\n    assert val == 0\n' >"$_rg_dir/tests/test_f2.py"
+    _rg_commit "move the test into a file with its own val fixture"
+    _rg_check "a moved test whose module-level fixture is redefined in the new file is an offender" 1 \
+      'green-on-base: tests/test_f2.py::test_v' 1
+  fi
+
+  # (o) moved CLASS test whose sibling method on the same class is redefined in
+  #     the new file (the class header alone is identical). Offender.
+  if _rg_new; then
+    printf 'from calc import add\n\n\nclass TestA:\n    def helper(self):\n        return add(5, 5)\n\n    def test_a(self):\n        assert self.helper() == 0\n' >"$_rg_dir/tests/test_c.py"
+    _rg_rebase "base holds a class with a helper method"
+    printf '# moved\n' >"$_rg_dir/tests/test_c.py"
+    printf 'from calc import add\n\n\nclass TestA:\n    def helper(self):\n        return 0\n\n    def test_a(self):\n        assert self.helper() == 0\n' >"$_rg_dir/tests/test_c2.py"
+    _rg_commit "move the class into a file with a different helper"
+    _rg_check "a moved class test whose sibling method is redefined in the new file is an offender" 1 \
+      'green-on-base: tests/test_c2.py::TestA::test_a' 1
+  fi
+
+  # (p) a verbatim move whose HEAD file is not valid UTF-8 (latin-1 cookie, byte
+  #     0xe9 in a comment; pytest collects it, the predicate cannot decode it):
+  #     fail closed, nothing is exempted.
+  if _rg_new; then
+    printf '# moved\n' >"$_rg_dir/tests/test_calc.py"
+    printf '# -*- coding: latin-1 -*-\n# caf\xe9\nfrom calc import add\n\n\ndef test_add_existing():\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_more.py"
+    _rg_commit "move into a file the predicate cannot decode"
+    _rg_check "a moved test whose HEAD file is not valid UTF-8 stays an offender" 1 \
+      'green-on-base: tests/test_more.py::test_add_existing' 1
+  fi
+
+  # (q) two-hop: the moved test requests fixture `val`, `val` requests `inner`, and
+  #     the new file redefines only `inner`. The name closure must reach it. Offender.
+  if _rg_new; then
+    printf 'import pytest\nfrom calc import add\n\n\n@pytest.fixture\ndef inner():\n    return add(5, 5)\n\n\n@pytest.fixture\ndef val(inner):\n    return inner\n\n\ndef test_v(val):\n    assert val == 0\n' >"$_rg_dir/tests/test_h.py"
+    _rg_rebase "base holds a two-hop fixture chain"
+    printf '# moved\n' >"$_rg_dir/tests/test_h.py"
+    printf 'import pytest\nfrom calc import add\n\n\n@pytest.fixture\ndef inner():\n    return 0\n\n\n@pytest.fixture\ndef val(inner):\n    return inner\n\n\ndef test_v(val):\n    assert val == 0\n' >"$_rg_dir/tests/test_h2.py"
+    _rg_commit "move the test into a file that redefines the inner fixture"
+    _rg_check "a moved test whose fixture's own dependency is redefined (two hops) is an offender" 1 \
+      'green-on-base: tests/test_h2.py::test_v' 1
+  fi
+
+  # (r) the fixture is named by STRING (usefixtures), not by parameter, and the new
+  #     file redefines it. Offender.
+  if _rg_new; then
+    printf 'import pytest\nfrom calc import add\n\n\n@pytest.fixture\ndef val():\n    return add(5, 5)\n\n\n@pytest.mark.usefixtures("val")\ndef test_u():\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_u.py"
+    _rg_rebase "base holds a test that names its fixture by string"
+    printf '# moved\n' >"$_rg_dir/tests/test_u.py"
+    printf 'import pytest\nfrom calc import add\n\n\n@pytest.fixture\ndef val():\n    return 0\n\n\n@pytest.mark.usefixtures("val")\ndef test_u():\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_u2.py"
+    _rg_commit "move the test into a file that redefines the string-named fixture"
+    _rg_check "a moved test whose usefixtures-named fixture is redefined is an offender" 1 \
+      'green-on-base: tests/test_u2.py::test_u' 1
+  fi
+
+  # (s) a star import added AFTER the real import of `add` could rebind it: the
+  #     name is bound in both files, so only the star check can refuse. Offender.
+  if _rg_new; then
+    printf '# moved\n' >"$_rg_dir/tests/test_calc.py"
+    printf 'from calc import add\nfrom os.path import *\n\n\ndef test_add_existing():\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_star.py"
+    _rg_commit "move into a file with a star import"
+    _rg_check "a moved test in a module with a star import stays an offender" 1 \
+      'green-on-base: tests/test_star.py::test_add_existing' 1
+  fi
+
+  # (t) the fixture is registered under a decorator alias (name="val"), not its
+  #     function name, in both files, with a different value in the new one. Offender.
+  if _rg_new; then
+    printf 'import pytest\nfrom calc import add\n\n\n@pytest.fixture(name="val")\ndef fixture_val():\n    return 5\n\n\ndef test_v(val):\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_v.py"
+    _rg_rebase "base holds a test that requests a fixture by its name"
+    printf '# moved\n' >"$_rg_dir/tests/test_v.py"
+    printf 'import pytest\nfrom calc import add\n\n\n@pytest.fixture(name="val")\ndef fixture_val():\n    return 0\n\n\ndef test_v(val):\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_v2.py"
+    _rg_commit "move the test into a file that defines the fixture under a name= alias"
+    _rg_check "a moved test whose fixture is redefined via name= is an offender" 1 \
+      'green-on-base: tests/test_v2.py::test_v' 1
+  fi
+
+  # (u) the fixture alias is name=N with N a module constant, in both files, with a
+  #     different value in the new one: `val` is bound in neither module. Offender.
+  if _rg_new; then
+    printf 'import pytest\nfrom calc import add\n\nN = "val"\n\n\n@pytest.fixture(name=N)\ndef fixture_val():\n    return 5\n\n\ndef test_n(val):\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_n.py"
+    _rg_rebase "base holds a test that requests a fixture registered via name=N"
+    printf '# moved\n' >"$_rg_dir/tests/test_n.py"
+    printf 'import pytest\nfrom calc import add\n\nN = "val"\n\n\n@pytest.fixture(name=N)\ndef fixture_val():\n    return 0\n\n\ndef test_n(val):\n    assert add(5, 5) == 0\n' >"$_rg_dir/tests/test_n2.py"
+    _rg_commit "move the test into a file that defines the fixture under a name=N alias"
+    _rg_check "a moved test whose fixture is redefined via a non-literal name= is an offender" 1 \
+      'green-on-base: tests/test_n2.py::test_n' 1
+  fi
+
   unset _rg_dir _rg_base _rg_rc
-  unset -f _rg_fixture _rg_new _rg_run
+  unset -f _rg_fixture _rg_new _rg_run _rg_check _rg_commit _rg_rebase
+  unset _rg_moved _rg_table _rg_old _rg_new_cases
 fi
+unset _rg_stale _rg_pre _rg_post
+
+# (e) check-mutation-diff cannot be driven here (it needs mutmut and a mutation
+#     run, too heavy for this suite), so cover its prune-on-start statically:
+#     the prune call must come BEFORE the `worktree add` in the shipped template.
+_rg_pl=$(grep -n '^ *run(\["git", "worktree", "prune"\])' "$SCAFFOLD_DIR/githooks/lib/check-mutation-diff.template" | head -1 | cut -d: -f1)
+_rg_al=$(grep -n '"worktree", "add"' "$SCAFFOLD_DIR/githooks/lib/check-mutation-diff.template" | head -1 | cut -d: -f1)
+if [ -n "$_rg_pl" ] && [ -n "$_rg_al" ] && [ "$_rg_pl" -lt "$_rg_al" ]; then
+  echo "  ✓ check-mutation-diff prunes worktrees before it adds one (static: line $_rg_pl < $_rg_al)"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ check-mutation-diff must call git worktree prune before git worktree add (prune: ${_rg_pl:-none}, add: ${_rg_al:-none})"
+  FAIL=$((FAIL + 1))
+fi
+unset _rg_pl _rg_al

@@ -31,11 +31,11 @@ rm -rf "$N"
 # default — accept the detected stack, every opt-in stays off, the default
 # test-execution workflow (plain tests.yml, no coverage gate) is installed.
 D=$(_iact_fixture)
-# 13 empty lines. The default flow asks 14 prompts: these Enters answer the first
-# 13, and the 14th (coverage-gate, asked because test-workflow defaulted to Y)
+# 14 empty lines. The default flow asks 15 prompts: these Enters answer the first
+# 14, and the 15th (coverage-gate, asked because test-workflow defaulted to Y)
 # takes its default at EOF.
 : >"$D/answers.txt"
-for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13; do printf '\n' >>"$D/answers.txt"; done
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do printf '\n' >>"$D/answers.txt"; done
 ( cd "$D" && SCAFFOLD_TTY="$D/answers.txt" "$SCAFFOLD_DIR/install.sh" --interactive --no-verify ) >"$HOOK_OUT" 2>&1 || true
 if [ -f "$D/.github/workflows/tests.yml" ] && [ ! -e "$D/.github/workflows/coverage.yml" ] \
    && [ ! -e "$D/.claude/settings.json" ] \
@@ -52,6 +52,7 @@ C=$(_iact_fixture)
 cat >"$C/answers.txt" <<'EOF'
 y
 y
+n
 n
 n
 n
@@ -93,6 +94,7 @@ n
 n
 n
 n
+n
 EOF
 ( cd "$S" && SCAFFOLD_TTY="$S/answers.txt" "$SCAFFOLD_DIR/install.sh" --interactive --no-verify ) >"$HOOK_OUT" 2>&1 || true
 if [ ! -e "$S/eslint.config.js" ] && [ ! -e "$S/.forbidden-patterns/frontend.txt" ] \
@@ -120,7 +122,7 @@ rm -rf "$B"
 # neither tests.yml nor coverage.yml is installed, and the loud skip banner
 # fires (matching the flag path cases/19 already covers).
 W=$(_iact_fixture)
-for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do printf '\n' >>"$W/answers.txt"; done
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13; do printf '\n' >>"$W/answers.txt"; done
 printf 'n\n' >>"$W/answers.txt"
 ( cd "$W" && SCAFFOLD_TTY="$W/answers.txt" "$SCAFFOLD_DIR/install.sh" --interactive --no-verify ) >"$HOOK_OUT" 2>&1 || true
 if [ ! -e "$W/.github/workflows/tests.yml" ] && [ ! -e "$W/.github/workflows/coverage.yml" ] \

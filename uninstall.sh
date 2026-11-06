@@ -354,6 +354,8 @@ remove_if_unmodified ".github/workflows/gitleaks.yml" "$SCAFFOLD_DIR/.github/wor
 remove_if_unmodified ".github/workflows/dependency-review.yml" "$SCAFFOLD_DIR/.github/workflows/dependency-review.yml.template"
 # Opt-in zizmor CI gate (only present if installed with --zizmor-ci).
 remove_if_unmodified ".github/workflows/zizmor.yml" "$SCAFFOLD_DIR/.github/workflows/zizmor.yml.template"
+# Opt-in advisory whole-tree lint (only present if installed with --tree-lint).
+remove_if_unmodified ".github/workflows/lint-tree.yml" "$SCAFFOLD_DIR/.github/workflows/lint-tree.yml.template"
 # Opt-in Socket Firewall supply-chain CI gate (only present if installed
 # with --socket-ci).
 remove_if_unmodified ".github/workflows/socket-security.yml" "$SCAFFOLD_DIR/.github/workflows/socket-security.yml.template"

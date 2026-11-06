@@ -51,6 +51,7 @@
     ".github/workflows/gitleaks.yml.template",
     ".github/workflows/dependency-review.yml.template",
     ".github/workflows/zizmor.yml.template",
+    ".github/workflows/lint-tree.yml.template",
     ".github/workflows/socket-security.yml.template",
     ".github/workflows/test-guard.yml.template",
     ".npmrc.template",

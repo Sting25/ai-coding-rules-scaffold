@@ -404,6 +404,7 @@ def main() -> int:
     tmp = tempfile.mkdtemp(prefix="mutdiff-")
     wt = os.path.join(tmp, "wt")
     try:
+        run(["git", "worktree", "prune"])  # best-effort; drops every stale entry, locked ones stay
         r = run(["git", "worktree", "add", "--detach", wt, head_sha])
         if r.returncode != 0:
             emit("error", f"git worktree add failed: {r.stderr.strip()}", args.ci)
@@ -414,10 +415,10 @@ def main() -> int:
         missing = [x for x in dirs + only_mutate if not pathlib.Path(wt, x).exists()]
         if missing:
             emit("error",
-                 "configured mutmut source path(s) do not exist in the "
-                 f"worktree, checked independently before running mutmut "
-                 f"because mutmut's own error for this is indistinguishable "
-                 f"from zero coverage: {', '.join(missing)}", args.ci)
+                 "configured mutmut source path(s) do not exist in the worktree, "
+                 "checked independently before running mutmut because mutmut's "
+                 "own error for this is indistinguishable from zero coverage: "
+                 f"{', '.join(missing)}", args.ci)
             return 2
 
         r = run([sys.executable, "-m", "mutmut", "run"], cwd=wt)

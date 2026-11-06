@@ -8,6 +8,36 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+- **Opt-in advisory whole-tree lint workflow (#217).** `install.sh --tree-lint`
+  installs `.github/workflows/lint-tree.yml`, the whole-tree twin of the
+  diff-scoped `lint.yml`. It runs ruff check, ruff format --check, eslint,
+  prettier --check and tsc over the tracked files weekly and on push to
+  main or master, never on a pull request, so it cannot block a merge. On
+  failure it opens or updates one `Lint baseline (whole-tree findings)` issue
+  (label `lint-baseline`); a later clean run comments and closes it.
+  `AGENTS.md.template` gains one line telling agents a finding in a file their
+  branch did not touch is baseline, and to check that issue first. The
+  installer wizard, uninstaller, doctor and the "not enabled" summary all know
+  the new workflow.
+- **Red-green gate exempts tests that were moved, with or without reformatting (#200).**
+  A new test node ID is exempt from green-on-base only when it is a true move:
+  the same `[Class::]name[param]` existed at base and is gone at HEAD, the
+  function and its enclosing class are the same AST, and every module-level name the
+  test uses is bound identically in both files (names are followed through the
+  module's own helpers and fixtures, fixtures named by string count, and a star
+  import is never exempt). A copy, a new parametrize case,
+  a redefined helper, fixture or sibling method stays an offender. One fail-closed predicate,
+  `exempt_as_unchanged_test`, in `check-red-green`; an unreadable or unparsable
+  base file is skipped, an unreadable HEAD file exempts nothing. The proposed
+  local receipts, pre-commit check and tool hooks were dropped.
+
+- **`scaffold-doctor` gains an advisory "worktree parity" section (#211).** Notes only,
+  never a gap and never blocking: `core.hooksPath` outside the worktree, `node_modules`
+  that differs from `package-lock.json`, a venv that imports the project from another
+  path, a missing gate tool (ruff, pytest, eslint, prettier) or a pytest that runs from
+  a venv outside the worktree, and an interpreter below `requires-python`. Each check skips quietly when its inputs are absent. The blocking
+  check and the version-vs-lockfile comparison stay open. `AGENTS.md.template` points
+  at the section.
 - **README documents three Claude Code harness behaviors (#224).** A new "Known
   Claude Code harness behaviors" section names subagent permission denials, long
   CI-style waits and output-style plugins that override reply length, each with
@@ -101,6 +131,11 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Fixed
 
+- **The red-green and mutation gates prune stale worktrees on start (#221, that
+  part only).** Each gate runs `git worktree prune` before adding its own
+  temporary worktree, so registrations left by killed runs stop piling up in
+  `.git/worktrees`. The prune covers every stale registration in the repo;
+  `git worktree lock` protects a worktree on a drive that is not mounted.
 - **The hooks, check scripts, assess, install and uninstall no longer need
   `dirname`.** They resolve their own directory with shell parameter expansion,
   so bash 5.3's fatal `cd ""` can no longer kill them before they start.
