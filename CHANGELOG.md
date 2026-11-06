@@ -95,7 +95,11 @@ versioning follows [SemVer](https://semver.org/).
   `skipped` gate and so fails in CI; and `SCAFFOLD_GATE_STRICT=1` in the four
   workflows makes any gate skipped for a missing tool fail the job. Locally
   nothing blocks: the hook still passes a skipped gate and prints one summary
-  line. Reason `disabled:` from `.scaffold.toml` still passes.
+  line. Reason `disabled:` from `.scaffold.toml` still passes. Two edge cases:
+  a project with colocated `test_*.py` files and no importable pytest now exits
+  2 from `check-red-green` where it used to pass; and a tree whose only Python
+  test files are `tests/conftest.py` or `tests/__init__.py` counts as having
+  test files for the pytest exit-5 rule.
 - **test-guard: a mutation size decline is a neutral check run, not a failure
   (#206).** When the diff has more mutants than `--max-mutants`, the mutation
   step used to fail the job and look like a real finding. It now passes, writes

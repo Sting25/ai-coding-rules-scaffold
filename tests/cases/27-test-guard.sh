@@ -61,13 +61,16 @@ else
   echo "  ✗ --test-guard should install both checks + workflow + appended rules section"; FAIL=$((FAIL + 1))
 fi
 
-# (T) the installed check is runnable python3 and exits 0 in a repo with no
-# tests/ directory (its documented nothing-to-verify path): the positive
-# assertion that the artifact executes, not just that no error appeared.
-if ( cd "$T" && python3 .githooks/lib/check-red-green --base HEAD ) >"$HOOK_OUT" 2>&1; then
-  echo "  ✓ installed check-red-green runs and exits 0 with no tests directory"; PASS=$((PASS + 1))
+# (T) the installed check is runnable python3 and, with a resolvable base and no
+# test files changed, exits 0 reporting `empty`: the positive assertion that the
+# artifact executes, not just that no error appeared. HEAD must resolve (an
+# unresolvable base is exit 2), so the fixture gets an empty initial commit.
+git -C "$T" commit -q --allow-empty --no-verify -m init  # scaffold-allow: test fixture
+if ( cd "$T" && python3 .githooks/lib/check-red-green --base HEAD ) >"$HOOK_OUT" 2>&1 \
+   && grep -qF "gate=red-green status=empty" "$HOOK_OUT"; then
+  echo "  ✓ installed check-red-green runs and exits 0 as empty when no test files changed"; PASS=$((PASS + 1))
 else
-  echo "  ✗ installed check-red-green should exit 0 with no tests directory"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  echo "  ✗ installed check-red-green should exit 0 with status=empty when no test files changed"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 
 # (T) the installed check-mutation-diff is runnable python3 and honors its
