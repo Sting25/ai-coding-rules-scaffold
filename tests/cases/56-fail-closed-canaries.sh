@@ -231,6 +231,54 @@ else
   c56_expect "mutation-diff: mutmut absent is exit 2 naming mutmut, never a pass" 2 "mutmut"
 fi
 
+# --- (i)-(iv) the review-round paths ------------------------------------------
+# (i) a changed non-.py file under tests/ in a project whose pyproject exists
+# only for ruff is not "pytest collected 0": empty, exit 0.
+if ! python3 -c 'import pytest' >/dev/null 2>&1; then
+  echo "  - SKIP: pytest not importable, so the red-green non-.py assertion did NOT run"
+  SKIP=$((SKIP + 1))
+else
+  git -C "$C56_RG" reset --quiet --hard "$C56_BASE"
+  printf '#!/bin/sh\n' >"$C56_RG/tests/run.sh"
+  git -C "$C56_RG" add tests/run.sh
+  git -C "$C56_RG" commit --quiet -m "add a shell helper under tests/" --no-verify  # scaffold-allow: test fixture
+  c56_run "$C56_RG" - python3 .githooks/lib/check-red-green --base "$C56_BASE"
+  c56_expect "red-green: a changed tests/run.sh (no .py) is empty, exit 0" 0 \
+    "gate=red-green status=empty" "no changed .py test files"
+fi
+
+# (ii) a base that does not resolve is exit 2 naming the base, never a pass.
+c56_run "$C56_RG" - python3 .githooks/lib/check-red-green --base no-such-ref-c56
+c56_expect "red-green: an unresolvable --base is exit 2 naming the base" 2 "no-such-ref-c56"
+# check-mutation-diff runs verify_mutmut() first, so without mutmut it exits 2
+# for that reason before it ever looks at the base; only assert it when mutmut is
+# importable, and count a SKIP otherwise.
+if python3 -c 'import mutmut' >/dev/null 2>&1; then
+  c56_run "$C56_RG" - python3 .githooks/lib/check-mutation-diff --base no-such-ref-c56
+  c56_expect "mutation-diff: an unresolvable --base is exit 2 naming the base" 2 "no-such-ref-c56"
+else
+  echo "  - SKIP: mutmut not importable, so mutation-diff's bad-base path is shadowed by verify_mutmut()"
+  SKIP=$((SKIP + 1))
+fi
+
+# (iii) no pattern file selected: skipped locally (exit 0), a failure under strict.
+c56_run "$C56" README.md env CHECK_PATTERNS_INCLUDE=nope.txt .githooks/lib/check-patterns
+c56_expect "patterns: no pattern file selected is skipped, exit 0 locally" 0 "gate=patterns status=skipped"
+c56_run "$C56" README.md env CHECK_PATTERNS_INCLUDE=nope.txt SCAFFOLD_GATE_STRICT=1 .githooks/lib/check-patterns
+c56_expect "patterns: no pattern file selected fails under SCAFFOLD_GATE_STRICT=1" 1 "::error::gate=patterns skipped"
+
+# (iv) the hook refuses to run without its status helper.
+fixture_repo C56_NG
+# shellcheck disable=SC2153  # C56_NG is assigned by fixture_repo
+echo '#!/usr/bin/env bash' >"$C56_NG/run.sh"
+fixture_install "$C56_NG" --shell --no-verify
+rm -f "$C56_NG/.githooks/lib/gate-status"
+echo '# docs' >"$C56_NG/README.md"
+git -C "$C56_NG" add README.md
+c56_run "$C56_NG" - .githooks/pre-commit
+c56_expect "pre-commit without .githooks/lib/gate-status exits 1, naming it" 1 "gate-status is missing"
+rm -rf "$C56_NG"
+
 # --- (h) the workflow templates carry the strict variable ----------------------
 WF="$SCAFFOLD_DIR/.github/workflows"
 C56_STRICT='SCAFFOLD_GATE_STRICT: "1"'
