@@ -17,6 +17,7 @@
 #   install.sh --gitleaks-ci # also install the gitleaks CI workflow (unskippable gate)
 #   install.sh --dependency-review # also install the dependency-review CI gate (opt-in: needs GitHub Advanced Security on a private repo, or it errors, so never default-on)
 #   install.sh --zizmor-ci   # also install the zizmor GitHub Actions audit gate
+#   install.sh --tree-lint   # also install the advisory whole-tree lint workflow (weekly + push to main/master; files one tracking issue)
 #   install.sh --socket-ci   # also install the Socket Firewall supply-chain gate
 #   install.sh --test-guard  # also install the red-green test-integrity gate (a new test must fail on the PR base before it may pass)
 #   install.sh --npm-cooldown # also install .npmrc's min-release-age (delays newly published npm versions, needs npm >=11.10)
@@ -40,7 +41,7 @@
 # and the "backed up:" line tells you it happened. User-owned files (rules docs,
 # configs) are left alone, even under --force; only --force-all replaces them.
 # A drifted .forbidden-patterns/*.txt or CI workflow (lint.yml, tests.yml,
-# coverage.yml, gitleaks.yml, dependency-review.yml, zizmor.yml, socket-security.yml,
+# coverage.yml, gitleaks.yml, dependency-review.yml, zizmor.yml, lint-tree.yml, socket-security.yml,
 # test-guard.yml) only prints a notice and keeps your file (--force replaces it, backed up first).
 # .githooks/local.d/ is never written to at all: it's where project-local checks
 # live precisely so an upgrade cannot unwire them.
@@ -66,6 +67,7 @@ GITLEAKS_HOOK=0
 GITLEAKS_CI=0
 DEPENDENCY_REVIEW=0
 ZIZMOR_CI=0
+TREE_LINT=0
 SOCKET_CI=0
 TEST_GUARD=0
 NPM_COOLDOWN=0
@@ -91,6 +93,7 @@ for arg in "$@"; do
     --gitleaks-ci) GITLEAKS_CI=1 ;;
     --dependency-review) DEPENDENCY_REVIEW=1 ;;
     --zizmor-ci)  ZIZMOR_CI=1 ;;
+    --tree-lint)  TREE_LINT=1 ;;
     --socket-ci)  SOCKET_CI=1 ;;
     --test-guard) TEST_GUARD=1 ;;
     --npm-cooldown) NPM_COOLDOWN=1 ;;
@@ -408,12 +411,14 @@ if [ "$DEPENDENCY_REVIEW" -eq 1 ]; then
   echo "note: dependency-review.yml needs GitHub's Dependency Graph (on by default for public repos; needs GitHub Advanced Security for private repos, or it errors)."
 fi
 
-# Opt-in zizmor / Socket Firewall CI gates (--zizmor-ci, --socket-ci), npm
+# Opt-in zizmor / Socket Firewall CI gates (--zizmor-ci, --socket-ci), the
+# whole-tree lint workflow (--tree-lint, #217), npm
 # install-layer cooldown (--npm-cooldown, #117), Claude Skill packaging
 # (--claude-skill, #118), and the red-green test-integrity gate
 # (--test-guard, #140); function bodies live in install-optin.sh to keep this
 # file and install-lib.sh under their 500-line caps (issue #84).
 install_opt_in_zizmor_ci
+install_opt_in_tree_lint
 install_opt_in_socket_ci
 install_opt_in_test_guard
 install_opt_in_npm_cooldown

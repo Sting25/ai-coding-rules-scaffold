@@ -8,6 +8,17 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+- **Opt-in advisory whole-tree lint workflow (#217).** `install.sh --tree-lint`
+  installs `.github/workflows/lint-tree.yml`, the whole-tree twin of the
+  diff-scoped `lint.yml`. It runs ruff check, ruff format --check, eslint,
+  prettier --check and tsc over the tracked files weekly and on push to
+  main or master, never on a pull request, so it cannot block a merge. On
+  failure it opens or updates one `Lint baseline (whole-tree findings)` issue
+  (label `lint-baseline`); a later clean run comments and closes it.
+  `AGENTS.md.template` gains one line telling agents a finding in a file their
+  branch did not touch is baseline, and to check that issue first. The
+  installer wizard, uninstaller, doctor and the "not enabled" summary all know
+  the new workflow.
 - **Red-green gate exempts tests that were moved, with or without reformatting (#200).**
   A new test node ID is exempt from green-on-base only when it is a true move:
   the same `[Class::]name[param]` existed at base and is gone at HEAD, the

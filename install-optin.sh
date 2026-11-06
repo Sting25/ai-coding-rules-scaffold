@@ -35,6 +35,13 @@ install_opt_in_zizmor_ci() {
   fi
 }
 
+install_opt_in_tree_lint() {
+  if [ "$TREE_LINT" -eq 1 ]; then
+    cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/lint-tree.yml.template" ".github/workflows/lint-tree.yml"
+    echo "note: lint-tree.yml is advisory (weekly and on push to main or master, never on a PR). It files or updates one \"Lint baseline\" issue; it never blocks a merge."
+  fi
+}
+
 install_opt_in_socket_ci() {
   if [ "$SOCKET_CI" -eq 1 ]; then
     cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/socket-security.yml.template" ".github/workflows/socket-security.yml"
@@ -285,6 +292,7 @@ print_not_enabled_summary() {
   echo "  - GitHub push protection (free, blocks a push containing a known secret pattern; on by default for public repos): not this installer's to enable. Turn it on in Repo Settings > Code security > Push protection."
   [ -f .github/workflows/dependency-review.yml ] || { echo "  - dependency-review CI gate (blocks vulnerable/malicious deps on a PR): not enabled. Enable with ./install.sh --dependency-review"; any=1; }
   [ -f .github/workflows/zizmor.yml ]            || { echo "  - zizmor CI gate (audits your own GitHub Actions workflows): not enabled. Enable with ./install.sh --zizmor-ci"; any=1; }
+  [ -f .github/workflows/lint-tree.yml ]         || { echo "  - whole-tree lint (advisory weekly check of the files lint.yml only diff-checks; files one issue): not enabled. Enable with ./install.sh --tree-lint"; any=1; }
   [ -f .github/workflows/socket-security.yml ]   || { echo "  - Socket Firewall CI gate (blocks a malicious/typosquat package at install time): not enabled. Enable with ./install.sh --socket-ci"; any=1; }
   [ -f .github/workflows/test-guard.yml ]        || { echo "  - test-guard CI gate (red-green: a new test must fail against the PR base before it may pass): not enabled. Enable with ./install.sh --test-guard"; any=1; }
   _pne_wired .npmrc min-release-age \
