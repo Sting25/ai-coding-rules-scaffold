@@ -351,8 +351,16 @@ minimal; turn them on per project.
   (characterization before a refactor, coverage backfill) must carry
   `@pytest.mark.characterization(reason=...)`; the marker snippet for
   pytest.ini is printed at install time (pytest.ini is user-owned, so the
-  installer never edits it). Also appends a marker-guarded rules section to
-  coding-rules.md so agents in the consumer repo see the gate's contract in
+  installer never edits it). A second, marker-free exemption
+  (`exempt_as_unchanged_test`) covers a test that was MOVED, with or without
+  reformatting: a base node ID with the same `[Class::]name[param]` tail is gone
+  from HEAD, the function and class header are the same AST (docstrings
+  stripped), and every module-level name the test uses is bound identically in
+  both files. A copy, a new parametrize case or a changed helper stays an
+  offender; a fixture or helper defined outside the module is not compared. An
+  unparsable base file is skipped; an unreadable HEAD file fails closed. Also
+  appends a marker-guarded rules section to coding-rules.md so agents in the
+  consumer repo see the gate's contract in
   loaded context. Opt-in, not default-on: it assumes a pytest suite and
   roughly doubles CI cost for the new tests in a PR; the vitest half does
   not exist yet. Worth little until made a REQUIRED status check (an

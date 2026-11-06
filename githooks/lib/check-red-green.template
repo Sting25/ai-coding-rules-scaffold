@@ -53,6 +53,20 @@ scaffold's --strict-markers:
 USAGE
   check-red-green --base <ref> [--ci] [--strict-unevaluable] [--max-new N]
 
+A second exemption needs no marker: a test that was MOVED (file split, with or
+without reformatting) is not new behaviour, only a new address. It is exempt
+when the original node ID is gone from HEAD, the function and enclosing class
+are the same AST, and every module-level name it uses or requests (fixtures
+named by string too), followed transitively through the module's own bindings,
+is bound identically in both files. A copy, a new parametrize case, a changed
+helper, fixture or sibling method, a class split across files and a module with
+a star import or a fixture name= that is not a string literal are not exempt.
+NOT compared: fixtures and helpers outside the module (conftest), autouse
+fixtures, setup_* hooks, pytestmark, a fixture registered by calling
+pytest.fixture outside a decorator (fx = pytest.fixture(name="val"),
+pytest.fixture(**kw)), and module-level statements binding no name the test
+reaches. See exempt_as_unchanged_test(); fails closed.
+
 Exit: 0 all new tests were red on base (or explicitly exempt)
       1 one or more new tests passed on base
       2 could not evaluate (no base, collection broken, git failure)
@@ -68,6 +82,8 @@ ratchets.
 from __future__ import annotations
 
 import argparse
+import ast
+import copy
 import os
 import pathlib
 import re
@@ -94,10 +110,8 @@ def emit(sev: str, msg: str, ci: bool) -> None:
 
 def collect(cwd: str) -> set[str] | None:
     """Collected node IDs, or None if collection failed."""
-    r = run(
-        [sys.executable, "-m", "pytest", "-q", "--collect-only", "-p", "no:randomly"],
-        cwd=cwd,
-    )
+    r = run([sys.executable, "-m", "pytest", "-q", "--collect-only", "-p", "no:randomly"],
+            cwd=cwd)
     if r.returncode not in (0, 5):
         return None
     return {ln.strip() for ln in r.stdout.splitlines() if "::" in ln}
@@ -107,12 +121,8 @@ NOISE_RE = re.compile(r"(^|/)(__pycache__|\.pytest_cache|node_modules)(/|$)|\.py
 
 
 def is_real_source(p: str) -> bool:
-    """Filter build artefacts that a careless `git add -A` can commit.
-
-    A tracked .pyc in the diff makes the overlay checkout fail outright, which
-    turns a working check into exit 2 for a reason that has nothing to do with
-    the tests.
-    """
+    """Filter build artefacts a careless `git add -A` can commit: a tracked .pyc
+    in the diff makes the overlay checkout fail, turning the check into exit 2."""
     return not NOISE_RE.search(p)
 
 
@@ -121,21 +131,175 @@ def is_test_path(p: str) -> bool:
     return bool(TEST_DIR_RE.search(p)) or name.startswith("test_") or name.endswith("_test.py")
 
 
+def _clean(node):
+    """Deep copy without docstrings and Constant.kind (a u'' prefix)."""
+    n = copy.deepcopy(node)
+    for x in ast.walk(n):
+        if isinstance(x, ast.Constant):
+            x.kind = None
+        b = getattr(x, "body", None)
+        if (isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                and b and isinstance(b[0], ast.Expr)
+                and isinstance(b[0].value, ast.Constant)
+                and isinstance(b[0].value.value, str)):
+            x.body = b[1:] or [ast.Pass()]
+    return n
+
+
+_FN = (ast.FunctionDef, ast.AsyncFunctionDef)
+_TREES: dict = {}
+
+
+def _tree(sha: str, path: str):
+    """Parsed module at sha:path, or None if unreadable, not UTF-8 or unparsable
+    (cached, failures included)."""
+    if (sha, path) not in _TREES:
+        t = None
+        try:
+            r = subprocess.run(["git", "show", f"{sha}:{path}"],
+                               capture_output=True, check=False, timeout=900)
+            if r.returncode == 0:
+                t = ast.parse(r.stdout.decode("utf-8"))
+        except (SyntaxError, ValueError, RecursionError):  # incl. UnicodeDecodeError
+            t = None
+        _TREES[(sha, path)] = t
+    return _TREES[(sha, path)]
+
+
+def _locate(tree, parts):
+    """(enclosing ClassDef | None, function) for ['name'] or ['Class', 'name']."""
+    top, cls = tree.body, None
+    if len(parts) == 2:
+        c = [n for n in top if isinstance(n, ast.ClassDef) and n.name == parts[0]]
+        if not c:
+            return None
+        cls, top = c[-1], c[-1].body
+    fns = [n for n in top if isinstance(n, _FN) and n.name == parts[-1]]
+    return (cls, fns[-1]) if fns and len(parts) <= 2 else None
+
+
+def _key(cls, fn):
+    return (ast.dump(_clean(cls)) if cls else None, ast.dump(_clean(fn)))
+
+
+def _names(node: ast.AST) -> set:
+    """Every Name id, arg name and identifier-like str constant under `node`."""
+    return {getattr(x, "id", None) or getattr(x, "arg", None) or x.value
+            for x in ast.walk(node) if isinstance(x, (ast.Name, ast.arg))
+            or (isinstance(x, ast.Constant) and isinstance(x.value, str)
+                and x.value.isidentifier())}
+
+
+def _free_names(cls, fn) -> set:
+    """Names the test reads from module scope (see _names, so fixtures named by
+    string count): all in its decorators, parameters, annotations and whole
+    enclosing class, plus those in its body that are not its own locals."""
+    outer = [*fn.decorator_list, fn.args, fn.returns, cls]  # args: defaults, annotations
+    free = set().union(*(_names(o) for o in outer if o))
+    loads, local = set(), set()
+    for s in fn.body:
+        for x in ast.walk(s):
+            if isinstance(x, ast.Name):
+                (loads if isinstance(x.ctx, ast.Load) else local).add(x.id)
+            elif isinstance(x, ast.Constant) and isinstance(x.value, str):
+                free |= {x.value} if x.value.isidentifier() else set()
+            elif isinstance(x, (*_FN, ast.ClassDef)):
+                local.add(x.name)
+            elif isinstance(x, ast.ExceptHandler) and x.name:
+                local.add(x.name)
+            elif isinstance(x, (ast.Import, ast.ImportFrom)):
+                local.update((al.asname or al.name).split(".")[0] for al in x.names)
+    return free | (loads - local)
+
+
+def _bindings(tree):
+    """({name: [dump of each binding]}, has `from x import *`, {name: [stmts]})."""
+    out, nodes, star = {}, {}, False
+    for s in tree.body:
+        d = ast.dump(_clean(s))
+        for x in ([s] if isinstance(s, (*_FN, ast.ClassDef)) else ast.walk(s)):
+            if isinstance(x, (ast.Import, ast.ImportFrom)):
+                for al in x.names:
+                    star = star or al.name == "*"
+                    one = copy.copy(x)
+                    one.names = [al]
+                    k = (al.asname or al.name).split(".")[0]
+                    out.setdefault(k, []).append(ast.dump(one) if x is s else d)
+                    nodes.setdefault(k, []).append(s)
+            elif isinstance(x, (*_FN, ast.ClassDef)):
+                nm = [w.value for c in x.decorator_list for w in ast.walk(c)
+                      if isinstance(w, ast.keyword) and w.arg == "name"]
+                lit = [v.value for v in nm if isinstance(getattr(v, "value", 0), str)]
+                star = star or len(lit) < len(nm)  # opaque name=
+                for k in [x.name, *lit]:
+                    out.setdefault(k, []).append(d)
+                    nodes.setdefault(k, []).append(s)
+            elif isinstance(x, ast.Name) and isinstance(x.ctx, ast.Store):
+                out.setdefault(x.id, []).append(d)
+                nodes.setdefault(x.id, []).append(s)
+    return out, star, nodes
+
+
+def exempt_as_unchanged_test(nid: str, head_sha: str, base_sha: str,
+                             head_ids: set, base_ids: set) -> bool:
+    """True when a new, green-on-base node ID is a TRUE MOVE of an existing test:
+
+      1. a base node ID with the same `[Class::]name[param]` tail existed (so a
+         new parametrize case in place is new, and so is a renamed test),
+      2. that base node ID is no longer collected at HEAD (a copy is not a move),
+      3. the test's function and enclosing class are the same AST (docstrings
+         and u'' prefixes stripped; wrapping, quoting and commas do not matter),
+      4. every module-level name the test uses or requests as a parameter
+         (imports, assignments, defs, classes, fixtures) is bound identically
+         in both files, or unbound in both. Names are followed transitively
+         through the module's own bindings; fixtures named by string count,
+      5. neither module has a `from x import *` or a non-literal fixture name=.
+
+    Pure AST comparison, nothing is imported or run. NOT compared: fixtures and
+    helpers outside the module (conftest), autouse fixtures, setup_* hooks,
+    pytestmark, fixtures built by calling pytest.fixture outside a decorator, and
+    module-level statements binding no name the test reaches. Fails closed: an
+    unreadable HEAD file, a node not found, or a timeout returns False; an
+    unreadable or unparsable BASE file is skipped (it only removes candidates).
+    """
+    try:
+        path, *rest = nid.split("::")
+        if not rest or len(rest) > 2:
+            return False
+        tail = "::".join(rest)
+        ht = _tree(head_sha, path)
+        hloc = ht and _locate(ht, [re.sub(r"\[.*\]$", "", x) for x in rest])
+        if not hloc:
+            return False
+        hkey, hnames, (hbind, hstar, hnodes) = _key(*hloc), _free_names(*hloc), _bindings(ht)
+        todo = set(hnames)
+        while todo:
+            for st in hnodes.get(todo.pop(), []):
+                new = _names(st)
+                todo |= new - hnames
+                hnames |= new
+        for b in sorted(base_ids):
+            bpath, _, btail = b.partition("::")
+            bt = None if btail != tail or b in head_ids else _tree(base_sha, bpath)
+            bloc = bt and _locate(bt, [re.sub(r"\[.*\]$", "", x) for x in rest])
+            if not bloc or _key(*bloc) != hkey:
+                continue
+            bbind, bstar, _ = _bindings(bt)
+            if not (hstar or bstar) and all(hbind.get(n) == bbind.get(n) for n in hnames):
+                return True
+        return False
+    except (SyntaxError, ValueError, RecursionError, subprocess.TimeoutExpired):
+        return False
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", required=True, help="base ref to compare against")
     ap.add_argument("--ci", action="store_true")
-    ap.add_argument(
-        "--strict-unevaluable",
-        action="store_true",
-        help="fail when a new test cannot be executed against base at all",
-    )
-    ap.add_argument(
-        "--max-new",
-        type=int,
-        default=200,
-        help="refuse to re-run more than this many new tests (guards CI time)",
-    )
+    ap.add_argument("--strict-unevaluable", action="store_true",
+                    help="fail when a new test cannot be executed against base at all")
+    ap.add_argument("--max-new", type=int, default=200,
+                    help="refuse to re-run more than this many new tests (guards CI time)")
     args = ap.parse_args()
 
     if not pathlib.Path("tests").exists() and not pathlib.Path("test").exists():
@@ -153,13 +317,11 @@ def main() -> int:
         emit("error", "cannot resolve HEAD.", args.ci)
         return 2
     head_sha = head.stdout.strip()
-    # head_sha, never the literal "HEAD". Inside a linked worktree "HEAD" is the
-    # WORKTREE's head — the base commit — so `git checkout HEAD -- tests/`
-    # there silently restores the BASE tests instead of overlaying the new ones.
-    # The new tests then do not exist in the scratch tree, pytest exits 4
-    # ("file or directory not found"), the non-zero return reads as "failed on
-    # base", and the check reports green. That is a false pass on exactly the
-    # case it exists to catch, and it is why the exit-4 guard below is explicit.
+    # head_sha, never the literal "HEAD": inside a linked worktree "HEAD" is the
+    # base commit, so `git checkout HEAD -- tests/` there restores the BASE
+    # tests. The new tests then do not exist, pytest exits 4, the non-zero
+    # return reads as "failed on base", and the check reports a false green on
+    # exactly the case it exists to catch (hence the explicit exit-4 guard).
 
     here = collect(".")
     if here is None:
@@ -176,10 +338,9 @@ def main() -> int:
             emit("error", f"git worktree add failed: {r.stderr.strip()}", args.ci)
             return 2
 
-        # STEP 1 — collect the PRISTINE base, before any overlay. This is what
-        # defines "new": a node ID present at HEAD and absent here. Collecting
-        # after the overlay would return the new tests too (they collect fine,
-        # they just fail), making the difference empty and the check vacuous.
+        # STEP 1 — collect the PRISTINE base, before any overlay: it defines
+        # "new" (present at HEAD, absent here). After the overlay the new tests
+        # would collect too (and just fail), making the difference empty.
         base_pristine = collect(wt)
         if base_pristine is None:
             emit("error", "pytest collection failed on the base commit itself. "
@@ -235,13 +396,11 @@ def main() -> int:
         # would have passed. There is no way to tell them apart from outside,
         # because on base they cannot be executed at all.
         #
-        # That is a genuine gap and it is stated rather than papered over: a test
-        # for pre-existing behaviour, placed in a file that also imports new
-        # code, is invisible to this check. It is reported by file and count so
-        # it appears in the CI log instead of silently passing, and
-        # --strict-unevaluable turns it into a failure for projects that would
-        # rather pay the false-positive cost. The assertion ratchet in
-        # check-test-ratchet and the characterization marker are the partial
+        # A genuine gap, stated rather than papered over: a test for pre-existing
+        # behaviour in a file that also imports new code is invisible here. It
+        # is reported by file and count so the CI log shows it, and
+        # --strict-unevaluable turns it into a failure. The assertion ratchet in
+        # check-test-ratchet and the characterization marker are partial
         # answers; mutation testing on the diff is the real one.
         offenders: list[str] = []
         red: list[str] = []
@@ -263,17 +422,25 @@ def main() -> int:
 
         # ── Exempt the ones that say out loud that they pass on base ──────────
         exempt = []
+        unchanged = []
         still_offending = []
         for nid in offenders:
             rk = run(
                 [sys.executable, "-m", "pytest", "-q", "--collect-only",
                  "-m", "characterization", "--no-header", nid],
             )
-            (exempt if (rk.returncode == 0 and "::" in rk.stdout) else
-             still_offending).append(nid)
+            if rk.returncode == 0 and "::" in rk.stdout:
+                exempt.append(nid)
+            elif exempt_as_unchanged_test(nid, head_sha, base_sha, here,
+                                          base_pristine):
+                unchanged.append(nid)
+            else:
+                still_offending.append(nid)
 
         for nid in exempt:
             print(f"  exempt (characterization): {nid}")
+        for nid in unchanged:
+            print(f"  exempt (moved, body and context unchanged): {nid}")
         if red:
             print(f"  red on base, as required: {len(red)} test(s)")
 
@@ -312,6 +479,7 @@ def main() -> int:
         if not failed:
             print(f"red-green OK: {len(new_ids)} new test(s) accounted for "
                   f"({len(red)} red, {len(exempt)} characterization, "
+                  f"{len(unchanged)} moved-unchanged, "
                   f"{sum(unevaluable.values())} unevaluable).")
         return 1 if failed else 0
 

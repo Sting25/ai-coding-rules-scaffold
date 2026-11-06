@@ -8,6 +8,18 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+- **Red-green gate exempts tests that were moved, with or without reformatting (#200).**
+  A new test node ID is exempt from green-on-base only when it is a true move:
+  the same `[Class::]name[param]` existed at base and is gone at HEAD, the
+  function and its enclosing class are the same AST, and every module-level name the
+  test uses is bound identically in both files (names are followed through the
+  module's own helpers and fixtures, fixtures named by string count, and a star
+  import is never exempt). A copy, a new parametrize case,
+  a redefined helper, fixture or sibling method stays an offender. One fail-closed predicate,
+  `exempt_as_unchanged_test`, in `check-red-green`; an unreadable or unparsable
+  base file is skipped, an unreadable HEAD file exempts nothing. The proposed
+  local receipts, pre-commit check and tool hooks were dropped.
+
 - **`scaffold-doctor` gains an advisory "worktree parity" section (#211).** Notes only,
   never a gap and never blocking: `core.hooksPath` outside the worktree, `node_modules`
   that differs from `package-lock.json`, a venv that imports the project from another
