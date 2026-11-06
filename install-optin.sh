@@ -93,11 +93,17 @@ install_opt_in_test_guard() {
     mkx ".githooks/lib/check-red-green"
     cp_scaffold "$SCAFFOLD_DIR/githooks/lib/check-mutation-diff.template" ".githooks/lib/check-mutation-diff"
     mkx ".githooks/lib/check-mutation-diff"
+    # Vitest twin of the two checks above; inert (exit 0) in a project with no Vitest.
+    cp_scaffold "$SCAFFOLD_DIR/githooks/lib/check-red-green-ts.template" ".githooks/lib/check-red-green-ts"
+    mkx ".githooks/lib/check-red-green-ts"
+    cp_scaffold "$SCAFFOLD_DIR/githooks/lib/check-mutation-diff-ts.template" ".githooks/lib/check-mutation-diff-ts"
+    mkx ".githooks/lib/check-mutation-diff-ts"
     cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/test-guard.yml.template" ".github/workflows/test-guard.yml"
     echo "note: test-guard.yml runs check-red-green on every PR: each NEW test is run against the base commit and must FAIL there. Register the exemption marker in pytest.ini under [pytest]:"
     echo "          markers ="
     echo "              characterization: passes against the base branch by design; give a reason"
     echo "      It also runs check-mutation-diff, an advisory mutation-testing layer scoped to the PR's changed lines: surviving mutants print a warning but never fail the job (advisory-first, issue #145). CI installs mutmut==3.7.0 itself, nothing to add locally."
+    echo "      Vitest projects get the same two checks (check-red-green-ts, check-mutation-diff-ts): a Vitest test that passes on base by design starts its title with 'characterization: <reason>'; CI installs Stryker itself."
     echo "      and make test-guard a REQUIRED status check on the default branch: an advisory check on a repo where the agent can also merge is a check the agent can route around."
   fi
   # Deliberately OUTSIDE the flag check: see ensure_test_guard_rules_section.

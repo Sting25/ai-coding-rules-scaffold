@@ -197,11 +197,13 @@ fi
 # so this tests the text consumers get, with GITHUB_OUTPUT pointed at a file.
 md_blk=$(awk '/- name: Resolve base commit/ { on = 1 } on && /^ +run: \|/ { inb = 1; next }
   inb && /^ {10}/ { sub(/^ {10}/, ""); print; next } inb && /^[ ]*$/ { next } inb { exit }' "$MD_WF")
+# BASE_SHA is read 4 times: red-green and mutation, plus their two TypeScript twin steps
+# (Red-green TypeScript, Mutation testing TypeScript).
 md_active=$(grep -v '^ *#' "$MD_WF")
 # shellcheck disable=SC2016  # ${{ }} is literal workflow text in the grep pattern
 if ! printf '%s\n' "$md_active" | grep -q 'pull_request\.base\.sha' \
    && ! printf '%s\n' "$md_active" | grep -q 'HEAD^2' \
-   && [ "$(printf '%s\n' "$md_active" | grep -c 'BASE_SHA: \${{ steps\.base\.outputs\.sha }}')" -eq 2 ] \
+   && [ "$(printf '%s\n' "$md_active" | grep -c 'BASE_SHA: \${{ steps\.base\.outputs\.sha }}')" -eq 4 ] \
    && printf '%s\n' "$md_blk" | grep -q 'git merge-base'; then
   echo "  ✓ test-guard.yml.template: no stale pull_request.base.sha and no HEAD^2 test; red-green and mutation both read the one resolved base"; PASS=$((PASS + 1))
 else

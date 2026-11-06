@@ -1,0 +1,326 @@
+#!/usr/bin/env node
+/*
+ * .githooks/lib/check-red-green-ts: the Vitest twin of check-red-green. Every
+ * new test must be shown failing against the PR base before it may pass.
+ * The full rationale (why a suite generated against an implementation passes
+ * by construction, the measured discard rates, the honest limits) lives in
+ * check-red-green, read that header first. Only the differences are here.
+ *
+ * MECHANISM. Collect test IDs on HEAD with `vitest list --json`, collect them
+ * again on a PRISTINE scratch copy of the base commit (git archive, not a
+ * worktree), and the difference is the set of NEW tests. HEAD's versions of
+ * the changed test files (and of the config that governs collection:
+ * vitest/vite config, vitest workspace, tsconfig.json) are then overlaid onto
+ * the base copy and the new tests are run once there. node_modules is a
+ * symlink to the project's own, so base code runs against today's
+ * dependencies; package.json is deliberately not overlaid for that reason.
+ *
+ * Test ID: "<file relative to the repo>::<describe titles and test title
+ * joined by ' > '>", e.g. "src/calc.test.ts::calc > adds".
+ *
+ * Classification of each new test on base:
+ *   failed                       RED, what we want
+ *   passed/skipped/todo          OFFENDER (a test that did not fail is not red)
+ *   its file failed to load      UNEVALUABLE (a missing import fails the whole
+ *                                file, so every test in it is invisible)
+ *
+ * THE EXEMPTION. A new test that passes on base by design must say so in its
+ * title: it starts with "characterization: <reason>". The reason must be
+ * non-empty. There is NO moved-test exemption in this twin (the Python script
+ * proves a move by comparing ASTs; nothing equivalent exists here): a moved
+ * Vitest test shows as green-on-base and must carry the characterization
+ * title. That fails closed.
+ *
+ * USAGE
+ *   check-red-green-ts --base <ref> [--ci] [--strict-unevaluable] [--max-new N]
+ *
+ * Exit: 0 all new tests were red on base (or explicitly exempt), or nothing
+ *         to verify
+ *       1 one or more new tests passed on base, or the diff is too large
+ *       2 could not evaluate (no base, collection broken, no report, git
+ *         failure, timeout)
+ * Exit 2 is a FAILURE, not a skip. A check that cannot run must never report
+ * the same green as a check that ran and passed.
+ *
+ * NOT overridable via .scaffold.toml, same boundary as check-red-green.
+ */
+"use strict";
+
+// An extensionless file takes its module type from the nearest package.json,
+// so in a project with "type": "module" this runs as ESM and a bare require
+// is undefined. Resolve built-ins in a way that works under both.
+const load = typeof require === "function" ? require : process.getBuiltinModule;
+const cp = load("child_process");
+const fs = load("fs");
+const os = load("os");
+const path = load("path");
+
+const TIMEOUT_MS = 900000;
+const TEST_RE = /\.(test|spec)\.[cm]?[jt]sx?$/;
+const NOISE_RE = /(^|\/)(node_modules|dist|build|coverage)\//;
+const CONFIG_RE = /^(vitest|vite)\.config\.[^/]+$|^vitest\.workspace\.[^/]+$|^tsconfig\.json$/;
+
+class Timeout extends Error {}
+
+function run(cmd, args, opts) {
+  const r = cp.spawnSync(cmd, args, Object.assign(
+    { encoding: "utf8", timeout: TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 }, opts || {}));
+  if (r.error && r.error.code === "ETIMEDOUT") throw new Timeout();
+  if (r.error) return { status: 127, stdout: "", stderr: String(r.error.message) };
+  return { status: r.status === null ? 1 : r.status, stdout: r.stdout || "", stderr: r.stderr || "" };
+}
+
+function emit(sev, msg, ci) {
+  if (ci) console.log(`::${sev}::${msg}`);
+  else console.error(`  ${sev}: ${msg}`);
+}
+
+function isTestPath(p) {
+  return (TEST_RE.test(p) || /(^|\/)__tests__\//.test(p)) && !NOISE_RE.test(p);
+}
+
+function real(p) {
+  try { return fs.realpathSync(p); } catch (e) { return path.resolve(p); }
+}
+
+// Test IDs from `vitest list --json` run in cwd, or null if collection failed.
+function collect(cwd, files) {
+  if (files.length === 0) return new Set();
+  // --json LAST: it takes an optional output path, so a file placed after it
+  // would be consumed as that path and overwritten with the JSON.
+  const r = run("npx", ["--no-install", "vitest", "list", ...files, "--json"], { cwd });
+  if (r.status !== 0) return null;
+  let rows;
+  try {
+    const s = r.stdout;
+    rows = JSON.parse(s.slice(s.indexOf("["), s.lastIndexOf("]") + 1));
+  } catch (e) {
+    return null;
+  }
+  if (!Array.isArray(rows)) return null;
+  const root = real(cwd);
+  const ids = new Set();
+  for (const t of rows) {
+    ids.add(`${path.relative(root, real(t.file)).split(path.sep).join("/")}::${t.name}`);
+  }
+  return ids;
+}
+
+function parseArgs(argv) {
+  const a = { base: null, ci: false, strict: false, maxNew: 200 };
+  for (let i = 0; i < argv.length; i++) {
+    const v = argv[i];
+    if (v === "--base") a.base = argv[++i];
+    else if (v === "--ci") a.ci = true;
+    else if (v === "--strict-unevaluable") a.strict = true;
+    else if (v === "--max-new") a.maxNew = parseInt(argv[++i], 10);
+    else { console.error(`unknown argument: ${v}`); process.exit(2); }
+  }
+  if (!a.base || Number.isNaN(a.maxNew)) {
+    console.error("usage: check-red-green-ts --base <ref> [--ci] [--strict-unevaluable] [--max-new N]");
+    process.exit(2);
+  }
+  return a;
+}
+
+function main() {
+  const args = parseArgs(process.argv.slice(2));
+
+  // Same detection as tests.yml: vitest must be DECLARED, not just a package.json.
+  let pkg = "";
+  try { pkg = fs.readFileSync("package.json", "utf8"); } catch (e) { /* none */ }
+  if (!/"vitest"/.test(pkg)) {
+    console.log("no Vitest project detected, nothing to verify.");
+    return 0;
+  }
+
+  const base = run("git", ["rev-parse", "--verify", `${args.base}^{commit}`]);
+  if (base.status !== 0) {
+    emit("error", `cannot resolve base ref '${args.base}'. In CI make sure the ` +
+      "checkout has fetch-depth: 0.", args.ci);
+    return 2;
+  }
+  const baseSha = base.stdout.trim();
+  const head = run("git", ["rev-parse", "--verify", "HEAD"]);
+  if (head.status !== 0) {
+    emit("error", "cannot resolve HEAD.", args.ci);
+    return 2;
+  }
+  const headSha = head.stdout.trim(); // the resolved SHA, never the literal HEAD
+
+  const diff = run("git", ["diff", "-z", "--name-only", "--diff-filter=d", `${baseSha}...${headSha}`]);
+  if (diff.status !== 0) {
+    emit("error", `git diff failed: ${diff.stderr.trim()}`, args.ci);
+    return 2;
+  }
+  const testFiles = diff.stdout.split("\0").filter((p) => p && isTestPath(p));
+  if (testFiles.length === 0) {
+    console.log("no test files changed in this diff — nothing to verify.");
+    return 0;
+  }
+
+  if (!fs.existsSync("node_modules")) {
+    emit("error", "node_modules is missing; install the project's dependencies " +
+      "first (npm ci).", args.ci);
+    return 2;
+  }
+
+  const here = collect(".", testFiles);
+  if (here === null) {
+    emit("error", "vitest collection failed on HEAD, so new tests cannot be " +
+      "identified. Fix collection first.", args.ci);
+    return 2;
+  }
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "redgreen-ts-"));
+  const wt = path.join(tmp, "wt");
+  try {
+    fs.mkdirSync(wt);
+    const tar = path.join(tmp, "base.tar");
+    let r = run("git", ["archive", "--format=tar", "-o", tar, baseSha]);
+    if (r.status === 0) r = run("tar", ["-xf", tar, "-C", wt]);
+    if (r.status !== 0) {
+      emit("error", `could not export the base commit: ${r.stderr.trim()}`, args.ci);
+      return 2;
+    }
+    fs.rmSync(tar, { force: true });
+    fs.symlinkSync(path.resolve("node_modules"), path.join(wt, "node_modules"), "dir");
+
+    // STEP 1: the PRISTINE base defines "new" (present at HEAD, absent here).
+    const onBase = testFiles.filter((p) => fs.existsSync(path.join(wt, p)));
+    const pristine = collect(wt, onBase);
+    if (pristine === null) {
+      emit("error", "vitest collection failed on the base commit itself. The " +
+        "base is broken, so nothing can be measured against it.", args.ci);
+      return 2;
+    }
+    const newIds = [...here].filter((id) => !pristine.has(id)).sort();
+    if (newIds.length === 0) {
+      console.log("no new test IDs in this diff — nothing to verify.");
+      return 0;
+    }
+    if (newIds.length > args.maxNew) {
+      emit("warning", `${newIds.length} new tests exceeds --max-new=${args.maxNew}; ` +
+        "re-running that many against base would dominate CI time. " +
+        "Split the PR — a change adding this many tests at once is not " +
+        "reviewable by any means available to you.", args.ci);
+      return 1;
+    }
+
+    // STEP 2: overlay HEAD's test files, then the config that governs
+    // collection (or a new test in a new directory is silently not collected).
+    const ls = run("git", ["ls-tree", "-r", "-z", "--name-only", headSha]);
+    const cfgs = ls.stdout.split("\0").filter((p) => p && !NOISE_RE.test(p) &&
+      CONFIG_RE.test(path.posix.basename(p)));
+    for (const p of [...testFiles, ...cfgs]) {
+      const s = cp.spawnSync("git", ["show", `${headSha}:${p}`], { maxBuffer: 64 * 1024 * 1024 });
+      if (s.status !== 0) {
+        if (testFiles.includes(p)) {
+          emit("error", `could not overlay ${p} onto base: ${String(s.stderr).trim()}`, args.ci);
+          return 2;
+        }
+        continue;
+      }
+      fs.mkdirSync(path.dirname(path.join(wt, p)), { recursive: true });
+      fs.writeFileSync(path.join(wt, p), s.stdout);
+    }
+
+    // STEP 3: one run on base, classified per test ID from the JSON report.
+    const out = path.join(tmp, "report.json");
+    run("npx", ["--no-install", "vitest", "run", "--reporter=json", `--outputFile=${out}`,
+      "--passWithNoTests", ...testFiles], { cwd: wt }); // exit code ignored on purpose
+    let report;
+    try { report = JSON.parse(fs.readFileSync(out, "utf8")); } catch (e) { report = null; }
+    if (!report || !Array.isArray(report.testResults)) {
+      emit("error", "vitest produced no readable JSON report against base; " +
+        "treating as unable to evaluate.", args.ci);
+      return 2;
+    }
+    const root = real(wt);
+    const status = new Map();
+    for (const f of report.testResults) {
+      const rel = path.relative(root, real(f.name)).split(path.sep).join("/");
+      for (const a of f.assertionResults || []) {
+        const titles = (a.ancestorTitles || []).concat([a.title]);
+        status.set(`${rel}::${titles.join(" > ")}`, a.status);
+      }
+    }
+
+    // THE HONEST LIMIT (see check-red-green): a file whose import fails on
+    // base fails to load as a whole, so its tests cannot be told apart. They
+    // are reported by file and count; --strict-unevaluable turns it into a failure.
+    const red = [];
+    const offenders = [];
+    const unevaluable = {};
+    for (const id of newIds) {
+      const st = status.get(id);
+      if (st === "failed") red.push(id);
+      else if (st !== undefined) offenders.push(id);
+      else {
+        const f = id.split("::", 1)[0];
+        unevaluable[f] = (unevaluable[f] || 0) + 1;
+      }
+    }
+
+    const exempt = [];
+    const stillOffending = [];
+    for (const id of offenders) {
+      const last = id.slice(id.indexOf("::") + 2).split(" > ").pop();
+      if (/^characterization:\s*\S/.test(last)) exempt.push(id);
+      else stillOffending.push(id);
+    }
+    for (const id of exempt) console.log(`  exempt (characterization): ${id}`);
+    if (red.length) console.log(`  red on base, as required: ${red.length} test(s)`);
+
+    let failed = false;
+    const unevalTotal = Object.values(unevaluable).reduce((a, b) => a + b, 0);
+    if (unevalTotal) {
+      const list = Object.entries(unevaluable).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([f, n]) => `${f} (${n})`).join(", ");
+      const msg = `${unevalTotal} new test(s) could not be executed against base ` +
+        "because their file does not load there — normally " +
+        "because they import code this PR adds. Counted as red. " +
+        "This check cannot see inside such a file, so a test for " +
+        `pre-existing behaviour placed in one is not verified: ${list}`;
+      if (args.strict) {
+        emit("error", msg + " — failing because --strict-unevaluable is " +
+          "set. Split tests for existing behaviour into " +
+          "a file that imports only existing code.", args.ci);
+        failed = true;
+      } else {
+        emit("notice", msg, args.ci);
+      }
+    }
+    if (stillOffending.length) {
+      emit("error", `${stillOffending.length} new test(s) PASS against ` +
+        `${args.base.slice(0, 12)}. A test that passes without the change it ` +
+        "accompanies is not evidence that the change works — it tests " +
+        "behaviour that already existed, or it asserts nothing. Make " +
+        "each one fail on base first, or give it a title starting with " +
+        "\"characterization: <reason>\" if it is " +
+        "deliberately pinning existing behaviour.", args.ci);
+      for (const id of stillOffending) emit("error", `green-on-base: ${id}`, args.ci);
+      failed = true;
+    }
+    if (!failed) {
+      console.log(`red-green OK: ${newIds.length} new test(s) accounted for ` +
+        `(${red.length} red, ${exempt.length} characterization, ` +
+        `0 moved-unchanged, ${unevalTotal} unevaluable).`);
+    }
+    return failed ? 1 : 0;
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+try {
+  process.exitCode = main();
+} catch (e) {
+  if (e instanceof Timeout) {
+    console.log("::error::red-green check timed out. A suite too slow to run twice " +
+      "is a suite too slow to trust as a gate; split it or scope this " +
+      "check to a subset.");
+    process.exitCode = 2;
+  } else {
+    throw e;
+  }
+}

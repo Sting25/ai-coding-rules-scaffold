@@ -8,6 +8,18 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+- **TypeScript/Vitest twin of the test-guard checks (#205).**
+  `install.sh --test-guard` now also installs `check-red-green-ts` and
+  `check-mutation-diff-ts`, Node scripts with the same flags, exit codes and
+  wording as the Python pair, and `test-guard.yml` runs them in a project that
+  declares `vitest`. A new Vitest test that passes on base must carry a title
+  starting `characterization: <reason>`; there is no moved-test exemption, so
+  a moved test fails closed. The mutation layer uses Stryker, pinned to 10.1.1
+  (core and vitest-runner), installed by CI without lifecycle scripts and not
+  saved into the project. One posting step now serves both flavours, so a
+  size decline from either posts its own neutral check run
+  (`test-guard / mutation-ts (declined: size)` for TypeScript) and the token
+  still exists in that step only.
 - **Opt-in advisory whole-tree lint workflow (#217).** `install.sh --tree-lint`
   installs `.github/workflows/lint-tree.yml`, the whole-tree twin of the
   diff-scoped `lint.yml`. It runs ruff check, ruff format --check, eslint,

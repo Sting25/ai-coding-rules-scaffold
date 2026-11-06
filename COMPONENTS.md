@@ -778,18 +778,24 @@ rm -f .github/workflows/dependency-review.yml .github/workflows/zizmor.yml .gith
 `check-red-green` runs every new test against the PR's base commit and requires
 it to fail there, so a test that could never fail cannot ship. An exemption
 marker exists for characterization tests. `check-mutation-diff` mutates the
-changed lines and warns about survivors; advisory, never fails the job.
+changed lines and warns about survivors; advisory, never fails the job. Each
+has a Vitest/Stryker twin (`check-red-green-ts`, `check-mutation-diff-ts`);
+there the exemption is a test title starting with `characterization: <reason>`.
 
 **Blast radius:** every PR that adds a test. Register the marker in
 `pytest.ini` (the template already does). Make `test-guard` a required status
 check, or an agent that can merge will route around it.
 
-**Prerequisites:** Python and pytest for the gate; CI installs `mutmut`.
+**Prerequisites:** Python and pytest, or Vitest, for the gate; CI installs
+`mutmut` or Stryker.
 
 ```sh adopt=test-guard
 cp "$SCAFFOLD/githooks/lib/check-red-green.template"     .githooks/lib/check-red-green
 cp "$SCAFFOLD/githooks/lib/check-mutation-diff.template" .githooks/lib/check-mutation-diff
+cp "$SCAFFOLD/githooks/lib/check-red-green-ts.template"     .githooks/lib/check-red-green-ts
+cp "$SCAFFOLD/githooks/lib/check-mutation-diff-ts.template" .githooks/lib/check-mutation-diff-ts
 chmod +x .githooks/lib/check-red-green .githooks/lib/check-mutation-diff
+chmod +x .githooks/lib/check-red-green-ts .githooks/lib/check-mutation-diff-ts
 mkdir -p .github/workflows
 cp "$SCAFFOLD/.github/workflows/test-guard.yml.template" .github/workflows/test-guard.yml
 grep -q 'test-guard:begin' coding-rules.md 2>/dev/null || cat "$SCAFFOLD/coding-rules-test-guard.md" >> coding-rules.md
@@ -798,12 +804,14 @@ grep -q 'test-guard:begin' coding-rules.md 2>/dev/null || cat "$SCAFFOLD/coding-
 ```sh verify=test-guard
 set -e
 test -x .githooks/lib/check-red-green && test -f .github/workflows/test-guard.yml
+test -x .githooks/lib/check-red-green-ts && test -x .githooks/lib/check-mutation-diff-ts
 grep -q 'test-guard:begin' coding-rules.md
 echo "verified: test-guard gate present and its rules section is in coding-rules.md"
 ```
 
 ```sh remove=test-guard
 rm -f .githooks/lib/check-red-green .githooks/lib/check-mutation-diff .github/workflows/test-guard.yml
+rm -f .githooks/lib/check-red-green-ts .githooks/lib/check-mutation-diff-ts
 # then delete the test-guard:begin ... test-guard:end block from coding-rules.md
 ```
 
