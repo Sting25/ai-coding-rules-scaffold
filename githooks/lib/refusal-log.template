@@ -6,7 +6,17 @@
 # most", "which rule misfires" and "was the same refusal retried ten times" can
 # be answered from data instead of transcripts.
 #
-# Usage: refusal-log <gate> <rule> [file] [exit] [--stdin-hash]
+# Usage: refusal-log <gate> <rule> <file> <exit> [--stdin-hash] [--say <a|b>]
+#        refusal-log --say <a|b>
+# (options are recognised only after the four positionals; pass "" for a blank one)
+#
+# --say a|b (issue #259) prints ONE fixed trailer line to stderr naming the
+# refusal class, so an agent can sort the refusal: (a) a check failed on its
+# own change, fix the file, never the gate; (b) the gate is itself wrong or
+# broken, stop and report the message verbatim. It prints FIRST, before any git
+# lookup, so it works outside a repo, with git missing or an unwritable log.
+# Any other value prints nothing. The say-only form prints and exits. Class (c),
+# a harness denial, is never printed: a denial does not run the gate.
 #
 # Appends ONE tab-separated line to <git common dir>/scaffold-blocks.log:
 #   <utc time ISO 8601> <gate> <rule slug> <file or -> <exit> <session or -> <command hash or ->
@@ -28,13 +38,41 @@
 # an older .1, so at most two generations exist and disk use stays bounded.
 # Read both with scaffold-blocks.sh (older generation first).
 #
-# Fail open: this ALWAYS exits 0 and prints nothing. Outside a git repo, with
+# Fail open: this ALWAYS exits 0 and prints nothing to stdout (only the --say
+# trailer, on stderr). Outside a git repo, with
 # git missing, or on an unwritable log it does nothing. A gate must never fail,
 # or change its exit code, because of logging, so there is deliberately no
 # errexit here.
 
 unset CDPATH
 set -u
+
+say_class() {
+  case "${1:-}" in
+    a) echo "refusal class (a): this check failed on your own change. Fix the file, never the gate." >&2 ;;
+    b) echo "refusal class (b): this gate is itself wrong or broken. Stop and report this message to the user verbatim." >&2 ;;
+  esac
+}
+
+# Options after the four positionals, in any order. In the say-only form $1 is
+# --say and everything is an option.
+if [ "${1:-}" = "--say" ]; then
+  say_class "${2:-}"
+  exit 0
+fi
+stdin_hash=0
+say=
+shift_n=$(( $# < 4 ? $# : 4 ))
+opts=("${@:$((shift_n + 1))}")
+i=0
+while [ "$i" -lt "${#opts[@]}" ]; do
+  case "${opts[$i]}" in
+    --stdin-hash) stdin_hash=1 ;;
+    --say) i=$((i + 1)); say=${opts[$i]:-} ;;
+  esac
+  i=$((i + 1))
+done
+say_class "$say"
 
 gate=${1:-}
 [ -n "$gate" ] || exit 0
@@ -70,7 +108,7 @@ session=$(clean "${CLAUDE_SESSION_ID:-}" 200)
 gate=$(slug "$gate")
 
 hash=-
-if [ "${5:-}" = "--stdin-hash" ]; then
+if [ "$stdin_hash" -eq 1 ]; then
   norm=$(cat 2>/dev/null | LC_ALL=C tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//')
   if command -v sha256sum >/dev/null 2>&1; then
     h=$(printf '%s' "$norm" | sha256sum 2>/dev/null | cut -c1-12)

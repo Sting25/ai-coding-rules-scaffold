@@ -28,7 +28,7 @@
 
 echo "cases/59: TypeScript test-guard twin against real Vitest and Stryker (#205)"
 
-_ts59_n=16
+_ts59_n=17
 _ts59_t="${SCAFFOLD_TS_TOOLS:-}"
 if [ -z "$_ts59_t" ] \
    || ! command -v node >/dev/null 2>&1 \
@@ -152,6 +152,7 @@ TS
   rm -f "$_ts59_d/.git/scaffold-blocks.log"
   _ts59_run check-red-green-ts --base "$_ts59_base"
   _ts59_check "(g) an offender run logs one check-red-green-ts green-on-base-or-cap line" "$([ "$_ts59_rc" = 1 ] && [ "$(grep -c "$(printf 'check-red-green-ts\tgreen-on-base-or-cap\t-\t1')" "$_ts59_d/.git/scaffold-blocks.log" 2>/dev/null)" = 1 ] && echo 1 || echo 0)"
+  _ts59_check "(g) the exit-1 refusal ends with the class (a) trailer (#259)" "$([ "$(printf '%s\n' "$_ts59_out" | tail -n 1)" = "refusal class (a): this check failed on your own change. Fix the file, never the gate." ] && echo 1 || echo 0)"
   rm -f "$_ts59_d/.githooks/lib/refusal-log" "$_ts59_d/.git/scaffold-blocks.log"
   _ts59_run check-red-green-ts --base "$_ts59_base"
   _ts59_check "(g) without the logger the verdict is unchanged: exit 1, nothing written" "$([ "$_ts59_rc" = 1 ] && [ ! -e "$_ts59_d/.git/scaffold-blocks.log" ] && echo 1 || echo 0)"

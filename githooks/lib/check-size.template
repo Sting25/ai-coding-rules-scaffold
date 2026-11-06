@@ -23,15 +23,18 @@ set -euo pipefail
 # developer with CDPATH='.' in their shell profile hit this on every commit.
 # Unset rather than `CDPATH= cd` so any later cd in this file is safe too.
 unset CDPATH
+# bash 5.3: cd "" is fatal; no dirname(1) needed (see scaffold-doctor.sh)
+case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
+SELF_DIR="$(cd "$_sd" && pwd)"
+cfg_refuse() { echo "error: $1" >&2; [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-size "$2" "" 2 --say b || true; exit 2; }
 
 MAX_LINES=${MAX_LINES:-500}
 case "$MAX_LINES" in
   ''|*[!0-9]*)
-    echo "error: MAX_LINES must be a positive integer, got: $MAX_LINES" >&2
-    exit 2
+    cfg_refuse "MAX_LINES must be a positive integer, got: $MAX_LINES" invalid-max-lines
     ;;
 esac
-[ "$MAX_LINES" -gt 0 ] || { echo "error: MAX_LINES must be > 0" >&2; exit 2; }
+[ "$MAX_LINES" -gt 0 ] || cfg_refuse "MAX_LINES must be > 0" invalid-max-lines
 
 CI_MODE=0
 [ "${1:-}" = "--ci" ] && CI_MODE=1
@@ -50,9 +53,6 @@ ghesc() {
 # Per-project overrides live in .scaffold.toml, read via the sibling
 # scaffold-config helper. `cfg` fails open to empty output if the helper is
 # missing (older install) — callers then fall back to the built-in defaults.
-# bash 5.3: cd "" is fatal; no dirname(1) needed (see scaffold-doctor.sh)
-case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
-SELF_DIR="$(cd "$_sd" && pwd)"
 CONFIG_BIN="$SELF_DIR/scaffold-config"
 cfg() { [ -x "$CONFIG_BIN" ] || return 0; "$CONFIG_BIN" "$@" 2>/dev/null || true; }
 
@@ -95,5 +95,5 @@ while IFS= read -r -d '' file; do
   fi
 done
 
-[ "$FAILED" -eq 0 ] || [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-size "${RL_RULE:-size}" "${RL_FILE:-}" 1 || true
+[ "$FAILED" -eq 0 ] || [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-size "${RL_RULE:-size}" "${RL_FILE:-}" 1 --say a || true
 exit $FAILED

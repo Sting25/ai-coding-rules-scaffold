@@ -129,7 +129,9 @@ CASE_FLOORS=(
   "55-tree-lint-template.sh:8"
   "57-refusal-log.sh:34"
   "58-ts-test-guard.sh:43"
-  "59-ts-test-guard-real.sh:16"
+  "59-ts-test-guard-real.sh:17"
+  "60-refusal-class.sh:55"
+  "61-refusal-class-helper.sh:17"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and
