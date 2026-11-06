@@ -217,7 +217,10 @@ jobs:
       - if: steps.detect_ts.outputs.present == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
-          node-version: "20"
+          # Stryker 10 and the Vitest majors it supports declare
+          # engines.node >= 22; the twins' ES-module fallback needs 20.16+.
+          # tests.yml and lint.yml keep their own Node pin.
+          node-version: "22"
 
       - name: Install dependencies (TypeScript)
         if: steps.detect_ts.outputs.present == 'true'

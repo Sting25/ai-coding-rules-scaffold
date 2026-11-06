@@ -9,11 +9,17 @@
  * MECHANISM. Stryker (pinned, see STRYKER_PIN) runs in a scratch copy of
  * HEAD (checked out through a throwaway index, node_modules symlinked to the
  * project's own) with a
- * config this script writes: `mutate` is the list of changed non-test source
- * files, the test runner is vitest, the reporter is the JSON report. Scoping
- * is FILE-level: every mutant in a changed file is evaluated, not only those
- * on changed lines. A stryker.config.* the project ships is not merged; the
- * diff run uses the scaffold's own config (a note says so).
+ * config this script writes: `mutate` carries one `path:start-end` entry per
+ * added or modified hunk of every changed non-test source file (a file new
+ * relative to the base gets the bare path, so the whole file), the test
+ * runner is vitest, the reporter is the JSON report. Scoping is therefore by
+ * changed LINE range, as in the Python twin. A stryker.config.* the project
+ * ships is not merged; the diff run uses the scaffold's own config (a note
+ * says so). The config sets vitest.related=false: with Stryker's default
+ * (run only tests related to the mutated files) an untested-only PR makes the
+ * initial run fail with "No tests were executed" and no report; unrelated
+ * tests are then simply run, every mutant is NoCoverage or survives, and the
+ * advisory verdict stays exit 0.
  *
  * Stryker's process exit code is NOT the verdict (it crashes with a stack
  * trace and no report when `mutate` matches nothing). The verdict is read
@@ -22,6 +28,10 @@
  * Status mapping: Killed and Timeout count as killed; Survived is survived;
  * NoCoverage is "no tests"; Ignored and Pending are "not checked"; anything
  * else (RuntimeError, CompileError) is "other".
+ *
+ * KNOWN LIMITATION: no dry-run mutant count exists, so --max-mutants is
+ * enforced AFTER the full run completes, not as a fast preflight (the Python
+ * twin records the same limit).
  *
  * Requires Node 20.16 or newer when the project is an ES module ("type":
  * "module"): the script then loads its built-ins via process.getBuiltinModule.
@@ -114,6 +124,29 @@ function verifyStryker(ci) {
   return 0;
 }
 
+// Added/modified line ranges of one file at HEAD, as Stryker `path:a-b`
+// entries. A file absent from the base is mutated whole (bare path). A hunk
+// with no new lines (pure deletion) contributes nothing; a file whose only
+// change is deletions then yields no entry, and is dropped by the caller.
+function mutateEntries(baseSha, headSha, rel, ci) {
+  const inBase = run("git", ["cat-file", "-e", `${baseSha}:${rel}`]).status === 0;
+  if (!inBase) return [rel];
+  const d = run("git", ["diff", "-U0", "--no-color", `${baseSha}...${headSha}`, "--", rel]);
+  if (d.status !== 0) {
+    emit("error", `git diff failed for ${rel}: ${d.stderr.trim()}`, ci);
+    return null;
+  }
+  const out = [];
+  for (const line of d.stdout.split("\n")) {
+    const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(line);
+    if (!m) continue;
+    const start = parseInt(m[1], 10);
+    const len = m[2] === undefined ? 1 : parseInt(m[2], 10);
+    if (len > 0) out.push(`${rel}:${start}-${start + len - 1}`);
+  }
+  return out;
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
 
@@ -157,10 +190,21 @@ function main() {
       "first (npm ci).", args.ci);
     return 2;
   }
+  const mutate = [];
+  for (const rel of srcFiles) {
+    const e = mutateEntries(baseSha, headSha, rel, args.ci);
+    if (e === null) return 2;
+    mutate.push(...e);
+  }
+  if (mutate.length === 0) {
+    console.log("nothing to mutate, the changed source files only had lines removed.");
+    return 0;
+  }
+  console.log(`  mutating: ${mutate.join(" ")}`);
   const carried = fs.readdirSync(".").filter((f) => /^stryker\.(conf|config)\.(js|cjs|mjs|ts|cts|mts|json)$/.test(f));
   if (carried.length) {
     console.error(`note: ${carried[0]} is not used by this diff run; the scaffold's own ` +
-      "config scopes it to the changed files (file-level scoping only).");
+      "config scopes it to the changed files (line-range scoping).");
   }
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "mutdiff-ts-"));
@@ -183,7 +227,12 @@ function main() {
     const reportRel = ".scaffold-mutation/report.json";
     fs.writeFileSync(path.join(wt, ".scaffold-stryker.json"), JSON.stringify({
       testRunner: "vitest",
-      mutate: srcFiles,
+      mutate,
+      // Both the option and the fallback below exist on purpose: the option
+      // keeps an untested-only PR from failing Stryker's initial run; the
+      // fallback is a belt for a Stryker that still reports "No tests were
+      // executed" without writing a report.
+      vitest: { related: false },
       reporters: ["json"],
       jsonReporter: { fileName: reportRel },
       tempDirName: ".scaffold-stryker-tmp",
@@ -198,6 +247,14 @@ function main() {
       const rep = JSON.parse(fs.readFileSync(path.join(wt, reportRel), "utf8"));
       if (rep && rep.files && typeof rep.files === "object") files = rep.files;
     } catch (e) { /* no report */ }
+    if (files === null && outText.includes("No tests were executed")) {
+      console.log("mutation notice: no related tests, the changed source files " +
+        "have no tests that run them (source: stryker output, no report).");
+      emit("notice", "mutation summary: 0 killed, 0 not killed (0 total) across " +
+        `${srcFiles.length} changed file(s), source: stryker output. Advisory only: ` +
+        "no test covers these files.", args.ci);
+      return 0;
+    }
     if (files === null) {
       emit("error", "stryker run produced no readable report (initial test run " +
         "failed, a config error, or a crash); treating as unable to evaluate.", args.ci);

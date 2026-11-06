@@ -16,11 +16,10 @@
 #       extensionless files, which is the shape that exercises the ES-module
 #       built-in loader fallback.
 #
-# THERE IS NO REAL-TOOL SECTION ON PURPOSE. This suite never npm-installs
-# anything, so real Vitest and Stryker runs are not part of the committed
-# case; the stubbed section proves the scripts' own logic (classification,
-# exit codes, flags, argument order), and the real-tool run is part of the
-# change's own validation. What the shim cannot prove: that real vitest
+# THERE IS NO REAL-TOOL SECTION IN THIS FILE ON PURPOSE. This suite never
+# npm-installs anything; real Vitest and Stryker runs live in case 59, gated
+# on SCAFFOLD_TS_TOOLS; the stubbed section proves the scripts' own logic
+# (classification, exit codes, flags, argument order). What the shim cannot prove: that real vitest
 # prints what it returns here. The argument shapes it is asserted against
 # (`vitest list <files> --json`, `vitest run --reporter=json`) are the ones
 # the scripts must send to the real tool.
@@ -329,6 +328,8 @@ elif [ "$tool" = vitest ] && [ "$1" = run ]; then
   exit 1
 elif [ "$tool" = stryker ] && [ "$1" = run ]; then
   echo "stryker $*" >>"$STUB_LOG"
+  cat "$here/$2" >>"$STUB_LOG"
+  [ "${STUB_MUTANTS:-}" = notests ] && { echo "No tests were executed" >&2; exit 1; }
   rep=$(sed -n 's/.*"fileName": *"\([^"]*\)".*/\1/p' "$here/$2")
   mkdir -p "$here/$(dirname "$rep")"
   k='{"status":"Killed"}'
@@ -472,6 +473,13 @@ SHIM
 
   _ts58_go "$_ts58_mdx" x none squares --base HEAD~1
   _ts58_expect 2 'no readable report' "a Stryker run that writes no report is exit 2, never a pass" "a missing report should exit 2 with 'no readable report'"
+  _ts58_go "$_ts58_mdx" x notests squares --base HEAD~1
+  _ts58_expect 0 'no related tests' "stryker's no-tests-executed failure is advisory, exit 0 (belt for vitest.related=false)" "a no-report run that says 'No tests were executed' should exit 0 with the no-related-tests notice"
+  if grep -q '"related": false' "$ts58_log" && grep -Eq '"src/calc\.ts(:[0-9]+-[0-9]+)?"' "$ts58_log"; then
+    echo "  ✓ the Stryker config sets vitest.related=false and lists changed source files"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ the Stryker config should set vitest.related=false and list src/calc.ts"; FAIL=$((FAIL + 1))
+  fi
   # Duplicate titles: base has one "calc > adds", head has two; the shim reports
   # the first instance passed and the second failed. A set-based diff would see
   # no new ID at all and miss it.

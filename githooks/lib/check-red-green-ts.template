@@ -26,10 +26,16 @@
  * Classification of each new test ID on base (all its new instances together):
  *   every instance failed        RED, what we want
  *   any instance passed/skipped/todo   OFFENDER (a test that did not fail is
- *                                not red)
+ *                                not red). Only a test that is COLLECTED and
+ *                                then reports skipped/pending at run time
+ *                                (ctx.skip(), skipIf) lands here.
  *   its file failed to load, or fewer results than instances
  *                                UNEVALUABLE (a missing import fails the whole
  *                                file, so every test in it is invisible)
+ *
+ * LIMIT: `vitest list` omits it.skip / it.todo, so those are never new IDs and
+ * are not checked; a skipped new test is invisible to this check, the same as
+ * a test pytest does not collect.
  *
  * THE EXEMPTION. A new test that passes on base by design must say so in its
  * title: it starts with "characterization: <reason>". The reason must be

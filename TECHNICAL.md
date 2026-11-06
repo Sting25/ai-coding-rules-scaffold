@@ -409,7 +409,8 @@ minimal; turn them on per project.
   one JSON report. There is no moved-test exemption: nothing equivalent to the
   Python AST comparison exists, so a moved test fails closed and must carry a
   title starting `characterization: <reason>`. The mutation script runs the
-  pinned Stryker over the changed source files (file-level scoping) and reads
+  pinned Stryker over the changed line ranges of the source files (a new file
+  is mutated whole) and reads
   the verdict from its JSON report, never from Stryker's own exit code.
 
 - **Socket Firewall CI gate (`install.sh --socket-ci` →

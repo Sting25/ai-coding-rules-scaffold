@@ -127,7 +127,8 @@ CASE_FLOORS=(
   "53-narrow-path-scripts.sh:13"
   "54-doctor-worktree-parity.sh:10"
   "55-tree-lint-template.sh:8"
-  "58-ts-test-guard.sh:41"
+  "58-ts-test-guard.sh:43"
+  "59-ts-test-guard-real.sh:10"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and

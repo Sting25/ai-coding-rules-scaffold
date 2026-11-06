@@ -780,7 +780,8 @@ it to fail there, so a test that could never fail cannot ship. An exemption
 marker exists for characterization tests. `check-mutation-diff` mutates the
 changed lines and warns about survivors; advisory, never fails the job. Each
 has a Vitest/Stryker twin (`check-red-green-ts`, `check-mutation-diff-ts`);
-there the exemption is a test title starting with `characterization: <reason>`.
+there the exemption is a test title starting with `characterization: <reason>`,
+and mutation is scoped to the changed line ranges (a new file is mutated whole).
 
 **Blast radius:** every PR that adds a test. Register the marker in
 `pytest.ini` (the template already does). Make `test-guard` a required status

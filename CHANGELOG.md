@@ -15,8 +15,11 @@ versioning follows [SemVer](https://semver.org/).
   declares `vitest`. A new Vitest test that passes on base must carry a title
   starting `characterization: <reason>`; there is no moved-test exemption, so
   a moved test fails closed. The mutation layer uses Stryker, pinned to 10.1.1
-  (core and vitest-runner), installed by CI without lifecycle scripts and not
-  saved into the project. One posting step now serves both flavours, so a
+  (core and vitest-runner), installed by CI on Node 22 without lifecycle
+  scripts and not saved into the project, and mutates only the changed line
+  ranges of each source file (a new file is mutated whole); a change whose
+  files have no related tests is reported as uncovered, still advisory. One
+  posting step now serves both flavours, so a
   size decline from either posts its own neutral check run
   (`test-guard / mutation-ts (declined: size)` for TypeScript) and the token
   still exists in that step only.
