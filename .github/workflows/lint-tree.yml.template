@@ -121,6 +121,10 @@ jobs:
             echo "status=fail" >> "$GITHUB_OUTPUT"
             head -n 300 "$out" >"$RUNNER_TEMP/f300"
             head -c 25000 "$RUNNER_TEMP/f300" >"$RUNNER_TEMP/trunc"
+            # Say so when the cut happened, so a partial list never reads as complete.
+            if [ "$(wc -l <"$out")" -gt 300 ] || [ "$(wc -c <"$RUNNER_TEMP/f300")" -gt 25000 ]; then
+              echo "... (findings truncated; see the run log)" >>"$RUNNER_TEMP/trunc"
+            fi
             d="END_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
             { echo "findings<<$d"; cat "$RUNNER_TEMP/trunc"; echo; echo "$d"; } >> "$GITHUB_OUTPUT"
             { echo "### ruff (whole tree)"; echo '```'; cat "$RUNNER_TEMP/trunc"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
@@ -236,6 +240,10 @@ jobs:
             echo "status=fail" >> "$GITHUB_OUTPUT"
             head -n 300 "$out" >"$RUNNER_TEMP/f300"
             head -c 25000 "$RUNNER_TEMP/f300" >"$RUNNER_TEMP/trunc"
+            # Say so when the cut happened, so a partial list never reads as complete.
+            if [ "$(wc -l <"$out")" -gt 300 ] || [ "$(wc -c <"$RUNNER_TEMP/f300")" -gt 25000 ]; then
+              echo "... (findings truncated; see the run log)" >>"$RUNNER_TEMP/trunc"
+            fi
             d="END_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
             { echo "findings<<$d"; cat "$RUNNER_TEMP/trunc"; echo; echo "$d"; } >> "$GITHUB_OUTPUT"
             { echo "### eslint, prettier, tsc (whole tree)"; echo '```'; cat "$RUNNER_TEMP/trunc"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

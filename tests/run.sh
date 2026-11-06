@@ -126,7 +126,7 @@ CASE_FLOORS=(
   "52-claude-only-scope.sh:3"
   "53-narrow-path-scripts.sh:13"
   "54-doctor-worktree-parity.sh:10"
-  "55-tree-lint-template.sh:7"
+  "55-tree-lint-template.sh:8"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and
