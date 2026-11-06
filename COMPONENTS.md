@@ -67,6 +67,8 @@ commit. `scaffold-config` is an optional sibling that reads `.scaffold.toml`
 overrides (entry 13); without it every rule runs at its default. `py-tool` is
 the resolver the hook uses to find `ruff` (a project venv, a linked worktree's
 main `.venv`, PATH); without it the local ruff pass is skipped with a note.
+`gate-status` is the line every gate ends with (`ran`, `skipped` or `empty`, with a
+count); a gate that ran on input but evaluated nothing fails.
 
 **Prerequisites:** bash, git. No other tool.
 
@@ -75,7 +77,8 @@ mkdir -p .githooks/lib
 cp "$SCAFFOLD/githooks/pre-commit.template" .githooks/pre-commit
 cp "$SCAFFOLD/githooks/lib/scaffold-config.template" .githooks/lib/scaffold-config
 cp "$SCAFFOLD/githooks/lib/py-tool.template" .githooks/lib/py-tool
-chmod +x .githooks/pre-commit .githooks/lib/scaffold-config .githooks/lib/py-tool
+cp "$SCAFFOLD/githooks/lib/gate-status.template" .githooks/lib/gate-status
+chmod +x .githooks/pre-commit .githooks/lib/scaffold-config .githooks/lib/py-tool .githooks/lib/gate-status
 git config core.hooksPath .githooks
 ```
 
