@@ -190,11 +190,11 @@ FAILED=0; unset RL_RULE RL_FILE
 # quiet here; scaffold-doctor.sh closes that hole, reporting a scanner the
 # install manifest recorded but that is no longer on disk as a gap. The
 # gitleaks pass rides the same rule (present iff `--gitleaks-hook` or entry
-# 16 copied it). check-red-green and check-mutation-diff are Python tools
-# driven by test-guard.yml with their own arguments, never from here.
+# 16 copied it). check-red-green and check-mutation-diff (and their -ts twins)
+# are test-guard.yml tools with their own arguments, never run from here.
 for check in "$LIB"/check-*; do
   [ -x "$check" ] || continue
-  case "${check##*/}" in check-red-green|check-mutation-diff) continue ;; esac
+  case "${check##*/}" in check-red-green|check-red-green-ts|check-mutation-diff|check-mutation-diff-ts) continue ;; esac
   "$check" <"$STAGED_LIST" || FAILED=1
 done
 

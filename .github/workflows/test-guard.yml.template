@@ -5,7 +5,8 @@ name: test-guard
 #
 # The anti-gaming layer. Every other gate in this scaffold assumes the test
 # suite is an honest witness; this workflow checks the witness. It runs two
-# checks:
+# checks, each in a Python flavour (pytest, mutmut) and a TypeScript flavour
+# (Vitest, Stryker); a project gets whichever of the two it has:
 #
 #   check-red-green      a NEW test that passes against the base branch was
 #                         never observed failing, and is therefore not
@@ -54,6 +55,12 @@ name: test-guard
 #
 # Actions are pinned to a commit SHA (trailing comment = version); the SHAs
 # match lint.yml / tests.yml / coverage.yml so Dependabot bumps them together.
+#
+# THE TYPESCRIPT TWIN (check-red-green-ts, check-mutation-diff-ts) mirrors the
+# Python pair flag for flag and exit code for exit code. Differences worth
+# knowing: a Vitest test that passes on base by design carries a title that
+# starts with "characterization: <reason>" (there is no marker mechanism and
+# no moved-test exemption), and CI installs the pinned Stryker itself.
 
 on:
   pull_request:
@@ -82,7 +89,20 @@ jobs:
           if [ -f pyproject.toml ] || [ -f pytest.ini ] || [ -f setup.py ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
-            echo "no Python project detected, skipping test-guard"
+            echo "no Python project detected, skipping the Python test-guard steps"
+          fi
+
+      # Same detection as tests.yml: vitest must be DECLARED, not merely a
+      # package.json present (#96).
+      - id: detect_ts
+        run: |
+          if [ ! -f package.json ]; then
+            echo "no package.json, skipping the TypeScript test-guard steps"
+          elif grep -q '"vitest"' package.json \
+               || grep -qE '"test"[[:space:]]*:[[:space:]]*"[^"]*vitest' package.json; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "package.json present but vitest is not declared (devDependencies/dependencies/scripts.test), skipping the TypeScript test-guard steps"
           fi
 
       - if: steps.detect.outputs.present == 'true'
@@ -122,7 +142,7 @@ jobs:
       # test cannot tell those two apart, so none is used.
       - name: Resolve base commit
         id: base
-        if: steps.detect.outputs.present == 'true'
+        if: steps.detect.outputs.present == 'true' || steps.detect_ts.outputs.present == 'true'
         run: |
           if ! BASE_SHA=$(git merge-base "origin/$GITHUB_BASE_REF" HEAD); then
             echo "::error::cannot resolve origin/$GITHUB_BASE_REF or its merge-base with HEAD. The checkout needs fetch-depth: 0 and the pull request's base branch."
@@ -192,22 +212,106 @@ jobs:
           echo "declined=true" >> "$GITHUB_OUTPUT"
           exit 0
 
-      # Posts the neutral check run for a size decline so it stays visible
-      # on the PR without a red X. Needs `checks: write`; a fork PR's token
-      # is read-only, so there it degrades to a warning and the step passes.
+      # TypeScript twin of the two steps above. Node is set up only when a
+      # Vitest project was detected.
+      - if: steps.detect_ts.outputs.present == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          # Stryker 10 and the Vitest majors it supports declare
+          # engines.node >= 22; the twins' ES-module fallback needs 20.16+.
+          # tests.yml and lint.yml keep their own Node pin.
+          node-version: "22"
+
+      - name: Install dependencies (TypeScript)
+        if: steps.detect_ts.outputs.present == 'true'
+        # Frozen-lockfile install when a lockfile exists, same as tests.yml.
+        # --ignore-scripts: vitest is pure JS and never needs a dependency's
+        # install hooks, and this runner holds GITHUB_TOKEN.
+        run: |
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            npm ci --ignore-scripts
+          else
+            npm install --ignore-scripts
+          fi
+
+      - name: Red-green TypeScript (new Vitest tests must fail against base)
+        if: steps.detect_ts.outputs.present == 'true'
+        env:
+          BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: node .githooks/lib/check-red-green-ts --base "$BASE_SHA" --ci
+
+      # Same exit-code contract and same no-token rule as the Python mutation
+      # step: the script runs Stryker and the PR's own vitest config, which
+      # inherit this step's env. Stryker is installed here, pinned, without
+      # lifecycle scripts, and not saved into the project's package.json.
+      # The ad-hoc install is deliberate and suppressed by name: the two top
+      # level packages are version-pinned, the consumer's own lockfile cannot
+      # cover tools it does not depend on, and --no-save keeps them out of it.
+      - name: Mutation testing TypeScript (diff-scoped, advisory)
+        id: mutation_ts
+        if: steps.detect_ts.outputs.present == 'true'
+        env:
+          BASE_SHA: ${{ steps.base.outputs.sha }}
+        run: | # zizmor: ignore[adhoc-packages]
+          npm install --no-save --ignore-scripts --no-audit --no-fund @stryker-mutator/core@10.1.1 @stryker-mutator/vitest-runner@10.1.1
+          rc=0
+          node .githooks/lib/check-mutation-diff-ts --base "$BASE_SHA" --ci || rc=$?
+          if [ "$rc" -eq 0 ]; then
+            exit 0
+          elif [ "$rc" -ne 1 ]; then
+            exit "$rc"
+          fi
+          {
+            echo "### Mutation check declined (size, TypeScript)"
+            echo
+            echo "The diff has more mutants than the default \`--max-mutants\` limit, so the mutation check did not evaluate it. This is not a finding."
+            echo
+            echo "Split the PR, or run the full set locally. From the PR branch (\`gh pr checkout <number>\`), in the project's dev environment:"
+            echo
+            echo '```sh'
+            echo "npm install --no-save @stryker-mutator/core@10.1.1 @stryker-mutator/vitest-runner@10.1.1 && node .githooks/lib/check-mutation-diff-ts --base origin/$GITHUB_BASE_REF --max-mutants N"
+            echo '```'
+            echo
+            echo "where N is at least the mutant count printed in this step's log."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning::mutation check declined for size (TypeScript): the diff has more mutants than --max-mutants; split the PR or run the full set locally"
+          echo "declined=true" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      # Posts the neutral check run for a size decline (either flavour) so it
+      # stays visible on the PR without a red X. ONE posting step serves both
+      # mutation steps, so `checks: write` and the token exist in exactly one
+      # place and that place runs none of the PR's code. Needs `checks: write`;
+      # a fork PR's token is read-only, so there it degrades to a warning and
+      # the step passes.
       - name: Post neutral check run (mutation declined)
-        if: steps.mutation.outputs.declined == 'true'
+        if: steps.mutation.outputs.declined == 'true' || steps.mutation_ts.outputs.declined == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DECLINED_PY: ${{ steps.mutation.outputs.declined }}
+          DECLINED_TS: ${{ steps.mutation_ts.outputs.declined }}
         run: |
-          if ! gh api "repos/${GITHUB_REPOSITORY}/check-runs" \
-            -f name='test-guard / mutation (declined: size)' \
-            -f head_sha="$HEAD_SHA" \
-            -f status=completed \
-            -f conclusion=neutral \
-            -f 'output[title]=Mutation check declined (size)' \
-            -f 'output[summary]=The diff has more mutants than --max-mutants. Split the PR or run the full set locally; see the job summary for the command.' >/dev/null; then
-            echo "::warning::could not post the neutral check run (a fork PR's token is read-only); the decline is in the job summary only"
+          if [ "$DECLINED_PY" = "true" ]; then
+            if ! gh api "repos/${GITHUB_REPOSITORY}/check-runs" \
+              -f name='test-guard / mutation (declined: size)' \
+              -f head_sha="$HEAD_SHA" \
+              -f status=completed \
+              -f conclusion=neutral \
+              -f 'output[title]=Mutation check declined (size)' \
+              -f 'output[summary]=The diff has more mutants than --max-mutants. Split the PR or run the full set locally; see the job summary for the command.' >/dev/null; then
+              echo "::warning::could not post the neutral check run (a fork PR's token is read-only); the decline is in the job summary only"
+            fi
+          fi
+          if [ "$DECLINED_TS" = "true" ]; then
+            if ! gh api "repos/${GITHUB_REPOSITORY}/check-runs" \
+              -f name='test-guard / mutation-ts (declined: size)' \
+              -f head_sha="$HEAD_SHA" \
+              -f status=completed \
+              -f conclusion=neutral \
+              -f 'output[title]=Mutation check declined (size, TypeScript)' \
+              -f 'output[summary]=The diff has more mutants than --max-mutants. Split the PR or run the full set locally; see the job summary for the command.' >/dev/null; then
+              echo "::warning::could not post the neutral check run (a fork PR's token is read-only); the decline is in the job summary only"
+            fi
           fi
           exit 0

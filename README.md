@@ -128,7 +128,7 @@ Tests run in CI by default: a plain install also drops `.github/workflows/tests.
 ./install.sh --zizmor-ci    # also install the zizmor GitHub Actions audit gate (opt-in: adds a third-party pip package)
 ./install.sh --tree-lint    # also install the advisory whole-tree lint workflow (weekly and on push to main or master; files one tracking issue, never blocks a PR)
 ./install.sh --socket-ci    # also install the Socket Firewall supply-chain gate (opt-in: adds a third-party action dependency)
-./install.sh --test-guard   # also install the red-green test-integrity gate (a new test must fail on the PR base before it may pass), plus an advisory diff-scoped mutation layer
+./install.sh --test-guard   # also install the red-green test-integrity gate (a new test must fail on the PR base before it may pass), plus an advisory diff-scoped mutation layer (Vitest projects get the same two checks via Stryker; a Vitest test that passes on base by design starts its title with `characterization: <reason>`)
 ./install.sh --npm-cooldown # also install .npmrc's min-release-age package cooldown (opt-in: needs npm >= 11.10.0, older npm just warns and ignores it)
 ./install.sh --claude-skill # also install an on-demand Claude Code Skill wrapping coding-rules.md/operational-rules.md
 ./install.sh --all-langs    # install every language's forbidden-pattern file
