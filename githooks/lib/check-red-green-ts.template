@@ -370,3 +370,15 @@ try {
     process.exitCode = 2;
   }
 }
+
+// Refusal log: a non-zero exit is recorded next to the Python pair's entries by
+// the sibling refusal-log script when it is installed. Fail open: logging can
+// never change the exit code, and the script's directory comes from argv so
+// this works whether the file runs as CommonJS or as an ES module.
+if (process.exitCode) {
+  try {
+    const rl = path.join(path.dirname(process.argv[1]), "refusal-log");
+    const rule = ({ 1: "green-on-base-or-cap", 2: "setup-error" })[process.exitCode] || "error";
+    if (fs.existsSync(rl)) cp.spawnSync("bash", [rl, "check-red-green-ts", rule, "", String(process.exitCode)], { stdio: "ignore" });
+  } catch (e) { /* never let logging change the verdict */ }
+}
