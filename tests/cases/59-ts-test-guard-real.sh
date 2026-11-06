@@ -17,14 +17,17 @@
 #   (a) a new function plus a test that fails on base: red-green exit 0, the
 #       mutation layer evaluates it
 #   (b) a new test that passes on base: red-green exit 1, green-on-base
-#   (c) only an untested new source file: mutation stays ADVISORY exit 0 with
-#       the no-related-tests notice (Stryker alone would exit with no report)
+#   (c) only an untested new source file: mutation stays ADVISORY exit 0 via
+#       the report summary (survived/no tests); the no-related-tests notice
+#       fires only when Stryker ran zero test files
 #   (d) a one-hunk edit inside a multi-function file: the mutate entry is a
 #       line range, not the whole file
+#   (e) a glob-metacharacter path (src/[id]/page.ts): escaped, so Stryker
+#       really instruments it (>= 1 mutant), not "0 mutants" from a no-match
 
 echo "cases/59: TypeScript test-guard twin against real Vitest and Stryker (#205)"
 
-_ts59_n=10
+_ts59_n=12
 _ts59_t="${SCAFFOLD_TS_TOOLS:-}"
 if [ -z "$_ts59_t" ] \
    || ! command -v node >/dev/null 2>&1 \
@@ -120,6 +123,16 @@ TS
   _ts59_run check-mutation-diff-ts --base "$_ts59_base"
   _ts59_check "(d) a one-hunk edit runs and exits 0" "$([ "$_ts59_rc" = 0 ] && echo 1 || echo 0)"
   _ts59_check "(d) the mutate entry is the changed line range src/calc.ts:6-7, not the whole file" "$(printf '%s' "$_ts59_out" | grep -q 'mutating: src/calc.ts:6-7$' && echo 1 || echo 0)"
+
+  # --- (e) glob metacharacters in the path ---------------------------------
+  _ts59_g checkout -q -B scen-e "$_ts59_base"
+  mkdir -p "$_ts59_d/src/[id]"
+  printf 'export function double(x: number): number {\n  return x * 2;\n}\n' >"$_ts59_d/src/[id]/page.ts"
+  printf 'import { expect, it } from "vitest";\nimport { double } from "./page";\n\nit("doubles", () => {\n  expect(double(4)).toBe(8);\n});\n' >"$_ts59_d/src/[id]/page.test.ts"
+  _ts59_commit "add bracket path"
+  _ts59_run check-mutation-diff-ts --base "$_ts59_base"
+  _ts59_check "(e) a [id] path evaluates and exits 0" "$([ "$_ts59_rc" = 0 ] && echo 1 || echo 0)"
+  _ts59_check "(e) at least 1 mutant was generated for the [id] path (escape works)" "$(printf '%s' "$_ts59_out" | grep -Eq 'mutation OK: [1-9][0-9]* mutants|mutation summary: [0-9]+ killed, [0-9]+ not killed \(([1-9][0-9]*) total' && echo 1 || echo 0)"
 
   rm -rf "$_ts59_d"
 fi

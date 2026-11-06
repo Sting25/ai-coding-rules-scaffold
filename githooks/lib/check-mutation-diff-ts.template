@@ -21,9 +21,13 @@
  * tests are then simply run, every mutant is NoCoverage or survives, and the
  * advisory verdict stays exit 0.
  *
- * Stryker's process exit code is NOT the verdict (it crashes with a stack
- * trace and no report when `mutate` matches nothing). The verdict is read
- * from the report file only: absent or unparsable means exit 2.
+ * Stryker's process exit code is NOT the verdict (on 10.1.1 a `mutate` that
+ * matches nothing only warns "did not result in any files", writes a report
+ * with empty `files` and exits 0). The verdict is read from the report file
+ * only: absent or unparsable means exit 2. Every mutate entry is a glob, so
+ * glob metacharacters in a changed path are escaped (globEscape), and output
+ * containing "did not result in any files" is also exit 2, because a pattern
+ * that matched nothing must never read as "0 mutants, OK".
  *
  * Status mapping: Killed and Timeout count as killed; Survived is survived;
  * NoCoverage is "no tests"; Ignored and Pending are "not checked"; anything
@@ -128,9 +132,21 @@ function verifyStryker(ci) {
 // entries. A file absent from the base is mutated whole (bare path). A hunk
 // with no new lines (pure deletion) contributes nothing; a file whose only
 // change is deletions then yields no entry, and is dropped by the caller.
+// Stryker treats each mutate entry as a glob (minimatch-style). A bracket
+// class per metacharacter is the form it honours ("[" -> "[[]"); backslash
+// escapes are NOT honoured. Without this `src/[id]/page.ts` matches nothing.
+// Measured on 10.1.1: [ ] * ? ( ) escape correctly; a mid-path "!" is already
+// literal; "{" and "}" (brace expansion) cannot be escaped at all, so a path
+// containing them reaches the "did not result in any files" guard in main()
+// and exits 2 instead of silently mutating nothing.
+function globEscape(p) {
+  return p.replace(/[[\]*?()]/g, (c) => `[${c}]`);
+}
+
 function mutateEntries(baseSha, headSha, rel, ci) {
+  const g = globEscape(rel);
   const inBase = run("git", ["cat-file", "-e", `${baseSha}:${rel}`]).status === 0;
-  if (!inBase) return [rel];
+  if (!inBase) return [g];
   const d = run("git", ["diff", "-U0", "--no-color", `${baseSha}...${headSha}`, "--", rel]);
   if (d.status !== 0) {
     emit("error", `git diff failed for ${rel}: ${d.stderr.trim()}`, ci);
@@ -142,7 +158,7 @@ function mutateEntries(baseSha, headSha, rel, ci) {
     if (!m) continue;
     const start = parseInt(m[1], 10);
     const len = m[2] === undefined ? 1 : parseInt(m[2], 10);
-    if (len > 0) out.push(`${rel}:${start}-${start + len - 1}`);
+    if (len > 0) out.push(`${g}:${start}-${start + len - 1}`);
   }
   return out;
 }
@@ -247,6 +263,12 @@ function main() {
       const rep = JSON.parse(fs.readFileSync(path.join(wt, reportRel), "utf8"));
       if (rep && rep.files && typeof rep.files === "object") files = rep.files;
     } catch (e) { /* no report */ }
+    const noMatch = outText.split("\n").filter((l) => l.includes("did not result in any files"));
+    if (noMatch.length > 0) {
+      emit("error", "stryker matched no files for these mutate pattern(s); treating as " +
+        "unable to evaluate, not as 0 mutants: " + noMatch.map((l) => l.replace(/\x1b\[[0-9;]*m/g, "").trim()).join(" | "), args.ci);
+      return 2;
+    }
     if (files === null && outText.includes("No tests were executed")) {
       console.log("mutation notice: no related tests, the changed source files " +
         "have no tests that run them (source: stryker output, no report).");

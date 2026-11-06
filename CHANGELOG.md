@@ -18,7 +18,7 @@ versioning follows [SemVer](https://semver.org/).
   (core and vitest-runner), installed by CI on Node 22 without lifecycle
   scripts and not saved into the project, and mutates only the changed line
   ranges of each source file (a new file is mutated whole); a change whose
-  files have no related tests is reported as uncovered, still advisory. One
+  files have no related tests is reported as surviving or uncovered mutants, still advisory. One
   posting step now serves both flavours, so a
   size decline from either posts its own neutral check run
   (`test-guard / mutation-ts (declined: size)` for TypeScript) and the token

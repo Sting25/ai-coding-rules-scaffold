@@ -461,7 +461,11 @@ SHIM
   _ts58_expect 0 'mutation OK: 3 mutants, all killed' "check-mutation-diff-ts reports all-killed as mutation OK, exit 0" "all-killed should exit 0 with 'mutation OK'"
 
   _ts58_go "$_ts58_mdx" x survivors squares --base HEAD~1
-  _ts58_expect 0 'src/calc.ts: 1 survived, 1 no tests' "$HOOK_OUT" && grep -qF 'mutation summary:' "survivors warn per file and keep exit 0 (advisory)" "survivors should warn per file with a summary and exit 0"
+  if [ "$TD_RC" -eq 0 ] && grep -qF 'src/calc.ts: 1 survived, 1 no tests' "$HOOK_OUT" && grep -qF 'mutation summary:' "$HOOK_OUT"; then
+    echo "  ✓ survivors warn per file and keep exit 0 (advisory)"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ survivors should warn per file with a summary and exit 0 (rc $TD_RC)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
 
   _ts58_go "$_ts58_mdx" x many squares --base HEAD~1 --max-mutants 1
   _ts58_expect 1 'exceeds --max-mutants=1' "more mutants than --max-mutants is a decline, exit 1" "5 mutants with --max-mutants 1 should exit 1"

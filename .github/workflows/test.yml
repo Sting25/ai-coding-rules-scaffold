@@ -118,4 +118,11 @@ jobs:
           fi
           echo "All action pins agree across real workflows and templates."
       - run: chmod +x tests/run.sh install.sh githooks/pre-commit.template
-      - run: ./tests/run.sh
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: "22"
+      - name: Install pinned Vitest and Stryker for case 59
+        run: npm ci --prefix tests/fixtures/ts-tools --no-audit --no-fund --ignore-scripts
+      # Case 59 needs real Vitest and Stryker (installed above from the
+      # committed lockfile) and skips, counted, without SCAFFOLD_TS_TOOLS.
+      - run: SCAFFOLD_TS_TOOLS="$PWD/tests/fixtures/ts-tools" ./tests/run.sh
