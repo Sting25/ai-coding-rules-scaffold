@@ -64,6 +64,11 @@ permissions:
 jobs:
   test-guard:
     runs-on: ubuntu-latest
+    # checks: write is for the neutral "mutation declined" check run only.
+    # A job-level block replaces the top-level one, so contents: read repeats.
+    permissions:
+      contents: read
+      checks: write # the neutral "mutation declined" check run only
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -140,13 +145,69 @@ jobs:
         run: python3 .githooks/lib/check-red-green --base "$BASE_SHA" --ci
 
       # Diff-scoped mutation testing, advisory-first (issue #145): surviving
-      # mutants warn but never fail this step, exit 2 (cannot evaluate) does.
-      # No continue-on-error here on purpose; the script's own exit codes
-      # already carry the pass/warn/fail semantics this workflow wants.
+      # mutants warn but never fail this step. The script's exit code is
+      # captured and sorted three ways:
+      #   0  evaluated: unchanged, the step passes.
+      #   1  declined: the diff has more mutants than --max-mutants. That is
+      #      a size limit, not a finding, so the step passes, writes a job
+      #      summary with the local command for the full set, warns, and
+      #      sets the output declined=true for the next step.
+      #   2  (or anything else) cannot evaluate: the step fails, since the
+      #      check evaluated nothing.
+      # No continue-on-error here on purpose; the exit codes carry the
+      # semantics this workflow wants.
+      # This step gets no token on purpose: the script runs mutmut, pytest
+      # and the PR's own conftest, all of which inherit the step's env, and
+      # a token with `checks: write` there would let a same-repo PR post
+      # check runs of any name and conclusion. The token lives only in the
+      # next step, which runs none of the PR's code.
       - name: Mutation testing (diff-scoped, advisory)
+        id: mutation
         if: steps.detect.outputs.present == 'true'
         env:
           BASE_SHA: ${{ steps.base.outputs.sha }}
         run: |
           pip install mutmut==3.7.0
-          python3 .githooks/lib/check-mutation-diff --base "$BASE_SHA" --ci
+          rc=0
+          python3 .githooks/lib/check-mutation-diff --base "$BASE_SHA" --ci || rc=$?
+          if [ "$rc" -eq 0 ]; then
+            exit 0
+          elif [ "$rc" -ne 1 ]; then
+            exit "$rc"
+          fi
+          {
+            echo "### Mutation check declined (size)"
+            echo
+            echo "The diff has more mutants than the default \`--max-mutants\` limit, so the mutation check did not evaluate it. This is not a finding."
+            echo
+            echo "Split the PR, or run the full set locally. From the PR branch (\`gh pr checkout <number>\`), in the project's dev environment:"
+            echo
+            echo '```sh'
+            echo "pip install mutmut==3.7.0 && python3 .githooks/lib/check-mutation-diff --base origin/$GITHUB_BASE_REF --max-mutants N"
+            echo '```'
+            echo
+            echo "where N is at least the mutant count printed in this step's log."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning::mutation check declined for size: the diff has more mutants than --max-mutants; split the PR or run the full set locally"
+          echo "declined=true" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      # Posts the neutral check run for a size decline so it stays visible
+      # on the PR without a red X. Needs `checks: write`; a fork PR's token
+      # is read-only, so there it degrades to a warning and the step passes.
+      - name: Post neutral check run (mutation declined)
+        if: steps.mutation.outputs.declined == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if ! gh api "repos/${GITHUB_REPOSITORY}/check-runs" \
+            -f name='test-guard / mutation (declined: size)' \
+            -f head_sha="$HEAD_SHA" \
+            -f status=completed \
+            -f conclusion=neutral \
+            -f 'output[title]=Mutation check declined (size)' \
+            -f 'output[summary]=The diff has more mutants than --max-mutants. Split the PR or run the full set locally; see the job summary for the command.' >/dev/null; then
+            echo "::warning::could not post the neutral check run (a fork PR's token is read-only); the decline is in the job summary only"
+          fi
+          exit 0
