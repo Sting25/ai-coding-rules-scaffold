@@ -136,14 +136,23 @@ function verifyStryker(ci) {
 // class per metacharacter is the form it honours ("[" -> "[[]"); backslash
 // escapes are NOT honoured. Without this `src/[id]/page.ts` matches nothing.
 // Measured on 10.1.1: [ ] * ? ( ) escape correctly; a mid-path "!" is already
-// literal; "{" and "}" (brace expansion) cannot be escaped at all, so a path
-// containing them reaches the "did not result in any files" guard in main()
-// and exits 2 instead of silently mutating nothing.
+// literal, a LEADING "!" is an exclusion (silently 0 mutants) and "{" "}"
+// (brace expansion) cannot be escaped at all, so those paths are refused in
+// mutateEntries() (exit 2); the "did not result in any files" guard in main()
+// is the second line of defence for anything else that matches nothing.
 function globEscape(p) {
   return p.replace(/[[\]*?()]/g, (c) => `[${c}]`);
 }
 
 function mutateEntries(baseSha, headSha, rel, ci) {
+  // A leading "!" is an EXCLUSION pattern to Stryker (no warning, 0 mutants,
+  // exit 0) and braces are brace expansion; neither has a literal form, so
+  // refuse them up front rather than let a no-match read as "0 mutants, OK".
+  if (rel.startsWith("!") || /[{}]/.test(rel)) {
+    emit("error", `${rel}: a path starting with "!" or containing "{" or "}" has no ` +
+                  "literal Stryker mutate pattern; rename the file or mutate it by hand.", ci);
+    return null;
+  }
   const g = globEscape(rel);
   const inBase = run("git", ["cat-file", "-e", `${baseSha}:${rel}`]).status === 0;
   if (!inBase) return [g];

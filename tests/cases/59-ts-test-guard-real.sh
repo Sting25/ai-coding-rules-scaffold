@@ -7,11 +7,10 @@
 # @stryker-mutator/core and @stryker-mutator/vitest-runner (at the versions
 # the scripts pin; Stryker 10 needs Node 22). The suite never npm-installs,
 # so without it every assertion here is SKIPped and counted, never silently
-# dropped. Typical set-up:
-#   mkdir t && cd t && npm init -y >/dev/null &&
-#   npm install --ignore-scripts vitest@5.1.0 \
-#     @stryker-mutator/core@10.1.1 @stryker-mutator/vitest-runner@10.1.1
-#   SCAFFOLD_TS_TOOLS=$PWD bash tests/run.sh
+# dropped. The repo's own CI installs them from the committed lockfile in
+# tests/fixtures/ts-tools; locally:
+#   npm ci --prefix tests/fixtures/ts-tools --ignore-scripts --no-audit --no-fund
+#   SCAFFOLD_TS_TOOLS="$PWD/tests/fixtures/ts-tools" bash tests/run.sh
 #
 # Scenarios (one scratch repo, one branch per scenario off the same base):
 #   (a) a new function plus a test that fails on base: red-green exit 0, the
@@ -24,10 +23,12 @@
 #       line range, not the whole file
 #   (e) a glob-metacharacter path (src/[id]/page.ts): escaped, so Stryker
 #       really instruments it (>= 1 mutant), not "0 mutants" from a no-match
+#   (f) a root file named !x.ts: a leading "!" is an exclusion pattern with no
+#       literal form, so the script refuses it with exit 2 naming the path
 
 echo "cases/59: TypeScript test-guard twin against real Vitest and Stryker (#205)"
 
-_ts59_n=12
+_ts59_n=14
 _ts59_t="${SCAFFOLD_TS_TOOLS:-}"
 if [ -z "$_ts59_t" ] \
    || ! command -v node >/dev/null 2>&1 \
@@ -133,6 +134,15 @@ TS
   _ts59_run check-mutation-diff-ts --base "$_ts59_base"
   _ts59_check "(e) a [id] path evaluates and exits 0" "$([ "$_ts59_rc" = 0 ] && echo 1 || echo 0)"
   _ts59_check "(e) at least 1 mutant was generated for the [id] path (escape works)" "$(printf '%s' "$_ts59_out" | grep -Eq 'mutation OK: [1-9][0-9]* mutants|mutation summary: [0-9]+ killed, [0-9]+ not killed \(([1-9][0-9]*) total' && echo 1 || echo 0)"
+
+  # --- (f) a leading "!" is an exclusion pattern: refused, never 0-mutants-OK --
+  _ts59_g checkout -q -B scen-f "$_ts59_base"
+  printf 'export function neg(x: number): number {\n  return -x;\n}\n' >"$_ts59_d/!x.ts"
+  printf 'import { expect, it } from "vitest";\nimport { neg } from "../!x";\n\nit("negates", () => {\n  expect(neg(2)).toBe(-2);\n});\n' >"$_ts59_d/src/bang.test.ts"
+  _ts59_commit "add bang path"
+  _ts59_run check-mutation-diff-ts --base "$_ts59_base"
+  _ts59_check "(f) a path starting with ! is exit 2, not a silent 0-mutant pass" "$([ "$_ts59_rc" = 2 ] && echo 1 || echo 0)"
+  _ts59_check "(f) the refusal names the path" "$(printf '%s' "$_ts59_out" | grep -q '!x.ts: a path starting with' && echo 1 || echo 0)"
 
   rm -rf "$_ts59_d"
 fi
