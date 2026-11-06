@@ -367,6 +367,7 @@ SHIM
     mkdir -p .githooks/lib
     cp "$_ts58_rg" .githooks/lib/check-red-green-ts
     cp "$_ts58_md" .githooks/lib/check-mutation-diff-ts
+    cp "$SCAFFOLD_DIR/githooks/lib/gate-status.template" .githooks/lib/gate-status  # the status line both end through (#210)
   ) >/dev/null 2>&1
   _ts58_rgx="$R/.githooks/lib/check-red-green-ts"
   _ts58_mdx="$R/.githooks/lib/check-mutation-diff-ts"
@@ -458,7 +459,7 @@ SHIM
   fi
 
   _ts58_go "$_ts58_mdx" x allkilled squares --base HEAD~1
-  _ts58_expect 0 'mutation OK: 3 mutants, all killed' "check-mutation-diff-ts reports all-killed as mutation OK, exit 0" "all-killed should exit 0 with 'mutation OK'"
+  _ts58_expect 0 'gate=mutation-diff-ts status=ran checked=3' "check-mutation-diff-ts reports all-killed as ran 3, exit 0" "all-killed should exit 0 with 'status=ran checked=3'"
 
   _ts58_go "$_ts58_mdx" x survivors squares --base HEAD~1
   if [ "$TD_RC" -eq 0 ] && grep -qF 'src/calc.ts: 1 survived, 1 no tests' "$HOOK_OUT" && grep -qF 'mutation summary:' "$HOOK_OUT"; then

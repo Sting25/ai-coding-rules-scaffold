@@ -83,6 +83,19 @@ function run(cmd, args, opts) {
   return { status: r.status === null ? 1 : r.status, stdout: r.stdout || "", stderr: r.stderr || "" };
 }
 
+// The shared status line (gate-status), run from this script's own directory.
+// Exit codes here are 0/1/2 and 1 means "declined for size", so any helper
+// failure reads as 2.
+function gate(status, n, reason, rc = 0) {
+  const helper = path.join(path.dirname(process.argv[1]), "gate-status");
+  const r = cp.spawnSync("bash", [helper, "mutation-diff-ts", status, String(n), reason, String(rc)], { stdio: "inherit" });
+  if (r.error || r.status === null) {
+    console.log(`::error::gate-status unusable: ${r.error ? r.error.message : "killed by signal"}`);
+    return 2;
+  }
+  return r.status === rc ? rc : 2;
+}
+
 function emit(sev, msg, ci) {
   if (ci) console.log(`::${sev}::${msg}`);
   else console.error(`  ${sev}: ${msg}`);
@@ -180,8 +193,7 @@ function main() {
   // Same detection as test-guard.yml's detect_ts: vitest declared anywhere, or
   // named in the test script.
   if (!/"vitest"/.test(pkg) && !/"test"\s*:\s*"[^"]*vitest/.test(pkg)) {
-    console.log("no Vitest project detected, nothing to mutate.");
-    return 0;
+    return gate("empty", 0, "no Vitest project detected");
   }
   const v = verifyStryker(args.ci);
   if (v) return v;
@@ -207,8 +219,7 @@ function main() {
   }
   const srcFiles = diff.stdout.split("\0").filter((p) => p && isSource(p)).sort();
   if (srcFiles.length === 0) {
-    console.log("nothing to mutate, no changed non-test TypeScript source files in this diff.");
-    return 0;
+    return gate("empty", 0, "no changed non-test TypeScript source files");
   }
   if (!fs.existsSync("node_modules")) {
     emit("error", "node_modules is missing; install the project's dependencies " +
@@ -222,8 +233,7 @@ function main() {
     mutate.push(...e);
   }
   if (mutate.length === 0) {
-    console.log("nothing to mutate, the changed source files only had lines removed.");
-    return 0;
+    return gate("empty", 0, "the changed source files only had lines removed");
   }
   console.log(`  mutating: ${mutate.join(" ")}`);
   const carried = fs.readdirSync(".").filter((f) => /^stryker\.(conf|config)\.(js|cjs|mjs|ts|cts|mts|json)$/.test(f));
@@ -284,7 +294,7 @@ function main() {
       emit("notice", "mutation summary: 0 killed, 0 not killed (0 total) across " +
         `${srcFiles.length} changed file(s), source: stryker output. Advisory only: ` +
         "no test covers these files.", args.ci);
-      return 0;
+      return gate("empty", 0, "no tests run the changed source files (advisory)");
     }
     if (files === null) {
       emit("error", "stryker run produced no readable report (initial test run " +
@@ -323,14 +333,10 @@ function main() {
       return 1;
     }
     if (total === 0) {
-      console.log("mutation OK: 0 mutants generated for the changed lines " +
-        `(source: ${src}); nothing to evaluate.`);
-      return 0;
+      return gate("empty", 0, `stryker generated no mutants for ${srcFiles.length} changed file(s)`);
     }
     if (badTotal === 0) {
-      console.log(`mutation OK: ${total} mutants, all killed across ` +
-        `${srcFiles.length} changed file(s) (source: ${src}).`);
-      return 0;
+      return gate("ran", total, `${total} mutants, all killed (${src})`);
     }
     for (const [rel, s] of Object.entries(perFile)) {
       if (s.survived + s.no_tests + s.not_checked + s.other) {
@@ -347,7 +353,8 @@ function main() {
       "(#145 point 4): none of this fails the build yet. A survivor " +
       "in a file check-red-green reported unevaluable is the " +
       "highest-signal finding above.", args.ci);
-    return 0;
+    const evaluated = total - sum("not_checked");
+    return gate("ran", evaluated, `${total} mutants, ${evaluated} evaluated`);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

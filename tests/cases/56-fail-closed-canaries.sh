@@ -322,13 +322,43 @@ for c56_g in "$C56_CD"/.githooks/lib/check-*; do
 done
 rm -rf "$C56_CD"
 
+# (vii) the TypeScript red-green twin ends through gate-status too. A stub `npx`
+# stands in for Vitest (real Vitest is case 59's, behind SCAFFOLD_TS_TOOLS): its
+# `vitest list --json` reports no tests, which is exactly "a test file changed
+# but nothing was collected".
+if ! command -v node >/dev/null 2>&1; then
+  echo "  - SKIP: node not on PATH, so the 3 TypeScript red-green assertions did NOT run"
+  SKIP=$((SKIP + 3))
+else
+  C56_STUB=$(mktemp -d)
+  printf '#!/bin/sh\necho "[]"\n' >"$C56_STUB/npx"; chmod +x "$C56_STUB/npx"
+  git -C "$C56_RG" reset --quiet --hard "$C56_BASE"
+  mkdir -p "$C56_RG/node_modules" "$C56_RG/src"
+  printf '{"name":"c56ts","devDependencies":{"vitest":"1"}}\n' >"$C56_RG/package.json"
+  printf 'export const b = 1;\n' >"$C56_RG/src/b.ts"
+  git -C "$C56_RG" add package.json src/b.ts
+  git -C "$C56_RG" commit --quiet -m "vitest project, no test change" --no-verify  # scaffold-allow: test fixture
+  c56_run "$C56_RG" - env PATH="$C56_STUB:$PATH" node .githooks/lib/check-red-green-ts --base "$C56_BASE"
+  c56_expect "red-green-ts: no changed test file is empty, exit 0" 0 \
+    "gate=red-green-ts status=empty" "no changed test files"
+  printf 'export {};\n' >"$C56_RG/src/a.test.ts"
+  git -C "$C56_RG" add src/a.test.ts
+  git -C "$C56_RG" commit --quiet -m "a test file that holds no tests" --no-verify  # scaffold-allow: test fixture
+  c56_run "$C56_RG" - env PATH="$C56_STUB:$PATH" node .githooks/lib/check-red-green-ts --base "$C56_BASE"
+  c56_expect "red-green-ts: a changed test file that lists 0 tests fails as ran 0" 1 \
+    "gate=red-green-ts status=ran checked=0" "evaluated 0 items"
+  c56_run "$C56_RG" - env PATH="$C56_STUB:$PATH" node .githooks/lib/check-red-green-ts --base no-such-ref-c56
+  c56_expect "red-green-ts: an unresolvable --base is exit 2 naming the base" 2 "no-such-ref-c56"
+  rm -rf "$C56_STUB"
+fi
+
 # --- (h) the workflow templates carry the strict variable ----------------------
 WF="$SCAFFOLD_DIR/.github/workflows"
 C56_STRICT='SCAFFOLD_GATE_STRICT: "1"'
 c56_count() { grep -cF -- "$C56_STRICT" "$1"; }
-if [ "$(c56_count "$WF/test-guard.yml.template")" -eq 2 ]; then
-  c56_ok "test-guard.yml.template sets the strict variable on both steps"
-else : >"$HOOK_OUT"; c56_bad "test-guard.yml.template must set $C56_STRICT on the red-green and mutation steps"; fi
+if [ "$(c56_count "$WF/test-guard.yml.template")" -eq 4 ]; then
+  c56_ok "test-guard.yml.template sets the strict variable on all four steps (Python and TypeScript)"
+else : >"$HOOK_OUT"; c56_bad "test-guard.yml.template must set $C56_STRICT on the four red-green and mutation steps"; fi
 if awk '/^  guardrails:/ { g = 1 } g' "$WF/lint.yml.template" | grep -qF -- "$C56_STRICT" \
    && ! awk '/^  guardrails:/ { exit } { print }' "$WF/lint.yml.template" | grep -qF -- "$C56_STRICT"; then
   c56_ok "lint.yml.template sets the strict variable in the guardrails job only"
