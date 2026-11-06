@@ -28,7 +28,7 @@ const args = process.argv.slice(2);
 // `assess` is the read-only measurement (scaffold-assess.sh): what each
 // component would flag in this repo, with nothing copied. Same shape as
 // `doctor`: dispatch on the first word, pass the rest through.
-const SUBCOMMANDS = { doctor: 'scaffold-doctor.sh', assess: 'scaffold-assess.sh' };
+const SUBCOMMANDS = { doctor: 'scaffold-doctor.sh', assess: 'scaffold-assess.sh', blocks: 'scaffold-blocks.sh' };
 const isSub = Object.prototype.hasOwnProperty.call(SUBCOMMANDS, args[0]);
 const script = isSub ? SUBCOMMANDS[args[0]] : 'install.sh';
 const scriptArgs = isSub ? args.slice(1) : args;

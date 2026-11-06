@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# .githooks/lib/refusal-log: durable, append-only record of every gate refusal
+# (issue #218). Each shipped gate calls this on its refusal path, right before
+# it exits non-zero. Nothing ever reads the log to make a decision, so it
+# cannot change what any gate does; it only records, so "which gate blocks
+# most", "which rule misfires" and "was the same refusal retried ten times" can
+# be answered from data instead of transcripts.
+#
+# Usage: refusal-log <gate> <rule> [file] [exit] [--stdin-hash]
+#
+# Appends ONE tab-separated line to <git common dir>/scaffold-blocks.log:
+#   <utc time ISO 8601> <gate> <rule slug> <file or -> <exit> <session or -> <command hash or ->
+# The common dir (not the per-worktree git dir) is used so every linked
+# worktree shares one log, and the log is untracked, so it survives session
+# end, branch deletion and worktree removal.
+#
+# What is recorded: the gate name, a rule slug (lower case, runs of characters
+# outside a-z0-9 become "-", cut at 48), a sanitised path (tabs, newlines and
+# non-printable bytes become "_", cut at 200), the exit code, the
+# CLAUDE_SESSION_ID when the caller has one, and with --stdin-hash the first 12
+# hex chars of a SHA-256 of the whitespace-normalised stdin. What is NEVER
+# recorded: the stdin text, the matched content, or a command line. The gates
+# pass rule ids or a rule's description, never what matched.
+#
+# One line is written per gate per refusing run: when a run has several
+# findings the first rule and first file win. Rotation: before appending, a
+# log over 1 MiB (1048576 bytes) is moved to scaffold-blocks.log.1, replacing
+# an older .1, so at most two generations exist and disk use stays bounded.
+# Read both with scaffold-blocks.sh (older generation first).
+#
+# Fail open: this ALWAYS exits 0 and prints nothing. Outside a git repo, with
+# git missing, or on an unwritable log it does nothing. A gate must never fail,
+# or change its exit code, because of logging, so there is deliberately no
+# errexit here.
+
+unset CDPATH
+set -u
+
+gate=${1:-}
+[ -n "$gate" ] || exit 0
+command -v git >/dev/null 2>&1 || exit 0
+cdir=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
+[ -n "$cdir" ] || exit 0
+case $cdir in /*) ;; *) cdir=$PWD/$cdir ;; esac
+[ -d "$cdir" ] || exit 0
+log="$cdir/scaffold-blocks.log"
+
+# slug <text>: lower-case, non-alphanumeric runs to "-", trimmed, cut at 48.
+slug() {
+  local s
+  s=$(printf '%s' "${1:-}" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -cs 'a-z0-9' '-' \
+    | sed 's/^-*//; s/-*$//' | cut -c1-48 | sed 's/-*$//')
+  [ -n "$s" ] || s=unknown
+  printf '%s' "$s"
+}
+
+# clean <text> <max>: printable bytes only, tab/newline/CR/other bytes to "_".
+clean() {
+  local s
+  s=$(printf '%s' "${1:-}" | LC_ALL=C tr -c '[:print:]' '_' | cut -c1-"$2")
+  [ -n "$s" ] || s=-
+  printf '%s' "$s"
+}
+
+rule=$(slug "${2:-}")
+file=$(clean "${3:-}" 200)
+code=${4:-1}
+case "$code" in ''|*[!0-9]*) code=1 ;; esac
+session=$(clean "${CLAUDE_SESSION_ID:-}" 200)
+gate=$(slug "$gate")
+
+hash=-
+if [ "${5:-}" = "--stdin-hash" ]; then
+  norm=$(cat 2>/dev/null | LC_ALL=C tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//')
+  if command -v sha256sum >/dev/null 2>&1; then
+    h=$(printf '%s' "$norm" | sha256sum 2>/dev/null | cut -c1-12)
+  else
+    h=$(printf '%s' "$norm" | shasum -a 256 2>/dev/null | cut -c1-12)
+  fi
+  case "$h" in
+    *[!0-9a-f]*|'') ;;
+    *) [ "${#h}" -eq 12 ] && hash=$h ;;
+  esac
+fi
+
+if [ -f "$log" ]; then
+  size=$({ wc -c <"$log"; } 2>/dev/null | tr -d ' ')
+  case "$size" in ''|*[!0-9]*) size=0 ;; esac
+  if [ "$size" -gt 1048576 ]; then mv -f "$log" "$log.1" 2>/dev/null || true; fi
+fi
+
+ts=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)
+[ -n "$ts" ] || exit 0
+{ printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$ts" "$gate" "$rule" "$file" "$code" "$session" "$hash" >>"$log"; } 2>/dev/null || true
+exit 0

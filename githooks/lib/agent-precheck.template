@@ -40,6 +40,31 @@ ROOT=${CLAUDE_PROJECT_DIR:-}
 
 tool=$(jq -r '.tool_name // empty' <<<"$payload" 2>/dev/null || true)
 
+# Record a refusal in the durable log (issue #218). Record-only: every failure
+# here is swallowed, so the `exit 2` that follows each call is never lost.
+# bash 5.3: cd "" is fatal; no dirname(1) needed (see scaffold-doctor.sh)
+case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
+# CDPATH would make cd echo the directory; see pre-commit
+unset CDPATH
+SELF_DIR="$(cd "$_sd" && pwd)"
+rl_log() {
+  [ -x "$SELF_DIR/refusal-log" ] || return 0
+  local f cmd sid
+  f=$(jq -r '.tool_input.file_path // empty' <<<"$payload" 2>/dev/null || true)
+  cmd=$(jq -r '.tool_input.command // empty' <<<"$payload" 2>/dev/null || true)
+  sid=${CLAUDE_SESSION_ID:-}
+  [ -n "$sid" ] || sid=$(jq -r '.session_id // empty' <<<"$payload" 2>/dev/null || true)
+  (
+    cd "$ROOT" 2>/dev/null || exit 0
+    export CLAUDE_SESSION_ID="$sid"
+    if [ "$tool" = Bash ]; then
+      printf '%s' "$cmd" | "$SELF_DIR/refusal-log" agent-precheck "$1" "$f" 2 --stdin-hash || true
+    else
+      "$SELF_DIR/refusal-log" agent-precheck "$1" "$f" 2 || true
+    fi
+  ) >/dev/null 2>&1 || true
+}
+
 # Scan only the text the tool would WRITE or RUN: Write.content, Edit.new_string,
 # MultiEdit edits[].new_string, Bash.command. Walking every string in the
 # payload also scanned old_string, which is text the edit REMOVES: an Edit that
@@ -68,6 +93,7 @@ if [ "$cap_rc" -eq 9 ]; then
     echo "to scan for secret/shell patterns — split the content (or raise"
     echo "MAX_LINE_LENGTH, accepting the ReDoS cost) before this write/command runs."
   } >&2
+  rl_log line-too-long
   exit 2
 fi
 [ -n "$content" ] || exit 0
@@ -156,6 +182,8 @@ scan_against() {
     # as "block", so a non-2 exit silently ALLOWS the matched action (fail-open).
     printf '%s\n' "$hit" | head -3 || true
   } >&2
+  local stem=${pfile##*/}
+  rl_log "${stem%.txt}"
   exit 2
 }
 
