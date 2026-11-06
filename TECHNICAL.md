@@ -395,6 +395,24 @@ minimal; turn them on per project.
   mutmut 3.x has no function-level scoping, so a large file with one changed
   line still has its whole file mutated.
 
+  Both checks have a TypeScript twin for Vitest projects
+  (`check-red-green-ts`, `check-mutation-diff-ts`, Node scripts using only
+  built-in modules) with the same flags, the same exit-code contract and the
+  same wording, so the workflow sorts their results with one set of rules.
+  Instead of a git worktree each script materialises the commit it needs
+  (`git read-tree` into a throwaway index, then `git checkout-index`, so
+  `export-ignore` attributes cannot drop files) into a scratch directory and symlinks the project's own
+  `node_modules` into it: base code runs against today's dependencies, and
+  `package.json` is deliberately not overlaid. Red-green collects test IDs
+  with `vitest list --json` on both trees, overlays HEAD's changed test files
+  and collection config onto the base copy, and classifies each new test from
+  one JSON report. There is no moved-test exemption: nothing equivalent to the
+  Python AST comparison exists, so a moved test fails closed and must carry a
+  title starting `characterization: <reason>`. The mutation script runs the
+  pinned Stryker over the changed line ranges of the source files (a new file
+  is mutated whole) and reads
+  the verdict from its JSON report, never from Stryker's own exit code.
+
 - **Socket Firewall CI gate (`install.sh --socket-ci` →
   `.github/workflows/socket-security.yml`).** Verifies a package is
   legitimate _before_ it is installed, not after: an LLM coding agent
@@ -522,11 +540,12 @@ ids, rule descriptions and paths. Past 1 MiB it rotates to
 `npx ai-coding-rules-scaffold blocks`) summarises both files: counts per gate and per rule, and the longest retry
 run. Logging is record-only: nothing reads the log to decide anything, and a
 missing helper (an older install) is silent (the shell gates also skip a
-helper that is not executable; the two Python gates run it through
-`bash`). One thing is not logged: a
+helper that is not executable; the two Python gates and their TypeScript
+twins run it through `bash`). One thing is not logged: a
 gate's own configuration error (a non-numeric `MAX_LINES`, `MAX_BYTES` or
 `MAX_LINE_LENGTH` exits 2 before any finding). The timeout exits of
-`check-red-green` and `check-mutation-diff` are logged as rule `timeout`.
+`check-red-green`, `check-mutation-diff` and their `-ts` twins are logged as
+rule `timeout`.
 
 ### Paired artifacts (half-installed guardrails)
 

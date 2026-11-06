@@ -377,6 +377,7 @@ _pne() { note "$1"; PNE_ANY=1; }
 [ -f .github/workflows/lint-tree.yml ]         || _pne "whole-tree lint (advisory weekly check of the files lint.yml only diff-checks): not installed. Enable with install.sh --tree-lint"
 [ -f .github/workflows/socket-security.yml ]   || _pne "Socket Firewall CI gate (blocks a malicious/typosquat package at install time): not installed. Enable with install.sh --socket-ci"
 [ -f .github/workflows/test-guard.yml ]        || _pne "test-guard CI gate (red-green: a new test must fail against the PR base before it may pass): not installed. Enable with install.sh --test-guard"
+[ ! -f .github/workflows/test-guard.yml ] || { [ -f .githooks/lib/check-red-green-ts ] && [ -f .githooks/lib/check-mutation-diff-ts ]; } || note "test-guard: the TypeScript twin (check-red-green-ts, check-mutation-diff-ts) is not installed; re-run install.sh --test-guard"
 [ -f .claude/settings.json ]                   || _pne "Claude Code agent guardrails: not installed. Enable with install.sh --claude"
 [ -f .githooks/commit-msg ]                    || _pne "commit-msg hook (Conventional Commits): not installed. Enable with install.sh --commit-msg"
 [ -f .npmrc ]                                   || _pne "npm install-layer cooldown (.npmrc min-release-age, delays freshly published versions): not installed. Enable with install.sh --npm-cooldown"

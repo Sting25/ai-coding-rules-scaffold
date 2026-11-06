@@ -419,7 +419,7 @@ jobs:
             [ -x "$check" ] || continue
             case "${check##*/}" in
               check-secrets|check-filenames) "$check" --ci <"$ALL_LIST" || FAILED=1 ;;
-              check-gitleaks|check-red-green|check-mutation-diff) ;;
+              check-gitleaks|check-red-green|check-red-green-ts|check-mutation-diff|check-mutation-diff-ts) ;;
               *) "$check" --ci <"$CHANGED_LIST" || FAILED=1 ;;
             esac
           done

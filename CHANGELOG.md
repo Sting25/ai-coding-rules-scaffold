@@ -8,10 +8,25 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+- **TypeScript/Vitest twin of the test-guard checks (#205).**
+  `install.sh --test-guard` now also installs `check-red-green-ts` and
+  `check-mutation-diff-ts`, Node scripts with the same flags, exit codes and
+  wording as the Python pair, and `test-guard.yml` runs them in a project that
+  declares `vitest`. A new Vitest test that passes on base must carry a title
+  starting `characterization: <reason>`; there is no moved-test exemption, so
+  a moved test fails closed. The mutation layer uses Stryker, pinned to 10.1.1
+  (core and vitest-runner), installed by CI on Node 22 without lifecycle
+  scripts and not saved into the project, and mutates only the changed line
+  ranges of each source file (a new file is mutated whole); a change whose
+  files have no related tests is reported as surviving or uncovered mutants, still advisory. One
+  posting step now serves both flavours, so a
+  size decline from either posts its own neutral check run
+  (`test-guard / mutation-ts (declined: size)` for TypeScript) and the token
+  still exists in that step only.
 - **Durable refusal log (#218).** Every finding-driven refusal the scaffold ships
   (`check-size`, `check-large-files`, `check-patterns`, `check-filenames`,
   `check-secrets`, `check-hygiene`, `check-gitleaks`, `check-red-green`,
-  `check-mutation-diff`, `commit-msg`, the pre-commit hook's own refusals and
+  `check-mutation-diff`, their `-ts` twins, `commit-msg`, the pre-commit hook's own refusals and
   the agent pre-check) now appends one tab-separated line to
   `<git common dir>/scaffold-blocks.log` through the new
   `.githooks/lib/refusal-log` helper: UTC time, gate, rule, file when there
