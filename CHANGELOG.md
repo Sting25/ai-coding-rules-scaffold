@@ -8,6 +8,21 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+- **Gates fail closed when they skip or check nothing (#210).** New
+  `.githooks/lib/gate-status` is the one line every gate ends with:
+  `gate=<name> status=ran|skipped|empty checked=<n> reason=<text>`. A gate that
+  ran but evaluated 0 items fails. The four workflows that run gates
+  (`lint.yml`'s guardrails job, `test-guard.yml`, and the pytest and vitest steps
+  of `tests.yml` and `coverage.yml`) set `SCAFFOLD_GATE_STRICT=1`, under which a
+  `skipped` gate fails unless its reason starts `disabled:` (a decision recorded
+  in `.scaffold.toml`). The pre-commit hook collects the lines and prints one
+  summary line, `note: N gate(s) skipped: ...`, instead of a note per tool; a
+  skip stays a pass locally. pytest exit 5 is no longer a blanket pass in
+  `tests.yml` and `coverage.yml`: it is `empty` only when the tree has no test
+  files, and a failure when test files exist but none were collected; vitest
+  uses `--passWithNoTests` only for a tree with no test files. Case 56 hands
+  each gate an input it must refuse and one it must report as empty, and covers
+  the skip, strict and summary paths.
 - **Opt-in advisory whole-tree lint workflow (#217).** `install.sh --tree-lint`
   installs `.github/workflows/lint-tree.yml`, the whole-tree twin of the
   diff-scoped `lint.yml`. It runs ruff check, ruff format --check, eslint,
