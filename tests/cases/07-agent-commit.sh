@@ -93,7 +93,6 @@ if command -v jq >/dev/null 2>&1; then
   for _v in \
     "git push $_ff origin main # scaffold-allow x" \
     "git commit -m x $_nv # scaffold-allow x" \
-    "git push \"$_ff\" origin main" \
     "git commit -m x --no-\\verify"; do
     pc=$(jq -nc --arg c "$_v" '{tool_name:"Bash",tool_input:{command:$c}}')
     rc=0
@@ -113,14 +112,25 @@ if command -v jq >/dev/null 2>&1; then
     echo "  ✗ agent-precheck — refusal does not say the marker is not honored for Bash"
     sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
   fi
-  # (48c4) a quoted flag does not make a benign command match: a quoted word is allowed
-  pc=$(jq -nc --arg c 'echo "hello world" | wc -w' '{tool_name:"Bash",tool_input:{command:$c}}')
-  if echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1; then
-    echo "  ✓ agent-precheck still allows a benign quoted Bash command"; PASS=$((PASS + 1))
-  else
-    echo "  ✗ agent-precheck — blocked a benign quoted Bash command"
-    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
-  fi
+  # (48c4) quoted text stays allowed (the rules exclude quotes on purpose, and the
+  #        commit-time scan agrees): a message or grep that merely NAMES a flag.
+  _am="--am""end"
+  for _v in \
+    'echo "hello world" | wc -w' \
+    "git commit -m \"docs: explain why -n is refused\"" \
+    "git commit -m \"docs: never use $_am on main\"" \
+    "git commit -m \"docs: never use $_nv\"" \
+    "grep -rn -- \"git push $_ff\" docs/"; do
+    pc=$(jq -nc --arg c "$_v" '{tool_name:"Bash",tool_input:{command:$c}}')
+    rc=0
+    echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1 || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      echo "  ✓ agent-precheck allows a Bash command that only quotes a flag"; PASS=$((PASS + 1))
+    else
+      echo "  ✗ agent-precheck — exit $rc for a quoted-flag Bash command, expected 0"
+      sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+    fi
+  done
   # (48f2) REGRESSION (audit, false positive): only the text a tool WRITES or
   #        RUNS is scanned (Write.content, Edit.new_string, MultiEdit
   #        edits[].new_string, Bash.command). An Edit that REMOVES a hardcoded

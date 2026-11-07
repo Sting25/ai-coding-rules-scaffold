@@ -134,17 +134,18 @@ scan_bucket() {
   fi
 }
 
-# Scan $content, then (Bash only) a normalised copy with quotes and backslashes
-# removed and whitespace runs collapsed, so a quoted flag cannot slip past a
-# pattern that expects it after a space. Sets HIT, and NORM_HIT=1 when only the
-# copy matched (the message then shows the original command, not the copy).
+# Scan $content, then (Bash only) a normalised copy with backslashes removed and
+# whitespace runs collapsed, so an escaped flag cannot slip past a pattern that
+# expects it after a space. Quotes are kept: the rules exclude quoted text on
+# purpose, and the commit-time scan must agree. Sets HIT, and NORM_HIT=1 when
+# only the copy matched.
 scan_both() {
   local iflag=$1; shift
   NORM_HIT=0
   SCAN_TEXT=$content
   HIT=$(scan_bucket "$iflag" "$@")
   if [ -z "$HIT" ] && [ "$tool" = Bash ]; then
-    SCAN_TEXT=$(printf '%s' "$content" | tr -d "\\\\\"'" | tr -s '[:blank:]' ' ')
+    SCAN_TEXT=$(printf '%s' "$content" | tr -d '\134' | tr -s '[:blank:]' ' ')
     HIT=$(scan_bucket "$iflag" "$@")
     [ -z "$HIT" ] || NORM_HIT=1
   fi
@@ -196,8 +197,8 @@ scan_against() {
     scan_both "" "${pats_cs[@]}"; hit=$HIT
   fi
   [ -n "$hit" ] || return 0
-  # A normalised-copy match has line text that is not the command as typed.
-  [ "$NORM_HIT" -eq 0 ] || hit=$(printf '%s\n' "$content" | head -3 || true)
+  # A normalised-copy match shows the matching lines of the copy, so say so.
+  [ "$NORM_HIT" -eq 0 ] || hit="(backslashes and repeated whitespace removed)"$'\n'"$hit"
 
   {
     echo "BLOCKED by agent-precheck: $advice"

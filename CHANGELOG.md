@@ -13,9 +13,9 @@ versioning follows [SemVer](https://semver.org/).
   but the precheck honored it on the command the agent was about to run, so a
   force-push or a hook-skip flag with a trailing marker was allowed. Bash
   commands are now never exempted, the refusal says why, and a normalised copy
-  of the command (quotes and backslashes removed, whitespace collapsed) is also
-  scanned so a quoted flag no longer slips past. Write and Edit content keeps
-  the exemption.
+  of the command (backslashes removed, whitespace collapsed) is also scanned so
+  an escaped flag no longer slips past. Write and Edit content keeps the
+  exemption.
 
 ## [v0.20.0] - 2026-11-07
 
