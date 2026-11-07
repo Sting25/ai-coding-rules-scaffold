@@ -118,14 +118,18 @@ PYEOF
   fi
 done
 # (T) a refusal-log call that itself raises (a bad bash path) must not change the gate's
-# exit code (#268): the crash stays exit 2 and a decline stays exit 1, each with one
+# exit code (#268): the crash and the timeout stay exit 2 and a decline stays exit 1, each with one
 # stderr warning, never Python's own exit 1 with a traceback. The failure is injected
 # into copies of the pristine installed gates (the first loop already rewrote its
 # copies; the gate looks for refusal-log beside itself).
 [ -f "$CRASH/lib/refusal-log" ] || { cp "$SCAFFOLD_DIR/githooks/lib/refusal-log.template" "$CRASH/lib/refusal-log"; chmod +x "$CRASH/lib/refusal-log"; }
 for log_g in check-mutation-diff check-red-green; do
-  for log_v in crash decline; do
-    if [ "$log_v" = crash ]; then log_inj='rc = [][0];'; log_want=2; else log_inj='rc = 1;'; log_want=1; fi
+  for log_v in crash decline timeout; do
+    case "$log_v" in
+      crash) log_inj='rc = [][0];'; log_want=2 ;;
+      decline) log_inj='rc = 1;'; log_want=1 ;;
+      timeout) log_inj='raise subprocess.TimeoutExpired("x", 1);'; log_want=2 ;;
+    esac
     python3 - "$T/.githooks/lib/$log_g" "$CRASH/lib/$log_g-$log_v" "$log_inj" <<'PYEOF'
 import sys
 s = open(sys.argv[1]).read()

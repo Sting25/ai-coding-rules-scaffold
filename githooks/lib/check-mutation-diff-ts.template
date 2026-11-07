@@ -394,5 +394,5 @@ if (process.exitCode) {
       const r = cp.spawnSync("bash", [rl, "check-mutation-diff-ts", rule, "", String(process.exitCode), "--say", process.exitCode === 1 ? "a" : "b"], { stdio: ["ignore", "ignore", "pipe"], encoding: "utf8" });
       if (r.stderr) process.stderr.write(r.stderr);
     }
-  } catch (e) { /* never let logging change the verdict */ }
+  } catch (e) { /* never let logging change the verdict */ process.stderr.write(`::warning::refusal-log failed, ${e && e.name ? e.name : "Error"}: ${e && e.message ? e.message : e}\n`); }
 }
