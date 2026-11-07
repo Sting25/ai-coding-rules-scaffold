@@ -35,7 +35,8 @@
  *
  * LIMIT: `vitest list` omits it.skip / it.todo, so those are never new IDs and
  * are not checked; a skipped new test is invisible to this check, the same as
- * a test pytest does not collect.
+ * a test pytest does not collect. A notice counts the added lines that use
+ * them (skipNotice); it never changes the exit code.
  *
  * THE EXEMPTION. A new test that passes on base by design must say so in its
  * title: it starts with "characterization: <reason>". The reason must be
@@ -139,6 +140,26 @@ function collect(cwd, files) {
   return ids;
 }
 
+// `vitest list` omits it.skip / it.todo, so a new one is invisible to the
+// classification. Count the ones the diff ADDS (a textual match, so a string
+// or comment can false-positive) and say so; a notice only, exit code unchanged.
+const SKIP_RE = /\b(?:it|test|describe)\.(?:skip|todo)\b|\b(?:xit|xtest|xdescribe)\(/;
+function skipNotice(baseSha, headSha, testFiles, ci) {
+  let n = 0;
+  for (const p of testFiles) {
+    const d = run("git", ["diff", "-U0", "--no-color", `${baseSha}...${headSha}`, "--", p]);
+    if (d.status !== 0) {
+      emit("notice", `could not diff ${p}, so its added skip/todo lines were not counted.`, ci);
+      continue;
+    }
+    n += d.stdout.split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++") && SKIP_RE.test(l)).length;
+  }
+  if (n > 0) {
+    emit("notice", `${n} added line(s) use skip or todo (it.skip, it.todo and the like). ` +
+      "vitest list does not list those tests, so they are not checked here.", ci);
+  }
+}
+
 function parseArgs(argv) {
   const a = { base: null, ci: false, strict: false, maxNew: 200 };
   for (let i = 0; i < argv.length; i++) {
@@ -197,6 +218,7 @@ function main() {
     return 2;
   }
 
+  skipNotice(baseSha, headSha, testFiles, args.ci);
   const here = collect(".", testFiles);
   if (here === null) {
     emit("error", "vitest collection failed on HEAD, so new tests cannot be " +
