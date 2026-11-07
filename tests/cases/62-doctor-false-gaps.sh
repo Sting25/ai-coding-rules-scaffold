@@ -68,6 +68,17 @@ fg_echo_wrapper() {
   fg_wrapper_file 'echo "check-large-files is not run here"'
   printf '\n.githooks/lib/run-checks\n' >>.githooks/pre-commit
 }
+fg_hook_line() {
+  fg_drop_callsites
+  fg_wrapper_file '.githooks/lib/check-large-files "$@"'
+  printf '\n%s\n' "$1" >>.githooks/pre-commit
+}
+fg_herestring() { fg_hook_line 'cat <<<"run-checks" >/dev/null'; }
+fg_heredoc() { fg_hook_line 'cat <<EOF >/dev/null
+run-checks
+EOF'; }
+fg_assign() { fg_hook_line 'W=run-checks'; }
+fg_cmdsub() { fg_hook_line 'out=$(.githooks/lib/run-checks)'; }
 fg_ghe() {
   git remote add origin git@github.mycorp.com:g/p.git
   rm -f .github/workflows/lint.yml
@@ -110,5 +121,13 @@ fg_case "a hook that only mentions the wrapper in a trailing comment does not ca
   "lib/check-large-files is installed and executable but nothing calls it" fg_trail_hook
 fg_case "a wrapper that only echoes the check's name does not call it" present \
   "lib/check-large-files is installed and executable but nothing calls it" fg_echo_wrapper
+fg_case "a here-string naming the wrapper does not call it" present \
+  "lib/check-large-files is installed and executable but nothing calls it" fg_herestring
+fg_case "a here-doc body naming the wrapper does not call it" present \
+  "lib/check-large-files is installed and executable but nothing calls it" fg_heredoc
+fg_case "a bare assignment naming the wrapper does not call it" present \
+  "lib/check-large-files is installed and executable but nothing calls it" fg_assign
+fg_case "a command substitution that runs the wrapper counts as a call" absent \
+  "lib/check-large-files is installed and executable but nothing calls it" fg_cmdsub
 fg_case "a GitHub Enterprise remote without lint.yml is still a gap" present \
   ".github/workflows/lint.yml is missing" fg_ghe

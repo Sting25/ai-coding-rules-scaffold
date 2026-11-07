@@ -34,8 +34,19 @@
 # comment lines, trailing comments, [ ... ] tests and echo/printf statements,
 # because a name in a message, a comment or a file test is not an invocation.
 _code_body() {
-  sed -E -e '/^[[:space:]]*#/d' -e 's/[[:space:]]#.*$//' -e 's/\[\[?[^]]*\]\]?//g' \
-    -e 's/(^[[:space:]]*|[;&|(][[:space:]]*)(echo|printf)[[:space:]]+[^;&|]*//g' "$1" 2>/dev/null || true
+  # Here-strings go first (so `<<<` is not read as a here-doc), then here-doc
+  # bodies up to their terminator line, then the sed strips; a bare NAME=value
+  # line is data, but one holding $( or a backtick runs a command and stays.
+  sed -E -e 's/<<<("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:];&|]*)//g' "$1" 2>/dev/null |
+    awk '
+      hd != "" { t = $0; sub(/^[\t]+/, "", t); if (t == hd) hd = ""; next }
+      { if (match($0, /<<-?[ \t]*["\047]?[A-Za-z_][A-Za-z0-9_]*/)) {
+          w = substr($0, RSTART, RLENGTH); sub(/^<<-?[ \t]*["\047]?/, "", w)
+          hd = w; $0 = substr($0, 1, RSTART - 1) }
+        print }' |
+    sed -E -e '/^[[:space:]]*#/d' -e 's/[[:space:]]#.*$//' -e 's/\[\[?[^]]*\]\]?//g' \
+      -e 's/(^[[:space:]]*|[;&|(][[:space:]]*)(echo|printf)[[:space:]]+[^;&|]*//g' \
+      -e '/\$\(|`/!{/^[[:space:]]*(export |local |readonly )?[A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:]]*)[[:space:]]*$/d;}' || true
 }
 
 _expand_callers() {
