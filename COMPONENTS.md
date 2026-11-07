@@ -796,10 +796,11 @@ changed lines and warns about survivors; advisory, never fails the job. Each
 has a Vitest/Stryker twin (`check-red-green-ts`, `check-mutation-diff-ts`);
 there the exemption is a test title starting with `characterization: <reason>`,
 and mutation is scoped to the changed line ranges (a new file is mutated whole).
-`worktree-sweep` runs at the start of each gate and removes the temp worktrees
-of a run that was killed (its own `redgreen-` and `mutdiff-` directories under
-the system temp dir, older than two hours, never a locked one); a gate that
-receives SIGTERM cleans up and exits 143. To list every registered worktree of
+`worktree-sweep` runs at the start of each Python gate and removes the temp
+worktrees of a run that was killed (only worktrees this repository lists, named
+`redgreen-*` or `mutdiff-*` directly under `$TMPDIR`, older than two hours,
+never a locked one or a symlink); a Python gate that receives SIGTERM cleans up
+and exits 143. To list every registered worktree of
 a repository (branch, age, merged or not, directory missing), run
 `bash "$SCAFFOLD/scaffold-worktree-report.sh"`: it only reports and always exits 0.
 

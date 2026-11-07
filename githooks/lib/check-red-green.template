@@ -490,7 +490,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     try:
-        import signal as _S; _S.signal(_S.SIGTERM, lambda *_: sys.exit(143)); _RL =pathlib.Path(__file__).with_name("refusal-log"); _B =shutil.which("bash"); rc = main(); sys.stdout.flush(); rc and _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-red-green", {1: "green-on-base-or-cap", 2: "setup-error"}.get(rc, "error"), "", str(rc), "--say", {1: "a"}.get(rc, "b")], check=False); raise SystemExit(rc)
+        import signal as _S; _S.signal(_S.SIGTERM, lambda *_: sys.exit(143)); _RL = pathlib.Path(__file__).with_name("refusal-log"); _B = shutil.which("bash"); rc = main(); sys.stdout.flush(); rc and _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-red-green", {1: "green-on-base-or-cap", 2: "setup-error"}.get(rc, "error"), "", str(rc), "--say", {1: "a"}.get(rc, "b")], check=False); raise SystemExit(rc)
     except subprocess.TimeoutExpired:
         print("::error::red-green check timed out. A suite too slow to run twice "
               "is a suite too slow to trust as a gate; split it or scope this "

@@ -5,7 +5,8 @@
 #   (a) worktree-sweep: an old redgreen- temp worktree is removed (directory and
 #       registration), a fresh one, a locked one, a differently named one and a
 #       redgreen- one outside the temp dir all survive, and it exits 0
-#   (b) the TypeScript twins' unregistered redgreen-ts- directory is swept when old
+#   (b) ownership: another repository's worktree, an unregistered directory, a
+#       symlinked wt and a worktree outside the one temp root all survive
 #   (c) SIGTERM during a check-red-green run that holds a temp worktree: the
 #       worktree is cleaned and the exit code is 143 (Python skips `finally`
 #       on SIGTERM unless a handler raises)
@@ -74,13 +75,33 @@ C62_RC=0
 ( cd "$C62_TP" && TMPDIR="$C62_TP" bash "$SWEEP" ) >"$HOOK_OUT" 2>&1 || C62_RC=$?
 c62_check "sweep: outside a git repository it exits 0" test "$C62_RC" -eq 0
 
-# --- (b) the TypeScript twins' plain directory -------------------------------------
-mkdir -p "$C62_TP/redgreen-ts-OLD/wt" "$C62_TP/mutdiff-ts-NEW/wt" "$C62_TP/redgreen-ts-NOWT"
-c62_old "$C62_TP/redgreen-ts-OLD"; c62_old "$C62_TP/redgreen-ts-NOWT"
-( cd "$C62_R" && TMPDIR="$C62_TP" bash "$SWEEP" ) >"$HOOK_OUT" 2>&1 || true
-c62_check "sweep: an old redgreen-ts- directory holding wt is removed" test ! -d "$C62_TP/redgreen-ts-OLD"
-c62_check "sweep: a fresh mutdiff-ts- directory, and a redgreen-ts- one without wt, survive" \
-  test -d "$C62_TP/mutdiff-ts-NEW/wt" -a -d "$C62_TP/redgreen-ts-NOWT"
+# --- (b) ownership: only what THIS repository lists is ever touched ---------------
+# (1) an old redgreen-ts-/wt that is a worktree of a DIFFERENT repository, with a
+#     user file in it; (2) an unregistered old redgreen-ts- directory; (3) an old
+#     redgreen-sym/wt that is a SYMLINK to a linked worktree outside the temp dir;
+#     (4) an old registered redgreen- worktree under /tmp while TMPDIR is elsewhere.
+c62_repo C62_F
+mkdir -p "$C62_TP/redgreen-ts-FOR"
+git -C "$C62_F" worktree add --quiet --detach "$C62_TP/redgreen-ts-FOR/wt" HEAD >/dev/null 2>&1
+printf 'mine\n' >"$C62_TP/redgreen-ts-FOR/wt/user-file"
+c62_old "$C62_TP/redgreen-ts-FOR"
+mkdir -p "$C62_TP/redgreen-ts-PLAIN/wt"; c62_old "$C62_TP/redgreen-ts-PLAIN"
+C62_OUT=$(mktemp -d)
+git -C "$C62_R" worktree add --quiet --detach "$C62_OUT/real" HEAD >/dev/null 2>&1
+printf 'real\n' >"$C62_OUT/real/user-file"
+mkdir -p "$C62_TP/redgreen-sym"; ln -s "$C62_OUT/real" "$C62_TP/redgreen-sym/wt"; c62_old "$C62_TP/redgreen-sym"
+C62_SYS=$(mktemp -d /tmp/redgreen-XXXXXX)
+git -C "$C62_R" worktree add --quiet --detach "$C62_SYS/wt" HEAD >/dev/null 2>&1; c62_old "$C62_SYS"
+( cd "$C62_R" && SCAFFOLD_WORKTREE_SWEEP_MAX_AGE=0 TMPDIR="$C62_TP" bash "$SWEEP" ) >"$HOOK_OUT" 2>&1 || true
+c62_check "sweep: another repository's old redgreen-ts-/wt survives with its file" test -f "$C62_TP/redgreen-ts-FOR/wt/user-file"
+c62_check "sweep: an unregistered redgreen-ts- directory is never scanned for or deleted" test -d "$C62_TP/redgreen-ts-PLAIN/wt"
+c62_check "sweep: a symlinked wt is not followed, the linked worktree outside the temp dir survives" \
+  test -f "$C62_OUT/real/user-file" -a -L "$C62_TP/redgreen-sym/wt"
+c62_check "sweep: the one temp root is TMPDIR, a /tmp worktree is left alone when TMPDIR is elsewhere" test -d "$C62_SYS/wt"
+git -C "$C62_R" worktree remove --force "$C62_SYS/wt" >/dev/null 2>&1
+git -C "$C62_R" worktree remove --force "$C62_OUT/real" >/dev/null 2>&1
+git -C "$C62_F" worktree remove --force "$C62_TP/redgreen-ts-FOR/wt" >/dev/null 2>&1
+rm -rf "$C62_F" "$C62_OUT" "$C62_SYS"
 git -C "$C62_R" worktree unlock "$C62_TP/redgreen-LOCK/wt" >/dev/null 2>&1
 rm -rf "$C62_R" "$C62_T" "$C62_E"
 
