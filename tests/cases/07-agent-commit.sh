@@ -140,7 +140,13 @@ if command -v jq >/dev/null 2>&1; then
   for _v in \
     "git push origin ${_pr}main" \
     "git -C /tmp/x push $_ff origin main" \
-    "git -C /tmp/x push origin ${_pr}HEAD:main"; do
+    "git -C /tmp/x push origin ${_pr}HEAD:main" \
+    "git push -""f|cat" \
+    "git push origin ${_pr}main|cat" \
+    "(cd x && git push -""f)" \
+    "git -C \"/tmp/a b\" push $_ff origin main" \
+    "git -C/tmp/x push $_ff origin main" \
+    "git push origin \\${_pr}main"; do
     pc=$(jq -nc --arg c "$_v" '{tool_name:"Bash",tool_input:{command:$c}}')
     rc=0
     echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1 || rc=$?
@@ -154,6 +160,8 @@ if command -v jq >/dev/null 2>&1; then
   for _v in \
     "git push origin main" \
     "git -C /tmp/x push origin main" \
+    "git -C \"/tmp/a b\" push origin main" \
+    "git push origin main 2>&1 | tail -1" \
     "git -C /tmp/x status"; do
     pc=$(jq -nc --arg c "$_v" '{tool_name:"Bash",tool_input:{command:$c}}')
     rc=0
@@ -280,9 +288,9 @@ if command -v jq >/dev/null 2>&1; then
   git checkout --quiet -- .forbidden-patterns/shell.txt
 else
   echo "  - skipped agent-precheck tests (jq not installed)"
-  # The jq block holds 34 assertions; count them as skipped so the floor in
+  # The jq block holds 42 assertions; count them as skipped so the floor in
   # run.sh (PASS+SKIP) is the same with and without jq.
-  SKIP=$((SKIP + 34))
+  SKIP=$((SKIP + 42))
 fi
 reset_repo
 

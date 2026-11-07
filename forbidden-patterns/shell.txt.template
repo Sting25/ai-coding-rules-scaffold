@@ -42,11 +42,12 @@
 # anchored to its subcommand: a bare `-f` arm would also block `git add -f`,
 # `git config -f`, `git branch -f` and `git checkout -f`, which are benign.
 # Two more push shapes are covered: a leading plus on a refspec is a force in
-# disguise (it forces that one ref with no flag at all), and `-C <dir>` between
-# `git` and the subcommand (repeatable) must not hide the subcommand from the
-# push rules. `-C` is NOT added to the amend or checkout rules.
-(^|[^A-Za-z_])git[[:space:]]+(-C[[:space:]]+[^[:space:]|;&]+[[:space:]]+)*push[[:space:]]([^|;&]*[[:space:]])?(--force(-with-lease)?([=[:space:]]|[;&]|$)|-f([[:space:]]|[;&]|$))	git push --force/-f/--force-with-lease rewrites published history. Never, on any branch; to update a branch, merge the base into it
-(^|[^A-Za-z_])git[[:space:]]+(-C[[:space:]]+[^[:space:]|;&]+[[:space:]]+)*push[[:space:]]([^|;&]*[[:space:]])?\+[^[:space:]|;&"']+([[:space:]]|[;&]|$)	a push with a +refspec is a force push in disguise and rewrites published history. Never, on any branch; to update a branch, merge the base into it
+# disguise (it forces that one ref with no flag at all), and `-C`/`-c` with a
+# quoted or space-less argument between `git` and the subcommand (repeatable)
+# must not hide the subcommand from the push rules. A flag or plus-refspec also
+# ends at a pipe, a closing paren or a redirect, not only at `;` and `&`.
+(^|[^A-Za-z_])git[[:space:]]+(-[Cc][[:space:]]*("[^"]*"|'[^']*'|[^[:space:]|;&]+)[[:space:]]+)*push[[:space:]]([^|;&]*[[:space:]])?(--force(-with-lease)?([=[:space:]]|[;&|)>]|$)|-f([[:space:]]|[;&|)>]|$))	git push --force/-f/--force-with-lease rewrites published history. Never, on any branch; to update a branch, merge the base into it
+(^|[^A-Za-z_])git[[:space:]]+(-[Cc][[:space:]]*("[^"]*"|'[^']*'|[^[:space:]|;&]+)[[:space:]]+)*push[[:space:]]([^|;&]*[[:space:]])?\+[^[:space:]|;&"']+([[:space:]]|[;&|)>]|$)	a push with a +refspec is a force push in disguise and rewrites published history. Never, on any branch; to update a branch, merge the base into it
 (^|[^A-Za-z_])git[[:space:]]+commit[[:space:]]([^|;&"']*[[:space:]])?--amend([[:space:]]|[;&]|$)	git commit --amend rewrites history. Never on a pushed commit; an unpushed amend needs the user's go-ahead; to update a pushed branch, merge the base into it
 (^|[^A-Za-z_])git[[:space:]]+checkout[[:space:]]+(--[[:space:]]+)?\.([[:space:]]|[;&]|$)	git checkout . discards every uncommitted change in the tree — confirm, and name the specific paths instead
 
