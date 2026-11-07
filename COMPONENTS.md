@@ -72,6 +72,19 @@ count); a gate that ran on input but evaluated nothing fails.
 `refusal-log` records each refusal in `scaffold-blocks.log` under the git
 common directory (summarise it with `scaffold-blocks.sh`); without it
 refusals are simply not recorded.
+`check-branch` is the one gate in `lib/` that reads no staged files: the hook
+calls it first and it refuses a commit made directly on the repository's
+default branch (read from `origin/HEAD`, else `main`, `master` and
+`init.defaultBranch`; with no `origin/HEAD` and no `init.defaultBranch`, a
+branch that is neither `main` nor `master` is allowed, fail-open by design).
+Concluding a real merge is allowed (content added to a genuine merge commit is
+not inspected by this gate, and a clean `git merge` never runs pre-commit). The first commit of a new repository and a detached HEAD
+pass. `SCAFFOLD_ALLOW_DEFAULT_BRANCH=1` lets one deliberate commit through, and
+`[rules.branch] disabled = true` in `.scaffold.toml` (entry 13) turns it off.
+The hook is only a local convenience, because `git commit` with the hook-skip
+flag runs no hook. The real guard is GitHub's server-side rule (entry 20),
+whose "Do not allow bypassing the above settings" option applies it to admins.
+`check-clean-tree` is a CI step, not a commit scanner (entry 4).
 
 **Prerequisites:** bash, git. No other tool.
 
@@ -373,6 +386,13 @@ rm -f .github/workflows/lint.yml .githooks/lib/ci-changed-files
 coverage threshold. `coverage.yml` is the stricter alternative: it fails a PR
 whose changed lines are not covered.
 
+Both workflows end with a `check-clean-tree` step that fails when the suite
+left untracked or modified files in the checkout, so a stray test artifact is a
+red check instead of a file in the next `git add -A`. It ignores the output
+the workflows themselves produce (`__pycache__`, coverage reports,
+`package-lock.json`); add more paths under `[rules.clean-tree] exclude` in
+`.scaffold.toml` (entry 13), or switch it off with `disabled = true`.
+
 **Blast radius:** runs your whole test suite in CI. If the suite is red today,
 CI is red tomorrow. That is information, not a scaffold bug, but know it before
 you adopt.
@@ -383,6 +403,10 @@ you adopt.
 ```sh adopt=ci-tests
 mkdir -p .github/workflows
 cp "$SCAFFOLD/.github/workflows/tests.yml.template" .github/workflows/tests.yml
+mkdir -p .githooks/lib
+for f in gate-status check-clean-tree scaffold-config refusal-log; do
+  cp "$SCAFFOLD/githooks/lib/$f.template" ".githooks/lib/$f"; chmod +x ".githooks/lib/$f"
+done
 # stricter: replace with coverage.yml instead of tests.yml
 # cp "$SCAFFOLD/.github/workflows/coverage.yml.template" .github/workflows/coverage.yml
 ```
@@ -879,6 +903,11 @@ an up-to-date branch. Add the other contexts you adopted (`pytest` or
 `vitest` from `tests.yml`, `gitleaks`, `dependency-review`, `test-guard`) to
 `required_status_checks`; a context named here that never reports blocks the
 merge forever, so name only jobs that run on every pull request.
+
+This server-side rule is the real guard behind the local `check-branch` gate
+(entry 1): a hook can be skipped, a ruleset cannot. In the GitHub UI the option
+that applies it to admins is "Do not allow bypassing the above settings"; for a
+ruleset, keep the bypass list empty (the shipped template does).
 
 **Blast radius:** every merge into the default branch, from the moment the
 ruleset is active. Import it as `"evaluate"` first on a busy repo.
