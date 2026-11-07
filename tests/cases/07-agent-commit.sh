@@ -134,6 +134,47 @@ if command -v jq >/dev/null 2>&1; then
       sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
     fi
   done
+  # (48c5) a +refspec push and a `-C <dir>` push are refused (exit 2); built from
+  #        pieces so this file carries no live pattern.
+  _pr="+"
+  for _v in \
+    "git push origin ${_pr}main" \
+    "git -C /tmp/x push $_ff origin main" \
+    "git -C /tmp/x push origin ${_pr}HEAD:main" \
+    "git push -""f|cat" \
+    "git push origin ${_pr}main|cat" \
+    "(cd x && git push -""f)" \
+    "git -C \"/tmp/a b\" push $_ff origin main" \
+    "git -C/tmp/x push $_ff origin main" \
+    "git push origin \\${_pr}main" \
+    "git -c k=v push $_ff origin main" \
+    "git -C'/tmp/a b' push $_ff origin main"; do
+    pc=$(jq -nc --arg c "$_v" '{tool_name:"Bash",tool_input:{command:$c}}')
+    rc=0
+    echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1 || rc=$?
+    if [ "$rc" -eq 2 ] && grep -qF "BLOCKED by agent-precheck" "$HOOK_OUT"; then
+      echo "  ✓ agent-precheck refuses a +refspec or git -C push"; PASS=$((PASS + 1))
+    else
+      echo "  ✗ agent-precheck — exit $rc for a +refspec or git -C push, expected 2 with the BLOCKED line"; FAIL=$((FAIL + 1))
+    fi
+  done
+  # (48c6) the plain forms stay allowed (exit 0)
+  for _v in \
+    "git push origin main" \
+    "git -C /tmp/x push origin main" \
+    "git -C \"/tmp/a b\" push origin main" \
+    "git push origin main 2>&1 | tail -1" \
+    "git -C /tmp/x status"; do
+    pc=$(jq -nc --arg c "$_v" '{tool_name:"Bash",tool_input:{command:$c}}')
+    rc=0
+    echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1 || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      echo "  ✓ agent-precheck allows a plain push or git -C status"; PASS=$((PASS + 1))
+    else
+      echo "  ✗ agent-precheck — exit $rc for a plain push or git -C status, expected 0"
+      sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+    fi
+  done
   # (48f2) REGRESSION (audit, false positive): only the text a tool WRITES or
   #        RUNS is scanned (Write.content, Edit.new_string, MultiEdit
   #        edits[].new_string, Bash.command). An Edit that REMOVES a hardcoded
@@ -249,9 +290,9 @@ if command -v jq >/dev/null 2>&1; then
   git checkout --quiet -- .forbidden-patterns/shell.txt
 else
   echo "  - skipped agent-precheck tests (jq not installed)"
-  # The jq block holds 28 assertions; count them as skipped so the floor in
+  # The jq block holds 44 assertions; count them as skipped so the floor in
   # run.sh (PASS+SKIP) is the same with and without jq.
-  SKIP=$((SKIP + 28))
+  SKIP=$((SKIP + 44))
 fi
 reset_repo
 

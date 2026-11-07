@@ -25,6 +25,30 @@
 # and CI (and, for Claude reads, permissions.deny) are the fail-CLOSED
 # backstops.
 #
+# Documented limits (accepted on purpose):
+#   - A quoted flag, force form or +refspec is allowed on purpose, so commit
+#     messages and greps that merely NAME a flag stay usable.
+#   - A quoted-delimiter heredoc whose body continues a forbidden command across
+#     a backslash-newline is refused, although bash does not join continuations
+#     inside it. A minor false positive.
+#   - A +word or a force flag in a trailing # comment after a push is refused
+#     (it refuses too much; the flag half pre-exists).
+# Known gaps (this is a text scan, not a shell parser, so it cannot see these):
+#   - a flag assembled from two variables (variable splitting)
+#   - ANSI-C quoting ($'...')
+#   - base64 piped into sh
+#   - $(printf ...) command substitution
+#   - an upper-case GIT binary name
+#   - other git global options before the subcommand (--git-dir=, --work-tree=,
+#     --no-pager, -P)
+#   - -C/-c are not applied to the amend or checkout rules (scoped to push, #270)
+#   - a flag or +refspec with an empty or partial quote glued on (a quote pair
+#     right after the flag, or a quote inside the refspec word) is not matched
+#     although bash runs it as the plain form; same class as the quoted-flag limit
+# For text that lands in a file, the commit-time scan and CI are the fail-closed
+# backstops. A command that runs (a push) reaches neither; the backstop for an
+# evaded force push is branch protection on the remote.
+#
 # Exit: 0 = allow (prints nothing), 2 = block (stderr shown to the model).
 
 set -euo pipefail
@@ -147,9 +171,9 @@ scan_both() {
   HIT=$(scan_bucket "$iflag" "$@")
   if [ -z "$HIT" ] && [ "$tool" = Bash ]; then
     # Join line continuations, drop only a backslash before a word character or
-    # hyphen (so `\|`, `\;`, `\"` and `\ ` stay as they are), collapse blanks.
+    # hyphen or plus (so `\|`, `\;`, `\"` and `\ ` stay as they are), collapse blanks.
     SCAN_TEXT=${content//\\$'\n'/}
-    SCAN_TEXT=$(printf '%s' "$SCAN_TEXT" | sed -E 's/\\([[:alnum:]_-])/\1/g' | tr -s '[:blank:]' ' ')
+    SCAN_TEXT=$(printf '%s' "$SCAN_TEXT" | sed -E 's/\\([[:alnum:]_+-])/\1/g' | tr -s '[:blank:]' ' ')
     HIT=$(scan_bucket "$iflag" "$@")
     [ -z "$HIT" ] || NORM_HIT=1
   fi
