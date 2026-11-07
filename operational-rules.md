@@ -61,17 +61,16 @@ _Anchor:_ a conflict prediction measured "clean" because the edit under test was
 
 A new guardrail or test is not in place until a realistic evasion goes red against it. An
 evasion the compiler or optimizer removes (an unused import) proves nothing; use one that
-survives the build. Report the pass and the forced failure; say UNVERIFIED when it cannot
-be forced.
+survives the build. Report the pass and the forced failure, or UNVERIFIED.
 _Anchor:_ a lint denylist passed 6 of 8 evasions; the build-graph test that replaced it caught
 all 12.
 
-### Every gate lives once, as a script that runs without the AI
+### If code can check it, code checks it
 
 Put a check's logic in one script that the hook, CI and a human can all run. A rule that exists
-only in a prompt or a settings file is a request, not a gate. If code can check it (exit code,
-string match, diff, hook), build it as code with an owner and a known false-positive path; a rule
-only a person must remember is a gap.
+only in a prompt or a settings file is a request, not a gate. Any check, confirmation or repeated
+step that can be deterministic must be, with an owner and a known false-positive path; a rule only
+a person must remember is a gap. List what you chose not to build.
 
 ## Process
 
@@ -90,8 +89,9 @@ _Anchor:_ a 4-unit smoke caught worker contention; a 1-unit smoke proved the fix
 
 ### Documentation hygiene
 
-Do not create a file when an existing one can absorb it. To retire a document, move its
-live parts to the document that owns them, then archive it with a banner saying where each went.
+Do not create a markdown file when an existing one can absorb it, or add a pointer
+where the fact itself fits. To retire one, move its live parts to the owning document, then
+archive it with a banner saying where each went.
 
 ### Write down why, not just what
 
@@ -146,8 +146,8 @@ _Anchor:_ a handoff called a PR red whose CI job had been cancelled before a sin
 
 ### Every rule applies to everyone
 
-Word rules as binding every contributor. When a slip prompts a rule, cite the incident, not the
-person.
+Word rules and checks as binding every contributor, owners included. When a slip prompts a rule,
+cite the incident, not the person.
 
 ### Plans default to PROPOSED; mark every assumption
 
@@ -196,6 +196,8 @@ movement. Deleting, moving, or repointing a path another session may use (a chec
 a symlink target), or sending a writer into a tree another session used, is a merge-grade write:
 look for live signals (fresh commits or issues from it, long-lived processes, file and git-index
 mtimes within minutes) and stop and ask on any; with none, get a go-ahead naming the path. Prefer
-a rename to a hard delete. A gate sweeps its own temporary worktrees at the start of a run; a
-read-only report lists worktrees with age and merge state.
+a rename to a hard delete. A gate's start-of-run sweep removes only unlocked, expired worktrees
+of its own temporary prefixes that this repository registered; a report lists registered
+worktrees with branch, HEAD-commit age, merge state and whether the directory exists. Check it
+before removing one.
 _Anchor:_ a handed-off builder kept writing for hours and its parent merged on a stale approval.
