@@ -508,9 +508,9 @@ later step or compromised action to read.
 The "Inherited state is a hypothesis" rule in `operational-rules.md` says a
 claim you did not measure this session (a handoff, PR text, a memory note, a
 local clone) is re-measured from the system of record before it drives an
-action. These are the commands, each run once against this repository with
-`gh` and `git` as they behave today. Replace `<id>`, `<branch>`, `<n>` and
-`<owner>/<repo>`.
+action. These are the commands. Each row was run once with the current `gh`
+and `git`; the conflict row was run in a scratch repository. Replace `<id>`,
+`<branch>`, `<n>`, `<package>` and `<owner>/<repo>`.
 
 | Claim to re-measure         | Command                                                                    | What it settles                                                                              |
 | --------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -539,8 +539,10 @@ project. What the Claude Code hook contract documents:
 - A `SubagentStop` hook can also exit 2, but its `background_tasks` array is
   scoped to the parent session, not the subagent, and has no owner field. It
   cannot tell the subagent's job from the user's own dev server.
-- A block forces the agent to keep going, usually by polling, and the harness
-  releases the stop after eight consecutive blocks.
+- A block forces the agent to keep going, usually by polling. The
+  documented cap is eight consecutive blocks, but the counter resets each time
+  the agent calls a tool, so an agent that polls with tool calls may never
+  reach it.
 - `SessionStart` cannot block.
 
 So a main-session `Stop` guard looks feasible and a `SubagentStop` guard looks

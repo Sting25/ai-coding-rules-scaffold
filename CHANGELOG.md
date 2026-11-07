@@ -12,7 +12,7 @@ versioning follows [SemVer](https://semver.org/).
   #226).** TECHNICAL.md gains a table of read-only commands for re-measuring
   inherited claims and a feasibility note on a `Stop`/`SubagentStop` guard
   (from documentation, not measured; no hook ships). The coding-rules skill
-  carries the one-line "a report is final" rule, and the README says to
+  carries a short "a report is final" rule, and the README says to
   import the rules files once.
 
 ### Changed
