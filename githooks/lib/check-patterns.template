@@ -217,7 +217,7 @@ scan() {
   # yields zero patterns fails closed at both gates. (ABSENCE is different and
   # still fine, a repo simply has no php.txt; that is the `[ -f ]` return above.)
   if [ ${#raw_patterns[@]} -eq 0 ]; then
-    local emsg="$config has no patterns, the forbidden-pattern scan for $stem is disabled. Restore its patterns (deleting the file on purpose is the user's own action, not the agent's)."
+    local emsg="$config has no patterns, the forbidden-pattern scan for $stem is disabled. Restore its patterns (emptying it on purpose is the user's own action, not the agent's)."
     if [ "$CI_MODE" -eq 1 ]; then echo "::error::$emsg"; else echo "✗ $emsg" >&2; fi
     FAILED=1; : "${RL_RULE:=empty-config}" "${RL_FILE:=$config}" "${RL_CLASS:=b}"
     return 0

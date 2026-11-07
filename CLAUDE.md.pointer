@@ -6,4 +6,4 @@ Claude Code loads this project's rules through these imports:
 @coding-rules.md
 @operational-rules.md
 
-Where two rule files disagree, the stricter one applies (the one that asks first, does less, or forbids more); a rule that only adds a restriction always applies.
+Where two rule files disagree, the stricter one applies (the one that asks first, does less, or forbids more); a rule that only adds a restriction always applies, except a rule the Project section of `AGENTS.md` names as relaxed.
