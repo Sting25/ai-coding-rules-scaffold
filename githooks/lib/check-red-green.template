@@ -496,3 +496,5 @@ if __name__ == "__main__":
               "is a suite too slow to trust as a gate; split it or scope this "
               "check to a subset.")
         sys.stdout.flush(); _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-red-green", "timeout", "", "2", "--say", "b"], check=False); raise SystemExit(2)
+    except Exception as e:
+        print(f"::error::check-red-green internal error, {type(e).__name__}: {e}"); sys.excepthook(*sys.exc_info()); sys.stdout.flush(); _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-red-green", "error", "", "2", "--say", "b"], check=False); raise SystemExit(2)

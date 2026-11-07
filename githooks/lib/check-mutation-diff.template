@@ -494,7 +494,7 @@ if __name__ == "__main__":
     try:
         _RL = pathlib.Path(__file__).with_name("refusal-log"); _B = shutil.which("bash"); rc = main(); sys.stdout.flush(); rc and _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-mutation-diff", {1: "max-mutants", 2: "setup-error"}.get(rc, "error"), "", str(rc), "--say", {1: "a"}.get(rc, "b")], check=False); raise SystemExit(rc)
     except subprocess.TimeoutExpired:
-        print("::error::mutation-diff check timed out. A mutation run too "
-              "slow to complete in CI is too slow to trust as a gate; scope "
-              "it to fewer files or raise the timeout deliberately.")
+        print("::error::mutation-diff check timed out. A mutation run too slow to complete in CI is too slow to trust as a gate; scope it to fewer files or raise the timeout deliberately.")
         sys.stdout.flush(); _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-mutation-diff", "timeout", "", "2", "--say", "b"], check=False); raise SystemExit(2)
+    except Exception as e:
+        print(f"::error::check-mutation-diff internal error, {type(e).__name__}: {e}"); sys.excepthook(*sys.exc_info()); sys.stdout.flush(); _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-mutation-diff", "error", "", "2", "--say", "b"], check=False); raise SystemExit(2)
