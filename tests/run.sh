@@ -132,7 +132,7 @@ CASE_FLOORS=(
   "58-ts-test-guard.sh:43"
   "59-ts-test-guard-real.sh:23"
   "60-refusal-class.sh:55"
-  "61-refusal-class-helper.sh:17"
+  "61-refusal-class-helper.sh:19"
   "62-doctor-false-gaps.sh:18"
   "64-clean-tree-gate.sh:24"
   "65-branch-gate.sh:38"

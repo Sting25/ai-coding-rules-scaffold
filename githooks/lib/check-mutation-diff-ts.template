@@ -392,6 +392,7 @@ if (process.exitCode) {
     const rule = RL_RULE || ({ 1: "max-mutants", 2: "setup-error" })[process.exitCode] || "error";
     if (fs.existsSync(rl)) {
       const r = cp.spawnSync("bash", [rl, "check-mutation-diff-ts", rule, "", String(process.exitCode), "--say", process.exitCode === 1 ? "a" : "b"], { stdio: ["ignore", "ignore", "pipe"], encoding: "utf8" });
+      if (r.error) throw r.error; // spawn failure (no bash) lands in the catch below
       if (r.stderr) process.stderr.write(r.stderr);
     }
   } catch (e) { /* never let logging change the verdict */ process.stderr.write(`::warning::refusal-log failed, ${e && e.name ? e.name : "Error"}: ${e && e.message ? e.message : e}\n`); }

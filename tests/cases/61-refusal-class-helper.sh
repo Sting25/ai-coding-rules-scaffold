@@ -92,10 +92,22 @@ if command -v node >/dev/null 2>&1; then
       rc_bad "$rc_ts: ::error line ${rc_el:-none}, trailer line ${rc_tl:-none}"
     fi
   done
-  rm -rf "$RCTS"
+  # bash unresolvable: spawnSync sets r.error instead of throwing (#268); the exit code
+  # must stay 2 and one warning must say the log failed. PATH holds only node.
+  rc_nb="$(mktemp -d)"; ln -s "$(command -v node)" "$rc_nb/node"
+  for rc_ts in check-red-green-ts check-mutation-diff-ts; do
+    RC_RC=0
+    ( cd "$RCTS" && env -u CLAUDE_SESSION_ID PATH="$rc_nb" "$rc_nb/node" ".githooks/lib/$rc_ts" --ci --base no-such-ref ) >"$HOOK_OUT" 2>&1 || RC_RC=$?
+    if [ "$RC_RC" -eq 2 ] && grep -qF 'refusal-log failed' "$HOOK_OUT"; then
+      rc_ok "$rc_ts: a missing bash keeps exit 2 and warns 'refusal-log failed'"
+    else
+      rc_bad "$rc_ts: a missing bash should keep exit 2 and warn (got exit $RC_RC)"; sed 's/^/      /' "$HOOK_OUT"
+    fi
+  done
+  rm -rf "$RCTS" "$rc_nb"
 else
   echo "  - SKIP: node not on PATH, the TypeScript twins' class trailer assertions did NOT run"
-  SKIP=$((SKIP + 4))
+  SKIP=$((SKIP + 6))
 fi
 
 
