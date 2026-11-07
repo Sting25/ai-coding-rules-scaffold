@@ -25,6 +25,20 @@
 # and CI (and, for Claude reads, permissions.deny) are the fail-CLOSED
 # backstops.
 #
+# Documented limits (accepted on purpose):
+#   - A quoted flag or quoted force form is allowed, so commit messages and
+#     greps that merely NAME a flag stay usable.
+#   - A quoted-delimiter heredoc whose body continues a forbidden command across
+#     a backslash-newline is refused, although bash does not join continuations
+#     inside it. A minor false positive.
+# Known gaps (this is a text scan, not a shell parser, so it cannot see these):
+#   - a flag assembled from two variables (variable splitting)
+#   - ANSI-C quoting ($'...')
+#   - base64 piped into sh
+#   - $(printf ...) command substitution
+#   - an upper-case GIT binary name
+# The commit-time scan and CI are the fail-closed backstops for all of them.
+#
 # Exit: 0 = allow (prints nothing), 2 = block (stderr shown to the model).
 
 set -euo pipefail

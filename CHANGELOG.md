@@ -71,6 +71,12 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Fixed
 
+- **`agent-precheck` refuses a plus-refspec push and a `git -C <dir>` push with
+  a force flag (#270).** A leading `+` on a push refspec forces that ref with
+  no flag, and `-C <dir>` between `git` and `push` hid the subcommand from the
+  push rule; `forbidden-patterns/shell.txt.template` now covers both. The
+  header of `agent-precheck.template` lists the documented limits and the known
+  gaps of the text scan.
 - **A crash in `check-mutation-diff` or `check-red-green` exits 2, not 1 (#257).**
   An uncaught Python exception used to exit 1, the code for "the diff is too
   big", so `test-guard.yml` reported a green "declined (size)" over a broken

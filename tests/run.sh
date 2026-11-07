@@ -78,7 +78,7 @@ CASE_FLOORS=(
   "04-shell-config-rename.sh:55"
   "05-frontend-typescript.sh:26"
   "06-hygiene-multilang.sh:66"
-  "07-agent-commit.sh:40"
+  "07-agent-commit.sh:46"
   "08-overrides-gitleaks.sh:14"
   "09-toolchain-clobber.sh:33"
   "10-ci-diff-scope.sh:12"
