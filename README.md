@@ -46,6 +46,8 @@ That setup hits four compounding failure modes that ordinary linting alone doesn
 
 This scaffold ships the **enforcement layer** that addresses all four directly. Two layers are always-on: commit-time (the pre-commit hook) and merge-time (the CI mirror), both running the same `lib/check-*` scripts. A third opt-in layer, agent-runtime hooks that block bad patterns _before_ they're written, ships via `install.sh --claude` (Claude Code); see [Opt-in layers](./TECHNICAL.md#opt-in-layers) in TECHNICAL.md and [`RECOMMENDATIONS.md`](./RECOMMENDATIONS.md) for the design space and tradeoffs.
 
+Import the rules files once. The pointer `CLAUDE.md` already imports `AGENTS.md`, `coding-rules.md` and `operational-rules.md`, so `AGENTS.md` must not also `@`-import them, and neither should a global `~/.claude/CLAUDE.md` when the project installs them; otherwise the rules load twice and cost context twice.
+
 What the scaffold doesn't try to solve: parallel-session collisions, context-window discipline across long projects, and spec-first workflows. Those belong to git workflow (`git worktree` per session), nested `CLAUDE.md` files, and project-specific spec docs respectively. Recommended patterns for each are documented in `AGENTS.md` and `RECOMMENDATIONS.md`.
 
 ## Install
