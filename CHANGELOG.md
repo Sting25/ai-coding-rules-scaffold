@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **TypeScript test-guard twins: three follow-ups (#260).** When
+  `check-mutation-diff-ts` refuses a whole run over a path Stryker cannot
+  express (a leading `!`, or braces), the error now says how many other changed
+  source files went unevaluated. `check-red-green-ts` prints a notice counting
+  added `it.skip` and `it.todo` lines, because `vitest list` does not list them
+  (exit code unchanged). Case 59 now runs the mutation twin's refusal logging
+  (`max-mutants` and `setup-error` lines) instead of reading it.
+
 ## [v0.20.0] - 2026-11-07
 
 ### Added
