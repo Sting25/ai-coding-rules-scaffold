@@ -397,7 +397,7 @@ _pne() { note "$1"; PNE_ANY=1; }
 section "required status checks on the default branch"
 _rsc_remote=$(doctor_remote_url)
 _rsc_repo=""
-if remote_is_github "$_rsc_remote"; then
+if remote_is_github "$_rsc_remote" && [[ $_rsc_remote == *github.com[:/]* ]]; then
   _rsc_repo=$(printf '%s' "$_rsc_remote" | sed -E 's#.*github\.com[:/]##; s#\.git$##')
 fi
 if [ -z "$_rsc_repo" ]; then

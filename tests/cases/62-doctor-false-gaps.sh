@@ -48,6 +48,31 @@ fg_gitlab() {
   rm -f .github/workflows/lint.yml
 }
 
+# A mention is not a call: these must all stay gaps (the wrapper never runs it).
+fg_wrapper_file() {
+  printf '#!/usr/bin/env bash\n%s\n' "$1" >.githooks/lib/run-checks
+  chmod +x .githooks/lib/run-checks
+}
+fg_echo_hook() {
+  fg_drop_callsites
+  fg_wrapper_file '.githooks/lib/check-large-files "$@"'
+  printf '\necho "see run-checks"\n' >>.githooks/pre-commit
+}
+fg_trail_hook() {
+  fg_drop_callsites
+  fg_wrapper_file '.githooks/lib/check-large-files "$@"'
+  printf '\ntrue # run-checks removed\n' >>.githooks/pre-commit
+}
+fg_echo_wrapper() {
+  fg_drop_callsites
+  fg_wrapper_file 'echo "check-large-files is not run here"'
+  printf '\n.githooks/lib/run-checks\n' >>.githooks/pre-commit
+}
+fg_ghe() {
+  git remote add origin git@github.mycorp.com:g/p.git
+  rm -f .github/workflows/lint.yml
+}
+
 # fg_case <name> <present|absent> <substring> <mutation...>
 fg_case() {
   local name=$1 mode=$2 expect=$3 t found=1
@@ -79,3 +104,11 @@ fg_case "a non-GitHub remote without lint.yml says CI cannot be checked" present
   "cannot check CI for this host" fg_gitlab
 fg_case "control: with no caller anywhere the check is still a gap" present \
   "lib/check-large-files is installed and executable but nothing calls it" fg_drop_callsites
+fg_case "a hook that only echoes the wrapper's name does not call it" present \
+  "lib/check-large-files is installed and executable but nothing calls it" fg_echo_hook
+fg_case "a hook that only mentions the wrapper in a trailing comment does not call it" present \
+  "lib/check-large-files is installed and executable but nothing calls it" fg_trail_hook
+fg_case "a wrapper that only echoes the check's name does not call it" present \
+  "lib/check-large-files is installed and executable but nothing calls it" fg_echo_wrapper
+fg_case "a GitHub Enterprise remote without lint.yml is still a gap" present \
+  ".github/workflows/lint.yml is missing" fg_ghe

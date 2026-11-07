@@ -30,6 +30,14 @@
 # step script) that names a non-check lib file such as lib/run-checks makes
 # that file a caller too, because the wrapper may be what invokes the check
 # (issue #244). Installer backups (*.scaffold-bak) are never callers or checks.
+# _code_body FILE: the text of FILE where a name can be a CALL. Drops whole
+# comment lines, trailing comments, [ ... ] tests and echo/printf statements,
+# because a name in a message, a comment or a file test is not an invocation.
+_code_body() {
+  sed -E -e '/^[[:space:]]*#/d' -e 's/[[:space:]]#.*$//' -e 's/\[\[?[^]]*\]\]?//g' \
+    -e 's/(^[[:space:]]*|[;&|(][[:space:]]*)(echo|printf)[[:space:]]+[^;&|]*//g' "$1" 2>/dev/null || true
+}
+
 _expand_callers() {
   local f lib b body
   for f in "$@"; do
@@ -37,7 +45,7 @@ _expand_callers() {
     case "$f" in *.scaffold-bak*) continue ;; esac
     printf '%s\n' "$f"
     case "$f" in .githooks/lib/*) continue ;; esac
-    body=$(grep -vE '^[[:space:]]*#' "$f" 2>/dev/null || true)
+    body=$(_code_body "$f")
     for lib in .githooks/lib/*; do
       [ -f "$lib" ] || continue
       b=${lib##*/}
@@ -52,14 +60,16 @@ _expand_callers() {
 # The remote host decides whether a missing GitHub workflow is a gap: a repo
 # hosted elsewhere cannot run it, so the doctor says it cannot check CI there.
 doctor_remote_url() { git config --get remote.origin.url 2>/dev/null || true; }
-remote_is_github() { case "$1" in *github.com[:/]*) return 0 ;; esac; return 1; }
+# Any host named github.* counts (github.com and GitHub Enterprise); the host
+# must START with "github.", so notgithub.com stays "not GitHub".
+remote_is_github() { case "$1" in github.*|*://github.*|*@github.*) return 0 ;; esac; return 1; }
 
 check_called_in() {
   local name=$1
   shift
   local re="(^|[^A-Za-z0-9_.-])${name}([^A-Za-z0-9_.-]|\$)" f body
   while IFS= read -r f; do
-    body=$(grep -vE '^[[:space:]]*#' "$f" 2>/dev/null || true)
+    body=$(_code_body "$f")
     if grep -qE "$re" <<<"$body"; then
       return 0
     fi
