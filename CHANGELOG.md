@@ -20,6 +20,14 @@ versioning follows [SemVer](https://semver.org/).
 - **Three downstream rules (#245).** One line each in `AGENTS.md`: never pipe a gate through `tail`/`head`, push/PR/merge each need their own go, any other write to a live system with real data needs the same confirmation and is otherwise read-only to the agent.
 - **Stack-specific go-live text moved out of `AGENTS.md` (#243).** The backend-as-a-service check now lives in `RECOMMENDATIONS.md`; rule numbers are unchanged.
 
+### Fixed
+
+- **A crash in `check-mutation-diff` or `check-red-green` exits 2, not 1 (#257).**
+  An uncaught Python exception used to exit 1, the code for "the diff is too
+  big", so `test-guard.yml` reported a green "declined (size)" over a broken
+  gate. Both Python gates now print `internal error` with the traceback and exit
+  2, which the workflow step already treats as a failure.
+
 ## [v0.20.0] - 2026-11-07
 
 ### Added

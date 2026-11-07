@@ -92,6 +92,33 @@ else
   fi
 fi
 
+# (T) an uncaught Python exception in either gate is a tooling crash: exit 2 with
+# `internal error` and the traceback, never exit 1 (the gate's "declined (size)" /
+# "found a decline" code, which test-guard.yml reads as a pass). The crash is
+# injected into a copy of the installed lib/ (main() is replaced by an IndexError),
+# so the installed files are untouched. A crash ends before gate-status, like the
+# timeout branch: the contract is a non-zero exit, not a status line.
+CRASH="$(mktemp -d)"
+cp -R "$T/.githooks/lib" "$CRASH/lib"
+for crash_g in check-mutation-diff check-red-green; do
+  python3 - "$CRASH/lib/$crash_g" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+assert "rc = main();" in s
+open(p, "w").write(s.replace("rc = main();", "rc = [][0];"))
+PYEOF
+  crash_rc=0
+  ( cd "$T" && python3 "$CRASH/lib/$crash_g" --base HEAD ) >"$HOOK_OUT" 2>&1 || crash_rc=$?
+  if [ "$crash_rc" -eq 2 ] && grep -qF "$crash_g internal error, IndexError" "$HOOK_OUT" \
+     && grep -qF "Traceback (most recent call last)" "$HOOK_OUT"; then
+    echo "  ✓ $crash_g: an uncaught exception exits 2 with 'internal error' and a traceback"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ $crash_g: an uncaught exception should exit 2 with 'internal error' and a traceback (got exit $crash_rc)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+done
+rm -rf "$CRASH"
+
 # (T) a re-run with the same flag appends nothing: the marker section must
 # appear exactly once afterwards, and the run must not back coding-rules.md
 # up (nothing was replaced).
