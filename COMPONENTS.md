@@ -77,7 +77,8 @@ calls it first and it refuses a commit made directly on the repository's
 default branch (read from `origin/HEAD`, else `main`, `master` and
 `init.defaultBranch`; with no `origin/HEAD` and no `init.defaultBranch`, a
 branch that is neither `main` nor `master` is allowed, fail-open by design).
-Concluding a merge is allowed. The first commit of a new repository and a detached HEAD
+Concluding a real merge is allowed (content added to a genuine merge commit is
+not inspected by this gate, and a clean `git merge` never runs pre-commit). The first commit of a new repository and a detached HEAD
 pass. `SCAFFOLD_ALLOW_DEFAULT_BRANCH=1` lets one deliberate commit through, and
 `[rules.branch] disabled = true` in `.scaffold.toml` (entry 13) turns it off.
 The hook is only a local convenience, because `git commit` with the hook-skip

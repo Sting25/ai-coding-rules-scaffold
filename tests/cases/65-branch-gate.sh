@@ -180,7 +180,14 @@ br_hook "$BR5"
 br_expect "concluding a conflicted merge on main is allowed" 0
 ( cd "$BR5" && env -u SCAFFOLD_GATE_LOG .githooks/lib/check-branch ) >"$HOOK_OUT" 2>&1 && BR_RC=0 || BR_RC=$?
 br_expect "the gate line says merge commit" 0 "merge commit on main"
+br_expect "the merge allowance prints a stderr note" 0 "merge commit on 'main' allowed"
 git -C "$BR5" merge --abort 2>/dev/null || true
+git -C "$BR5" rev-parse HEAD >"$BR5/.git/MERGE_HEAD"
+printf '5\n' >"$BR5/c.txt"
+git -C "$BR5" add c.txt
+br_hook "$BR5"
+br_expect "a hand-written MERGE_HEAD (HEAD's own sha) is refused" 1 "refusing to commit on the default branch"
+rm -f "$BR5/.git/MERGE_HEAD"
 ( cd "$BR5" && env -u SCAFFOLD_GATE_LOG .githooks/lib/check-branch ) >"$HOOK_OUT" 2>&1 && BR_RC=0 || BR_RC=$?
 br_expect "the refusal names the project-level switch" 1 "[rules.branch] disabled = true"
 rm -rf "$BR2" "$BR3" "$BR4" "$BR5"

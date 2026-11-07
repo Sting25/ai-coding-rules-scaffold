@@ -57,7 +57,11 @@ esac
 
 # Concluding a merge: the merged work was already reviewed, and a clean
 # `git merge` on this branch is not gated either, so a conflicted one is not.
-if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+# MERGE_HEAD must be a commit that is NOT already an ancestor of HEAD, which
+# guarantees a real two-parent merge (a hand-written MERGE_HEAD does not pass).
+MH=$(git rev-parse -q --verify MERGE_HEAD 2>/dev/null || true)
+if [ -n "$MH" ] && ! git merge-base --is-ancestor "$MH" HEAD 2>/dev/null; then
+  echo "note: merge commit on '$BRANCH' allowed" >&2
   exec "$GS" branch ran 1 "merge commit on $BRANCH"
 fi
 if [ "${SCAFFOLD_ALLOW_DEFAULT_BRANCH:-}" = 1 ]; then
