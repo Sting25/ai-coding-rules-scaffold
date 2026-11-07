@@ -90,7 +90,7 @@ _Anchor:_ a 4-unit smoke caught worker contention; a 1-unit smoke proved the fix
 ### Documentation hygiene
 
 Do not create a markdown file when an existing one can absorb it, or add a pointer
-where the fact itself fits. To retire one, move its live parts to the owning document, then
+where the fact itself fits. To retire one, move its live parts to the owning document and
 archive it with a banner saying where each went.
 
 ### Write down why, not just what
@@ -197,7 +197,7 @@ a symlink target), or sending a writer into a tree another session used, is a me
 look for live signals (fresh commits or issues from it, long-lived processes, file and git-index
 mtimes within minutes) and stop and ask on any; with none, get a go-ahead naming the path. Prefer
 a rename to a hard delete. A gate's start-of-run sweep removes only unlocked, expired worktrees
-of its own temporary prefixes that this repository registered; a report lists registered
+of its own temporary prefixes this repository registered; a report lists
 worktrees with branch, HEAD-commit age, merge state and whether the directory exists. Check it
 before removing one.
 _Anchor:_ a handed-off builder kept writing for hours and its parent merged on a stale approval.
