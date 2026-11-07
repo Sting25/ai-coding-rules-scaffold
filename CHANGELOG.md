@@ -17,6 +17,11 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Fixed
 
+- **A crash in `check-mutation-diff` or `check-red-green` exits 2, not 1 (#257).**
+  An uncaught Python exception used to exit 1, the code for "the diff is too
+  big", so `test-guard.yml` reported a green "declined (size)" over a broken
+  gate. Both Python gates now print `internal error` with the traceback and exit
+  2, which the workflow step already treats as a failure.
 - **A `# scaffold-allow` comment no longer exempts a Bash command from the agent
   precheck (#203, #239).** The marker is for file content a person sanctioned,
   but the precheck honored it on the command the agent was about to run, so a
