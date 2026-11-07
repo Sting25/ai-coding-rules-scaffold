@@ -127,7 +127,7 @@ CASE_FLOORS=(
   "53-narrow-path-scripts.sh:13"
   "54-doctor-worktree-parity.sh:10"
   "55-tree-lint-template.sh:8"
-  "56-fail-closed-canaries.sh:59"
+  "56-fail-closed-canaries.sh:62"
   "57-refusal-log.sh:34"
   "58-ts-test-guard.sh:43"
   "59-ts-test-guard-real.sh:23"
@@ -136,6 +136,7 @@ CASE_FLOORS=(
   "62-doctor-false-gaps.sh:18"
   "64-clean-tree-gate.sh:24"
   "65-branch-gate.sh:38"
+  "66-worktree-sweep-report.sh:21"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and
