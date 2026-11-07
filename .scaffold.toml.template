@@ -101,3 +101,19 @@
 # case collisions still scan them); config entries add to those defaults:
 # [rules.hidden-unicode]
 # exclude = ["src/strings.json", "resources/lang/*"]
+#
+# Two gates added later use the same shape. `branch` refuses a commit on the
+# default branch (one deliberate commit: SCAFFOLD_ALLOW_DEFAULT_BRANCH=1 git
+# commit ...). `clean-tree` is the CI step after the tests in tests.yml and
+# coverage.yml that fails when the suite left untracked or modified files;
+# `exclude` adds paths it should not count.
+#
+# [rules.branch]
+# disabled = true
+# reason   = "trunk-based repo, every commit lands on the default branch"
+# by       = "the team lead"
+#
+# [rules.clean-tree]
+# exclude = ["build/*", "reports/*.xml"]
+# reason  = "the suite writes its reports there; they are cleaned by the next job"
+# by      = "the team lead"

@@ -6,6 +6,28 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`check-clean-tree`: CI fails when the test suite leaves files behind
+  (#219).** New `githooks/lib/check-clean-tree.template`, run as a step after
+  the tests in `tests.yml` (both jobs) and `coverage.yml`. It lists every
+  untracked file (individually, even inside a new directory) and every modified
+  tracked file, ignores the output the workflows produce themselves
+  (`__pycache__`, coverage reports, `package-lock.json`), and ends through
+  `gate-status` (`ran N` on a clean tree). `[rules.clean-tree]` in
+  `.scaffold.toml` takes `exclude`, `severity = "warn"` or `disabled = true`.
+  `pre-commit` and `lint.yml` skip it by name.
+- **`check-branch`: the hook refuses a commit on the default branch (#220).**
+  New `githooks/lib/check-branch.template`, called first by `pre-commit`
+  (so an empty commit is refused too). The default branch is read from
+  `origin/HEAD`, else `main`, `master` and `init.defaultBranch`; the first
+  commit of a new repository and a detached HEAD pass.
+  `SCAFFOLD_ALLOW_DEFAULT_BRANCH=1` allows one deliberate commit;
+  `[rules.branch]` in `.scaffold.toml` takes `disabled` or `severity`. The
+  test fixtures now commit on a work branch. README and COMPONENTS name
+  GitHub's server-side "Do not allow bypassing the above settings" as the real
+  guard, since the hook-skip flag bypasses any local hook.
+
 ### Changed
 
 - **Workflow templates move to Node 24 (#258).** The shipped `tests`, `lint`,
