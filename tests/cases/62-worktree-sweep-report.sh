@@ -78,7 +78,7 @@ c62_check "sweep: outside a git repository it exits 0" test "$C62_RC" -eq 0
 # --- (b) ownership: only what THIS repository lists is ever touched ---------------
 # (1) an old redgreen-ts-/wt that is a worktree of a DIFFERENT repository, with a
 #     user file in it; (2) an unregistered old redgreen-ts- directory; (3) an old
-#     redgreen-sym/wt that is a SYMLINK to a linked worktree outside the temp dir;
+#     redgreen-ts-sym/wt that is a SYMLINK to a linked worktree outside the temp dir;
 #     (4) an old registered redgreen- worktree under /tmp while TMPDIR is elsewhere.
 c62_repo C62_F
 mkdir -p "$C62_TP/redgreen-ts-FOR"
@@ -89,14 +89,14 @@ mkdir -p "$C62_TP/redgreen-ts-PLAIN/wt"; c62_old "$C62_TP/redgreen-ts-PLAIN"
 C62_OUT=$(mktemp -d)
 git -C "$C62_R" worktree add --quiet --detach "$C62_OUT/real" HEAD >/dev/null 2>&1
 printf 'real\n' >"$C62_OUT/real/user-file"
-mkdir -p "$C62_TP/redgreen-sym"; ln -s "$C62_OUT/real" "$C62_TP/redgreen-sym/wt"; c62_old "$C62_TP/redgreen-sym"
+mkdir -p "$C62_TP/redgreen-ts-sym"; ln -s "$C62_OUT/real" "$C62_TP/redgreen-ts-sym/wt"; c62_old "$C62_TP/redgreen-ts-sym"
 C62_SYS=$(mktemp -d /tmp/redgreen-XXXXXX)
 git -C "$C62_R" worktree add --quiet --detach "$C62_SYS/wt" HEAD >/dev/null 2>&1; c62_old "$C62_SYS"
 ( cd "$C62_R" && SCAFFOLD_WORKTREE_SWEEP_MAX_AGE=0 TMPDIR="$C62_TP" bash "$SWEEP" ) >"$HOOK_OUT" 2>&1 || true
 c62_check "sweep: another repository's old redgreen-ts-/wt survives with its file" test -f "$C62_TP/redgreen-ts-FOR/wt/user-file"
 c62_check "sweep: an unregistered redgreen-ts- directory is never scanned for or deleted" test -d "$C62_TP/redgreen-ts-PLAIN/wt"
 c62_check "sweep: a symlinked wt is not followed, the linked worktree outside the temp dir survives" \
-  test -f "$C62_OUT/real/user-file" -a -L "$C62_TP/redgreen-sym/wt"
+  test -f "$C62_OUT/real/user-file" -a -L "$C62_TP/redgreen-ts-sym/wt"
 c62_check "sweep: the one temp root is TMPDIR, a /tmp worktree is left alone when TMPDIR is elsewhere" test -d "$C62_SYS/wt"
 git -C "$C62_R" worktree remove --force "$C62_SYS/wt" >/dev/null 2>&1
 git -C "$C62_R" worktree remove --force "$C62_OUT/real" >/dev/null 2>&1
