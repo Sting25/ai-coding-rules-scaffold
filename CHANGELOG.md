@@ -6,8 +6,22 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Workflow templates move to Node 24 (#258).** The shipped `tests`, `lint`,
+  `coverage` and `lint-tree` templates and the repo's own `self-lint.yml` move
+  from Node 20 to Node 24, and `test-guard` moves from Node 22 to Node 24;
+  Node 20 reached end of life on 2026-04-30. Case 35 gains a numeric-floor
+  (22) assertion on every `node-version` pin, so the next bump needs no test
+  edit.
+
 ### Fixed
 
+- **A crash in `check-mutation-diff` or `check-red-green` exits 2, not 1 (#257).**
+  An uncaught Python exception used to exit 1, the code for "the diff is too
+  big", so `test-guard.yml` reported a green "declined (size)" over a broken
+  gate. Both Python gates now print `internal error` with the traceback and exit
+  2, which the workflow step already treats as a failure.
 - **The doctor no longer reports false "nothing calls it" gaps, or demands a GitHub workflow off GitHub (#244).** A check is now counted as called when it is invoked from `pre-push` or `post-*` hooks, or from a wrapper lib file that a hook invokes (one hop). Installer backups (`*.scaffold-bak`) are no longer treated as checks or callers. In the other direction, a check named only in an `echo`, a comment, a here-doc body or an assignment is now reported as a gap, where it used to read as armed. A missing `.github/workflows/lint.yml` is a note, not a gap, when `remote.origin` is set and is not a github.com URL. Covered by `tests/cases/62-doctor-false-gaps.sh`.
 
 ## [v0.20.0] - 2026-11-07
