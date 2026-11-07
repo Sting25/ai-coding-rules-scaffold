@@ -44,6 +44,9 @@ c62_old() { touch -t 202001010000 "$1"; }
 c62_wt() { mkdir -p "$2/$3" && git -C "$1" worktree add --quiet --detach "$2/$3/wt" HEAD >/dev/null 2>&1; }
 c62_registered() { git -C "$1" worktree list --porcelain | grep -c "^worktree .*$2" || true; }
 
+# c62_repo fills these through printf -v; the plain assignment keeps shellcheck
+# from reading the names as misspellings (SC2153).
+C62_R="" C62_F=""
 SWEEP="$SCAFFOLD_DIR/githooks/lib/worktree-sweep.template"
 
 # --- (a) the sweep's guards ----------------------------------------------------
