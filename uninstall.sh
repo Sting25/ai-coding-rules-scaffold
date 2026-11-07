@@ -369,6 +369,7 @@ remove_if_unmodified ".githooks/lib/check-mutation-diff" "$SCAFFOLD_DIR/githooks
 # Vitest twin of the two checks above.
 remove_if_unmodified ".githooks/lib/check-red-green-ts" "$SCAFFOLD_DIR/githooks/lib/check-red-green-ts.template"
 remove_if_unmodified ".githooks/lib/check-mutation-diff-ts" "$SCAFFOLD_DIR/githooks/lib/check-mutation-diff-ts.template"
+remove_if_unmodified ".githooks/lib/worktree-sweep" "$SCAFFOLD_DIR/githooks/lib/worktree-sweep.template"
 # Opt-in npm install-layer cooldown (only present if installed with
 # --npm-cooldown, #117).
 remove_if_unmodified ".npmrc" "$SCAFFOLD_DIR/.npmrc.template"

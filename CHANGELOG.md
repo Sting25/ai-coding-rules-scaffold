@@ -27,6 +27,21 @@ versioning follows [SemVer](https://semver.org/).
   test fixtures now commit on a work branch. README and COMPONENTS name
   GitHub's server-side "Do not allow bypassing the above settings" as the real
   guard, since the hook-skip flag bypasses any local hook.
+- **The test-guard gates clean up their temp worktrees (#221).** New
+  `.githooks/lib/worktree-sweep`, installed with `--test-guard`, runs at the
+  start of each Python gate and removes the `redgreen-` and `mutdiff-` temp
+  worktrees that a killed earlier run left under the temp dir. It acts only on
+  worktrees this repository itself lists, directly under `$TMPDIR` (else
+  `/tmp`), never through a symlink, never a locked one, and nothing younger than
+  two hours (`SCAFFOLD_WORKTREE_SWEEP_MAX_AGE`, seconds); it deletes nothing
+  that `git worktree remove` did not remove. Both Python gates also clean up and
+  exit 143 on SIGTERM, which skips `finally` otherwise; SIGKILL cannot be
+  trapped, so the sweep is its backstop. The TypeScript twins use plain
+  directories, not worktrees, and are unchanged.
+- **`scaffold-worktree-report.sh` lists stale-looking worktrees (#221).**
+  Read-only, always exits 0: one line per registered worktree with branch, age
+  of the last commit, whether it is merged into the default branch, and whether
+  its directory is missing or the worktree locked.
 
 ### Changed
 
