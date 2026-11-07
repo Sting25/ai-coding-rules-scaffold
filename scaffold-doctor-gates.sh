@@ -49,6 +49,8 @@
 section "server-side backstop"
 if [ ! -d .githooks/lib ]; then
   note "no .githooks/lib/ — no local checks installed, so there is nothing for CI to mirror"
+elif [ ! -f .github/workflows/lint.yml ] && [ -n "$(doctor_remote_url)" ] && ! remote_is_github "$(doctor_remote_url)"; then
+  note "server-side backstop: cannot check CI for this host (remote.origin is not github.com), so .github/workflows/lint.yml is not required here; mirror the lib/check-* scripts in your host's own CI"
 elif [ ! -f .github/workflows/lint.yml ]; then
   gap ".github/workflows/lint.yml is missing — the lib/check-* scripts run client-side only, and 'git commit --no-verify' bypasses every one of them with nothing behind it" \
       "re-run install.sh to restore .github/workflows/lint.yml"
@@ -394,11 +396,11 @@ _pne() { note "$1"; PNE_ANY=1; }
 # when it can be measured and is absent; everything else is a note that says
 # what was NOT checked, never silence.
 section "required status checks on the default branch"
-_rsc_remote=$(git config --get remote.origin.url 2>/dev/null || true)
+_rsc_remote=$(doctor_remote_url)
 _rsc_repo=""
-case "$_rsc_remote" in
-  *github.com[:/]*) _rsc_repo=$(printf '%s' "$_rsc_remote" | sed -E 's#.*github\.com[:/]##; s#\.git$##') ;;
-esac
+if remote_is_github "$_rsc_remote" && [[ $_rsc_remote == *github.com[:/]* ]]; then
+  _rsc_repo=$(printf '%s' "$_rsc_remote" | sed -E 's#.*github\.com[:/]##; s#\.git$##')
+fi
 if [ -z "$_rsc_repo" ]; then
   note "required status checks: not checked (remote.origin is not a github.com URL)"
 elif ! command -v gh >/dev/null 2>&1; then

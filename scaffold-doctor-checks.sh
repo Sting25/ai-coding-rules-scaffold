@@ -25,13 +25,83 @@
 # Comment lines are stripped first: every one of these files discusses the
 # checks by name in its own header, and a header is not a call site. The name
 # must match as a whole word so one check's name cannot satisfy another's.
+#
+# Callers are followed ONE hop: a hook or a .github/workflows/*.yml file (not
+# a lib file) that names a non-check lib file such as lib/run-checks makes
+# that file a caller too, because the wrapper may be what invokes the check
+# (issue #244). Installer backups (*.scaffold-bak) are never callers or checks.
+# _code_body FILE: the text of FILE where a name can be a CALL. Drops whole
+# comment lines, trailing comments, [ ... ] tests and echo/printf statements,
+# because a name in a message, a comment or a file test is not an invocation.
+# Known limits, all accepted: a `<<$var` here-doc and a `<<` inside a string
+# quoted with the other quote type read as code (false ARMED, never a false
+# gap); a here-doc inside $( ) is not tracked; and a call reached through a
+# variable (GS="$LIB/gate-status"; "$GS") is not hopped.
+_code_body() {
+  # Here-strings go first (so `<<<` is not read as a here-doc), then here-doc
+  # bodies up to their terminator line, then the sed strips; a bare NAME=value
+  # line is data, but one holding $( or a backtick runs a command and stays.
+  # A `<<` inside (( )) or $(( )) is a shift, not a here-doc, so it is blanked
+  # first; only the operator and its word leave the `<<` line, because the rest
+  # (`| run-checks`, `&& run-checks`) is still code. Body lines are dropped.
+  sed -E -e 's/<<<("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:];&|]*)//g' "$1" 2>/dev/null |
+    awk '
+      hd != "" { t = $0; sub(/^[\t]+/, "", t); if (t == hdq[1]) { for (i = 1; i < nq; i++) hdq[i] = hdq[i+1]; nq--; if (nq == 0) hd = "" }; next }
+      { s = $0; o = ""
+        while (match(s, /\(\([^()]*(\([^()]*\)[^()]*)*\)\)/)) {
+          a = substr(s, RSTART, RLENGTH); gsub(/</, " ", a)
+          o = o substr(s, 1, RSTART - 1) a; s = substr(s, RSTART + RLENGTH) }
+        $0 = o s
+        nq = 0; o = ""
+        while (match($0, /(^|[^<])<<-?[ \t]*["\047\\]?[A-Za-z_][A-Za-z0-9_]*["\047]?/)) {
+          m = substr($0, RSTART, RLENGTH); p = index(m, "<<"); pre = o substr($0, 1, RSTART + p - 2)
+          w = substr(m, p); sub(/^<<-?[ \t]*["\047\\]?/, "", w); sub(/["\047]$/, "", w)
+          if (gsub(/"/, "\"", pre) % 2 == 0 && gsub(/\047/, "\047", pre) % 2 == 0) { hdq[++nq] = w; hd = "x" }
+          o = o substr($0, 1, RSTART + p - 2) " "; $0 = substr($0, RSTART + RLENGTH) }
+        $0 = o $0
+        print }' |
+    sed -E -e '/^[[:space:]]*#/d' -e 's/[[:space:]]#.*$//' -e 's/\[\[?[^]]*\]\]?//g' \
+      -e 's/(^[[:space:]]*|[;&|(][[:space:]]*)(echo|printf)[[:space:]]+[^;&|]*//g' \
+      -e '/\$\(|`/!{/^[[:space:]]*(export |local |readonly )?[A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:]]*)[[:space:]]*$/d;}' || true
+}
+
+_expand_callers() {
+  local f lib b body
+  for f in "$@"; do
+    [ -f "$f" ] || continue
+    case "$f" in *.scaffold-bak*) continue ;; esac
+    printf '%s\n' "$f"
+    case "$f" in .githooks/lib/*) continue ;; esac
+    body=$(_code_body "$f")
+    for lib in .githooks/lib/*; do
+      [ -f "$lib" ] || continue
+      b=${lib##*/}
+      case "$b" in check-*|*.scaffold-bak*) continue ;; esac
+      if [[ $body =~ (^|[^A-Za-z0-9_.-])${b}([^A-Za-z0-9_.-]|$) ]]; then
+        printf '%s\n' "$lib"
+      fi
+    done
+  done
+}
+
+# The remote host decides whether a missing GitHub workflow is a gap: a repo
+# hosted elsewhere cannot run it, so the doctor says it cannot check CI there.
+doctor_remote_url() { git config --get remote.origin.url 2>/dev/null || true; }
+# Any host named github.* counts (github.com and GitHub Enterprise); the host
+# must START with "github.", so notgithub.com stays "not GitHub".
+remote_is_github() { case "$1" in github.*|*://github.*|*@github.*) return 0 ;; esac; return 1; }
+
 check_called_in() {
   local name=$1
   shift
-  local re="(^|[^A-Za-z0-9_.-])${name}([^A-Za-z0-9_.-]|\$)" f body
-  for f in "$@"; do
-    [ -f "$f" ] || continue
-    body=$(grep -vE '^[[:space:]]*#' "$f" 2>/dev/null || true)
+  local re="(^|[^A-Za-z0-9_.-])${name}([^A-Za-z0-9_.-]|\$)" f body callers
+  # The whole list is read before the scan: with `< <(_expand_callers)` the
+  # early return below closes the pipe on a live writer, and where SIGPIPE is
+  # ignored (GitHub's ubuntu runner) its printf logs "write error: Broken pipe".
+  callers=$(_expand_callers "$@")
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    body=$(_code_body "$f")
     if grep -qE "$re" <<<"$body"; then
       return 0
     fi
@@ -43,7 +113,7 @@ check_called_in() {
         return 0
       fi ;;
     esac
-  done
+  done <<<"$callers"
   return 1
 }
 section "shipped checks"
@@ -62,8 +132,9 @@ for chk in check-size check-large-files check-patterns check-filenames check-sec
   elif [ ! -x ".githooks/lib/$chk" ]; then
     gap "lib/$chk is not executable — every commit will error on it" "chmod +x .githooks/lib/$chk"
   elif ! check_called_in "$chk" .githooks/pre-commit .githooks/commit-msg \
+                         .githooks/pre-push .githooks/post-* \
                          .githooks/local.d/* .github/workflows/*.yml; then
-    gap "lib/$chk is installed and executable but nothing calls it: no invocation in .githooks/pre-commit or .github/workflows/, so it is decoration and the commits it should block are not blocked (issue #72)" \
+    gap "lib/$chk is installed and executable but nothing calls it: no invocation in .githooks/pre-commit, pre-push, a wrapper script they run, or .github/workflows/, so it is decoration and the commits it should block are not blocked (issue #72)" \
         "re-run install.sh to restore the call sites, then re-apply any customization you had made to the hook or workflow"
   elif [ -f .github/workflows/lint.yml ] && ! check_called_in "$chk" .github/workflows/*.yml; then
     # Half-wired, not inert: the hook still runs it locally, so this is a note
@@ -83,8 +154,10 @@ for chk_path in .githooks/lib/check-*; do
   chk=$(basename "$chk_path")
   case "$chk" in
     check-size|check-large-files|check-patterns|check-filenames|check-secrets|check-hygiene) continue ;;
+    *.scaffold-bak*) continue ;;
   esac
   if ! check_called_in "$chk" .githooks/pre-commit .githooks/commit-msg \
+                       .githooks/pre-push .githooks/post-* \
                        .githooks/local.d/* .github/workflows/*.yml; then
     gap "lib/$chk is installed but nothing calls it: no invocation in .githooks/ or .github/workflows/, so it never runs" \
         "re-run install.sh with the flag that installed it, to restore its call site"
