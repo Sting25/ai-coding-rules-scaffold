@@ -8,6 +8,11 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Changed
 
+- **`coding-rules.md` names no stack (#243).** Language, framework and tool
+  names (Python and TypeScript defaults, logging libraries, the FastAPI and
+  SQLAlchemy examples) moved to `RECOMMENDATIONS.md` > "Stack-specific forms of
+  the coding rules"; each rule keeps its number and states its principle
+  stack-neutrally. Text only: no rule deleted, no installer change.
 - **Workflow templates move to Node 24 (#258).** The shipped `tests`, `lint`,
   `coverage` and `lint-tree` templates and the repo's own `self-lint.yml` move
   from Node 20 to Node 24, and `test-guard` moves from Node 22 to Node 24;
