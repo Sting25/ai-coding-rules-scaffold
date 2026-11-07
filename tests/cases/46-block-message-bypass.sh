@@ -7,10 +7,10 @@
 # `--no-verify` on EVERY failure, and agent-precheck told every blocked agent to
 # append a `scaffold-allow` marker. The block message is the one text an agent
 # is guaranteed to read at the moment it decides, so the bypass the rules call a
-# last resort became the default route. AGENTS.md "Git discipline" allows
-# `--no-verify` only when the hook's own refusal prints it (forbidden-pattern
-# config removal, a confirmed secret-scan false positive); "Fix the file, not
-# the check" says a suppression needs a recorded reason and the user's go-ahead.
+# last resort became the default route. AGENTS.md "Git discipline" now says
+# never skip a hook, so no block message may offer the flag at all (removing
+# guard config is the user's own action); "Fix the file, not the check" says a
+# suppression needs a recorded reason and the user's go-ahead.
 #
 # The agent-precheck half of this lives in cases/07 (it needs jq, so it sits
 # inside that file's existing jq gate).
@@ -56,16 +56,15 @@ else
 fi
 reset_repo
 
-# 46c. The sanctioned refusal keeps the bypass: removing forbidden-pattern
-#      config is one of the two cases AGENTS.md names, so its own refusal prints
-#      it.
+# 46c. AGENTS.md no longer offers a skip-the-hook exception, so the
+#      config-removal refusal names the human's own action instead of the flag.
 git rm -q .forbidden-patterns/secrets.txt
 if .githooks/pre-commit >"$HOOK_OUT" 2>&1; then
   echo "  ✗ config removal: hook accepted the deletion, expected reject"; FAIL=$((FAIL + 1))
-elif grep -qF "deletes forbidden-pattern config" "$HOOK_OUT" && grep -qF -e "$BM_FLAG" "$HOOK_OUT"; then
-  echo "  ✓ forbidden-pattern config removal refusal still offers the bypass flag"; PASS=$((PASS + 1))
+elif grep -qF "deletes forbidden-pattern config" "$HOOK_OUT" && grep -qF "the user's own action, not the agent's" "$HOOK_OUT" && ! grep -qF -e "$BM_FLAG" "$HOOK_OUT"; then
+  echo "  ✓ forbidden-pattern config removal refusal names the user's own action and omits the bypass flag"; PASS=$((PASS + 1))
 else
-  echo "  ✗ config removal: refusal lost the sanctioned bypass line"
+  echo "  ✗ config removal: refusal still offers the bypass flag or lost the user-action line"
   sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
 fi
 reset_repo
@@ -91,7 +90,8 @@ else
   echo "  ✗ a rule message prescribes the scaffold-allow marker:"; printf '%s\n' "$BM_RULE_HITS" | sed 's/^/      /'; FAIL=$((FAIL + 1))
 fi
 
-# 46f. The bypass is offered only where AGENTS.md sanctions it: a pattern file
+# 46f. No shipped hook offers the bypass flag (AGENTS.md sanctions none now).
+#      It used to be offered only where AGENTS.md sanctioned it: a pattern file
 #      that is EMPTY or DELETED (pre-commit's two deletion guards, check-patterns'
 #      empty-file and manifest-recorded-missing refusals, check-secrets' empty
 #      secrets.txt) and gitleaks' user-confirmed false positive. A refusal whose
@@ -99,14 +99,16 @@ fi
 #      offer it. Pinned by file and count over non-comment lines of the shipped
 #      hooks, so a new offer fails here. (forbidden-patterns/ is not searched:
 #      its two hits are the shell.txt rules that FORBID the flag.)
-BM_WANT="githooks/lib/check-gitleaks.template:1 githooks/lib/check-patterns.template:2 githooks/lib/check-secrets.template:1 githooks/pre-commit.template:2 "
+# Since AGENTS.md dropped its skip-the-hook exception, the sanctioned list is
+# empty: no shipped hook offers the flag at all.
+BM_WANT=""
 BM_GOT=$(cd "$SCAFFOLD_DIR" && grep -rnF -e "$BM_FLAG" githooks \
   | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' | cut -d: -f1 | LC_ALL=C sort | uniq -c \
-  | awk '{ printf "%s:%s ", $2, $1 }')
+  | awk '{ printf "%s:%s ", $2, $1 }' || true)
 if [ "$BM_GOT" = "$BM_WANT" ]; then
-  echo "  ✓ the bypass flag is offered only by the sanctioned refusals (by file and count)"; PASS=$((PASS + 1))
+  echo "  ✓ no shipped hook offers the bypass flag (by file and count)"; PASS=$((PASS + 1))
 else
-  echo "  ✗ bypass offers by file and count differ from the sanctioned list"
+  echo "  ✗ bypass offers by file and count differ from the empty sanctioned list"
   echo "      want: $BM_WANT"; echo "      got:  $BM_GOT"; FAIL=$((FAIL + 1))
 fi
 
