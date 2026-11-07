@@ -90,7 +90,7 @@ _Anchor:_ a 4-unit smoke caught worker contention; a 1-unit smoke proved the fix
 
 ### Documentation hygiene
 
-Do not create a file when an existing one can absorb the content. To retire a document, move its
+Do not create a file when an existing one can absorb it. To retire a document, move its
 live parts to the document that owns them, then archive it with a banner saying where each went.
 
 ### Write down why, not just what
@@ -197,5 +197,5 @@ a symlink target), or sending a writer into a tree another session used, is a me
 look for live signals (fresh commits or issues from it, long-lived processes, file and git-index
 mtimes within minutes) and stop and ask on any; with none, get a go-ahead naming the path. Prefer
 a rename to a hard delete. A gate sweeps its own temporary worktrees at the start of a run; a
-read-only report lists registered worktrees with age and merge state.
+read-only report lists worktrees with age and merge state.
 _Anchor:_ a handed-off builder kept writing for hours and its parent merged on a stale approval.
