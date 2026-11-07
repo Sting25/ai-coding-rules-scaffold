@@ -148,7 +148,10 @@ function skipNotice(baseSha, headSha, testFiles, ci) {
   let n = 0;
   for (const p of testFiles) {
     const d = run("git", ["diff", "-U0", "--no-color", `${baseSha}...${headSha}`, "--", p]);
-    if (d.status !== 0) continue;
+    if (d.status !== 0) {
+      emit("notice", `could not diff ${p}, so its added skip/todo lines were not counted.`, ci);
+      continue;
+    }
     n += d.stdout.split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++") && SKIP_RE.test(l)).length;
   }
   if (n > 0) {

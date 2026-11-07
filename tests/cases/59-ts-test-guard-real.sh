@@ -150,7 +150,7 @@ TS
   _ts59_run check-mutation-diff-ts --base "$_ts59_base"
   _ts59_check "(f) a path starting with ! is exit 2, not a silent 0-mutant pass" "$([ "$_ts59_rc" = 2 ] && echo 1 || echo 0)"
   _ts59_check "(f) the refusal names the path" "$(printf '%s' "$_ts59_out" | grep -q '!x.ts: a path starting with' && echo 1 || echo 0)"
-  _ts59_check "(f) the refusal says the other changed source file went unevaluated (#260)" "$(printf '%s' "$_ts59_out" | grep -q '1 other changed source file(s) went unevaluated' && echo 1 || echo 0)"
+  _ts59_check "(f) the refusal says the other changed source file went unevaluated (#260)" "$(printf '%s' "$_ts59_out" | grep -q 'refused: 1 other changed source file(s) went unevaluated' && echo 1 || echo 0)"
 
   # --- (g) refusal log: the offender run writes one line; a missing logger
   #         never changes the verdict (fail open) -------------------------
