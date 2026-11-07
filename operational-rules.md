@@ -1,8 +1,8 @@
 # Operational rules
 
 Where two rule files disagree, the stricter one applies (the one that asks first, does less, or
-forbids more); a rule that only adds a restriction always applies, except a rule the Project
-section of `AGENTS.md` names as relaxed.
+forbids more); a rule that only adds a restriction always applies, except a rule the user named
+as relaxed in the Project section of `AGENTS.md`.
 
 Judgment and collaboration rules for working with AI agents. Rules about the code live in
 [`coding-rules.md`](./coding-rules.md), repo mechanics and red lines in [`AGENTS.md`](./AGENTS.md);
