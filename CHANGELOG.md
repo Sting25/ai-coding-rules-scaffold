@@ -6,6 +6,15 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Workflow templates move to Node 24 (#258).** The shipped `tests`, `lint`,
+  `coverage` and `lint-tree` templates and the repo's own `self-lint.yml` move
+  from Node 20 to Node 24, and `test-guard` moves from Node 22 to Node 24;
+  Node 20 reached end of life on 2026-04-30. Case 35 gains a numeric-floor
+  (22) assertion on every `node-version` pin, so the next bump needs no test
+  edit.
+
 ### Fixed
 
 - **TypeScript test-guard twins: three follow-ups (#260).** When
