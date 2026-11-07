@@ -158,13 +158,15 @@ function globEscape(p) {
   return p.replace(/[[\]*?()]/g, (c) => `[${c}]`);
 }
 
-function mutateEntries(baseSha, headSha, rel, ci) {
+function mutateEntries(baseSha, headSha, rel, ci, others) {
   // A leading "!" is an EXCLUSION pattern to Stryker (no warning, 0 mutants,
   // exit 0) and braces are brace expansion; neither has a literal form, so
   // refuse them up front rather than let a no-match read as "0 mutants, OK".
+  // The refusal is for the whole run, so say what else went unevaluated (#260).
   if (rel.startsWith("!") || /[{}]/.test(rel)) {
     emit("error", `${rel}: a path starting with "!" or containing "{" or "}" has no ` +
-                  "literal Stryker mutate pattern; rename the file or mutate it by hand.", ci);
+                  "literal Stryker mutate pattern; rename the file or mutate it by hand. " +
+                  `The whole run is refused: ${others} other changed source file(s) went unevaluated.`, ci);
     return null;
   }
   const g = globEscape(rel);
@@ -229,7 +231,7 @@ function main() {
   }
   const mutate = [];
   for (const rel of srcFiles) {
-    const e = mutateEntries(baseSha, headSha, rel, args.ci);
+    const e = mutateEntries(baseSha, headSha, rel, args.ci, srcFiles.length - 1);
     if (e === null) return 2;
     mutate.push(...e);
   }
