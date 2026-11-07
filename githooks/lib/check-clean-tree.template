@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# .githooks/lib/check-clean-tree: fail when the working tree is not clean after
+# the test suite ran (#219). A suite that writes files into the checkout (a
+# fixture, a generated report, a log) leaves them untracked; the next
+# `git add -A` sweeps them into a commit. CI runs this as a step AFTER the test
+# step in tests.yml / coverage.yml, so the leak is a red check on the pull
+# request that introduced it, not a stray file in a later commit.
+#
+# It is a CI step, not a pre-commit scanner: it reads `git status`, not the
+# staged list, so pre-commit and lint.yml skip it by name. Run it by hand
+# after any test run to see the same answer.
+#
+# Reports every untracked file (individually, even inside a new directory) and
+# every modified tracked file. Fix a finding one of two ways: add a .gitignore
+# entry if the file is meant to be local, or make the test write into a
+# temporary directory outside the repository.
+#
+# Never counted: output the shipped test workflows themselves produce
+# (__pycache__, *.pyc, *.egg-info, .pytest_cache, .coverage*, coverage.xml,
+# coverage/, node_modules/, .venv/, and the package-lock.json an `npm install`
+# writes), at any depth. It always judges the whole repository.
+# More paths: .scaffold.toml [rules.clean-tree] exclude = ["out/*"]. The whole
+# check: disabled = true (recorded in scaffold-audit) or severity = "warn".
+#
+# Usage: check-clean-tree [--ci]    (stdin is ignored)
+# Ends through gate-status with checked = the number of tracked files, so a
+# clean tree is `ran N`, never `ran 0`. Exit: 0 clean, 1 dirty.
+
+set -euo pipefail
+
+# See pre-commit: CDPATH must not reach the cd below.
+unset CDPATH
+case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
+SELF_DIR="$(cd "$_sd" && pwd)"
+GS="$SELF_DIR/gate-status"
+CONFIG_BIN="$SELF_DIR/scaffold-config"
+cfg() { [ -x "$CONFIG_BIN" ] || return 0; "$CONFIG_BIN" "$@" 2>/dev/null || true; }
+
+# Always judge the whole repository, whatever directory this runs from.
+TOP=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "error: not inside a git repository" >&2; exec "$GS" clean-tree ran 0 "not inside a git repository"; }
+cd "$TOP"
+
+CI_MODE=0
+[ "${1:-}" = "--ci" ] && CI_MODE=1
+
+STATE=$(cfg rule-state clean-tree); [ -n "$STATE" ] || STATE=error
+[ "$STATE" != disabled ] || exec "$GS" clean-tree skipped 0 "disabled: .scaffold.toml [rules.clean-tree]"
+
+# Escape a value for a GitHub workflow command (see check-large-files).
+ghesc() {
+  local s=$2
+  s=${s//'%'/%25}; s=${s//$'\r'/%0D}; s=${s//$'\n'/%0A}
+  if [ "$1" = prop ]; then s=${s//:/%3A}; s=${s//,/%2C}; fi
+  printf '%s' "$s"
+}
+
+EXTRA=$(cfg rule-excludes clean-tree)
+excluded() {
+  local p=$1 xy=$2 g
+  # Defaults match at any depth (the path is padded with a leading "/") and
+  # only for UNTRACKED files, so a tracked file the suite modified is always
+  # reported. The one exception: a tracked package-lock.json npm rewrites.
+  if [ "$xy" = '??' ]; then
+    case /$p in
+      */__pycache__/* | *.pyc | */*.egg-info/* | */package-lock.json | */.pytest_cache/* | */.coverage | */.coverage.* | */coverage.xml | */coverage/* | */node_modules/* | */.venv/*) return 0 ;;
+    esac
+  else
+    case /$p in */package-lock.json) return 0 ;; esac
+  fi
+  while IFS= read -r g; do
+    [ -n "$g" ] || continue
+    # shellcheck disable=SC2254  # the glob is the pattern, on purpose
+    case $p in $g) return 0 ;; esac
+  done <<EOF_EXTRA
+$EXTRA
+EOF_EXTRA
+  return 1
+}
+
+TRACKED=$(( $(git ls-files -z | tr -cd '\0' | wc -c) + 0 ))
+FAILED=0; FIRST=""; N=0; SKIP_NEXT=0
+while IFS= read -r -d '' rec; do
+  # With -z a rename or copy is followed by its origin path as its own record.
+  if [ "$SKIP_NEXT" -eq 1 ]; then SKIP_NEXT=0; continue; fi
+  xy=${rec:0:2}; path=${rec:3}
+  case $xy in R? | C? | ?R | ?C) SKIP_NEXT=1 ;; esac
+  excluded "$path" "$xy" && continue
+  if [ "$xy" = '??' ]; then kind="untracked"; else kind="modified (status $xy)"; fi
+  N=$((N + 1)); : "${FIRST:=$path}"
+  if [ "$STATE" = warn ]; then
+    if [ "$CI_MODE" -eq 1 ]; then echo "::warning file=$(ghesc prop "$path")::$(ghesc data "$kind after the test run")"
+    else echo "! $path: $kind after the test run (warn, .scaffold.toml override)"; fi
+  else
+    if [ "$CI_MODE" -eq 1 ]; then echo "::error file=$(ghesc prop "$path")::$(ghesc data "$kind after the test run")"
+    else echo "✗ $path: $kind after the test run"; fi
+    FAILED=1
+  fi
+done < <(git status --porcelain=v1 -z --untracked-files=all)
+
+if [ "$N" -gt 0 ]; then
+  echo "$N path(s) differ from the commit after the tests ran. Add a .gitignore entry if the file is meant to stay local, or make the test write into a temporary directory outside the repository." >&2
+fi
+
+if [ "$TRACKED" -gt 0 ]; then set -- ran "$TRACKED" ""; else set -- empty 0 "no tracked files"; fi
+# The status line comes BEFORE the refusal log's class trailer, which must stay the last line.
+rc=0; "$GS" clean-tree "$@" "$FAILED" || rc=$?
+[ "$FAILED" -eq 0 ] || [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-clean-tree clean-tree "$FIRST" 1 --say a || true
+exit "$rc"

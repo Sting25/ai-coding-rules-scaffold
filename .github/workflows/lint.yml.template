@@ -422,6 +422,7 @@ jobs:
             case "${check##*/}" in
               check-secrets|check-filenames) "$check" --ci <"$ALL_LIST" || FAILED=1 ;;
               check-gitleaks|check-red-green|check-red-green-ts|check-mutation-diff|check-mutation-diff-ts) ;;
+              check-branch|check-clean-tree) ;;  # commit-time / after-tests gates, not changed-file scanners
               *) "$check" --ci <"$CHANGED_LIST" || FAILED=1 ;;
             esac
           done

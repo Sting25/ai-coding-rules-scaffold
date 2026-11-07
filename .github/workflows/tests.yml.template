@@ -117,6 +117,17 @@ jobs:
           # rc 0 proves tests ran (pytest exits 5, not 0, when it collects nothing).
           if [ "$n" -gt 0 ]; then exec .githooks/lib/gate-status pytest ran "$n" ""; fi
           exec .githooks/lib/gate-status pytest ran 1 "exit 0: tests ran, none matched the default file patterns"
+      # A suite that writes files into the checkout leaves them for the next
+      # `git add -A` (#219). Default on; .scaffold.toml [rules.clean-tree]
+      # (disabled, or exclude = [...]) records a deliberate exception.
+      - name: Fail if the tests left files behind
+        if: steps.detect.outputs.present == 'true'
+        env:
+          SCAFFOLD_GATE_STRICT: "1"  # a gate that skips or checks nothing fails
+        run: |
+          chmod +x .githooks/lib/check-clean-tree .githooks/lib/gate-status 2>/dev/null || true
+          [ -x .githooks/lib/check-clean-tree ] || { echo "::error::.githooks/lib/check-clean-tree is missing; re-run install.sh"; exit 1; }
+          exec .githooks/lib/check-clean-tree --ci
 
   vitest:
     runs-on: ubuntu-latest
@@ -170,3 +181,11 @@ jobs:
           fi
           npx --no-install vitest run
           exec .githooks/lib/gate-status vitest ran "$n" ""
+      - name: Fail if the tests left files behind
+        if: steps.detect.outputs.present == 'true'
+        env:
+          SCAFFOLD_GATE_STRICT: "1"  # a gate that skips or checks nothing fails
+        run: |
+          chmod +x .githooks/lib/check-clean-tree .githooks/lib/gate-status 2>/dev/null || true
+          [ -x .githooks/lib/check-clean-tree ] || { echo "::error::.githooks/lib/check-clean-tree is missing; re-run install.sh"; exit 1; }
+          exec .githooks/lib/check-clean-tree --ci
