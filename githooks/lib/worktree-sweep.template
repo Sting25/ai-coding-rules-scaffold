@@ -29,7 +29,10 @@
 #
 # AGE. A run in progress must survive a second run starting beside it, so
 # nothing younger than SCAFFOLD_WORKTREE_SWEEP_MAX_AGE seconds (default 7200:
-# longer than two gate-run timeouts) is removed. 0 removes every match.
+# longer than two gate-run timeouts) is removed. The limit is compared in whole
+# minutes, rounded up, so a non-zero value under 60 s means about one minute.
+# 0 removes every match, including a run in progress: use it only in a private
+# fixture repository.
 set -u
 
 age=${SCAFFOLD_WORKTREE_SWEEP_MAX_AGE:-7200}

@@ -37,8 +37,9 @@ fixture_install "$TA" --frontend --no-verify --test-guard
 if [ -x "$TA/.githooks/lib/check-red-green-ts" ] \
    && cmp -s "$_ts58_rg" "$TA/.githooks/lib/check-red-green-ts" \
    && [ -x "$TA/.githooks/lib/check-mutation-diff-ts" ] \
-   && cmp -s "$_ts58_md" "$TA/.githooks/lib/check-mutation-diff-ts"; then
-  echo "  ✓ --test-guard installs both TypeScript checks, executable and identical to the templates"; PASS=$((PASS + 1))
+   && cmp -s "$_ts58_md" "$TA/.githooks/lib/check-mutation-diff-ts" \
+   && [ -x "$TA/.githooks/lib/worktree-sweep" ] && cmp -s "$SCAFFOLD_DIR/githooks/lib/worktree-sweep.template" "$TA/.githooks/lib/worktree-sweep"; then
+  echo "  ✓ --test-guard installs both TypeScript checks and worktree-sweep, executable and identical to the templates"; PASS=$((PASS + 1))
 else
   echo "  ✗ --test-guard should install check-red-green-ts and check-mutation-diff-ts"; FAIL=$((FAIL + 1))
 fi
@@ -68,7 +69,7 @@ echo '{"name":"x"}' >"$TU/package.json"
 fixture_install "$TU" --frontend --no-verify --test-guard
 ( cd "$TU" && bash "$SCAFFOLD_DIR/uninstall.sh" ) >"$HOOK_OUT" 2>&1
 if [ ! -e "$TU/.githooks/lib/check-red-green-ts" ] && [ ! -e "$TU/.githooks/lib/check-mutation-diff-ts" ] \
-   && [ ! -e "$TU/.githooks/lib/check-red-green" ]; then
+   && [ ! -e "$TU/.githooks/lib/check-red-green" ] && [ ! -e "$TU/.githooks/lib/worktree-sweep" ]; then
   echo "  ✓ uninstall.sh removes both TypeScript checks"; PASS=$((PASS + 1))
 else
   echo "  ✗ uninstall.sh should remove both TypeScript checks"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))

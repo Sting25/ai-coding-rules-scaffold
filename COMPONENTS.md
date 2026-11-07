@@ -799,7 +799,9 @@ and mutation is scoped to the changed line ranges (a new file is mutated whole).
 `worktree-sweep` runs at the start of each Python gate and removes the temp
 worktrees of a run that was killed (only worktrees this repository lists, named
 `redgreen-*` or `mutdiff-*` directly under `$TMPDIR`, older than two hours,
-never a locked one or a symlink); a Python gate that receives SIGTERM cleans up
+never a locked one or a symlink; the age is compared in whole minutes, rounded
+up, and `SCAFFOLD_WORKTREE_SWEEP_MAX_AGE=0` is safe only in a private fixture
+repository); a Python gate that receives SIGTERM cleans up
 and exits 143. Known limit: a killed TypeScript twin leaves its temp directories
 behind (plain directories, never registered as worktrees), with no automatic
 cleanup. To list every registered worktree of
