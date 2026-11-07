@@ -45,6 +45,13 @@ versioning follows [SemVer](https://semver.org/).
   character removed, whitespace collapsed) is also scanned so an escaped or
   continued flag no longer slips past. Write and Edit content keeps the
   exemption.
+- **TypeScript test-guard twins: three follow-ups (#260).** When
+  `check-mutation-diff-ts` refuses a whole run over a path Stryker cannot
+  express (a leading `!`, or braces), the error now says how many other changed
+  source files went unevaluated. `check-red-green-ts` prints a notice counting
+  added `it.skip` and `it.todo` lines, because `vitest list` does not list them
+  (exit code unchanged). Case 59 now runs the mutation twin's refusal logging
+  (`max-mutants` and `setup-error` lines) instead of reading it.
 
 ## [v0.20.0] - 2026-11-07
 
