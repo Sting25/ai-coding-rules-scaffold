@@ -8,6 +8,11 @@
 #   (c) an installer backup (check-x.scaffold-bak) is not a check
 #   (d) a non-GitHub remote with no lint.yml is a note, not a gap
 #   (e) control: no caller anywhere is still a gap (the fixes did not blind it)
+#   (f) a name only in an echo, trailing comment, here-string, here-doc body
+#       (including the second of two on one line) or bare assignment is a gap
+#   (g) a real call still counts: inside $( ), piped a here-doc on the `<<`
+#       line, after a $(( << )) shift, after a `<<` inside a quoted string
+#   (h) a GitHub Enterprise remote without lint.yml is still a gap
 # Sourced into the driver's shell: PASS/FAIL/SKIP/HOOK_OUT/SCAFFOLD_DIR in scope.
 
 echo "cases/62: doctor false gaps (#244)"
@@ -78,11 +83,21 @@ fg_heredoc() { fg_hook_line 'cat <<EOF >/dev/null
 run-checks
 EOF'; }
 fg_assign() { fg_hook_line 'W=run-checks'; }
+# The $( and $(( below are literal hook source written into the fixture.
+# shellcheck disable=SC2016
 fg_cmdsub() { fg_hook_line 'out=$(.githooks/lib/run-checks)'; }
 fg_pipe_heredoc() { fg_hook_line 'cat <<EOF | .githooks/lib/run-checks
 x
 EOF'; }
+# shellcheck disable=SC2016
 fg_arith_shift() { fg_hook_line 'n=2; x=$((1<<n))
+.githooks/lib/run-checks'; }
+fg_two_heredocs() { fg_hook_line 'cat <<A >/dev/null; cat <<B >/dev/null
+a
+A
+.githooks/lib/run-checks
+B'; }
+fg_quoted_ltlt() { fg_hook_line 'msg="use <<EOF here"
 .githooks/lib/run-checks'; }
 fg_ghe() {
   git remote add origin git@github.mycorp.com:g/p.git
@@ -138,5 +153,9 @@ fg_case "a wrapper piped a here-doc on the << line counts as a call" absent \
   "lib/check-large-files is installed and executable but nothing calls it" fg_pipe_heredoc
 fg_case "a << shift inside \$(( )) is not a here-doc and a later call counts" absent \
   "lib/check-large-files is installed and executable but nothing calls it" fg_arith_shift
+fg_case "a call inside the second of two here-docs on one line does not call it" present \
+  "lib/check-large-files is installed and executable but nothing calls it" fg_two_heredocs
+fg_case "a << inside a quoted string is not a here-doc and a later call counts" absent \
+  "lib/check-large-files is installed and executable but nothing calls it" fg_quoted_ltlt
 fg_case "a GitHub Enterprise remote without lint.yml is still a gap" present \
   ".github/workflows/lint.yml is missing" fg_ghe

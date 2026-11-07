@@ -133,7 +133,7 @@ CASE_FLOORS=(
   "59-ts-test-guard-real.sh:17"
   "60-refusal-class.sh:55"
   "61-refusal-class-helper.sh:17"
-  "62-doctor-false-gaps.sh:16"
+  "62-doctor-false-gaps.sh:18"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and

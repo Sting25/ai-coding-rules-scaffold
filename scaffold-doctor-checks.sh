@@ -26,13 +26,17 @@
 # checks by name in its own header, and a header is not a call site. The name
 # must match as a whole word so one check's name cannot satisfy another's.
 #
-# Callers are followed ONE hop: a hook (not a lib file, not a CI workflow's
-# step script) that names a non-check lib file such as lib/run-checks makes
+# Callers are followed ONE hop: a hook or a .github/workflows/*.yml file (not
+# a lib file) that names a non-check lib file such as lib/run-checks makes
 # that file a caller too, because the wrapper may be what invokes the check
 # (issue #244). Installer backups (*.scaffold-bak) are never callers or checks.
 # _code_body FILE: the text of FILE where a name can be a CALL. Drops whole
 # comment lines, trailing comments, [ ... ] tests and echo/printf statements,
 # because a name in a message, a comment or a file test is not an invocation.
+# Known limits, all accepted: a `<<$var` here-doc and a `<<` inside a string
+# quoted with the other quote type read as code (false ARMED, never a false
+# gap); a here-doc inside $( ) is not tracked; and a call reached through a
+# variable (GS="$LIB/gate-status"; "$GS") is not hopped.
 _code_body() {
   # Here-strings go first (so `<<<` is not read as a here-doc), then here-doc
   # bodies up to their terminator line, then the sed strips; a bare NAME=value
@@ -42,16 +46,19 @@ _code_body() {
   # (`| run-checks`, `&& run-checks`) is still code. Body lines are dropped.
   sed -E -e 's/<<<("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:];&|]*)//g' "$1" 2>/dev/null |
     awk '
-      hd != "" { t = $0; sub(/^[\t]+/, "", t); if (t == hd) hd = ""; next }
+      hd != "" { t = $0; sub(/^[\t]+/, "", t); if (t == hdq[1]) { for (i = 1; i < nq; i++) hdq[i] = hdq[i+1]; nq--; if (nq == 0) hd = "" }; next }
       { s = $0; o = ""
         while (match(s, /\(\([^()]*(\([^()]*\)[^()]*)*\)\)/)) {
           a = substr(s, RSTART, RLENGTH); gsub(/</, " ", a)
           o = o substr(s, 1, RSTART - 1) a; s = substr(s, RSTART + RLENGTH) }
         $0 = o s
-        if (match($0, /(^|[^<])<<-?[ \t]*["\047\\]?[A-Za-z_][A-Za-z0-9_]*["\047]?/)) {
-          m = substr($0, RSTART, RLENGTH); p = index(m, "<<"); w = substr(m, p)
-          sub(/^<<-?[ \t]*["\047\\]?/, "", w); sub(/["\047]$/, "", w); hd = w
-          $0 = substr($0, 1, RSTART + p - 2) " " substr($0, RSTART + RLENGTH) }
+        nq = 0; o = ""
+        while (match($0, /(^|[^<])<<-?[ \t]*["\047\\]?[A-Za-z_][A-Za-z0-9_]*["\047]?/)) {
+          m = substr($0, RSTART, RLENGTH); p = index(m, "<<"); pre = o substr($0, 1, RSTART + p - 2)
+          w = substr(m, p); sub(/^<<-?[ \t]*["\047\\]?/, "", w); sub(/["\047]$/, "", w)
+          if (gsub(/"/, "\"", pre) % 2 == 0 && gsub(/\047/, "\047", pre) % 2 == 0) { hdq[++nq] = w; hd = "x" }
+          o = o substr($0, 1, RSTART + p - 2) " "; $0 = substr($0, RSTART + RLENGTH) }
+        $0 = o $0
         print }' |
     sed -E -e '/^[[:space:]]*#/d' -e 's/[[:space:]]#.*$//' -e 's/\[\[?[^]]*\]\]?//g' \
       -e 's/(^[[:space:]]*|[;&|(][[:space:]]*)(echo|printf)[[:space:]]+[^;&|]*//g' \
@@ -122,7 +129,7 @@ for chk in check-size check-large-files check-patterns check-filenames check-sec
   elif ! check_called_in "$chk" .githooks/pre-commit .githooks/commit-msg \
                          .githooks/pre-push .githooks/post-* \
                          .githooks/local.d/* .github/workflows/*.yml; then
-    gap "lib/$chk is installed and executable but nothing calls it: no invocation in .githooks/pre-commit or .github/workflows/, so it is decoration and the commits it should block are not blocked (issue #72)" \
+    gap "lib/$chk is installed and executable but nothing calls it: no invocation in .githooks/pre-commit, pre-push, a wrapper script they run, or .github/workflows/, so it is decoration and the commits it should block are not blocked (issue #72)" \
         "re-run install.sh to restore the call sites, then re-apply any customization you had made to the hook or workflow"
   elif [ -f .github/workflows/lint.yml ] && ! check_called_in "$chk" .github/workflows/*.yml; then
     # Half-wired, not inert: the hook still runs it locally, so this is a note
