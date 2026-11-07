@@ -27,6 +27,15 @@ versioning follows [SemVer](https://semver.org/).
   big", so `test-guard.yml` reported a green "declined (size)" over a broken
   gate. Both Python gates now print `internal error` with the traceback and exit
   2, which the workflow step already treats as a failure.
+- **A `# scaffold-allow` comment no longer exempts a Bash command from the agent
+  precheck (#203, #239).** The marker is for file content a person sanctioned,
+  but the precheck honored it on the command the agent was about to run, so a
+  force-push or a hook-skip flag with a trailing marker was allowed. Bash
+  commands are now never exempted, the refusal says why, and a normalised copy
+  of the command (line continuations joined, backslashes before a word
+  character removed, whitespace collapsed) is also scanned so an escaped or
+  continued flag no longer slips past. Write and Edit content keeps the
+  exemption.
 - **The doctor no longer reports false "nothing calls it" gaps, or demands a GitHub workflow off GitHub (#244).** A check is now counted as called when it is invoked from `pre-push` or `post-*` hooks, or from a wrapper lib file that a hook invokes (one hop). Installer backups (`*.scaffold-bak`) are no longer treated as checks or callers. In the other direction, a check named only in an `echo`, a comment, a here-doc body or an assignment is now reported as a gap, where it used to read as armed. A missing `.github/workflows/lint.yml` is a note, not a gap, when `remote.origin` is set and is not a github.com URL. Covered by `tests/cases/62-doctor-false-gaps.sh`.
 
 ## [v0.20.0] - 2026-11-07
