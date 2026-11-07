@@ -503,6 +503,52 @@ and the runner holds `GITHUB_TOKEN`); and every `actions/checkout` sets
 **`persist-credentials: false`** so the token isn't left in `.git/config` for a
 later step or compromised action to read.
 
+## Re-measuring inherited claims
+
+The "Inherited state is a hypothesis" rule in `operational-rules.md` says a
+claim you did not measure this session (a handoff, PR text, a memory note, a
+local clone) is re-measured from the system of record before it drives an
+action. These are the commands. Each row was run once with the current `gh`
+and `git`; the conflict row was run in a scratch repository. Replace `<id>`,
+`<branch>`, `<n>`, `<package>` and `<owner>/<repo>`.
+
+| Claim to re-measure         | Command                                                                    | What it settles                                                                              |
+| --------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| CI state of a run           | `gh run view <id> --json status,conclusion,jobs`                           | Failure is a job with steps that ran; a cancelled job with no steps is not a red build.      |
+| Latest runs on a branch     | `gh run list --branch <branch> --limit 3`                                  | Which run is newest and whether it is still in progress.                                     |
+| Branch position, both ways  | `git fetch origin && git rev-list --left-right --count origin/main...HEAD` | Behind (left) and ahead (right) in one line; `0 0` means level.                              |
+| Open PRs and their state    | `gh pr list --state open --json number,headRefName,mergeStateStatus`       | Whether another session already has a PR open against the same base.                         |
+| Whether a PR merged         | `gh pr view <n> --json state,mergedAt,mergeCommit`                         | `state`, merge time and merge commit; `merged` is not a valid `--json` field.                |
+| Conflicts, by trial merge   | `git merge-tree --write-tree origin/main HEAD`                             | Exit 0 and a tree id: clean. Exit 1: conflicts, named in the output. Nothing is checked out. |
+| Tags on the host            | `git ls-remote --tags origin 'v0.20*'`                                     | The remote's tags, not the local clone's.                                                    |
+| Latest published release    | `gh release list --limit 3`                                                | The `Latest` marker; `isLatest` is not a valid `--json` field of `gh release view`.          |
+| Branch head on the host     | `gh api repos/<owner>/<repo>/commits/<branch> --jq .sha`                   | The commit the host serves for the branch, compared with the local one.                      |
+| Version on the package host | `npm view <package> version`                                               | The version the registry serves, for projects that publish there.                            |
+
+Every command above is read-only. A claim that no command here can confirm is
+reported as unmeasured, not repeated.
+
+### Stop-hook feasibility (from documentation, not measured)
+
+The "An agent's report is final" rule is text only. Whether a hook could
+enforce it is open, and nothing ships until it is measured in a scratch
+project. What the Claude Code hook contract documents:
+
+- A `Stop` hook receives a `background_tasks` array (id, type, status,
+  description, and the command for shell jobs). Exit code 2 prevents the stop.
+- A `SubagentStop` hook can also exit 2, but its `background_tasks` array is
+  scoped to the parent session, not the subagent, and has no owner field. It
+  cannot tell the subagent's job from the user's own dev server.
+- A block forces the agent to keep going, usually by polling. The
+  documented cap is eight consecutive blocks, but the counter resets each time
+  the agent calls a tool, so an agent that polls with tool calls may never
+  reach it.
+- `SessionStart` cannot block.
+
+So a main-session `Stop` guard looks feasible and a `SubagentStop` guard looks
+unreliable. The measurement to run first: spawn a subagent that starts
+`sleep 60 &`, dump the `SubagentStop` stdin, and read what the array holds.
+
 ## Check whether it's armed
 
 `install.sh` reports what it _wrote_. Whether the guardrails actually _run_ is

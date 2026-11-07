@@ -23,5 +23,9 @@ their full text on every turn, by design, to keep the always-loaded context
 small. This Skill is what actually pulls the full text in, on demand, at the
 moments it matters, instead of relying on the summary alone.
 
+A report is final: never end a turn or hand back while a job you started is
+still running. Run the last verification in the foreground, stop the job, or
+report it unfinished with its id and how to check it.
+
 If either file is missing from the project root, say so plainly rather than
 guessing at rules that were never installed; do not fabricate a rule.

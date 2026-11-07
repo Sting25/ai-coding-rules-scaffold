@@ -42,6 +42,12 @@ versioning follows [SemVer](https://semver.org/).
   Read-only, always exits 0: one line per registered worktree with branch, age
   of the last commit, whether it is merged into the default branch, and whether
   its directory is missing or the worktree locked.
+- **Re-measure commands, Stop-hook feasibility, import-once note (#216, #214,
+  #226).** TECHNICAL.md gains a table of read-only commands for re-measuring
+  inherited claims and a feasibility note on a `Stop`/`SubagentStop` guard
+  (from documentation, not measured; no hook ships). The coding-rules skill
+  carries a short "a report is final" rule, and the README says to
+  import the rules files once.
 
 ### Changed
 
