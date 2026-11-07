@@ -61,7 +61,7 @@ _Anchor:_ a conflict prediction measured "clean" because the edit under test was
 
 A new guardrail or test is not in place until a realistic evasion goes red against it. An
 evasion the compiler or optimizer removes (an unused import) proves nothing; use one that
-survives the build. Report the pass and the forced failure, or UNVERIFIED.
+survives the build. Report the pass and the forced failure; say UNVERIFIED when it cannot be forced.
 _Anchor:_ a lint denylist passed 6 of 8 evasions; the build-graph test that replaced it caught
 all 12.
 
@@ -90,7 +90,7 @@ _Anchor:_ a 4-unit smoke caught worker contention; a 1-unit smoke proved the fix
 ### Documentation hygiene
 
 Do not create a markdown file when an existing one can absorb it, or add a pointer
-where the fact itself fits. To retire one, move its live parts to the owning document and
+where the fact fits. To retire one, move its live parts to the owning document and
 archive it with a banner saying where each went.
 
 ### Write down why, not just what
@@ -197,7 +197,7 @@ a symlink target), or sending a writer into a tree another session used, is a me
 look for live signals (fresh commits or issues from it, long-lived processes, file and git-index
 mtimes within minutes) and stop and ask on any; with none, get a go-ahead naming the path. Prefer
 a rename to a hard delete. A gate's start-of-run sweep removes only unlocked, expired worktrees
-of its own temporary prefixes this repository registered; a report lists
-worktrees with branch, HEAD-commit age, merge state and whether the directory exists. Check it
-before removing one.
+of its own temporary prefixes registered here; a report lists
+worktrees with branch, HEAD-commit age, merge state and directory existence. Check it
+before removal.
 _Anchor:_ a handed-off builder kept writing for hours and its parent merged on a stale approval.
