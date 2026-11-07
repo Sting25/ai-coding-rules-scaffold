@@ -139,7 +139,7 @@ _Added 2026-08-28._
 
 **Adopt if:** the project has a hosted database or backend-as-a-service (Supabase, Firebase, a managed Postgres) and is about to be reachable by anyone other than the person who built it.
 
-**What it is.** Two questions to answer before calling a project ready to ship. Both are provider-console state rather than code, which is exactly why nothing in this scaffold can see them:
+**What it is.** Two questions to answer before calling a project ready to ship. Both are provider-console state rather than code, which is exactly why nothing in this scaffold can see them, and neither shows in a diff:
 
 - **Row Level Security, or whatever the platform calls its per-row auth rules, is on for every table holding user data, and each of those tables has a policy that actually says who may read and write it.** Tables created during AI-assisted building are routinely left with RLS off, which leaves them readable by anyone holding the project URL and the public anon key. The caveat matters as much as the rule: RLS switched on with no policies blocks all access, and that is precisely when builders switch it back off and ship. Write the policies, then confirm with a real non-owner session, rather than disabling the protection to make the app work again.
 - **Automatic backups are enabled on the data store, and you know how old the most recent one is.** This is the half that makes a destructive mistake survivable. `AGENTS.md` > "Destructive actions and live data" has the agent confirm a backup before anything irreversible, and that rule is worth no more than the backup schedule sitting behind it.

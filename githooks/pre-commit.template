@@ -52,7 +52,7 @@ LIB="$HOOK_DIR/lib"
 # still on disk (`git rm --cached`) is a different thing and only warns for the
 # two configs CI re-arms itself; see the untrack-vs-delete note below.
 # Checked BEFORE the empty-staged-list exit, since a delete-only commit has an
-# empty ACMRT list. Use `git commit --no-verify` if a removal is intended (uninstall).
+# empty ACMRT list. A removal on purpose (uninstall) is the user's own action.
 # `--no-renames` is load-bearing: git's default rename detection reports a
 # `git mv secrets.txt secrets.txt.disabled` as an R (rename), not a D, so the
 # guard's list would be empty and the neutered-config commit would pass. Treating
@@ -101,7 +101,7 @@ EOF_DELCFG
   if [ -n "$GONE_CONFIG" ]; then
     echo "error: this commit deletes forbidden-pattern config, disabling the scanner:" >&2
     printf '%s' "$GONE_CONFIG" | sed 's/^/       /' >&2
-    echo "       Refusing — re-add it, or use 'git commit --no-verify' if intended." >&2
+    echo "       Refusing — re-add it. Dropping it on purpose is the user's own action, not the agent's." >&2
     [ ! -x "$LIB/refusal-log" ] || "$LIB/refusal-log" pre-commit config-deleted "$(printf '%s' "$GONE_CONFIG" | head -n1)" 1 --say a || true
     exit 1
   fi
@@ -122,7 +122,7 @@ EOF_UNTRACKED
   if [ -n "$STRICT_CONFIG" ]; then
     echo "error: this commit untracks forbidden-pattern config that nothing enforces server-side — check-patterns cannot tell a removed optional config from a language this project never installed, so these rules stop running in every fresh clone and in CI:" >&2
     printf '%s' "$STRICT_CONFIG" | sed 's/^/       /' >&2
-    echo "       Refusing — re-add it, or use 'git commit --no-verify' if intended." >&2
+    echo "       Refusing — re-add it. Dropping it on purpose is the user's own action, not the agent's." >&2
     [ ! -x "$LIB/refusal-log" ] || "$LIB/refusal-log" pre-commit config-untracked "$(printf '%s' "$STRICT_CONFIG" | head -n1)" 1 --say a || true
     exit 1
   fi

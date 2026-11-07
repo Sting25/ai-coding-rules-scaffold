@@ -14,6 +14,11 @@ versioning follows [SemVer](https://semver.org/).
   Node 20 reached end of life on 2026-04-30. Case 35 gains a numeric-floor
   (22) assertion on every `node-version` pin, so the next bump needs no test
   edit.
+- **No `--no-verify` exception in `AGENTS.md` (#239).** The rule is now "never skip a hook"; a confirmed false positive gets a narrow `scaffold-allow` line, and removing guard config is the user's own action. The six hook messages that told the reader to use the flag now say so (message text only).
+- **Never rewrite pushed history, on any branch (#240).** `AGENTS.md` drops the "unless told" clause; the two `shell.txt` messages match. No new permission-deny entries: the pattern precheck already blocks every spelling.
+- **Stricter rule wins (#241).** `AGENTS.md`, `CLAUDE.md` and `operational-rules.md` all state that where two rule files disagree the stricter applies, except a rule the Project section of `AGENTS.md` names as relaxed; `AGENTS.md` requires that relaxing line to be written by the user.
+- **Three downstream rules (#245).** One line each in `AGENTS.md`: never pipe a gate through `tail`/`head`, push/PR/merge each need their own go, any other write to a live system with real data needs the same confirmation and is otherwise read-only to the agent.
+- **Stack-specific go-live text moved out of `AGENTS.md` (#243).** The backend-as-a-service check now lives in `RECOMMENDATIONS.md`; rule numbers are unchanged.
 
 ### Fixed
 
