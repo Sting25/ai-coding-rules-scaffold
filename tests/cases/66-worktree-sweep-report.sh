@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# cases/62-worktree-sweep-report.sh: the test-guard gates' worktree lifecycle (#221).
+# cases/66-worktree-sweep-report.sh: the test-guard gates' worktree lifecycle (#221).
 # Sourced into the driver's shell, so PASS/FAIL/SKIP/HOOK_OUT/SCAFFOLD_DIR are in scope.
 #
 #   (a) worktree-sweep: an old redgreen- temp worktree is removed (directory and
@@ -18,7 +18,7 @@
 # Fixtures live in mktemp directories; TMPDIR is pointed at a private one for
 # (a) to (d) so the sweep only ever sees what the case created.
 
-echo "cases/62: worktree sweep and report (#221)"
+echo "cases/66: worktree sweep and report (#221)"
 
 c62_ok() { echo "  ✓ $1"; PASS=$((PASS + 1)); }
 c62_bad() { echo "  ✗ $1"; sed 's/^/      /' "$HOOK_OUT" | head -20; FAIL=$((FAIL + 1)); }

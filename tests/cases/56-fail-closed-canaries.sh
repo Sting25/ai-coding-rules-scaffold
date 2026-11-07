@@ -388,7 +388,7 @@ done
 # --- (i) the one exit that does not end in gate-status: SIGTERM (#221) ---------
 # A terminated Python gate exits through its SIGTERM handler, not gate-status.
 # That path must be non-zero (143), or a killed gate would read as a pass. The
-# live signal run is in cases/62; this pins the handler's exit code in both.
+# live signal run is in cases/66; this pins the handler's exit code in both.
 for c56_t in check-red-green check-mutation-diff; do
   : >"$HOOK_OUT"
   if grep -qF 'SIGTERM, lambda *_: sys.exit(143)' "$SCAFFOLD_DIR/githooks/lib/$c56_t.template"; then
