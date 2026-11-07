@@ -37,12 +37,21 @@ _code_body() {
   # Here-strings go first (so `<<<` is not read as a here-doc), then here-doc
   # bodies up to their terminator line, then the sed strips; a bare NAME=value
   # line is data, but one holding $( or a backtick runs a command and stays.
+  # A `<<` inside (( )) or $(( )) is a shift, not a here-doc, so it is blanked
+  # first; only the operator and its word leave the `<<` line, because the rest
+  # (`| run-checks`, `&& run-checks`) is still code. Body lines are dropped.
   sed -E -e 's/<<<("[^"]*"|'"'"'[^'"'"']*'"'"'|[^[:space:];&|]*)//g' "$1" 2>/dev/null |
     awk '
       hd != "" { t = $0; sub(/^[\t]+/, "", t); if (t == hd) hd = ""; next }
-      { if (match($0, /<<-?[ \t]*["\047]?[A-Za-z_][A-Za-z0-9_]*/)) {
-          w = substr($0, RSTART, RLENGTH); sub(/^<<-?[ \t]*["\047]?/, "", w)
-          hd = w; $0 = substr($0, 1, RSTART - 1) }
+      { s = $0; o = ""
+        while (match(s, /\(\([^()]*(\([^()]*\)[^()]*)*\)\)/)) {
+          a = substr(s, RSTART, RLENGTH); gsub(/</, " ", a)
+          o = o substr(s, 1, RSTART - 1) a; s = substr(s, RSTART + RLENGTH) }
+        $0 = o s
+        if (match($0, /(^|[^<])<<-?[ \t]*["\047\\]?[A-Za-z_][A-Za-z0-9_]*["\047]?/)) {
+          m = substr($0, RSTART, RLENGTH); p = index(m, "<<"); w = substr(m, p)
+          sub(/^<<-?[ \t]*["\047\\]?/, "", w); sub(/["\047]$/, "", w); hd = w
+          $0 = substr($0, 1, RSTART + p - 2) " " substr($0, RSTART + RLENGTH) }
         print }' |
     sed -E -e '/^[[:space:]]*#/d' -e 's/[[:space:]]#.*$//' -e 's/\[\[?[^]]*\]\]?//g' \
       -e 's/(^[[:space:]]*|[;&|(][[:space:]]*)(echo|printf)[[:space:]]+[^;&|]*//g' \

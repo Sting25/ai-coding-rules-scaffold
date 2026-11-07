@@ -79,6 +79,11 @@ run-checks
 EOF'; }
 fg_assign() { fg_hook_line 'W=run-checks'; }
 fg_cmdsub() { fg_hook_line 'out=$(.githooks/lib/run-checks)'; }
+fg_pipe_heredoc() { fg_hook_line 'cat <<EOF | .githooks/lib/run-checks
+x
+EOF'; }
+fg_arith_shift() { fg_hook_line 'n=2; x=$((1<<n))
+.githooks/lib/run-checks'; }
 fg_ghe() {
   git remote add origin git@github.mycorp.com:g/p.git
   rm -f .github/workflows/lint.yml
@@ -129,5 +134,9 @@ fg_case "a bare assignment naming the wrapper does not call it" present \
   "lib/check-large-files is installed and executable but nothing calls it" fg_assign
 fg_case "a command substitution that runs the wrapper counts as a call" absent \
   "lib/check-large-files is installed and executable but nothing calls it" fg_cmdsub
+fg_case "a wrapper piped a here-doc on the << line counts as a call" absent \
+  "lib/check-large-files is installed and executable but nothing calls it" fg_pipe_heredoc
+fg_case "a << shift inside \$(( )) is not a here-doc and a later call counts" absent \
+  "lib/check-large-files is installed and executable but nothing calls it" fg_arith_shift
 fg_case "a GitHub Enterprise remote without lint.yml is still a gap" present \
   ".github/workflows/lint.yml is missing" fg_ghe
