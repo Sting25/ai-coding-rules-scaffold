@@ -130,7 +130,7 @@ CASE_FLOORS=(
   "56-fail-closed-canaries.sh:55"
   "57-refusal-log.sh:34"
   "58-ts-test-guard.sh:43"
-  "59-ts-test-guard-real.sh:17"
+  "59-ts-test-guard-real.sh:23"
   "60-refusal-class.sh:55"
   "61-refusal-class-helper.sh:17"
   "66-worktree-sweep-report.sh:21"
