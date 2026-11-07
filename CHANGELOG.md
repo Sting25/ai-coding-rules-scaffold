@@ -66,6 +66,7 @@ versioning follows [SemVer](https://semver.org/).
 - **Never rewrite pushed history, on any branch (#240).** `AGENTS.md` drops the "unless told" clause; the two `shell.txt` messages match. No new permission-deny entries: the pattern precheck already blocks every spelling.
 - **Stricter rule wins (#241).** `AGENTS.md`, `CLAUDE.md` and `operational-rules.md` all state that where two rule files disagree the stricter applies, except a rule the Project section of `AGENTS.md` names as relaxed; `AGENTS.md` requires that relaxing line to be written by the user.
 - **Three downstream rules (#245).** One line each in `AGENTS.md`: never pipe a gate through `tail`/`head`, push/PR/merge each need their own go, any other write to a live system with real data needs the same confirmation and is otherwise read-only to the agent.
+- **Six additions to `operational-rules.md` (#242, #245, #226, #216, #221).** Anything code can check is built as code; a gate reports both the pass and the forced failure (or UNVERIFIED); new rules "Every rule applies to everyone" and "Documentation hygiene"; a pointer to the command list in `TECHNICAL.md` from "Inherited state is a hypothesis"; one sentence on worktree sweep and report beside "One writer per repo at a time".
 - **Stack-specific go-live text moved out of `AGENTS.md` (#243).** The backend-as-a-service check now lives in `RECOMMENDATIONS.md`; rule numbers are unchanged.
 
 ### Fixed
