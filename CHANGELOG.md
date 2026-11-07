@@ -32,6 +32,15 @@ versioning follows [SemVer](https://semver.org/).
   big", so `test-guard.yml` reported a green "declined (size)" over a broken
   gate. Both Python gates now print `internal error` with the traceback and exit
   2, which the workflow step already treats as a failure.
+- **A `# scaffold-allow` comment no longer exempts a Bash command from the agent
+  precheck (#203, #239).** The marker is for file content a person sanctioned,
+  but the precheck honored it on the command the agent was about to run, so a
+  force-push or a hook-skip flag with a trailing marker was allowed. Bash
+  commands are now never exempted, the refusal says why, and a normalised copy
+  of the command (line continuations joined, backslashes before a word
+  character removed, whitespace collapsed) is also scanned so an escaped or
+  continued flag no longer slips past. Write and Edit content keeps the
+  exemption.
 
 ## [v0.20.0] - 2026-11-07
 
