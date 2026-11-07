@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# .githooks/lib/check-branch: refuse a commit made directly on the repository's
+# default branch (#220). The rule is shipped in AGENTS.md ("work on a branch,
+# merge by pull request"); this is the local gate behind it.
+#
+# Default branch, first match wins:
+#   1. `git symbolic-ref refs/remotes/origin/HEAD` (what the remote says; alone)
+#   2. otherwise `main`, `master` and the `init.defaultBranch` git setting
+# Allowed: the first commit of a new repository (HEAD does not exist yet),
+# and a detached HEAD (a rebase or a bisect in progress).
+#
+# Escape, for one commit: SCAFFOLD_ALLOW_DEFAULT_BRANCH=1 git commit ...
+# Off for the project: .scaffold.toml [rules.branch] disabled = true (recorded
+# in scaffold-audit). `git commit --no-verify` skips every hook, this one
+# included, so it is a local convenience; the real guard is the server-side
+# rule (see COMPONENTS.md entry 20): GitHub's "Do not allow bypassing the above
+# settings".
+#
+# pre-commit calls this directly, before its empty-commit exit, and skips it in
+# its scanner loop; lint.yml skips it too (CI always runs on the default
+# branch). Ends through gate-status. Exit: 0 allowed, 1 refused.
+
+set -euo pipefail
+
+# See pre-commit: CDPATH must not reach the cd below.
+unset CDPATH
+case $0 in */*) _sd=${0%/*}; [ -n "$_sd" ] || _sd=/ ;; *) _sd=. ;; esac
+SELF_DIR="$(cd "$_sd" && pwd)"
+GS="$SELF_DIR/gate-status"
+CONFIG_BIN="$SELF_DIR/scaffold-config"
+cfg() { [ -x "$CONFIG_BIN" ] || return 0; "$CONFIG_BIN" "$@" 2>/dev/null || true; }
+
+STATE=$(cfg rule-state branch); [ -n "$STATE" ] || STATE=error
+[ "$STATE" != disabled ] || exec "$GS" branch skipped 0 "disabled: .scaffold.toml [rules.branch]"
+
+BRANCH=$(git symbolic-ref --short -q HEAD 2>/dev/null || true)
+[ -n "$BRANCH" ] || exec "$GS" branch empty 0 "detached HEAD, no branch to check"
+git rev-parse -q --verify HEAD >/dev/null 2>&1 || exec "$GS" branch empty 0 "first commit of a new repository"
+
+DEFAULT=$(git symbolic-ref --short -q refs/remotes/origin/HEAD 2>/dev/null || true)
+DEFAULT=${DEFAULT#origin/}
+if [ -n "$DEFAULT" ]; then
+  PROTECTED=" $DEFAULT "  # the remote's word is authoritative
+else
+  PROTECTED=" $(git config --get init.defaultBranch 2>/dev/null || true) main master "
+fi
+
+case "$PROTECTED" in
+  *" $BRANCH "*) ;;
+  *) exec "$GS" branch ran 1 "on branch $BRANCH" ;;
+esac
+
+if [ "${SCAFFOLD_ALLOW_DEFAULT_BRANCH:-}" = 1 ]; then
+  echo "note: committing on the default branch '$BRANCH' because SCAFFOLD_ALLOW_DEFAULT_BRANCH=1 is set" >&2
+  exec "$GS" branch ran 1 "escape SCAFFOLD_ALLOW_DEFAULT_BRANCH=1 used on $BRANCH"
+fi
+if [ "$STATE" = warn ]; then
+  echo "! commit on the default branch '$BRANCH' (warn, .scaffold.toml override)" >&2
+  exec "$GS" branch ran 1 "warn: on default branch $BRANCH"
+fi
+
+echo "✗ refusing to commit on the default branch '$BRANCH'. Work on a branch and merge by pull request:" >&2
+echo "      git switch -c <topic-branch>      (your staged changes come with you)" >&2
+echo "  For one deliberate commit here: SCAFFOLD_ALLOW_DEFAULT_BRANCH=1 git commit ..." >&2
+# The status line comes BEFORE the refusal log's class trailer, which must stay the last line.
+rc=0; "$GS" branch ran 1 "on default branch $BRANCH" 1 || rc=$?
+[ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-branch default-branch "$BRANCH" 1 --say a || true
+exit "$rc"

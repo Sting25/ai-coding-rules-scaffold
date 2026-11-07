@@ -17,6 +17,7 @@ Drop-in guardrails that **block bad code from being committed or merged**. One `
 - **Secrets & key files** — AWS / GCP / GitHub / GitLab / OpenAI / Anthropic / Stripe / Slack / Docker tokens, private keys, URL-embedded credentials, and stray `.env` / `*.pem` / SSH-key files.
 - **Runaway file growth**, a hard **500-line cap** that forces a file to be split before it outgrows an agent's context window (the one rule never to raise), plus a **500 KB cap** on any single committed file that blocks large binaries (videos, model checkpoints, database dumps, zipped exports).
 - **Insecure shortcuts** — `curl | bash`, `rm -rf /`, `chmod 777`, disabled TLS verification (`verify=False`, `curl -k`, `rejectUnauthorized: false`), raw `innerHTML`/XSS sinks, and `git --no-verify` hook bypasses.
+- **Commits straight to the default branch, and files the tests leave behind.** The hook refuses a commit on `main` or `master` (one deliberate commit: `SCAFFOLD_ALLOW_DEFAULT_BRANCH=1`), and the test workflows fail when a run leaves untracked or modified files. A local hook can be skipped, so the real guard is GitHub's server-side rule: turn on "Do not allow bypassing the above settings" (see [COMPONENTS.md](./COMPONENTS.md), entry 20).
 - **Repo-hygiene rot** — leftover merge-conflict markers, case-only filename collisions, and hidden-Unicode (Trojan-Source) tricks.
 - **Lint & type regressions** — `ruff` for Python; type-aware `eslint` + `tsc` + `prettier` for TS/JS; deny-lists for Vue, Svelte, PHP, Go, Rust, Java, Kotlin, Ruby, and shell.
 

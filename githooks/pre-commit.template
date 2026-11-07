@@ -131,6 +131,13 @@ EOF_UNTRACKED
   echo "       CI has no copy of an untracked config, and check-secrets/check-patterns fail closed on a missing secrets.txt/shell.txt, so a guardrails job fails closed there." >&2
 fi
 
+# Refuse a commit on the default branch (#220). Called here, before the
+# empty-staged-list exit below, so an `--allow-empty` commit is refused too; the
+# scanner loop skips it. Its gate line goes to /dev/null (the log is not open yet).
+if [ -x "$LIB/check-branch" ] && [ -x "$LIB/gate-status" ]; then
+  SCAFFOLD_GATE_LOG=/dev/null "$LIB/check-branch" </dev/null || exit 1
+fi
+
 # The T in ACMRT is load-bearing: git reports a symlink replaced by a regular
 # file (or the reverse) as a TYPE CHANGE, not as M. Without T such a path was
 # absent from the list, so every scanner ran on nothing and the new content
@@ -198,9 +205,10 @@ FAILED=0; unset RL_RULE RL_FILE
 # gitleaks pass rides the same rule (present iff `--gitleaks-hook` or entry
 # 16 copied it). check-red-green and check-mutation-diff (and their -ts twins)
 # are test-guard.yml tools with their own arguments, never run from here.
+# check-branch runs above; check-clean-tree is a CI step after the test suite.
 for check in "$LIB"/check-*; do
   [ -x "$check" ] || continue
-  case "${check##*/}" in check-red-green|check-red-green-ts|check-mutation-diff|check-mutation-diff-ts) continue ;; esac
+  case "${check##*/}" in check-red-green|check-red-green-ts|check-mutation-diff|check-mutation-diff-ts|check-branch|check-clean-tree) continue ;; esac
   "$check" <"$STAGED_LIST" || FAILED=1
 done
 
