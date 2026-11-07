@@ -7,10 +7,10 @@
 # `--no-verify` on EVERY failure, and agent-precheck told every blocked agent to
 # append a `scaffold-allow` marker. The block message is the one text an agent
 # is guaranteed to read at the moment it decides, so the bypass the rules call a
-# last resort became the default route. AGENTS.md "Git discipline" allows
-# `--no-verify` only when the hook's own refusal prints it (forbidden-pattern
-# config removal, a confirmed secret-scan false positive); "Fix the file, not
-# the check" says a suppression needs a recorded reason and the user's go-ahead.
+# last resort became the default route. AGENTS.md "Git discipline" now says
+# never skip a hook, so no block message may offer the flag at all (removing
+# guard config is the user's own action); "Fix the file, not the check" says a
+# suppression needs a recorded reason and the user's go-ahead.
 #
 # The agent-precheck half of this lives in cases/07 (it needs jq, so it sits
 # inside that file's existing jq gate).

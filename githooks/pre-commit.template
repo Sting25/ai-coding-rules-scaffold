@@ -52,7 +52,7 @@ LIB="$HOOK_DIR/lib"
 # still on disk (`git rm --cached`) is a different thing and only warns for the
 # two configs CI re-arms itself; see the untrack-vs-delete note below.
 # Checked BEFORE the empty-staged-list exit, since a delete-only commit has an
-# empty ACMRT list. Use `git commit --no-verify` if a removal is intended (uninstall).
+# empty ACMRT list. A removal on purpose (uninstall) is the user's own action.
 # `--no-renames` is load-bearing: git's default rename detection reports a
 # `git mv secrets.txt secrets.txt.disabled` as an R (rename), not a D, so the
 # guard's list would be empty and the neutered-config commit would pass. Treating

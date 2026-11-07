@@ -1,7 +1,7 @@
 # Operational rules
 
-Where a project's `AGENTS.md` says something different, the project's rule wins; these rules apply
-only where the project is silent.
+Where two rule files disagree, the stricter one applies (the one that asks first, does less, or
+forbids more); a rule that only adds a restriction always applies.
 
 Judgment and collaboration rules for working with AI agents. Rules about the code live in
 [`coding-rules.md`](./coding-rules.md), repo mechanics and red lines in [`AGENTS.md`](./AGENTS.md);

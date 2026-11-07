@@ -24,7 +24,7 @@ git hook run pre-commit            # size / pattern / secret / hygiene / filenam
 - In a monorepo, run `pytest` from the directory holding its config.
 - A finding in a file your branch did not touch is baseline, not yours: check the open `Lint baseline` issue (from `lint-tree.yml`, when installed) before reporting it.
 - Every hook refusal is recorded in `.git/scaffold-blocks.log` (shared by all worktrees, never the matched content); summarise it with `npx ai-coding-rules-scaffold blocks` (or `<scaffold path>/scaffold-blocks.sh`).
-- **Fix the file, not the check.** A `scaffold-allow` marker, a `.scaffold.toml` disable or downgrade, a widened ignore list, or a skipped or deleted test turns red green without fixing anything. Use one only for a genuine false positive you cannot fix, with the user's go-ahead, narrowly scoped with a recorded reason, named in the change summary. Never delete a test in the same change as the code it covered.
+- **Fix the file, not the check.** A `scaffold-allow` marker, a `.scaffold.toml` disable or downgrade, an ignore list widened over code you wrote, a skipped test, or a deleted test or workflow turns red green without fixing anything. Use one only for a genuine false positive you cannot fix, with the user's go-ahead, narrowly scoped with a recorded reason, named in the change summary. Never delete a test in the same change as the code it covered.
 - **Never pipe a gate's output through `tail` or `head`**: the pipe hides the gate's exit code. Write the output to a file and check the exit code, or use `set -o pipefail`.
 
 ## Session start
@@ -70,7 +70,7 @@ Before reporting a hook or check you created, confirm it exists on disk (`ls -l`
 - **Before `DROP`, `TRUNCATE`, an unbounded `DELETE`/`UPDATE`, a migration, or wiping a bucket, collection, or index** outside a local throwaway store ("start clean" counts): confirm a backup exists and its age, then get an explicit yes naming the target. No backup? Say so; treat it as unrecoverable.
 - **State the blast radius in the store's own units** ("deletes all 4,182 rows in `orders`, no undo"), not as a pasted command.
 - **Never `cat`, print, echo, or log `.env`, credential files, keys, or tokens.** Verify by length, hash, or line count; anything printed lands in a permanent transcript.
-- **Live systems with real data are read-only to you**; draft any message for a person to send.
+- **Beyond the confirmed writes above, live systems with real data are read-only to you**; draft any message for a person to send.
 
 ## Untrusted content
 
