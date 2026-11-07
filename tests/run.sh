@@ -133,8 +133,8 @@ CASE_FLOORS=(
   "59-ts-test-guard-real.sh:17"
   "60-refusal-class.sh:55"
   "61-refusal-class-helper.sh:17"
-  "64-clean-tree-gate.sh:21"
-  "65-branch-gate.sh:32"
+  "64-clean-tree-gate.sh:24"
+  "65-branch-gate.sh:33"
 )
 
 # A case file that exists but is NOT in the list above contributes nothing and

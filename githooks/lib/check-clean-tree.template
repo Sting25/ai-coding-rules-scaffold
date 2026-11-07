@@ -56,11 +56,17 @@ ghesc() {
 
 EXTRA=$(cfg rule-excludes clean-tree)
 excluded() {
-  local p=$1 g
-  # Defaults match at any depth: the path is padded with a leading "/".
-  case /$p in
-    */__pycache__/* | *.pyc | */*.egg-info/* | */package-lock.json | */.pytest_cache/* | */.coverage | */.coverage.* | */coverage.xml | */coverage/* | */node_modules/* | */.venv/*) return 0 ;;
-  esac
+  local p=$1 xy=$2 g
+  # Defaults match at any depth (the path is padded with a leading "/") and
+  # only for UNTRACKED files, so a tracked file the suite modified is always
+  # reported. The one exception: a tracked package-lock.json npm rewrites.
+  if [ "$xy" = '??' ]; then
+    case /$p in
+      */__pycache__/* | *.pyc | */*.egg-info/* | */package-lock.json | */.pytest_cache/* | */.coverage | */.coverage.* | */coverage.xml | */coverage/* | */node_modules/* | */.venv/*) return 0 ;;
+    esac
+  else
+    case /$p in */package-lock.json) return 0 ;; esac
+  fi
   while IFS= read -r g; do
     [ -n "$g" ] || continue
     # shellcheck disable=SC2254  # the glob is the pattern, on purpose
@@ -78,7 +84,7 @@ while IFS= read -r -d '' rec; do
   if [ "$SKIP_NEXT" -eq 1 ]; then SKIP_NEXT=0; continue; fi
   xy=${rec:0:2}; path=${rec:3}
   case $xy in R? | C? | ?R | ?C) SKIP_NEXT=1 ;; esac
-  excluded "$path" && continue
+  excluded "$path" "$xy" && continue
   if [ "$xy" = '??' ]; then kind="untracked"; else kind="modified (status $xy)"; fi
   N=$((N + 1)); : "${FIRST:=$path}"
   if [ "$STATE" = warn ]; then

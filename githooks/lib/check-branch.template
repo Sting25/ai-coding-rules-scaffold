@@ -38,7 +38,7 @@ BRANCH=$(git symbolic-ref --short -q HEAD 2>/dev/null || true)
 [ -n "$BRANCH" ] || exec "$GS" branch empty 0 "detached HEAD, no branch to check"
 # Only a repository with no branch at all is a true first commit. An orphan
 # branch in a repository with history (`checkout --orphan main`) is not.
-if ! git rev-parse -q --verify HEAD >/dev/null 2>&1 && [ -z "$(git for-each-ref --count=1 refs/heads refs/remotes)" ]; then
+if ! git rev-parse -q --verify HEAD >/dev/null 2>&1 && [ -z "$(git for-each-ref --count=1 refs/heads refs/remotes refs/tags)" ]; then
   exec "$GS" branch empty 0 "first commit of a new repository"
 fi
 

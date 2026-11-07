@@ -94,6 +94,30 @@ ct_expect "run from a subdirectory it still sees the whole repository" 1 "elsewh
 ct_expect "outside a repository it fails closed" 1 "not inside a git repository"
 rm -rf "$CT/sub" "$CT/pkg" "$CT/elsewhere"
 
+# The built-in excludes cover UNTRACKED files only: a tracked file the suite
+# modified is always reported, except a tracked package-lock.json.
+mkdir -p "$CT/d/.venv" "$CT/app/coverage" "$CT/web"
+printf 'a\n' >"$CT/d/.venv/tracked.txt"
+printf 'a\n' >"$CT/app/coverage/keep.txt"
+printf 'a\n' >"$CT/web/package-lock.json"
+git -C "$CT" add d app web
+git -C "$CT" commit --quiet -m "tracked files under excluded-looking paths"
+printf 'b\n' >>"$CT/d/.venv/tracked.txt"
+ct_run "$CT"
+ct_expect "a modified tracked file under .venv/ is flagged" 1 "d/.venv/tracked.txt"
+git -C "$CT" checkout --quiet -- d
+printf 'b\n' >>"$CT/app/coverage/keep.txt"
+ct_run "$CT"
+ct_expect "a modified tracked file under coverage/ is flagged" 1 "app/coverage/keep.txt"
+git -C "$CT" checkout --quiet -- app
+mkdir -p "$CT/n/node_modules/m"
+printf 'x\n' >"$CT/n/node_modules/m/i.js"
+printf 'b\n' >>"$CT/web/package-lock.json"
+ct_run "$CT"
+ct_expect "an untracked node_modules file and a modified tracked package-lock.json are ignored" 0 "gate=clean-tree status=ran"
+git -C "$CT" checkout --quiet -- web
+rm -rf "$CT/n"
+
 # Per-project settings: exclude, warn, disabled (recorded, passes under strict).
 printf '[rules.clean-tree]\nexclude = ["build/*"]\n' >"$CT/.scaffold.toml"
 git -C "$CT" add .scaffold.toml

@@ -153,7 +153,17 @@ br_expect "a real detached HEAD is allowed with the detached reason" 0 "detached
 ( cd "$BR" && git checkout --quiet main )
 ( cd / && env -u SCAFFOLD_GATE_LOG "$BR/.githooks/lib/check-branch" ) >"$HOOK_OUT" 2>&1 && BR_RC=0 || BR_RC=$?
 br_expect "outside a repository it fails closed, not as a detached HEAD" 1 "not inside a git repository"
-rm -rf "$BR2" "$BR3"
+fixture_repo BR4
+fixture_install "$BR4" --python --no-verify
+git -C "$BR4" add -A
+git -C "$BR4" commit --quiet -m "base"
+git -C "$BR4" tag v1
+git -C "$BR4" checkout --quiet --orphan main
+git -C "$BR4" branch --quiet -D work
+git -C "$BR4" add -A
+br_hook "$BR4"
+br_expect "only a tag plus an orphan main is refused, not a first commit" 1 "refusing to commit on the default branch 'main'"
+rm -rf "$BR2" "$BR3" "$BR4"
 
 # Wiring.
 if grep -qF 'check-branch' "$SCAFFOLD_DIR/githooks/pre-commit.template" && grep -qF 'check-branch' "$SCAFFOLD_DIR/.github/workflows/lint.yml.template"; then
