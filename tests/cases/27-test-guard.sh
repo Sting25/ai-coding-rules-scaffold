@@ -117,6 +117,36 @@ PYEOF
     echo "  ✗ $crash_g: an uncaught exception should exit 2 with 'internal error' and a traceback (got exit $crash_rc)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
   fi
 done
+# (T) a refusal-log call that itself raises (a bad bash path) must not change the gate's
+# exit code (#268): the crash and the timeout stay exit 2 and a decline stays exit 1, each with one
+# stderr warning, never Python's own exit 1 with a traceback. The failure is injected
+# into copies of the pristine installed gates (the first loop already rewrote its
+# copies; the gate looks for refusal-log beside itself).
+[ -f "$CRASH/lib/refusal-log" ] || { cp "$SCAFFOLD_DIR/githooks/lib/refusal-log.template" "$CRASH/lib/refusal-log"; chmod +x "$CRASH/lib/refusal-log"; }
+for log_g in check-mutation-diff check-red-green; do
+  for log_v in crash decline timeout; do
+    case "$log_v" in
+      crash) log_inj='rc = [][0];'; log_want=2 ;;
+      decline) log_inj='rc = 1;'; log_want=1 ;;
+      timeout) log_inj='raise subprocess.TimeoutExpired("x", 1);'; log_want=2 ;;
+    esac
+    python3 - "$T/.githooks/lib/$log_g" "$CRASH/lib/$log_g-$log_v" "$log_inj" <<'PYEOF'
+import sys
+s = open(sys.argv[1]).read()
+for old, new in (("rc = main();", sys.argv[3]), ('_B = shutil.which("bash")', '_B = "/nonexistent/bash"')):
+    assert old in s
+    s = s.replace(old, new)
+open(sys.argv[2], "w").write(s)
+PYEOF
+    log_rc=0
+    ( cd "$T" && python3 "$CRASH/lib/$log_g-$log_v" --base HEAD ) >"$HOOK_OUT" 2>&1 || log_rc=$?
+    if [ "$log_rc" -eq "$log_want" ] && grep -qF "refusal-log failed" "$HOOK_OUT"; then
+      echo "  ✓ $log_g ($log_v): a failing refusal-log call keeps exit $log_want and warns on stderr"; PASS=$((PASS + 1))
+    else
+      echo "  ✗ $log_g ($log_v): a failing refusal-log call should keep exit $log_want and warn (got exit $log_rc)"; sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+    fi
+  done
+done
 rm -rf "$CRASH"
 
 # (T) a re-run with the same flag appends nothing: the marker section must
