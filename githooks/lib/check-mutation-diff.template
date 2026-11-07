@@ -28,22 +28,18 @@ mutmut majors, whose CLI and config surface differ substantially:
     --tests-dir, no dry-run/count-only mode. All scoping is config-file
     based: `only_mutate` (glob, file-level only, no function-level
     scoping exists in this major) plus `source_paths`. So this script
-    writes a [tool.mutmut] table into a disposable worktree, it does not
-    pass CLI flags to mutmut.
+    writes a [tool.mutmut] table into a disposable worktree, it does not pass CLI flags to mutmut.
   - `mutmut --help`/`--version` import Config at IMPORT TIME and crash with
     a bare traceback if no source directory is guessable from cwd. Because
-    of this, mutmut's presence and pinned version are verified via
-    importlib.metadata in a subprocess, never via `mutmut --version`.
+    of this, mutmut's presence and pinned version are verified via importlib.metadata in a subprocess, never via `mutmut --version`.
   - mutmut ALWAYS copies sources into mutants/ under wherever it is
     invoked; it never mutates in place and does not require git. This
     script still builds an isolated `git worktree` copy of HEAD so the
-    synthesized config never touches the real checkout and so a crashed
-    or slow run cannot leave stray mutants/ artifacts in the repo.
+    synthesized config never touches the real checkout and so a crashed or slow run cannot leave stray mutants/ artifacts in the repo.
   - mutmut's own process exit code is NOT the verdict: surviving mutants
     exit 0, like a clean kill. The only reliable signal is a NONZERO code
     paired with one of the HARD_FAILURES strings below (baseline or clean
-    run failed, bad test-selection args, no test hit matches a mutant).
-    Everything else is read from the artifacts under mutants/, never $?.
+    run failed, bad test-selection args, no test hit matches a mutant). Everything else is read from the artifacts under mutants/, never $?.
   - A bad/nonexistent source_paths entry produces NO distinct error: 0
     files get mutated and mutmut exits 1 with "Stopping early, because we
     could not find any test case for any mutant", the same as "your tests
@@ -98,8 +94,7 @@ Exit: 0 evaluated cleanly (killed-clean, or advisory warnings emitted)
       2 could not evaluate: mutmut missing/wrong version, broken baseline,
         config/path failure, or timeout
 
-Exit 2 is a FAILURE, not a skip (as in check-red-green). CI-only / PR-only by
-design (#145 point 1): mutation runs take minutes, not a hook's seconds.
+Exit 2 is a FAILURE, not a skip (as in check-red-green). CI-only / PR-only by design (#145 point 1): mutation runs take minutes, not a hook's seconds.
 """
 
 from __future__ import annotations
@@ -152,6 +147,11 @@ def gate(status: str, n: int, reason: str, rc: int = 0) -> int:
         print(f"::error::gate-status unusable: {e}")
         return 2
     return r if r == rc else 2
+
+
+def _safe(f) -> None:  # a refusal-log failure must never change the exit code
+    try: f()
+    except Exception as e: print(f"::warning::refusal-log failed, {type(e).__name__}: {e}", file=sys.stderr)
 
 
 def emit(sev: str, msg: str, ci: bool) -> None:
@@ -492,9 +492,9 @@ def main() -> int:
 
 if __name__ == "__main__":
     try:
-        import signal as _S; _S.signal(_S.SIGTERM, lambda *_: sys.exit(143)); _RL = pathlib.Path(__file__).with_name("refusal-log"); _B = shutil.which("bash"); rc = main(); sys.stdout.flush(); rc and _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-mutation-diff", {1: "max-mutants", 2: "setup-error"}.get(rc, "error"), "", str(rc), "--say", {1: "a"}.get(rc, "b")], check=False); raise SystemExit(rc)
+        import signal as _S; _S.signal(_S.SIGTERM, lambda *_: sys.exit(143)); _RL = pathlib.Path(__file__).with_name("refusal-log"); _B = shutil.which("bash"); rc = main(); sys.stdout.flush(); rc and _B and _RL.is_file() and _safe(lambda: subprocess.run([_B, str(_RL), "check-mutation-diff", {1: "max-mutants", 2: "setup-error"}.get(rc, "error"), "", str(rc), "--say", {1: "a"}.get(rc, "b")], check=False)); raise SystemExit(rc)
     except subprocess.TimeoutExpired:
         print("::error::mutation-diff check timed out. A mutation run too slow to complete in CI is too slow to trust as a gate; scope it to fewer files or raise the timeout deliberately.")
-        sys.stdout.flush(); _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-mutation-diff", "timeout", "", "2", "--say", "b"], check=False); raise SystemExit(2)
+        sys.stdout.flush(); _B and _RL.is_file() and _safe(lambda: subprocess.run([_B, str(_RL), "check-mutation-diff", "timeout", "", "2", "--say", "b"], check=False)); raise SystemExit(2)
     except Exception as e:
-        print(f"::error::check-mutation-diff internal error, {type(e).__name__}: {e}", flush=True); sys.excepthook(*sys.exc_info()); _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-mutation-diff", "error", "", "2", "--say", "b"], check=False); raise SystemExit(2)
+        print(f"::error::check-mutation-diff internal error, {type(e).__name__}: {e}", flush=True); sys.excepthook(*sys.exc_info()); _B and _RL.is_file() and _safe(lambda: subprocess.run([_B, str(_RL), "check-mutation-diff", "error", "", "2", "--say", "b"], check=False)); raise SystemExit(2)

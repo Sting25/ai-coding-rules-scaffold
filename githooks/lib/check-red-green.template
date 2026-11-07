@@ -10,8 +10,7 @@ tools DISCARD any generated test that fails against the current code, so a test
 that correctly detects a bug is thrown away for being "wrong". Share of
 generated tests that VALIDATE the bug rather than catch it: CoverAgent 59.6%,
 CoverUp 68.1% (arXiv 2412.14137); CoverAgent discarded 470 bug-revealing tests,
-CoverUp 400. LLM test oracles also follow the implementation, not the intent:
-assertion correctness dropped 8-9 points on buggy code (arXiv 2410.21136).
+CoverUp 400. LLM test oracles also follow the implementation, not the intent: assertion correctness dropped 8-9 points on buggy code (arXiv 2410.21136).
 
 A test never seen to fail has never been shown to test anything.
 
@@ -29,8 +28,7 @@ If a new test passes against the base branch, one of three things is true:
   - it was written to match the implementation, not the requirement
 All three are worth stopping, with no diff-reading needed.
 
-A test that fails on base because its import does not exist yet counts as RED
-(honest: the code it tests did not exist).
+A test that fails on base because its import does not exist yet counts as RED (honest: the code it tests did not exist).
 
 THE LEGITIMATE EXCEPTION, made explicit rather than assumed.
 Some new tests SHOULD pass against base: characterization tests pinning
@@ -67,8 +65,7 @@ Exit: 0 all new tests were red on base (or explicitly exempt)
       1 one or more new tests passed on base, or tests changed but 0 collected
       2 could not evaluate (no base, collection broken, git failure)
 
-Exit 2 is a FAILURE, not a skip: a check that cannot run never reports green.
-Every other end goes through gate-status. NOT overridable via .scaffold.toml.
+Exit 2 is a FAILURE, not a skip: a check that cannot run never reports green. Every other end goes through gate-status. NOT overridable via .scaffold.toml.
 """
 
 from __future__ import annotations
@@ -100,6 +97,11 @@ def gate(status: str, n: int, reason: str, rc: int = 0) -> int:
     except OSError as e:  # not executable / missing: exit 2, never a traceback's 1
         print(f"::error::gate-status unusable: {e}")
         return 2
+
+
+def _safe(f) -> None:  # a refusal-log failure must never change the exit code
+    try: f()
+    except Exception as e: print(f"::warning::refusal-log failed, {type(e).__name__}: {e}", file=sys.stderr)
 
 
 def emit(sev: str, msg: str, ci: bool) -> None:
@@ -490,11 +492,9 @@ def main() -> int:
 
 if __name__ == "__main__":
     try:
-        import signal as _S; _S.signal(_S.SIGTERM, lambda *_: sys.exit(143)); _RL = pathlib.Path(__file__).with_name("refusal-log"); _B = shutil.which("bash"); rc = main(); sys.stdout.flush(); rc and _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-red-green", {1: "green-on-base-or-cap", 2: "setup-error"}.get(rc, "error"), "", str(rc), "--say", {1: "a"}.get(rc, "b")], check=False); raise SystemExit(rc)
+        import signal as _S; _S.signal(_S.SIGTERM, lambda *_: sys.exit(143)); _RL = pathlib.Path(__file__).with_name("refusal-log"); _B = shutil.which("bash"); rc = main(); sys.stdout.flush(); rc and _B and _RL.is_file() and _safe(lambda: subprocess.run([_B, str(_RL), "check-red-green", {1: "green-on-base-or-cap", 2: "setup-error"}.get(rc, "error"), "", str(rc), "--say", {1: "a"}.get(rc, "b")], check=False)); raise SystemExit(rc)
     except subprocess.TimeoutExpired:
-        print("::error::red-green check timed out. A suite too slow to run twice "
-              "is a suite too slow to trust as a gate; split it or scope this "
-              "check to a subset.")
-        sys.stdout.flush(); _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-red-green", "timeout", "", "2", "--say", "b"], check=False); raise SystemExit(2)
+        print("::error::red-green check timed out. A suite too slow to run twice is a suite too slow to trust as a gate; split it or scope this check to a subset.")
+        sys.stdout.flush(); _B and _RL.is_file() and _safe(lambda: subprocess.run([_B, str(_RL), "check-red-green", "timeout", "", "2", "--say", "b"], check=False)); raise SystemExit(2)
     except Exception as e:
-        print(f"::error::check-red-green internal error, {type(e).__name__}: {e}", flush=True); sys.excepthook(*sys.exc_info()); _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-red-green", "error", "", "2", "--say", "b"], check=False); raise SystemExit(2)
+        print(f"::error::check-red-green internal error, {type(e).__name__}: {e}", flush=True); sys.excepthook(*sys.exc_info()); _B and _RL.is_file() and _safe(lambda: subprocess.run([_B, str(_RL), "check-red-green", "error", "", "2", "--say", "b"], check=False)); raise SystemExit(2)
