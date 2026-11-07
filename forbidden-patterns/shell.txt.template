@@ -34,7 +34,7 @@
 # ships a `githooks/` dir), and `git -c core.hooksPath=<tmpdir>` (what a hook test
 # harness does — tests/cases/14,15,18 here). An earlier draft of this rule matched
 # all three and put four errors into this repo's own self-lint run.
-(^|[^A-Za-z_])git[[:space:]][^|;&]*core\.hooksPath[[:space:]=]+(["']?/dev/null|""|'')	core.hooksPath=/dev/null (or empty) disarms every hook in this clone. Fix the failing check instead (a genuine uninstall needs the user's go-ahead)
+(^|[^A-Za-z_])git[[:space:]][^|;&]*core\.hooksPath[[:space:]=]+(["']?/dev/null|""|'')	core.hooksPath=/dev/null (or empty) disarms every hook in this clone. Fix the failing check instead (an uninstall is the user's own action, not yours)
 
 # Git discipline (AGENTS.md > Git discipline). agent-precheck feeds this file to
 # Claude PreToolUse, which is the only point at which a destructive git command

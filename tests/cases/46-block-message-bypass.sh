@@ -104,7 +104,7 @@ fi
 BM_WANT=""
 BM_GOT=$(cd "$SCAFFOLD_DIR" && grep -rnF -e "$BM_FLAG" githooks \
   | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' | cut -d: -f1 | LC_ALL=C sort | uniq -c \
-  | awk '{ printf "%s:%s ", $2, $1 }')
+  | awk '{ printf "%s:%s ", $2, $1 }' || true)
 if [ "$BM_GOT" = "$BM_WANT" ]; then
   echo "  ✓ no shipped hook offers the bypass flag (by file and count)"; PASS=$((PASS + 1))
 else
