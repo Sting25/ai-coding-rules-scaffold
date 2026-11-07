@@ -71,6 +71,7 @@ versioning follows [SemVer](https://semver.org/).
   added `it.skip` and `it.todo` lines, because `vitest list` does not list them
   (exit code unchanged). Case 59 now runs the mutation twin's refusal logging
   (`max-mutants` and `setup-error` lines) instead of reading it.
+- **The doctor no longer reports false "nothing calls it" gaps, or demands a GitHub workflow off GitHub (#244).** A check is now counted as called when it is invoked from `pre-push` or `post-*` hooks, or from a wrapper lib file that a hook invokes (one hop). Installer backups (`*.scaffold-bak`) are no longer treated as checks or callers. In the other direction, a check named only in an `echo`, a comment, a here-doc body or an assignment is now reported as a gap, where it used to read as armed. A missing `.github/workflows/lint.yml` is a note, not a gap, when `remote.origin` is set and is not a github.com URL. Covered by `tests/cases/62-doctor-false-gaps.sh`.
 
 ## [v0.20.0] - 2026-11-07
 
