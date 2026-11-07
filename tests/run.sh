@@ -49,7 +49,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # number for every case that does not touch SKIP, so the floors in the list
 # below are unchanged by this. It matters for a case whose whole body sits
 # behind an optional tool AND which says how many assertions that costs —
-# cases/35 (14 workflows, actionlint; plus 2 ungated structural checks) and cases/36 (3 verdicts, pytest).
+# cases/35 (15 workflows, actionlint; plus 2 ungated structural checks) and cases/36 (3 verdicts, pytest).
 # Counting only passes would force those floors to 0, the bare machine's
 # number, and a 0 floor guards nothing: the file could be emptied and the run
 # would still be green.
