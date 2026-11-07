@@ -1,11 +1,11 @@
 # shellcheck shell=bash
-# cases/63-branch-gate.sh: lib/check-branch, called from pre-commit, refuses a
+# cases/65-branch-gate.sh: lib/check-branch, called from pre-commit, refuses a
 # commit on the repository's default branch (#220). Sourced into the driver's
 # shell (PASS/FAIL/HOOK_OUT/SCAFFOLD_DIR and fixture_* in scope); self-
 # sufficient, so it also runs alone. The suite's own fixtures commit on a work
 # branch (tests/lib/common.sh), so every other case stays unaffected.
 
-echo "cases/63: check-branch refuses the default branch, allows a work branch and the first commit (#220)"
+echo "cases/65: check-branch refuses the default branch, allows a work branch and the first commit (#220)"
 
 br_ok() { echo "  ✓ $1"; PASS=$((PASS + 1)); }
 br_bad() { echo "  ✗ $1"; sed 's/^/      /' "$HOOK_OUT" | head -20; FAIL=$((FAIL + 1)); }
@@ -116,6 +116,44 @@ printf '[rules.branch]\nseverity = "warn"\n' >"$BR/.scaffold.toml"
 git -C "$BR" add .scaffold.toml
 br_hook "$BR"
 br_expect "severity = warn lets the commit through and says so" 0 "warn"
+
+# Only the exact value 1 is an escape.
+git -C "$BR" checkout --quiet -B main
+git -C "$BR" rm --quiet -f .scaffold.toml  # drop the warn setting from above
+git -C "$BR" reset --quiet
+printf 'esc\n' >"$BR/esc.txt"
+git -C "$BR" add esc.txt
+for br_v in "" 0 false yes; do
+  br_hook "$BR" SCAFFOLD_ALLOW_DEFAULT_BRANCH="$br_v"
+  br_expect "SCAFFOLD_ALLOW_DEFAULT_BRANCH='$br_v' is not an escape" 1 "refusing to commit on the default branch"
+done
+br_hook "$BR" SCAFFOLD_ALLOW_DEFAULT_BRANCH=1
+br_expect "the escape prints a visible stderr line through pre-commit" 0 "SCAFFOLD_ALLOW_DEFAULT_BRANCH=1 is set"
+
+# An orphan branch named like the default, in a repository WITH history, is not
+# a first commit; a repository with no branch at all is.
+fixture_repo BR2
+fixture_install "$BR2" --python --no-verify
+git -C "$BR2" add -A
+git -C "$BR2" commit --quiet -m "base"
+git -C "$BR2" checkout --quiet --orphan main
+git -C "$BR2" add -A
+br_hook "$BR2"
+br_expect "an orphan 'main' in a repository with history is refused" 1 "refusing to commit on the default branch 'main'"
+( cd "$BR2" && env -u SCAFFOLD_GATE_LOG .githooks/lib/check-branch ) >"$HOOK_OUT" 2>&1 && BR_RC=0 || BR_RC=$?
+if grep -qF 'first commit' "$HOOK_OUT"; then br_bad "an orphan branch must not be reported as a first commit"; else br_ok "an orphan branch is not reported as a first commit"; fi
+fixture_repo BR3
+fixture_install "$BR3" --python --no-verify
+git -C "$BR3" checkout --quiet -b main
+( cd "$BR3" && env -u SCAFFOLD_GATE_LOG .githooks/lib/check-branch ) >"$HOOK_OUT" 2>&1 && BR_RC=0 || BR_RC=$?
+br_expect "a true first commit (no branch anywhere) is allowed, reason named" 0 "gate=branch status=empty" "first commit of a new repository"
+git -C "$BR3" checkout --quiet --detach 2>/dev/null || true
+( cd "$BR" && git checkout --quiet --detach && env -u SCAFFOLD_GATE_LOG .githooks/lib/check-branch ) >"$HOOK_OUT" 2>&1 && BR_RC=0 || BR_RC=$?
+br_expect "a real detached HEAD is allowed with the detached reason" 0 "detached HEAD"
+( cd "$BR" && git checkout --quiet main )
+( cd / && env -u SCAFFOLD_GATE_LOG "$BR/.githooks/lib/check-branch" ) >"$HOOK_OUT" 2>&1 && BR_RC=0 || BR_RC=$?
+br_expect "outside a repository it fails closed, not as a detached HEAD" 1 "not inside a git repository"
+rm -rf "$BR2" "$BR3"
 
 # Wiring.
 if grep -qF 'check-branch' "$SCAFFOLD_DIR/githooks/pre-commit.template" && grep -qF 'check-branch' "$SCAFFOLD_DIR/.github/workflows/lint.yml.template"; then

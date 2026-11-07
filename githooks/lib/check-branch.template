@@ -33,9 +33,14 @@ cfg() { [ -x "$CONFIG_BIN" ] || return 0; "$CONFIG_BIN" "$@" 2>/dev/null || true
 STATE=$(cfg rule-state branch); [ -n "$STATE" ] || STATE=error
 [ "$STATE" != disabled ] || exec "$GS" branch skipped 0 "disabled: .scaffold.toml [rules.branch]"
 
+git rev-parse --git-dir >/dev/null 2>&1 || { echo "error: not inside a git repository" >&2; exec "$GS" branch ran 0 "not inside a git repository"; }
 BRANCH=$(git symbolic-ref --short -q HEAD 2>/dev/null || true)
 [ -n "$BRANCH" ] || exec "$GS" branch empty 0 "detached HEAD, no branch to check"
-git rev-parse -q --verify HEAD >/dev/null 2>&1 || exec "$GS" branch empty 0 "first commit of a new repository"
+# Only a repository with no branch at all is a true first commit. An orphan
+# branch in a repository with history (`checkout --orphan main`) is not.
+if ! git rev-parse -q --verify HEAD >/dev/null 2>&1 && [ -z "$(git for-each-ref --count=1 refs/heads refs/remotes)" ]; then
+  exec "$GS" branch empty 0 "first commit of a new repository"
+fi
 
 DEFAULT=$(git symbolic-ref --short -q refs/remotes/origin/HEAD 2>/dev/null || true)
 DEFAULT=${DEFAULT#origin/}

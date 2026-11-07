@@ -1,10 +1,10 @@
 # shellcheck shell=bash
-# cases/62-clean-tree-gate.sh: lib/check-clean-tree, the CI step that fails when
+# cases/64-clean-tree-gate.sh: lib/check-clean-tree, the CI step that fails when
 # the test suite leaves untracked or modified files behind (#219). Sourced into
 # the driver's shell (PASS/FAIL/HOOK_OUT/SCAFFOLD_DIR and fixture_* in scope);
 # self-sufficient, so it also runs alone. Gates run from the INSTALLED copy.
 
-echo "cases/62: check-clean-tree fails a dirty tree and passes a clean one (#219)"
+echo "cases/64: check-clean-tree fails a dirty tree and passes a clean one (#219)"
 
 ct_ok() { echo "  ✓ $1"; PASS=$((PASS + 1)); }
 ct_bad() { echo "  ✗ $1"; sed 's/^/      /' "$HOOK_OUT" | head -20; FAIL=$((FAIL + 1)); }
@@ -71,6 +71,28 @@ printf 'x\n' >"$CT/ignored.log"
 ct_run "$CT"
 ct_expect "a git-ignored file passes" 0 "gate=clean-tree status=ran"
 rm -f "$CT/ignored.log"
+
+# Defaults match at any depth; a nested stray file is flagged; the verdict is the
+# whole repository even when run from a subdirectory.
+mkdir -p "$CT/sub/frontend" "$CT/pkg/.pytest_cache"
+printf 'x\n' >"$CT/sub/frontend/package-lock.json"
+printf 'x\n' >"$CT/pkg/.pytest_cache/v"
+printf 'x\n' >"$CT/sub/.coverage"
+mkdir -p "$CT/sub/node_modules/m" "$CT/sub/.venv"
+printf 'x\n' >"$CT/sub/node_modules/m/i.js"
+printf 'x\n' >"$CT/sub/.venv/p"
+ct_run "$CT"
+ct_expect "nested package-lock.json, .pytest_cache, .coverage, node_modules, .venv are ignored" 0 "gate=clean-tree status=ran"
+printf 'x\n' >"$CT/sub/frontend/stray.txt"
+ct_run "$CT"
+ct_expect "a nested stray file is flagged" 1 "sub/frontend/stray.txt"
+mkdir -p "$CT/elsewhere"
+printf 'x\n' >"$CT/elsewhere/other.txt"
+( cd "$CT/sub" && env -u SCAFFOLD_GATE_LOG -u SCAFFOLD_GATE_STRICT ../.githooks/lib/check-clean-tree ) >"$HOOK_OUT" 2>&1 && CT_RC=0 || CT_RC=$?
+ct_expect "run from a subdirectory it still sees the whole repository" 1 "elsewhere/other.txt" "sub/frontend/stray.txt"
+( cd / && env -u SCAFFOLD_GATE_LOG -u SCAFFOLD_GATE_STRICT "$CT/.githooks/lib/check-clean-tree" ) >"$HOOK_OUT" 2>&1 && CT_RC=0 || CT_RC=$?
+ct_expect "outside a repository it fails closed" 1 "not inside a git repository"
+rm -rf "$CT/sub" "$CT/pkg" "$CT/elsewhere"
 
 # Per-project settings: exclude, warn, disabled (recorded, passes under strict).
 printf '[rules.clean-tree]\nexclude = ["build/*"]\n' >"$CT/.scaffold.toml"

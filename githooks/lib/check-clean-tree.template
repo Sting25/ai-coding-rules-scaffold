@@ -17,7 +17,8 @@
 #
 # Never counted: output the shipped test workflows themselves produce
 # (__pycache__, *.pyc, *.egg-info, .pytest_cache, .coverage*, coverage.xml,
-# coverage/, and the package-lock.json an `npm install` writes).
+# coverage/, node_modules/, .venv/, and the package-lock.json an `npm install`
+# writes), at any depth. It always judges the whole repository.
 # More paths: .scaffold.toml [rules.clean-tree] exclude = ["out/*"]. The whole
 # check: disabled = true (recorded in scaffold-audit) or severity = "warn".
 #
@@ -34,6 +35,10 @@ SELF_DIR="$(cd "$_sd" && pwd)"
 GS="$SELF_DIR/gate-status"
 CONFIG_BIN="$SELF_DIR/scaffold-config"
 cfg() { [ -x "$CONFIG_BIN" ] || return 0; "$CONFIG_BIN" "$@" 2>/dev/null || true; }
+
+# Always judge the whole repository, whatever directory this runs from.
+TOP=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "error: not inside a git repository" >&2; exec "$GS" clean-tree ran 0 "not inside a git repository"; }
+cd "$TOP"
 
 CI_MODE=0
 [ "${1:-}" = "--ci" ] && CI_MODE=1
@@ -52,8 +57,9 @@ ghesc() {
 EXTRA=$(cfg rule-excludes clean-tree)
 excluded() {
   local p=$1 g
-  case $p in
-    __pycache__/* | */__pycache__/* | *.pyc | *.egg-info/* | package-lock.json | .pytest_cache/* | .coverage | .coverage.* | coverage.xml | coverage/*) return 0 ;;
+  # Defaults match at any depth: the path is padded with a leading "/".
+  case /$p in
+    */__pycache__/* | *.pyc | */*.egg-info/* | */package-lock.json | */.pytest_cache/* | */.coverage | */.coverage.* | */coverage.xml | */coverage/* | */node_modules/* | */.venv/*) return 0 ;;
   esac
   while IFS= read -r g; do
     [ -n "$g" ] || continue
