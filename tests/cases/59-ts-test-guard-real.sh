@@ -24,11 +24,14 @@
 #   (e) a glob-metacharacter path (src/[id]/page.ts): escaped, so Stryker
 #       really instruments it (>= 1 mutant), not "0 mutants" from a no-match
 #   (f) a root file named !x.ts: a leading "!" is an exclusion pattern with no
-#       literal form, so the script refuses it with exit 2 naming the path
+#       literal form, so the script refuses it with exit 2 naming the path and
+#       saying the other changed source files went unevaluated
+#   (g) refusal log lines for both twins (red-green and mutation)
+#   (h) added it.skip / it.todo: a notice that vitest list does not list them
 
 echo "cases/59: TypeScript test-guard twin against real Vitest and Stryker (#205)"
 
-_ts59_n=17
+_ts59_n=23
 _ts59_t="${SCAFFOLD_TS_TOOLS:-}"
 if [ -z "$_ts59_t" ] \
    || ! command -v node >/dev/null 2>&1 \
@@ -142,10 +145,12 @@ TS
   _ts59_g checkout -q -B scen-f "$_ts59_base"
   printf 'export function neg(x: number): number {\n  return -x;\n}\n' >"$_ts59_d/!x.ts"
   printf 'import { expect, it } from "vitest";\nimport { neg } from "../!x";\n\nit("negates", () => {\n  expect(neg(2)).toBe(-2);\n});\n' >"$_ts59_d/src/bang.test.ts"
+  printf 'export function pos(x: number): number {\n  return +x;\n}\n' >"$_ts59_d/src/other.ts"
   _ts59_commit "add bang path"
   _ts59_run check-mutation-diff-ts --base "$_ts59_base"
   _ts59_check "(f) a path starting with ! is exit 2, not a silent 0-mutant pass" "$([ "$_ts59_rc" = 2 ] && echo 1 || echo 0)"
   _ts59_check "(f) the refusal names the path" "$(printf '%s' "$_ts59_out" | grep -q '!x.ts: a path starting with' && echo 1 || echo 0)"
+  _ts59_check "(f) the refusal says the other changed source file went unevaluated (#260)" "$(printf '%s' "$_ts59_out" | grep -q 'refused: 1 other changed source file(s) went unevaluated' && echo 1 || echo 0)"
 
   # --- (g) refusal log: the offender run writes one line; a missing logger
   #         never changes the verdict (fail open) -------------------------
@@ -159,6 +164,32 @@ TS
   rm -f "$_ts59_d/.githooks/lib/refusal-log" "$_ts59_d/.git/scaffold-blocks.log"
   _ts59_run check-red-green-ts --base "$_ts59_base"
   _ts59_check "(g) without the logger the verdict is unchanged: exit 1, nothing written" "$([ "$_ts59_rc" = 1 ] && [ ! -e "$_ts59_d/.git/scaffold-blocks.log" ] && echo 1 || echo 0)"
+
+  # The mutation twin's own log lines (#260 item 6): the size decline (exit 1,
+  # --max-mutants 1 against scenario (a)'s several mutants) and the exit-2
+  # refusal (scenario (f)).
+  cp "$SCAFFOLD_DIR/githooks/lib/refusal-log.template" "$_ts59_d/.githooks/lib/refusal-log"
+  chmod +x "$_ts59_d/.githooks/lib/refusal-log"
+  _ts59_g checkout -q scen-a
+  rm -f "$_ts59_d/.git/scaffold-blocks.log"
+  _ts59_run check-mutation-diff-ts --base "$_ts59_base" --max-mutants 1
+  _ts59_check "(g) a mutation run over --max-mutants logs one check-mutation-diff-ts max-mutants line" "$([ "$_ts59_rc" = 1 ] && [ "$(grep -c "$(printf 'check-mutation-diff-ts\tmax-mutants\t-\t1')" "$_ts59_d/.git/scaffold-blocks.log" 2>/dev/null)" = 1 ] && echo 1 || echo 0)"
+  _ts59_check "(g) the mutation twin's exit-1 refusal ends with the class (a) trailer" "$([ "$(printf '%s\n' "$_ts59_out" | tail -n 1)" = "refusal class (a): this check failed on your own change. Fix the file, never the gate." ] && echo 1 || echo 0)"
+  _ts59_g checkout -q scen-f
+  rm -f "$_ts59_d/.git/scaffold-blocks.log"
+  _ts59_run check-mutation-diff-ts --base "$_ts59_base"
+  _ts59_check "(g) a mutation setup refusal logs one check-mutation-diff-ts setup-error line" "$([ "$_ts59_rc" = 2 ] && [ "$(grep -c "$(printf 'check-mutation-diff-ts\tsetup-error\t-\t2')" "$_ts59_d/.git/scaffold-blocks.log" 2>/dev/null)" = 1 ] && echo 1 || echo 0)"
+  rm -f "$_ts59_d/.githooks/lib/refusal-log" "$_ts59_d/.git/scaffold-blocks.log"
+
+  # --- (h) skip and todo are invisible to vitest list: a notice, same exit ---
+  _ts59_g checkout -q -B scen-h "$_ts59_base"
+  # One listed red test beside them: a file with only skips lists 0 tests,
+  # which the gate-status contract (#210) already refuses on its own.
+  printf 'import { expect, it } from "vitest";\n\nit("is red", () => {\n  expect(1).toBe(2);\n});\nit.skip("later", () => {});\nit.todo("someday");\n' >"$_ts59_d/src/skipped.test.ts"
+  _ts59_commit "add skipped tests"
+  _ts59_run check-red-green-ts --base "$_ts59_base"
+  _ts59_check "(h) added it.skip and it.todo do not change the verdict (exit 0)" "$([ "$_ts59_rc" = 0 ] && echo 1 || echo 0)"
+  _ts59_check "(h) the output counts 2 added skip/todo lines as not listed" "$(printf '%s' "$_ts59_out" | grep -q '2 added line(s) use skip or todo' && echo 1 || echo 0)"
 
   rm -rf "$_ts59_d"
 fi
