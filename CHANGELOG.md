@@ -15,6 +15,14 @@ versioning follows [SemVer](https://semver.org/).
   (22) assertion on every `node-version` pin, so the next bump needs no test
   edit.
 
+### Fixed
+
+- **A crash in `check-mutation-diff` or `check-red-green` exits 2, not 1 (#257).**
+  An uncaught Python exception used to exit 1, the code for "the diff is too
+  big", so `test-guard.yml` reported a green "declined (size)" over a broken
+  gate. Both Python gates now print `internal error` with the traceback and exit
+  2, which the workflow step already treats as a failure.
+
 ## [v0.20.0] - 2026-11-07
 
 ### Added
