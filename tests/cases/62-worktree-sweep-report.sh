@@ -136,8 +136,7 @@ c62_start_gate() {
   ( cd "$C62_R" && exec env TMPDIR="$C62_TP" PYTHONPATH="$C62_STUB" C62_MARK="$C62_MARK" \
       python3 "$RGATE" --base "$C62_BASE" ) >"$HOOK_OUT" 2>&1 &
   C62_PID=$!
-  local i
-  for i in $(seq 1 100); do [ -f "$C62_MARK" ] && return 0; sleep 0.2; done
+  for _ in $(seq 1 100); do [ -f "$C62_MARK" ] && return 0; sleep 0.2; done
   kill -KILL "$C62_PID" 2>/dev/null
   return 1
 }
@@ -178,7 +177,7 @@ c62_repo C62_R
 C62_W=$(mktemp -d)
 (
   cd "$C62_R" || exit 1
-  git worktree add --quiet -b done "$C62_W/done" HEAD
+  git worktree add --quiet -b "done" "$C62_W/done" HEAD
   git worktree add --quiet -b gone "$C62_W/gone" HEAD
   git worktree add --quiet -b open "$C62_W/open" HEAD
   ( cd "$C62_W/open" && printf 'y\n' >g && git add g && git commit --quiet -m wip --no-verify )  # scaffold-allow: test fixture
