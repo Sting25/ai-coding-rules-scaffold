@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **A crash in `check-mutation-diff` or `check-red-green` exits 2, not 1 (#257).**
+  An uncaught Python exception used to exit 1, the code for "the diff is too
+  big", so `test-guard.yml` reported a green "declined (size)" over a broken
+  gate. Both Python gates now print `internal error` with the traceback and exit
+  2, which the workflow step already treats as a failure.
+
 ## [v0.20.0] - 2026-11-07
 
 ### Added
