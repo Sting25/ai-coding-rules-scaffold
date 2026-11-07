@@ -24,7 +24,8 @@ git hook run pre-commit            # size / pattern / secret / hygiene / filenam
 - In a monorepo, run `pytest` from the directory holding its config.
 - A finding in a file your branch did not touch is baseline, not yours: check the open `Lint baseline` issue (from `lint-tree.yml`, when installed) before reporting it.
 - Every hook refusal is recorded in `.git/scaffold-blocks.log` (shared by all worktrees, never the matched content); summarise it with `npx ai-coding-rules-scaffold blocks` (or `<scaffold path>/scaffold-blocks.sh`).
-- **Fix the file, not the check.** A `scaffold-allow` marker, a `.scaffold.toml` disable or downgrade, an ignore list widened over code you wrote, a skipped test, or a deleted test or workflow turns red green without fixing anything. Use one only for a genuine false positive you cannot fix, with the user's go-ahead, scoped narrowly with a recorded reason, and name it in the change summary. Never delete a test in the same change as the code it covered.
+- **Fix the file, not the check.** A `scaffold-allow` marker, a `.scaffold.toml` disable or downgrade, a widened ignore list, or a skipped or deleted test turns red green without fixing anything. Use one only for a genuine false positive you cannot fix, with the user's go-ahead, narrowly scoped with a recorded reason, named in the change summary. Never delete a test in the same change as the code it covered.
+- **Never pipe a gate's output through `tail` or `head`**: the pipe hides the gate's exit code. Write the output to a file and check the exit code, or use `set -o pipefail`.
 
 ## Session start
 
@@ -44,7 +45,7 @@ Before reporting a hook or check you created, confirm it exists on disk (`ls -l`
 
 ## Operational rules
 
-[`operational-rules.md`](./operational-rules.md) holds the judgment and collaboration rules; they apply wherever this file is silent.
+[`operational-rules.md`](./operational-rules.md) holds the judgment and collaboration rules. Where two rule files disagree, the stricter one applies (the one that asks first, does less, or forbids more); a rule that only adds a restriction always applies. A project relaxes a shipped rule only by naming it in its Project section.
 
 ## Git discipline
 
@@ -52,9 +53,9 @@ Before reporting a hook or check you created, confirm it exists on disk (`ls -l`
 - **On a feature branch, commit each passing logical unit without asking; ask before committing to `main`/`master`.**
 - **Stage explicit paths.** Never `git add -A` or `git add .` where tests or tools write into the tree.
 - **One commit per logical change**; split a fix, a rename, and a feature. Exception: a fix and its regression test go in together.
-- **Never push, or merge into a protected branch, unless asked** ("push it", "merge it").
-- **Never rewrite pushed history** (`--amend`, rebase, `push --force`, `push --force-with-lease`) without explicit instruction for that specific push. On `main`/`master`, refuse and tell the user to run it themselves.
-- **Never `git commit --no-verify` past a failing check**; fix the hook if it is wrong. Sole exception, with the user's go-ahead: the hook's own refusal offers the bypass (removing forbidden-pattern config, a confirmed secret-scan false positive). Name it in your summary; in a committed script, mark the line `# scaffold-allow: <reason>`.
+- **Never push, or merge into a protected branch, unless asked** ("push it", "merge it"). Push, PR and merge each need their own go; a standing "merge as builds go green" covers only the task it names.
+- **Never rewrite pushed history, on any branch**: no `--amend` or rebase of pushed commits, no `push --force` or `push --force-with-lease`. To update a branch, merge the base into it.
+- **Never skip a hook** (`--no-verify`, `-n`, or any other way). A hook that is wrong gets fixed, with a test. A confirmed false positive gets a narrow `# scaffold-allow: <reason>` on that one line, named in your summary. Removing guard config or uninstalling is the user's own action, not yours.
 - **Every gate refusal ends with a `refusal class` line** (a full pre-commit run adds its own banner after the last one). (a) says the check failed on your own change: fix the file, never the gate. (b) says the gate itself is wrong or broken: stop and report the message to the user verbatim. A refusal with no such line never reached a gate's refusal path (a harness or permission denial, an older or broken install, or a usage error or crash before the gate decided): report it verbatim, never reword or split it.
 - **Never `reset --hard`, `checkout .`, or `clean -fd`** on a dirty tree without confirming.
 - **Before risky multi-step work, tag a green restore point** (`git tag pre-<name>`), never a dirty checkpoint commit.
@@ -69,10 +70,7 @@ Before reporting a hook or check you created, confirm it exists on disk (`ls -l`
 - **Before `DROP`, `TRUNCATE`, an unbounded `DELETE`/`UPDATE`, a migration, or wiping a bucket, collection, or index** outside a local throwaway store ("start clean" counts): confirm a backup exists and its age, then get an explicit yes naming the target. No backup? Say so; treat it as unrecoverable.
 - **State the blast radius in the store's own units** ("deletes all 4,182 rows in `orders`, no undo"), not as a pasted command.
 - **Never `cat`, print, echo, or log `.env`, credential files, keys, or tokens.** Verify by length, hash, or line count; anything printed lands in a permanent transcript.
-
-## Before you call it ready to ship
-
-If a hosted database or backend-as-a-service is reachable by others, ask the user to confirm in its dashboard that every table with user data has row-level security with real policies, and that automatic backups are on. Neither shows in a diff.
+- **Live systems with real data are read-only to you**; draft any message for a person to send.
 
 ## Untrusted content
 

@@ -217,7 +217,7 @@ scan() {
   # yields zero patterns fails closed at both gates. (ABSENCE is different and
   # still fine, a repo simply has no php.txt; that is the `[ -f ]` return above.)
   if [ ${#raw_patterns[@]} -eq 0 ]; then
-    local emsg="$config has no patterns, the forbidden-pattern scan for $stem is disabled. Restore its patterns (use 'git commit --no-verify' or delete the file if intended)."
+    local emsg="$config has no patterns, the forbidden-pattern scan for $stem is disabled. Restore its patterns (deleting the file on purpose is the user's own action, not the agent's)."
     if [ "$CI_MODE" -eq 1 ]; then echo "::error::$emsg"; else echo "✗ $emsg" >&2; fi
     FAILED=1; : "${RL_RULE:=empty-config}" "${RL_FILE:=$config}" "${RL_CLASS:=b}"
     return 0
@@ -478,7 +478,7 @@ if [ ${#FILES[@]} -gt 0 ] && [ -f "$SCAFFOLD_MANIFEST" ] && [ -r "$SCAFFOLD_MANI
     fi
     if [ -e "$recorded" ] || [ -h "$recorded" ]; then continue; fi
     mname=${mbase%.txt}
-    mmsg="$recorded is missing but $SCAFFOLD_MANIFEST records the scaffold installing it here, so it was removed and every forbidden-pattern rule it carries has stopped running, in CI and in every fresh clone. Restore it, or — if this project dropped that language on purpose — run 'uninstall.sh --drop-lang=$mname' from your scaffold checkout, which removes the file and its manifest entry together; do not hand-edit $SCAFFOLD_MANIFEST (use 'git commit --no-verify' if intended)."
+    mmsg="$recorded is missing but $SCAFFOLD_MANIFEST records the scaffold installing it here, so it was removed and every forbidden-pattern rule it carries has stopped running, in CI and in every fresh clone. Restore it, or — if this project dropped that language on purpose — run 'uninstall.sh --drop-lang=$mname' from your scaffold checkout, which removes the file and its manifest entry together; do not hand-edit $SCAFFOLD_MANIFEST (dropping it on purpose is the user's own action, not the agent's)."
     if [ "$CI_MODE" -eq 1 ]; then echo "::error::$mmsg"; else echo "✗ $mmsg" >&2; fi
     FAILED=1; : "${RL_RULE:=config-removed}" "${RL_FILE:=$recorded}" "${RL_CLASS:=b}"
   done <<EOF_MANIFEST

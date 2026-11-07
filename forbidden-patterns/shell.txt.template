@@ -41,8 +41,8 @@
 # can still be stopped — after it runs there is nothing left to gate. Each rule is
 # anchored to its subcommand: a bare `-f` arm would also block `git add -f`,
 # `git config -f`, `git branch -f` and `git checkout -f`, which are benign.
-(^|[^A-Za-z_])git[[:space:]]+push[[:space:]]([^|;&]*[[:space:]])?(--force(-with-lease)?([=[:space:]]|[;&]|$)|-f([[:space:]]|[;&]|$))	git push --force/-f/--force-with-lease rewrites published history — needs explicit instruction for this push, and on main/master ask first even then
-(^|[^A-Za-z_])git[[:space:]]+commit[[:space:]]([^|;&"']*[[:space:]])?--amend([[:space:]]|[;&]|$)	git commit --amend rewrites history. Never on a pushed commit; a local amend needs the user's go-ahead
+(^|[^A-Za-z_])git[[:space:]]+push[[:space:]]([^|;&]*[[:space:]])?(--force(-with-lease)?([=[:space:]]|[;&]|$)|-f([[:space:]]|[;&]|$))	git push --force/-f/--force-with-lease rewrites published history. Never, on any branch; to update a branch, merge the base into it
+(^|[^A-Za-z_])git[[:space:]]+commit[[:space:]]([^|;&"']*[[:space:]])?--amend([[:space:]]|[;&]|$)	git commit --amend rewrites history. Never on a pushed commit; to update a pushed branch, merge the base into it
 (^|[^A-Za-z_])git[[:space:]]+checkout[[:space:]]+(--[[:space:]]+)?\.([[:space:]]|[;&]|$)	git checkout . discards every uncommitted change in the tree — confirm, and name the specific paths instead
 
 # Optional: the two tree-destroying commands (AGENTS.md > Git discipline names
