@@ -145,3 +145,38 @@ _Added 2026-08-28._
 - **Automatic backups are enabled on the data store, and you know how old the most recent one is.** This is the half that makes a destructive mistake survivable. `AGENTS.md` > "Destructive actions and live data" has the agent confirm a backup before anything irreversible, and that rule is worth no more than the backup schedule sitting behind it.
 
 **Why it stays advisory.** The shipped checks scan staged file content; RLS state and a backup schedule have no file in the repo to scan, so no hook or CI job here can reach them. `forbidden-patterns/secrets.txt` already catches the leaked service-role key shape, the other half of the same failure. Keep this entry to the two questions above: general app security (headers, CORS, rate limits) stays out of scope per `TECHNICAL.md` > "What this scaffold deliberately omits".
+
+---
+
+## Stack-specific forms of the coding rules
+
+_Added 2026-11-07._
+
+**Adopt if:** you want the language, framework and tool names that `coding-rules.md` once carried inline. The shipped rules now state each principle without naming a stack, so the file reads the same for any project; the stack detail lives here, keyed by rule number. Copy the lines you use into your own `AGENTS.md` or into the project-specific section of `coding-rules.md`.
+
+**Rule 4, event loop and async work.**
+
+- _Python:_ blocking I/O in async code goes through `asyncio.to_thread()`; CPU-bound work goes to a process pool (`loop.run_in_executor` with a `ProcessPoolExecutor`), because under the GIL a thread still stalls the loop (free-threaded 3.13t+ builds excepted).
+- _TypeScript:_ never leave a promise floating: `await` it or handle it explicitly.
+
+**Rule 6, four-category baseline defaults.**
+
+| Category         | Python           | TypeScript          |
+| ---------------- | ---------------- | ------------------- |
+| Linter/formatter | `ruff`           | `eslint`+`prettier` |
+| Type-checker     | `pyright`/`mypy` | `tsc`               |
+| Test runner      | `pytest`         | `vitest`/`jest`     |
+| Property-based   | `hypothesis`     | `fast-check`        |
+
+Other stacks pick equivalents and record them in `AGENTS.md`.
+
+**Rule 7, hook versus CI type-checking.** The pre-commit hook runs `tsc` as a warning only (CI's lint job gates it); wire `pyright` / `mypy` into CI.
+
+**Rule 8, structured logging.** Python `structlog`; TypeScript `pino` or `winston`.
+
+**Project-specific additions, example entries.**
+
+- **FastAPI endpoints return Pydantic response models**, not raw dicts.
+- **SQLAlchemy 2.0 style only** (`Mapped[]`, `mapped_column()`); no `declarative_base`.
+
+**Why it stays here.** The rule keeps its number and its principle; only the names moved, so nothing referencing "rule 3" or "rule 12" changes. This entry is advice with no machine check, and the shipped linter configs (`ruff.toml`, `eslint.config.js`) already enforce what a tool can.

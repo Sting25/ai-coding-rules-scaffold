@@ -1,6 +1,6 @@
 # Coding rules
 
-Rules about the code that tools cannot enforce; the linter (`ruff` / `eslint`) and the pre-commit hook fail the build or the commit on the rest. Git and collaboration rules live in `AGENTS.md` and `operational-rules.md`.
+Rules about the code that tools cannot enforce; the linter and the pre-commit hook fail the build or the commit on the rest. Git and collaboration rules live in `AGENTS.md` and `operational-rules.md`.
 
 ## File size
 
@@ -10,7 +10,7 @@ Rules about the code that tools cannot enforce; the linter (`ruff` / `eslint`) a
 
 2. **No copy-paste logic.** Import existing helpers; duplication drifts.
 3. **Before creating a new file, check for extension candidates.** Search for an existing module that could absorb the logic. When you do create one, state in the commit or PR body what you considered and why it could not extend.
-4. **Never block the event loop.** Blocking I/O in async code goes through `asyncio.to_thread()`; CPU-bound work goes to a process pool (`loop.run_in_executor` with a `ProcessPoolExecutor`), because under the GIL a thread still stalls the loop (free-threaded 3.13t+ builds excepted). _(TypeScript)_ Never leave a promise floating: `await` it or handle it explicitly.
+4. **Never block the event loop or leave async work unhandled.** Blocking I/O in async code goes to a worker thread; CPU-bound work goes to a separate process, because a thread can still stall the loop where the runtime has a global lock. Await every pending task or promise, or handle it explicitly. Stack-specific forms: the scaffold's `RECOMMENDATIONS.md` > "Stack-specific forms of the coding rules".
 
 ## Pattern files
 
@@ -22,7 +22,7 @@ Stack-specific deny patterns live in `.forbidden-patterns/*.txt`, one per langua
 
 ## Testing
 
-6. **Four-category baseline**, picked per stack: a linter/formatter, a type-checker, a test runner (unit and integration), and property-based tests for the edge cases nobody thought of (especially numeric, spatial, and parsing code). Defaults: Python `ruff`, `pyright`/`mypy`, `pytest`, `hypothesis`; TypeScript `eslint`+`prettier`, `tsc`, `vitest`/`jest`, `fast-check`. Other stacks pick equivalents and record them in `AGENTS.md`.
+6. **Four-category baseline**, picked per stack: a linter/formatter, a type-checker, a test runner (unit and integration), and property-based tests for the edge cases nobody thought of (especially numeric, spatial, and parsing code). Pick the tool for each category per stack and record the choices in `AGENTS.md`.
 
    **A test you have never watched fail is not evidence.** Write it before the change, or run it against the base commit; a test written against existing code passes by construction. A new test that legitimately passes on base (characterization before a refactor, coverage backfill) says so and why. `install.sh --test-guard` adds this as an opt-in CI gate.
 
@@ -30,11 +30,11 @@ Stack-specific deny patterns live in `.forbidden-patterns/*.txt`, one per langua
 
    **Integration tests hit a real database**, an ephemeral one per run if isolation matters, never a mock connection. Run pre-production checks in an environment built by the same provisioning as production.
 
-7. **The pre-commit hook is the gate.** It runs the size, pattern, and secret guards and the linter; `tsc` only warns (CI's lint job gates it). Wire the rest of the type-checking (`pyright` / `mypy`) into CI. `AGENTS.md` > "Git discipline" is the only authority on `--no-verify`.
+7. **The pre-commit hook is the gate.** It runs the size, pattern, and secret guards and the linter; a type check in the hook only warns (CI's lint job gates it). Wire the rest of the type-checking into CI. `AGENTS.md` > "Git discipline" is the only authority on `--no-verify`.
 
 ## Observability
 
-8. **Structured logging library**, picked per stack (Python `structlog`; TypeScript `pino` or `winston`). Output JSON, and pass fields as arguments rather than formatting them into the message.
+8. **Structured logging library**, picked per stack. Output JSON, and pass fields as arguments rather than formatting them into the message.
 
 9. **Event names are `snake_case_verbs`**, not prose: `request_received`, `job_completed`, `cache_miss`. Filters, alerts, and grep depend on stable identifiers.
 
@@ -58,7 +58,8 @@ Stack-specific deny patterns live in `.forbidden-patterns/*.txt`, one per langua
 
 ## Project-specific additions
 
-Add your project's own rules here (library quirks, import-path conventions, architectural constraints). Two examples of the shape; keep the ones your stack uses:
+Add your project's own rules here (library quirks, import-path conventions, architectural constraints). Shape of an entry:
 
-- **FastAPI endpoints return Pydantic response models**, not raw dicts.
-- **SQLAlchemy 2.0 style only** (`Mapped[]`, `mapped_column()`); no `declarative_base`.
+- **<Framework or library> <does X>**, not <Y>. One line, then the reason if it is not obvious.
+
+Worked examples: the scaffold's `RECOMMENDATIONS.md` > "Stack-specific forms of the coding rules".
