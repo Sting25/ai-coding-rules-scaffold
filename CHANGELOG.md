@@ -6,6 +6,24 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **The test-guard gates clean up their temp worktrees (#221).** New
+  `.githooks/lib/worktree-sweep`, installed with `--test-guard`, runs at the
+  start of each gate and removes the `redgreen-` and `mutdiff-` temp worktrees
+  (and the TypeScript twins' `redgreen-ts-` and `mutdiff-ts-` directories) that
+  a killed earlier run left under the system temp dir. It touches only those
+  names, only directly under the temp dir, never a locked worktree, and nothing
+  younger than two hours (`SCAFFOLD_WORKTREE_SWEEP_MAX_AGE`, seconds). Both
+  Python gates also clean up and exit 143 on SIGTERM, which skips `finally`
+  otherwise; SIGKILL cannot be trapped, so the sweep is its backstop. The
+  TypeScript twins get the sweep only: a SIGTERM handler cannot run while they
+  block in a child process.
+- **`scaffold-worktree-report.sh` lists stale-looking worktrees (#221).**
+  Read-only, always exits 0: one line per registered worktree with branch, age
+  of the last commit, whether it is merged into the default branch, and whether
+  its directory is missing or the worktree locked.
+
 ### Changed
 
 - **Workflow templates move to Node 24 (#258).** The shipped `tests`, `lint`,

@@ -204,6 +204,12 @@ function main() {
     return 2;
   }
   if (here.size === 0) return gate("ran", 0, `${testFiles.length} test file(s) changed, vitest listed 0 tests`);
+  // Stale temp dirs of a killed earlier run (#221), best effort. No SIGTERM
+  // handler on purpose: main() blocks in spawnSync, so a handler would defer
+  // the signal until the child exits (measured: the run then ends 0) and the
+  // default kill would be lost. The sweep is the cleanup for this twin.
+  const sweep = path.join(path.dirname(process.argv[1]), "worktree-sweep");
+  if (fs.existsSync(sweep)) cp.spawnSync("bash", [sweep], { stdio: "ignore" });
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "redgreen-ts-"));
   const wt = path.join(tmp, "wt");
   try {

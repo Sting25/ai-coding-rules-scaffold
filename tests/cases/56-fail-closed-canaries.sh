@@ -385,4 +385,15 @@ for c56_w in tests coverage; do
     c56_ok "$c56_w.yml.template: strict on both test steps, each ending in gate-status"
   else : >"$HOOK_OUT"; c56_bad "$c56_w.yml.template must set strict on the pytest and vitest steps and end in gate-status"; fi
 done
+# --- (i) the one exit that does not end in gate-status: SIGTERM (#221) ---------
+# A terminated Python gate exits through its SIGTERM handler, not gate-status.
+# That path must be non-zero (143), or a killed gate would read as a pass. The
+# live signal run is in cases/62; this pins the handler's exit code in both.
+for c56_t in check-red-green check-mutation-diff; do
+  : >"$HOOK_OUT"
+  if grep -qF 'SIGTERM, lambda *_: sys.exit(143)' "$SCAFFOLD_DIR/githooks/lib/$c56_t.template"; then
+    c56_ok "$c56_t: SIGTERM leaves through a handler that exits 143, never 0"
+  else c56_bad "$c56_t must install a SIGTERM handler that exits non-zero (143)"; fi
+done
+
 rm -rf "$C56_RG" "$C56_NOGL" "$C56_B"

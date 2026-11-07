@@ -796,6 +796,12 @@ changed lines and warns about survivors; advisory, never fails the job. Each
 has a Vitest/Stryker twin (`check-red-green-ts`, `check-mutation-diff-ts`);
 there the exemption is a test title starting with `characterization: <reason>`,
 and mutation is scoped to the changed line ranges (a new file is mutated whole).
+`worktree-sweep` runs at the start of each gate and removes the temp worktrees
+of a run that was killed (its own `redgreen-` and `mutdiff-` directories under
+the system temp dir, older than two hours, never a locked one); a gate that
+receives SIGTERM cleans up and exits 143. To list every registered worktree of
+a repository (branch, age, merged or not, directory missing), run
+`bash "$SCAFFOLD/scaffold-worktree-report.sh"`: it only reports and always exits 0.
 
 **Blast radius:** every PR that adds a test. Register the marker in
 `pytest.ini` (the template already does). Make `test-guard` a required status
@@ -810,8 +816,9 @@ cp "$SCAFFOLD/githooks/lib/check-mutation-diff.template" .githooks/lib/check-mut
 cp "$SCAFFOLD/githooks/lib/gate-status.template" .githooks/lib/gate-status
 cp "$SCAFFOLD/githooks/lib/check-red-green-ts.template"     .githooks/lib/check-red-green-ts
 cp "$SCAFFOLD/githooks/lib/check-mutation-diff-ts.template" .githooks/lib/check-mutation-diff-ts
+cp "$SCAFFOLD/githooks/lib/worktree-sweep.template" .githooks/lib/worktree-sweep
 chmod +x .githooks/lib/check-red-green .githooks/lib/check-mutation-diff .githooks/lib/gate-status
-chmod +x .githooks/lib/check-red-green-ts .githooks/lib/check-mutation-diff-ts
+chmod +x .githooks/lib/check-red-green-ts .githooks/lib/check-mutation-diff-ts .githooks/lib/worktree-sweep
 mkdir -p .github/workflows
 cp "$SCAFFOLD/.github/workflows/test-guard.yml.template" .github/workflows/test-guard.yml
 grep -q 'test-guard:begin' coding-rules.md 2>/dev/null || cat "$SCAFFOLD/coding-rules-test-guard.md" >> coding-rules.md
@@ -827,7 +834,7 @@ echo "verified: test-guard gate present and its rules section is in coding-rules
 
 ```sh remove=test-guard
 rm -f .githooks/lib/check-red-green .githooks/lib/check-mutation-diff .github/workflows/test-guard.yml
-rm -f .githooks/lib/check-red-green-ts .githooks/lib/check-mutation-diff-ts
+rm -f .githooks/lib/check-red-green-ts .githooks/lib/check-mutation-diff-ts .githooks/lib/worktree-sweep
 # then delete the test-guard:begin ... test-guard:end block from coding-rules.md
 ```
 
