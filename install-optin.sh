@@ -98,6 +98,9 @@ install_opt_in_test_guard() {
     mkx ".githooks/lib/check-red-green-ts"
     cp_scaffold "$SCAFFOLD_DIR/githooks/lib/check-mutation-diff-ts.template" ".githooks/lib/check-mutation-diff-ts"
     mkx ".githooks/lib/check-mutation-diff-ts"
+    # Start-of-run sweep of temp worktrees a killed earlier run left behind (#221).
+    cp_scaffold "$SCAFFOLD_DIR/githooks/lib/worktree-sweep.template" ".githooks/lib/worktree-sweep"
+    mkx ".githooks/lib/worktree-sweep"
     cp_scaffold_preserve "$SCAFFOLD_DIR/.github/workflows/test-guard.yml.template" ".github/workflows/test-guard.yml"
     echo "note: test-guard.yml runs check-red-green on every PR: each NEW test is run against the base commit and must FAIL there. Register the exemption marker in pytest.ini under [pytest]:"
     echo "          markers ="

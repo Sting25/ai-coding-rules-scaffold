@@ -389,7 +389,6 @@ for c56_w in tests:4 coverage:3; do
     c56_ok "${c56_w%%:*}.yml.template: strict on the test and clean-tree steps, each ending in gate-status"
   else : >"$HOOK_OUT"; c56_bad "${c56_w%%:*}.yml.template must set strict on the pytest, vitest and clean-tree steps"; fi
 done
-
 # --- (i) clean-tree (#219) and branch (#220): refuse + empty -------------------
 fixture_repo C56_CT
 fixture_install "$C56_CT" --python --no-verify
@@ -412,4 +411,16 @@ c56_run "$C56_CT" - .githooks/lib/check-branch
 c56_expect "branch refuses a commit on main" 1 "refusing to commit on the default branch" "gate=branch status=ran checked=1"
 c56_run "$C56_CT" - env SCAFFOLD_GATE_STRICT=1 .githooks/lib/check-branch
 c56_expect "branch: refusal stands under SCAFFOLD_GATE_STRICT=1" 1 "gate=branch status=ran"
+
+# --- (j) the one exit that does not end in gate-status: SIGTERM (#221) ---------
+# A terminated Python gate exits through its SIGTERM handler, not gate-status.
+# That path must be non-zero (143), or a killed gate would read as a pass. The
+# live signal run is in cases/66; this pins the handler's exit code in both.
+for c56_t in check-red-green check-mutation-diff; do
+  : >"$HOOK_OUT"
+  if grep -qF 'SIGTERM, lambda *_: sys.exit(143)' "$SCAFFOLD_DIR/githooks/lib/$c56_t.template"; then
+    c56_ok "$c56_t: SIGTERM leaves through a handler that exits 143, never 0"
+  else c56_bad "$c56_t must install a SIGTERM handler that exits non-zero (143)"; fi
+done
+
 rm -rf "$C56_RG" "$C56_NOGL" "$C56_B" "$C56_CT" "$C56_E"

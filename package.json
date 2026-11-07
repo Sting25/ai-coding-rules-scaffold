@@ -22,6 +22,7 @@
     "scaffold-doctor-gates.sh",
     "scaffold-doctor-checks.sh",
     "scaffold-doctor-drift.sh",
+    "scaffold-worktree-report.sh",
     "bin/",
     "githooks/",
     "forbidden-patterns/",
