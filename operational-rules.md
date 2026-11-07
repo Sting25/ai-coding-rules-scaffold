@@ -61,14 +61,17 @@ _Anchor:_ a conflict prediction measured "clean" because the edit under test was
 
 A new guardrail or test is not in place until a realistic evasion goes red against it. An
 evasion the compiler or optimizer removes (an unused import) proves nothing; use one that
-survives the build.
+survives the build. Report the pass and the forced failure; say UNVERIFIED when it cannot
+be forced.
 _Anchor:_ a lint denylist passed 6 of 8 evasions; the build-graph test that replaced it caught
 all 12.
 
 ### Every gate lives once, as a script that runs without the AI
 
 Put a check's logic in one script that the hook, CI and a human can all run. A rule that exists
-only in a prompt or a settings file is a request, not a gate.
+only in a prompt or a settings file is a request, not a gate. If code can check it (exit code,
+string match, diff, hook), build it as code with an owner and a known false-positive path; a rule
+only a person must remember is a gap.
 
 ## Process
 
@@ -84,6 +87,11 @@ Before any job longer than five minutes, check each external dependency in secon
 reachable, schema migrated, auth valid, disk space, output writable. After a non-trivial change,
 run one unit first, through every component that fails at scale; scale only after it passes.
 _Anchor:_ a 4-unit smoke caught worker contention; a 1-unit smoke proved the fix.
+
+### Documentation hygiene
+
+Do not create a file when an existing one can absorb the content. To retire a document, move its
+live parts to the document that owns them, then archive it with a banner saying where each went.
 
 ### Write down why, not just what
 
@@ -133,8 +141,13 @@ A claim you did not measure this session (a handoff, PR text, a memory note, a l
 CI, branch position, conflicts, open decisions, or versions is re-measured from the system of
 record, naming the command, before it drives an action. CI fails only at job level with steps that
 ran; count branch position both ways; test conflicts with a trial merge; ask a repository's host,
-not a clone.
+not a clone (the scaffold's TECHNICAL.md lists the commands).
 _Anchor:_ a handoff called a PR red whose CI job had been cancelled before a single step ran.
+
+### Every rule applies to everyone
+
+Word rules as binding every contributor. When a slip prompts a rule, cite the incident, not the
+person.
 
 ### Plans default to PROPOSED; mark every assumption
 
@@ -183,5 +196,6 @@ movement. Deleting, moving, or repointing a path another session may use (a chec
 a symlink target), or sending a writer into a tree another session used, is a merge-grade write:
 look for live signals (fresh commits or issues from it, long-lived processes, file and git-index
 mtimes within minutes) and stop and ask on any; with none, get a go-ahead naming the path. Prefer
-a rename to a hard delete.
+a rename to a hard delete. A gate sweeps its own temporary worktrees at the start of a run; a
+read-only report lists registered worktrees with age and merge state.
 _Anchor:_ a handed-off builder kept writing for hours and its parent merged on a stale approval.
