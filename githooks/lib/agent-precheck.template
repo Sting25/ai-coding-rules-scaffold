@@ -31,6 +31,8 @@
 #   - A quoted-delimiter heredoc whose body continues a forbidden command across
 #     a backslash-newline is refused, although bash does not join continuations
 #     inside it. A minor false positive.
+#   - A +word or a force flag in a trailing # comment after a push is refused
+#     (it refuses too much; the flag half pre-exists).
 # Known gaps (this is a text scan, not a shell parser, so it cannot see these):
 #   - a flag assembled from two variables (variable splitting)
 #   - ANSI-C quoting ($'...')
@@ -40,8 +42,9 @@
 #   - other git global options before the subcommand (--git-dir=, --work-tree=,
 #     --no-pager, -P)
 #   - -C/-c are not applied to the amend or checkout rules (scoped to push, #270)
-#   - a trailing # comment that names a force flag or a +word after a push is
-#     refused (false positive; the flag half pre-exists)
+#   - a flag or +refspec with an empty or partial quote glued on (a quote pair
+#     right after the flag, or a quote inside the refspec word) is not matched
+#     although bash runs it as the plain form; same class as the quoted-flag limit
 # For text that lands in a file, the commit-time scan and CI are the fail-closed
 # backstops. A command that runs (a push) reaches neither; the backstop for an
 # evaded force push is branch protection on the remote.
