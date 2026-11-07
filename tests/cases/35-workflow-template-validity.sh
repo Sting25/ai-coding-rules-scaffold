@@ -110,6 +110,34 @@ else
 fi
 unset _wt_templates _wt_own _wt_total _wt_tpl _wt_name _wt_dir
 
+# Every Node pin in a workflow must be at or above a supported floor. The
+# check is a numeric floor, not a literal, so the next bump does not break
+# it. Raise the floor when the oldest Node major still in maintenance moves
+# (https://github.com/nodejs/Release/blob/main/schedule.json). Runs without
+# actionlint: it is a structural check on the files.
+_nv_floor=22
+_nv_bad=""
+_nv_count=0
+for _nv_f in "$SCAFFOLD_DIR"/.github/workflows/*.yml.template "$SCAFFOLD_DIR"/.github/workflows/*.yml; do
+  [ -f "$_nv_f" ] || continue
+  while IFS= read -r _nv_line; do
+    _nv_count=$((_nv_count + 1))
+    _nv_val=$(printf '%s\n' "$_nv_line" | sed -E 's/^[[:space:]]*node-version:[[:space:]]*["'"'"']?([0-9]+).*/\1/')
+    case "$_nv_val" in
+      '' | *[!0-9]*) _nv_bad="$_nv_bad ${_nv_f##*/}(unparsed: $_nv_line)" ;;
+      *) [ "$_nv_val" -ge "$_nv_floor" ] || _nv_bad="$_nv_bad ${_nv_f##*/}(node $_nv_val)" ;;
+    esac
+  done < <(grep -E '^[[:space:]]*node-version:' "$_nv_f" || true)
+done
+if [ "$_nv_count" -gt 0 ] && [ -z "$_nv_bad" ]; then
+  echo "  ✓ all $_nv_count node-version pins in the workflows are >= $_nv_floor"
+  PASS=$((PASS + 1))
+else
+  echo "  ✗ node-version pins below the Node $_nv_floor floor (or none found, count=$_nv_count):${_nv_bad:- none}"
+  FAIL=$((FAIL + 1))
+fi
+unset _nv_floor _nv_bad _nv_count _nv_f _nv_line _nv_val
+
 # The release gate must be the PR gate, not a copy of it. release.yml once
 # carried its own bare `./tests/run.sh` with none of test.yml's tool installs;
 # it passed while the runner counted only passes and went red on the v0.16.0
