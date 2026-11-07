@@ -221,8 +221,8 @@ jobs:
         with:
           # Stryker 10 and the Vitest majors it supports declare
           # engines.node >= 22; the twins' ES-module fallback needs 20.16+.
-          # tests.yml and lint.yml keep their own Node pin.
-          node-version: "22"
+          # Every shipped workflow pins the same Node major.
+          node-version: "24"
 
       - name: Install dependencies (TypeScript)
         if: steps.detect_ts.outputs.present == 'true'

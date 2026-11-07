@@ -141,7 +141,7 @@ jobs:
       - if: steps.detect.outputs.present == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
-          node-version: "20"
+          node-version: "24"
       - name: Install dependencies
         if: steps.detect.outputs.present == 'true'
         # Frozen-lockfile install when a lockfile exists, same as lint.yml.
