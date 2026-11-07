@@ -25,12 +25,40 @@
 # Comment lines are stripped first: every one of these files discusses the
 # checks by name in its own header, and a header is not a call site. The name
 # must match as a whole word so one check's name cannot satisfy another's.
+#
+# Callers are followed ONE hop: a hook (not a lib file, not a CI workflow's
+# step script) that names a non-check lib file such as lib/run-checks makes
+# that file a caller too, because the wrapper may be what invokes the check
+# (issue #244). Installer backups (*.scaffold-bak) are never callers or checks.
+_expand_callers() {
+  local f lib b body
+  for f in "$@"; do
+    [ -f "$f" ] || continue
+    case "$f" in *.scaffold-bak*) continue ;; esac
+    printf '%s\n' "$f"
+    case "$f" in .githooks/lib/*) continue ;; esac
+    body=$(grep -vE '^[[:space:]]*#' "$f" 2>/dev/null || true)
+    for lib in .githooks/lib/*; do
+      [ -f "$lib" ] || continue
+      b=${lib##*/}
+      case "$b" in check-*|*.scaffold-bak*) continue ;; esac
+      if [[ $body =~ (^|[^A-Za-z0-9_.-])${b}([^A-Za-z0-9_.-]|$) ]]; then
+        printf '%s\n' "$lib"
+      fi
+    done
+  done
+}
+
+# The remote host decides whether a missing GitHub workflow is a gap: a repo
+# hosted elsewhere cannot run it, so the doctor says it cannot check CI there.
+doctor_remote_url() { git config --get remote.origin.url 2>/dev/null || true; }
+remote_is_github() { case "$1" in *github.com[:/]*) return 0 ;; esac; return 1; }
+
 check_called_in() {
   local name=$1
   shift
   local re="(^|[^A-Za-z0-9_.-])${name}([^A-Za-z0-9_.-]|\$)" f body
-  for f in "$@"; do
-    [ -f "$f" ] || continue
+  while IFS= read -r f; do
     body=$(grep -vE '^[[:space:]]*#' "$f" 2>/dev/null || true)
     if grep -qE "$re" <<<"$body"; then
       return 0
@@ -43,7 +71,7 @@ check_called_in() {
         return 0
       fi ;;
     esac
-  done
+  done < <(_expand_callers "$@")
   return 1
 }
 section "shipped checks"
@@ -62,6 +90,7 @@ for chk in check-size check-large-files check-patterns check-filenames check-sec
   elif [ ! -x ".githooks/lib/$chk" ]; then
     gap "lib/$chk is not executable — every commit will error on it" "chmod +x .githooks/lib/$chk"
   elif ! check_called_in "$chk" .githooks/pre-commit .githooks/commit-msg \
+                         .githooks/pre-push .githooks/post-* \
                          .githooks/local.d/* .github/workflows/*.yml; then
     gap "lib/$chk is installed and executable but nothing calls it: no invocation in .githooks/pre-commit or .github/workflows/, so it is decoration and the commits it should block are not blocked (issue #72)" \
         "re-run install.sh to restore the call sites, then re-apply any customization you had made to the hook or workflow"
@@ -83,8 +112,10 @@ for chk_path in .githooks/lib/check-*; do
   chk=$(basename "$chk_path")
   case "$chk" in
     check-size|check-large-files|check-patterns|check-filenames|check-secrets|check-hygiene) continue ;;
+    *.scaffold-bak*) continue ;;
   esac
   if ! check_called_in "$chk" .githooks/pre-commit .githooks/commit-msg \
+                       .githooks/pre-push .githooks/post-* \
                        .githooks/local.d/* .github/workflows/*.yml; then
     gap "lib/$chk is installed but nothing calls it: no invocation in .githooks/ or .github/workflows/, so it never runs" \
         "re-run install.sh with the flag that installed it, to restore its call site"

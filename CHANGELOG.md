@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **The doctor no longer reports false "nothing calls it" gaps, or demands a GitHub workflow off GitHub (#244).** A check is now counted as called when it is invoked from `pre-push` or `post-*` hooks, or from a wrapper lib file that a hook invokes (one hop). Installer backups (`*.scaffold-bak`) are no longer treated as checks or callers. A missing `.github/workflows/lint.yml` is a note, not a gap, when `remote.origin` is set and is not a github.com URL. Covered by `tests/cases/62-doctor-false-gaps.sh`.
+
 ## [v0.20.0] - 2026-11-07
 
 ### Added
