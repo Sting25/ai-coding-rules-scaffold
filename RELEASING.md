@@ -10,7 +10,7 @@ The version lives in these places — all must agree on `vX.Y.Z`:
 | Place      | File                                                       | What to change                             |
 | ---------- | ---------------------------------------------------------- | ------------------------------------------ |
 | git tag    | —                                                          | annotated tag `vX.Y.Z`                     |
-| changelog  | `CHANGELOG.md`                                             | promote `[Unreleased]` → `[vX.Y.Z] — DATE` |
+| changelog  | `CHANGELOG.md`                                             | promote `[Unreleased]` → `[vX.Y.Z] - DATE` |
 | README pin | `README.md`                                                | the `git clone --branch vX.Y.Z` line       |
 | npm        | `package.json`                                             | `"version": "X.Y.Z"`                       |
 | Homebrew   | `packaging/homebrew/ai-coding-rules-scaffold.rb` + the tap | `url` (tag) + `sha256`                     |
@@ -26,7 +26,7 @@ on an unreleased number, and installs tracking the branch pick it up.
 2. Pick `X.Y.Z` per SemVer: bug-fix-only → patch; new features / behavior changes
    → minor; breaking consumer-facing changes → major.
 3. In one PR:
-   - Promote `[Unreleased]` → `## [vX.Y.Z] — YYYY-MM-DD` in `CHANGELOG.md`.
+   - Promote `[Unreleased]` → `## [vX.Y.Z] - YYYY-MM-DD` in `CHANGELOG.md`.
    - Bump the `git clone --branch` pin in `README.md`.
    - Bump `"version"` in `package.json`.
    - Run a self-lint dry run before pushing (a fat changelog can trip the secret
@@ -35,6 +35,7 @@ on an unreleased number, and installs tracking the branch pick it up.
      mkdir -p .githooks/lib .forbidden-patterns
      for t in githooks/lib/*.template; do cp "$t" ".githooks/lib/$(basename "$t" .template)"; done
      for t in forbidden-patterns/*.txt.template; do cp "$t" ".forbidden-patterns/$(basename "$t" .template)"; done
+     chmod +x .githooks/lib/*
      git -c core.quotepath=off ls-files -z | .githooks/lib/check-secrets --ci
      ```
    - Commit these changes with message `chore(release): vX.Y.Z` (the commit-msg
