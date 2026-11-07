@@ -163,7 +163,27 @@ git -C "$BR4" branch --quiet -D work
 git -C "$BR4" add -A
 br_hook "$BR4"
 br_expect "only a tag plus an orphan main is refused, not a first commit" 1 "refusing to commit on the default branch 'main'"
-rm -rf "$BR2" "$BR3" "$BR4"
+fixture_repo BR5
+fixture_install "$BR5" --python --no-verify
+git -C "$BR5" add -A
+git -C "$BR5" commit --quiet -m "base"
+git -C "$BR5" checkout --quiet -b main
+printf '1\n' >"$BR5/c.txt"; git -C "$BR5" add c.txt; SCAFFOLD_ALLOW_DEFAULT_BRANCH=1 git -C "$BR5" commit --quiet -m "c1"
+git -C "$BR5" checkout --quiet -b side
+printf '2\n' >"$BR5/c.txt"; git -C "$BR5" commit --quiet -am "c2"
+git -C "$BR5" checkout --quiet main
+printf '3\n' >"$BR5/c.txt"; SCAFFOLD_ALLOW_DEFAULT_BRANCH=1 git -C "$BR5" commit --quiet -am "c3"
+git -C "$BR5" merge --quiet side >/dev/null 2>&1 || true
+printf '4\n' >"$BR5/c.txt"
+git -C "$BR5" add c.txt
+br_hook "$BR5"
+br_expect "concluding a conflicted merge on main is allowed" 0
+( cd "$BR5" && env -u SCAFFOLD_GATE_LOG .githooks/lib/check-branch ) >"$HOOK_OUT" 2>&1 && BR_RC=0 || BR_RC=$?
+br_expect "the gate line says merge commit" 0 "merge commit on main"
+git -C "$BR5" merge --abort 2>/dev/null || true
+( cd "$BR5" && env -u SCAFFOLD_GATE_LOG .githooks/lib/check-branch ) >"$HOOK_OUT" 2>&1 && BR_RC=0 || BR_RC=$?
+br_expect "the refusal names the project-level switch" 1 "[rules.branch] disabled = true"
+rm -rf "$BR2" "$BR3" "$BR4" "$BR5"
 
 # Wiring.
 if grep -qF 'check-branch' "$SCAFFOLD_DIR/githooks/pre-commit.template" && grep -qF 'check-branch' "$SCAFFOLD_DIR/.github/workflows/lint.yml.template"; then

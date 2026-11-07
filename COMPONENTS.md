@@ -75,7 +75,9 @@ refusals are simply not recorded.
 `check-branch` is the one gate in `lib/` that reads no staged files: the hook
 calls it first and it refuses a commit made directly on the repository's
 default branch (read from `origin/HEAD`, else `main`, `master` and
-`init.defaultBranch`). The first commit of a new repository and a detached HEAD
+`init.defaultBranch`; with no `origin/HEAD` and no `init.defaultBranch`, a
+branch that is neither `main` nor `master` is allowed, fail-open by design).
+Concluding a merge is allowed. The first commit of a new repository and a detached HEAD
 pass. `SCAFFOLD_ALLOW_DEFAULT_BRANCH=1` lets one deliberate commit through, and
 `[rules.branch] disabled = true` in `.scaffold.toml` (entry 13) turns it off.
 The hook is only a local convenience, because `git commit` with the hook-skip

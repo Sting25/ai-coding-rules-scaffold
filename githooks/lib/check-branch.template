@@ -55,6 +55,11 @@ case "$PROTECTED" in
   *) exec "$GS" branch ran 1 "on branch $BRANCH" ;;
 esac
 
+# Concluding a merge: the merged work was already reviewed, and a clean
+# `git merge` on this branch is not gated either, so a conflicted one is not.
+if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+  exec "$GS" branch ran 1 "merge commit on $BRANCH"
+fi
 if [ "${SCAFFOLD_ALLOW_DEFAULT_BRANCH:-}" = 1 ]; then
   echo "note: committing on the default branch '$BRANCH' because SCAFFOLD_ALLOW_DEFAULT_BRANCH=1 is set" >&2
   exec "$GS" branch ran 1 "escape SCAFFOLD_ALLOW_DEFAULT_BRANCH=1 used on $BRANCH"
@@ -67,6 +72,7 @@ fi
 echo "✗ refusing to commit on the default branch '$BRANCH'. Work on a branch and merge by pull request:" >&2
 echo "      git switch -c <topic-branch>      (your staged changes come with you)" >&2
 echo "  For one deliberate commit here: SCAFFOLD_ALLOW_DEFAULT_BRANCH=1 git commit ..." >&2
+echo "  Off for this repo: .scaffold.toml [rules.branch] disabled = true (or severity = \"warn\")" >&2
 # The status line comes BEFORE the refusal log's class trailer, which must stay the last line.
 rc=0; "$GS" branch ran 1 "on default branch $BRANCH" 1 || rc=$?
 [ ! -x "$SELF_DIR/refusal-log" ] || "$SELF_DIR/refusal-log" check-branch default-branch "$BRANCH" 1 --say a || true
