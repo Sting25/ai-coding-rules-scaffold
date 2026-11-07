@@ -123,8 +123,31 @@ scan_bucket() {
   c_err=$(printf '' | grep -E -- "$combined" 2>&1 1>/dev/null || true)
   [ -z "$c_err" ] || return 0
   # A comment-anchored `scaffold-allow` exempts a line, exactly like the scanners.
-  printf '%s\n' "$content" | grep -an"${iflag}"E -- "$combined" \
-    | grep -ivE '(^[0-9]+:|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true
+  # The exemption is for file content a person sanctioned. A Bash command is text
+  # the agent itself authors and is about to run, so there it never exempts: an
+  # appended marker would otherwise defeat every shell and secret rule.
+  if [ "$tool" = Bash ]; then
+    printf '%s\n' "$SCAN_TEXT" | grep -an"${iflag}"E -- "$combined" || true
+  else
+    printf '%s\n' "$SCAN_TEXT" | grep -an"${iflag}"E -- "$combined" \
+      | grep -ivE '(^[0-9]+:|[[:space:]])(#|//|/\*|<!--)[[:space:]]*scaffold-allow' || true
+  fi
+}
+
+# Scan $content, then (Bash only) a normalised copy with quotes and backslashes
+# removed and whitespace runs collapsed, so a quoted flag cannot slip past a
+# pattern that expects it after a space. Sets HIT, and NORM_HIT=1 when only the
+# copy matched (the message then shows the original command, not the copy).
+scan_both() {
+  local iflag=$1; shift
+  NORM_HIT=0
+  SCAN_TEXT=$content
+  HIT=$(scan_bucket "$iflag" "$@")
+  if [ -z "$HIT" ] && [ "$tool" = Bash ]; then
+    SCAN_TEXT=$(printf '%s' "$content" | tr -d "\\\\\"'" | tr -s '[:blank:]' ' ')
+    HIT=$(scan_bucket "$iflag" "$@")
+    [ -z "$HIT" ] || NORM_HIT=1
+  fi
 }
 
 scan_against() {
@@ -168,16 +191,21 @@ scan_against() {
   # Guarded by an explicit count so an empty array is never expanded under
   # `set -u` (bash 3.2 on macOS errors on "${empty[@]}").
   hit=""
-  [ ${#pats_def[@]} -gt 0 ] && hit=$(scan_bucket "$iflag" "${pats_def[@]}")
+  if [ ${#pats_def[@]} -gt 0 ]; then scan_both "$iflag" "${pats_def[@]}"; hit=$HIT; fi
   if [ -z "$hit" ] && [ ${#pats_cs[@]} -gt 0 ]; then
-    hit=$(scan_bucket "" "${pats_cs[@]}")
+    scan_both "" "${pats_cs[@]}"; hit=$HIT
   fi
   [ -n "$hit" ] || return 0
+  # A normalised-copy match has line text that is not the command as typed.
+  [ "$NORM_HIT" -eq 0 ] || hit=$(printf '%s\n' "$content" | head -3 || true)
 
   {
     echo "BLOCKED by agent-precheck: $advice"
     echo "(${pfile#"$ROOT"/}). Stop and report this block to the user with the rule that matched."
     echo "A suppression needs a recorded reason and the user's go-ahead (AGENTS.md > \"Fix the file, not the check\"); do not work around the block."
+    if [ "$tool" = Bash ]; then
+      echo "A scaffold-allow comment does not exempt a Bash command: the marker is for file content a person sanctioned, not for text you are about to run."
+    fi
     echo "Matched:"
     # `|| true`: on a many-line $hit, `head -3` closes the pipe early and printf
     # takes SIGPIPE (exit 141). Under `set -euo pipefail` that would abort the
