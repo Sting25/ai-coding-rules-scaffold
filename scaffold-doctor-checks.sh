@@ -94,8 +94,13 @@ remote_is_github() { case "$1" in github.*|*://github.*|*@github.*) return 0 ;; 
 check_called_in() {
   local name=$1
   shift
-  local re="(^|[^A-Za-z0-9_.-])${name}([^A-Za-z0-9_.-]|\$)" f body
+  local re="(^|[^A-Za-z0-9_.-])${name}([^A-Za-z0-9_.-]|\$)" f body callers
+  # The whole list is read before the scan: with `< <(_expand_callers)` the
+  # early return below closes the pipe on a live writer, and where SIGPIPE is
+  # ignored (GitHub's ubuntu runner) its printf logs "write error: Broken pipe".
+  callers=$(_expand_callers "$@")
   while IFS= read -r f; do
+    [ -n "$f" ] || continue
     body=$(_code_body "$f")
     if grep -qE "$re" <<<"$body"; then
       return 0
@@ -108,7 +113,7 @@ check_called_in() {
         return 0
       fi ;;
     esac
-  done < <(_expand_callers "$@")
+  done <<<"$callers"
   return 1
 }
 section "shipped checks"
