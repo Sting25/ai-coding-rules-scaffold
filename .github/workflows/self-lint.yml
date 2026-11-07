@@ -157,7 +157,7 @@ jobs:
       - name: Set up Node (eslint.config.js.template check)
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: eslint.config.js.template lints with its documented peers (#83)
         # A third self-application gap, beside the two above: the scaffold ships
