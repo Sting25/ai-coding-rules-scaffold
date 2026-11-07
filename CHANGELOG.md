@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [v0.20.0] - 2026-11-07
 
 ### Added
 
@@ -210,6 +210,14 @@ versioning follows [SemVer](https://semver.org/).
   repo's own `.github/dependabot.yml`) now sets
   `update-types: ["minor", "patch"]`, so a major bump arrives as its own PR.
   The commented npm example carries the same `groups` block.
+- **The doctor no longer reports a tuned coverage threshold or an unavailable
+  branch protection as a gap.** A `DIFF_COVER_FAIL_UNDER` of 1 to 99 is now a
+  note naming the value; 0, a missing variable and a non-numeric value stay
+  gaps. A required-status-checks lookup that GitHub answers with HTTP 403 or
+  "upgrade" (a private repo on the Free plan) is a note instead of a gap that
+  could never be cleared; a 200 or 404 with no checks is still a gap. Both
+  notes still print under `--quiet`, since each names a guardrail that is
+  weaker than shipped or was not measured.
 
 ### Fixed
 
@@ -338,17 +346,6 @@ WORKTREE` note when it does. Python tools are resolved by one shared helper,
   root declared in `pyproject.toml`. Settings that are tables, and
   `[tool.mutmut.*]` subtables, are not carried and are named on stderr.
   `only_mutate` still limits mutation to the changed files (#197).
-
-### Changed
-
-- **The doctor no longer reports a tuned coverage threshold or an unavailable
-  branch protection as a gap.** A `DIFF_COVER_FAIL_UNDER` of 1 to 99 is now a
-  note naming the value; 0, a missing variable and a non-numeric value stay
-  gaps. A required-status-checks lookup that GitHub answers with HTTP 403 or
-  "upgrade" (a private repo on the Free plan) is a note instead of a gap that
-  could never be cleared; a 200 or 404 with no checks is still a gap. Both
-  notes still print under `--quiet`, since each names a guardrail that is
-  weaker than shipped or was not measured.
 
 ### Removed
 
