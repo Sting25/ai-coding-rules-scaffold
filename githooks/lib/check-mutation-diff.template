@@ -407,7 +407,7 @@ def main() -> int:
     tmp = tempfile.mkdtemp(prefix="mutdiff-")
     wt = os.path.join(tmp, "wt")
     try:
-        run(["git", "worktree", "prune"])  # best-effort; drops every stale entry, locked ones stay
+        run(["git", "worktree", "prune"]); _B and run([_B, str(pathlib.Path(__file__).resolve().parent / "worktree-sweep")])  # best-effort: drop dead entries, then stale temp worktrees (#221)
         r = run(["git", "worktree", "add", "--detach", wt, head_sha])
         if r.returncode != 0:
             emit("error", f"git worktree add failed: {r.stderr.strip()}", args.ci)
@@ -492,7 +492,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     try:
-        _RL = pathlib.Path(__file__).with_name("refusal-log"); _B = shutil.which("bash"); rc = main(); sys.stdout.flush(); rc and _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-mutation-diff", {1: "max-mutants", 2: "setup-error"}.get(rc, "error"), "", str(rc), "--say", {1: "a"}.get(rc, "b")], check=False); raise SystemExit(rc)
+        import signal as _S; _S.signal(_S.SIGTERM, lambda *_: sys.exit(143)); _RL = pathlib.Path(__file__).with_name("refusal-log"); _B = shutil.which("bash"); rc = main(); sys.stdout.flush(); rc and _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-mutation-diff", {1: "max-mutants", 2: "setup-error"}.get(rc, "error"), "", str(rc), "--say", {1: "a"}.get(rc, "b")], check=False); raise SystemExit(rc)
     except subprocess.TimeoutExpired:
         print("::error::mutation-diff check timed out. A mutation run too slow to complete in CI is too slow to trust as a gate; scope it to fewer files or raise the timeout deliberately.")
         sys.stdout.flush(); _B and _RL.is_file() and subprocess.run([_B, str(_RL), "check-mutation-diff", "timeout", "", "2", "--say", "b"], check=False); raise SystemExit(2)

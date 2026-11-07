@@ -49,6 +49,8 @@
 section "server-side backstop"
 if [ ! -d .githooks/lib ]; then
   note "no .githooks/lib/ — no local checks installed, so there is nothing for CI to mirror"
+elif [ ! -f .github/workflows/lint.yml ] && [ -n "$(doctor_remote_url)" ] && ! remote_is_github "$(doctor_remote_url)"; then
+  note "server-side backstop: cannot check CI for this host (remote.origin is not github.com), so .github/workflows/lint.yml is not required here; mirror the lib/check-* scripts in your host's own CI"
 elif [ ! -f .github/workflows/lint.yml ]; then
   gap ".github/workflows/lint.yml is missing — the lib/check-* scripts run client-side only, and 'git commit --no-verify' bypasses every one of them with nothing behind it" \
       "re-run install.sh to restore .github/workflows/lint.yml"
@@ -378,6 +380,7 @@ _pne() { note "$1"; PNE_ANY=1; }
 [ -f .github/workflows/socket-security.yml ]   || _pne "Socket Firewall CI gate (blocks a malicious/typosquat package at install time): not installed. Enable with install.sh --socket-ci"
 [ -f .github/workflows/test-guard.yml ]        || _pne "test-guard CI gate (red-green: a new test must fail against the PR base before it may pass): not installed. Enable with install.sh --test-guard"
 [ ! -f .github/workflows/test-guard.yml ] || { [ -f .githooks/lib/check-red-green-ts ] && [ -f .githooks/lib/check-mutation-diff-ts ]; } || note "test-guard: the TypeScript twin (check-red-green-ts, check-mutation-diff-ts) is not installed; re-run install.sh --test-guard"
+[ ! -f .githooks/lib/check-red-green ] || [ -f .githooks/lib/worktree-sweep ] || note "test-guard: worktree-sweep (cleans temp worktrees a killed gate left) is not installed; re-run install.sh --test-guard"
 [ -f .claude/settings.json ]                   || _pne "Claude Code agent guardrails: not installed. Enable with install.sh --claude"
 [ -f .githooks/commit-msg ]                    || _pne "commit-msg hook (Conventional Commits): not installed. Enable with install.sh --commit-msg"
 [ -f .npmrc ]                                   || _pne "npm install-layer cooldown (.npmrc min-release-age, delays freshly published versions): not installed. Enable with install.sh --npm-cooldown"
@@ -393,11 +396,11 @@ _pne() { note "$1"; PNE_ANY=1; }
 # when it can be measured and is absent; everything else is a note that says
 # what was NOT checked, never silence.
 section "required status checks on the default branch"
-_rsc_remote=$(git config --get remote.origin.url 2>/dev/null || true)
+_rsc_remote=$(doctor_remote_url)
 _rsc_repo=""
-case "$_rsc_remote" in
-  *github.com[:/]*) _rsc_repo=$(printf '%s' "$_rsc_remote" | sed -E 's#.*github\.com[:/]##; s#\.git$##') ;;
-esac
+if remote_is_github "$_rsc_remote" && [[ $_rsc_remote == *github.com[:/]* ]]; then
+  _rsc_repo=$(printf '%s' "$_rsc_remote" | sed -E 's#.*github\.com[:/]##; s#\.git$##')
+fi
 if [ -z "$_rsc_repo" ]; then
   note "required status checks: not checked (remote.origin is not a github.com URL)"
 elif ! command -v gh >/dev/null 2>&1; then

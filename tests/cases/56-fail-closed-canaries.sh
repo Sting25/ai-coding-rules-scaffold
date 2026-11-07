@@ -316,7 +316,8 @@ echo '# docs' >"$C56_CD/README.md"
 git -C "$C56_CD" add README.md
 for c56_g in "$C56_CD"/.githooks/lib/check-*; do
   c56_n=${c56_g##*/}
-  case $c56_n in check-red-green | check-mutation-diff) continue ;; esac
+  # check-clean-tree reads `git status`, not the staged list: the staged README is a dirty tree to it (#219).
+  case $c56_n in check-red-green | check-mutation-diff | check-clean-tree) continue ;; esac
   c56_run "$C56_CD" README.md env CDPATH=. ".githooks/lib/$c56_n"
   c56_expect "$c56_n with CDPATH=. passes a clean staged README (exit 0)" 0 "gate=${c56_n#check-} status="
 done
@@ -378,11 +379,48 @@ if awk '/^  guardrails:/ { g = 1 } g' "$WF/lint.yml.template" | grep -qF -- "$C5
    && ! awk '/^  guardrails:/ { exit } { print }' "$WF/lint.yml.template" | grep -qF -- "$C56_STRICT"; then
   c56_ok "lint.yml.template sets the strict variable in the guardrails job only"
 else : >"$HOOK_OUT"; c56_bad "lint.yml.template must set $C56_STRICT in the guardrails job"; fi
-for c56_w in tests coverage; do
-  if [ "$(c56_count "$WF/$c56_w.yml.template")" -eq 2 ] \
-     && grep -qF 'gate-status pytest' "$WF/$c56_w.yml.template" \
-     && grep -qF 'gate-status vitest' "$WF/$c56_w.yml.template"; then
-    c56_ok "$c56_w.yml.template: strict on both test steps, each ending in gate-status"
-  else : >"$HOOK_OUT"; c56_bad "$c56_w.yml.template must set strict on the pytest and vitest steps and end in gate-status"; fi
+# tests.yml: pytest, vitest and one clean-tree step per job (4); coverage.yml: its
+# two test steps and one clean-tree step (3). The clean-tree steps are #219.
+for c56_w in tests:4 coverage:3; do
+  if [ "$(c56_count "$WF/${c56_w%%:*}.yml.template")" -eq "${c56_w##*:}" ] \
+     && grep -qF 'gate-status pytest' "$WF/${c56_w%%:*}.yml.template" \
+     && grep -qF 'gate-status vitest' "$WF/${c56_w%%:*}.yml.template" \
+     && grep -qF 'check-clean-tree --ci' "$WF/${c56_w%%:*}.yml.template"; then
+    c56_ok "${c56_w%%:*}.yml.template: strict on the test and clean-tree steps, each ending in gate-status"
+  else : >"$HOOK_OUT"; c56_bad "${c56_w%%:*}.yml.template must set strict on the pytest, vitest and clean-tree steps"; fi
 done
-rm -rf "$C56_RG" "$C56_NOGL" "$C56_B"
+# --- (i) clean-tree (#219) and branch (#220): refuse + empty -------------------
+fixture_repo C56_CT
+fixture_install "$C56_CT" --python --no-verify
+fixture_repo C56_E
+# shellcheck disable=SC2153  # C56_E is assigned by fixture_repo
+c56_run "$C56_E" - "$C56_CT/.githooks/lib/check-clean-tree"
+c56_expect "clean-tree: no tracked files is empty, exit 0" 0 "gate=clean-tree status=empty checked=0"
+c56_run "$C56_CT" - .githooks/lib/check-branch
+c56_expect "branch: an unborn branch (first commit) is empty, exit 0" 0 "gate=branch status=empty checked=0"
+git -C "$C56_CT" add -A
+git -C "$C56_CT" commit --quiet -m "base"
+c56_run "$C56_CT" - .githooks/lib/check-clean-tree
+c56_expect "clean-tree: a clean tree is ran N, exit 0" 0 "gate=clean-tree status=ran checked="
+printf 'leaked\n' >"$C56_CT/leaked-by-tests.txt"
+c56_run "$C56_CT" - .githooks/lib/check-clean-tree
+c56_expect "clean-tree refuses an untracked file the suite left behind" 1 "leaked-by-tests.txt" "gate=clean-tree status=ran"
+rm -f "$C56_CT/leaked-by-tests.txt"
+git -C "$C56_CT" checkout --quiet -b main
+c56_run "$C56_CT" - .githooks/lib/check-branch
+c56_expect "branch refuses a commit on main" 1 "refusing to commit on the default branch" "gate=branch status=ran checked=1"
+c56_run "$C56_CT" - env SCAFFOLD_GATE_STRICT=1 .githooks/lib/check-branch
+c56_expect "branch: refusal stands under SCAFFOLD_GATE_STRICT=1" 1 "gate=branch status=ran"
+
+# --- (j) the one exit that does not end in gate-status: SIGTERM (#221) ---------
+# A terminated Python gate exits through its SIGTERM handler, not gate-status.
+# That path must be non-zero (143), or a killed gate would read as a pass. The
+# live signal run is in cases/66; this pins the handler's exit code in both.
+for c56_t in check-red-green check-mutation-diff; do
+  : >"$HOOK_OUT"
+  if grep -qF 'SIGTERM, lambda *_: sys.exit(143)' "$SCAFFOLD_DIR/githooks/lib/$c56_t.template"; then
+    c56_ok "$c56_t: SIGTERM leaves through a handler that exits 143, never 0"
+  else c56_bad "$c56_t must install a SIGTERM handler that exits non-zero (143)"; fi
+done
+
+rm -rf "$C56_RG" "$C56_NOGL" "$C56_B" "$C56_CT" "$C56_E"

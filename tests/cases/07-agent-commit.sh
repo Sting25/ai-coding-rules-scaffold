@@ -85,6 +85,55 @@ if command -v jq >/dev/null 2>&1; then
     echo "  ✗ agent-precheck — blocked a benign Bash command, expected allow"
     sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
   fi
+  # (48c2) A scaffold-allow comment on a Bash COMMAND does not exempt it: the
+  #        marker is for file content a person sanctioned, not for text the agent
+  #        is about to run. Flag strings are built from pieces so this file
+  #        carries no live pattern. Each variant must exit EXACTLY 2.
+  _ff="--for""ce"; _nv="--no-""verify"
+  for _v in \
+    "git push $_ff origin main # scaffold-allow x" \
+    "git commit -m x $_nv # scaffold-allow x" \
+    "git commit -m x --no-\\verify" \
+    "git push origin main \\"$'\n'"  $_ff"; do
+    pc=$(jq -nc --arg c "$_v" '{tool_name:"Bash",tool_input:{command:$c}}')
+    rc=0
+    echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1 || rc=$?
+    if [ "$rc" -eq 2 ]; then
+      echo "  ✓ agent-precheck refuses a Bash command despite a marker or quoting (exit 2)"; PASS=$((PASS + 1))
+    else
+      echo "  ✗ agent-precheck — exit $rc for an annotated or quoted Bash command, expected 2"; FAIL=$((FAIL + 1))
+    fi
+  done
+  # (48c3) the refusal of an annotated Bash command says why the marker is not honored
+  pc=$(jq -nc --arg c "git push $_ff origin main # scaffold-allow x" '{tool_name:"Bash",tool_input:{command:$c}}')
+  echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1 || true
+  if grep -qF "does not exempt a Bash command" "$HOOK_OUT"; then
+    echo "  ✓ agent-precheck explains that the marker does not exempt a Bash command"; PASS=$((PASS + 1))
+  else
+    echo "  ✗ agent-precheck — refusal does not say the marker is not honored for Bash"
+    sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+  fi
+  # (48c4) quoted text stays allowed (the rules exclude quotes on purpose, and the
+  #        commit-time scan agrees): a message or grep that merely NAMES a flag.
+  _am="--am""end"
+  for _v in \
+    'echo "hello world" | wc -w' \
+    "git commit -m \"docs: explain why -n is refused\"" \
+    "git commit -m \"docs: never use $_am on main\"" \
+    "git commit -m \"docs: never use $_nv\"" \
+    "git commit -m \"fix: handle \\\"$_am\\\" docs\"" \
+    "grep -c 'curl\\|bash ' README.md" \
+    "grep -rn -- \"git push $_ff\" docs/"; do
+    pc=$(jq -nc --arg c "$_v" '{tool_name:"Bash",tool_input:{command:$c}}')
+    rc=0
+    echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1 || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      echo "  ✓ agent-precheck allows a Bash command that only quotes a flag"; PASS=$((PASS + 1))
+    else
+      echo "  ✗ agent-precheck — exit $rc for a quoted-flag Bash command, expected 0"
+      sed 's/^/      /' "$HOOK_OUT"; FAIL=$((FAIL + 1))
+    fi
+  done
   # (48f2) REGRESSION (audit, false positive): only the text a tool WRITES or
   #        RUNS is scanned (Write.content, Edit.new_string, MultiEdit
   #        edits[].new_string, Bash.command). An Edit that REMOVES a hardcoded
@@ -200,6 +249,9 @@ if command -v jq >/dev/null 2>&1; then
   git checkout --quiet -- .forbidden-patterns/shell.txt
 else
   echo "  - skipped agent-precheck tests (jq not installed)"
+  # The jq block holds 28 assertions; count them as skipped so the floor in
+  # run.sh (PASS+SKIP) is the same with and without jq.
+  SKIP=$((SKIP + 28))
 fi
 reset_repo
 

@@ -319,7 +319,7 @@ remove_if_unmodified ".prettierrc.json"              "$SCAFFOLD_DIR/.prettierrc.
 remove_if_unmodified ".prettierignore"               "$SCAFFOLD_DIR/.prettierignore.template"
 remove_if_unmodified "vitest.config.ts"              "$SCAFFOLD_DIR/vitest.config.ts.template"
 remove_if_unmodified ".githooks/pre-commit"          "$SCAFFOLD_DIR/githooks/pre-commit.template"
-for check in check-size check-large-files check-patterns check-filenames check-secrets check-hygiene scaffold-config scaffold-audit ci-changed-files py-tool gate-status refusal-log; do
+for check in check-size check-large-files check-patterns check-filenames check-secrets check-hygiene scaffold-config scaffold-audit ci-changed-files py-tool gate-status refusal-log check-branch check-clean-tree; do
   remove_if_unmodified ".githooks/lib/${check}" "$SCAFFOLD_DIR/githooks/lib/${check}.template"
 done
 # Per-project override file — removed only if still byte-identical to the
@@ -369,6 +369,7 @@ remove_if_unmodified ".githooks/lib/check-mutation-diff" "$SCAFFOLD_DIR/githooks
 # Vitest twin of the two checks above.
 remove_if_unmodified ".githooks/lib/check-red-green-ts" "$SCAFFOLD_DIR/githooks/lib/check-red-green-ts.template"
 remove_if_unmodified ".githooks/lib/check-mutation-diff-ts" "$SCAFFOLD_DIR/githooks/lib/check-mutation-diff-ts.template"
+remove_if_unmodified ".githooks/lib/worktree-sweep" "$SCAFFOLD_DIR/githooks/lib/worktree-sweep.template"
 # Opt-in npm install-layer cooldown (only present if installed with
 # --npm-cooldown, #117).
 remove_if_unmodified ".npmrc" "$SCAFFOLD_DIR/.npmrc.template"

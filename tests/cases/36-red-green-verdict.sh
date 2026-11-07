@@ -440,7 +440,7 @@ unset _rg_stale _rg_pre _rg_post
 # (e) check-mutation-diff cannot be driven here (it needs mutmut and a mutation
 #     run, too heavy for this suite), so cover its prune-on-start statically:
 #     the prune call must come BEFORE the `worktree add` in the shipped template.
-_rg_pl=$(grep -n '^ *run(\["git", "worktree", "prune"\])' "$SCAFFOLD_DIR/githooks/lib/check-mutation-diff.template" | head -1 | cut -d: -f1)
+_rg_pl=$(grep -n '^ *run(\["git", "worktree", "prune"\]); _B and run(\[_B, .*worktree-sweep' "$SCAFFOLD_DIR/githooks/lib/check-mutation-diff.template" | head -1 | cut -d: -f1)
 _rg_al=$(grep -n '"worktree", "add"' "$SCAFFOLD_DIR/githooks/lib/check-mutation-diff.template" | head -1 | cut -d: -f1)
 if [ -n "$_rg_pl" ] && [ -n "$_rg_al" ] && [ "$_rg_pl" -lt "$_rg_al" ]; then
   echo "  ✓ check-mutation-diff prunes worktrees before it adds one (static: line $_rg_pl < $_rg_al)"

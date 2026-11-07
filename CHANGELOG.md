@@ -6,6 +6,49 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`check-clean-tree`: CI fails when the test suite leaves files behind
+  (#219).** New `githooks/lib/check-clean-tree.template`, run as a step after
+  the tests in `tests.yml` (both jobs) and `coverage.yml`. It lists every
+  untracked file (individually, even inside a new directory) and every modified
+  tracked file, ignores the output the workflows produce themselves
+  (`__pycache__`, coverage reports, `package-lock.json`), and ends through
+  `gate-status` (`ran N` on a clean tree). `[rules.clean-tree]` in
+  `.scaffold.toml` takes `exclude`, `severity = "warn"` or `disabled = true`.
+  `pre-commit` and `lint.yml` skip it by name.
+- **`check-branch`: the hook refuses a commit on the default branch (#220).**
+  New `githooks/lib/check-branch.template`, called first by `pre-commit`
+  (so an empty commit is refused too). The default branch is read from
+  `origin/HEAD`, else `main`, `master` and `init.defaultBranch`; the first
+  commit of a new repository and a detached HEAD pass.
+  `SCAFFOLD_ALLOW_DEFAULT_BRANCH=1` allows one deliberate commit;
+  `[rules.branch]` in `.scaffold.toml` takes `disabled` or `severity`. The
+  test fixtures now commit on a work branch. README and COMPONENTS name
+  GitHub's server-side "Do not allow bypassing the above settings" as the real
+  guard, since the hook-skip flag bypasses any local hook.
+- **The test-guard gates clean up their temp worktrees (#221).** New
+  `.githooks/lib/worktree-sweep`, installed with `--test-guard`, runs at the
+  start of each Python gate and removes the `redgreen-` and `mutdiff-` temp
+  worktrees that a killed earlier run left under the temp dir. It acts only on
+  worktrees this repository itself lists, directly under `$TMPDIR` (else
+  `/tmp`), never through a symlink, never a locked one, and nothing younger than
+  two hours (`SCAFFOLD_WORKTREE_SWEEP_MAX_AGE`, seconds); it deletes nothing
+  that `git worktree remove` did not remove. Both Python gates also clean up and
+  exit 143 on SIGTERM, which skips `finally` otherwise; SIGKILL cannot be
+  trapped, so the sweep is its backstop. The TypeScript twins use plain
+  directories, not worktrees, and are unchanged.
+- **`scaffold-worktree-report.sh` lists stale-looking worktrees (#221).**
+  Read-only, always exits 0: one line per registered worktree with branch, age
+  of the last commit, whether it is merged into the default branch, and whether
+  its directory is missing or the worktree locked.
+- **Re-measure commands, Stop-hook feasibility, import-once note (#216, #214,
+  #226).** TECHNICAL.md gains a table of read-only commands for re-measuring
+  inherited claims and a feasibility note on a `Stop`/`SubagentStop` guard
+  (from documentation, not measured; no hook ships). The coding-rules skill
+  carries a short "a report is final" rule, and the README says to
+  import the rules files once.
+
 ### Changed
 
 - **Workflow templates move to Node 24 (#258).** The shipped `tests`, `lint`,
@@ -28,6 +71,23 @@ versioning follows [SemVer](https://semver.org/).
   big", so `test-guard.yml` reported a green "declined (size)" over a broken
   gate. Both Python gates now print `internal error` with the traceback and exit
   2, which the workflow step already treats as a failure.
+- **A `# scaffold-allow` comment no longer exempts a Bash command from the agent
+  precheck (#203, #239).** The marker is for file content a person sanctioned,
+  but the precheck honored it on the command the agent was about to run, so a
+  force-push or a hook-skip flag with a trailing marker was allowed. Bash
+  commands are now never exempted, the refusal says why, and a normalised copy
+  of the command (line continuations joined, backslashes before a word
+  character removed, whitespace collapsed) is also scanned so an escaped or
+  continued flag no longer slips past. Write and Edit content keeps the
+  exemption.
+- **TypeScript test-guard twins: three follow-ups (#260).** When
+  `check-mutation-diff-ts` refuses a whole run over a path Stryker cannot
+  express (a leading `!`, or braces), the error now says how many other changed
+  source files went unevaluated. `check-red-green-ts` prints a notice counting
+  added `it.skip` and `it.todo` lines, because `vitest list` does not list them
+  (exit code unchanged). Case 59 now runs the mutation twin's refusal logging
+  (`max-mutants` and `setup-error` lines) instead of reading it.
+- **The doctor no longer reports false "nothing calls it" gaps, or demands a GitHub workflow off GitHub (#244).** A check is now counted as called when it is invoked from `pre-push` or `post-*` hooks, or from a wrapper lib file that a hook invokes (one hop). Installer backups (`*.scaffold-bak`) are no longer treated as checks or callers. In the other direction, a check named only in an `echo`, a comment, a here-doc body or an assignment is now reported as a gap, where it used to read as armed. A missing `.github/workflows/lint.yml` is a note, not a gap, when `remote.origin` is set and is not a github.com URL. Covered by `tests/cases/62-doctor-false-gaps.sh`.
 
 ## [v0.20.0] - 2026-11-07
 

@@ -90,6 +90,8 @@ fixture_repo() {
   local __fixture_repo_var=$1 __fixture_repo_dir
   __fixture_repo_dir=$(mktemp -d)
   git -C "$__fixture_repo_dir" init --quiet
+  # Commits happen on a work branch: check-branch refuses the default branch (#220).
+  git -C "$__fixture_repo_dir" checkout --quiet -b work
   git -C "$__fixture_repo_dir" config user.email "test@test.local"
   git -C "$__fixture_repo_dir" config user.name "Scaffold Test"
   printf -v "$__fixture_repo_var" '%s' "$__fixture_repo_dir"
@@ -135,6 +137,7 @@ fixture_install() {
 # shellcheck disable=SC2164
 cd "$WORK"
 git init --quiet
+git checkout --quiet -b work  # check-branch refuses the default branch (#220)
 git config user.email "test@test.local"
 git config user.name "Scaffold Test"
 echo '{"name":"test"}' >package.json

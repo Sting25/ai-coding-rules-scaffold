@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# .githooks/lib/worktree-sweep: remove the temp worktrees an earlier Python
+# test-guard gate run left behind (#221). Called at the start of each run by
+# check-red-green and check-mutation-diff.
+#
+#   worktree-sweep            no arguments; exits 0 always (best effort)
+#
+# WHY. A gate that is killed leaves a directory under the temp dir and a
+# registration in .git/worktrees. `git worktree prune` drops only registrations
+# whose directory is already gone, so a killed run's worktree (directory still
+# there) stays until the OS clears tmp. SIGTERM is handled in the gates
+# themselves; SIGKILL cannot be trapped, so this sweep is the backstop.
+#
+# OWNERSHIP RULE. The sweep acts only on an entry THIS repository lists in
+# `git worktree list --porcelain`, and only when all of these hold:
+#   - its basename is `wt` and its parent's name is redgreen-* or mutdiff-*
+#     (what the gates create with mkdtemp);
+#   - the parent sits directly in the one temp root, $TMPDIR when set, else /tmp
+#     (compared as physical paths);
+#   - neither the parent nor `wt` is a symlink, and `wt`'s physical path is
+#     <parent>/wt (a link is refused, never followed);
+#   - it is not locked, and the parent is older than the age limit.
+# It never scans the temp dir for directories to delete. Removal is
+# `git worktree remove --force`; nothing is deleted unless that succeeds, and
+# afterwards only the now-empty parent is removed (rmdir, so a parent holding
+# anything else stays). A worktree of another repository, a TypeScript twin's
+# plain directory (never registered) and anything under another name are left
+# alone.
+#
+# AGE. A run in progress must survive a second run starting beside it, so
+# nothing younger than SCAFFOLD_WORKTREE_SWEEP_MAX_AGE seconds (default 7200:
+# longer than two gate-run timeouts) is removed. The limit is compared in whole
+# minutes, rounded up, so a non-zero value under 60 s means about one minute.
+# 0 removes every match, including a run in progress: use it only in a private
+# fixture repository.
+set -u
+
+age=${SCAFFOLD_WORKTREE_SWEEP_MAX_AGE:-7200}
+case $age in '' | *[!0-9]*) age=7200 ;; esac
+git rev-parse --git-dir >/dev/null 2>&1 || exit 0
+
+root=$(cd -P "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P) || exit 0
+
+# old_enough <dir>: true when <dir> is older than the age limit.
+old_enough() {
+  [ "$age" -eq 0 ] && return 0
+  [ -n "$(find "$1" -maxdepth 0 -mmin "+$(((age + 59) / 60))" 2>/dev/null)" ]
+}
+
+# sweep_entry <registered-path>: apply the ownership rule, then remove.
+sweep_entry() {
+  local wt=$1 parent pphys
+  [ "${wt##*/}" = wt ] || return 0
+  parent=${wt%/*}
+  case ${parent##*/} in redgreen-* | mutdiff-*) ;; *) return 0 ;; esac
+  [ -d "$parent" ] && [ ! -L "$parent" ] && [ -d "$wt" ] && [ ! -L "$wt" ] || return 0
+  pphys=$(cd -P "$parent" 2>/dev/null && pwd -P) || return 0
+  [ "${pphys%/*}" = "$root" ] || return 0
+  [ "$(cd -P "$wt" 2>/dev/null && pwd -P)" = "$pphys/wt" ] || return 0
+  old_enough "$pphys" || return 0
+  git worktree remove --force "$pphys/wt" >/dev/null 2>&1 || return 0
+  rmdir "$pphys" 2>/dev/null || true
+  echo "worktree-sweep: removed stale temp worktree $pphys/wt" >&2
+}
+
+# porcelain: one block per worktree, "worktree <path>" first, an optional
+# "locked" line, a blank line between blocks.
+path="" locked=0
+while IFS= read -r line || [ -n "$line" ]; do
+  case $line in
+    "worktree "*) path=${line#worktree } locked=0 ;;
+    locked*) locked=1 ;;
+    "")
+      [ -z "$path" ] || [ "$locked" -ne 0 ] || sweep_entry "$path"
+      path="" locked=0
+      ;;
+  esac
+done < <(git worktree list --porcelain 2>/dev/null; echo)
+
+# Last: drop registrations whose directory is already gone.
+git worktree prune >/dev/null 2>&1 || true
+exit 0
