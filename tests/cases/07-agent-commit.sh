@@ -93,7 +93,8 @@ if command -v jq >/dev/null 2>&1; then
   for _v in \
     "git push $_ff origin main # scaffold-allow x" \
     "git commit -m x $_nv # scaffold-allow x" \
-    "git commit -m x --no-\\verify"; do
+    "git commit -m x --no-\\verify" \
+    "git push origin main \\"$'\n'"  $_ff"; do
     pc=$(jq -nc --arg c "$_v" '{tool_name:"Bash",tool_input:{command:$c}}')
     rc=0
     echo "$pc" | CLAUDE_PROJECT_DIR="$PWD" bash "$PRECHECK" >"$HOOK_OUT" 2>&1 || rc=$?
@@ -120,6 +121,8 @@ if command -v jq >/dev/null 2>&1; then
     "git commit -m \"docs: explain why -n is refused\"" \
     "git commit -m \"docs: never use $_am on main\"" \
     "git commit -m \"docs: never use $_nv\"" \
+    "git commit -m \"fix: handle \\\"$_am\\\" docs\"" \
+    "grep -c 'curl\\|bash ' README.md" \
     "grep -rn -- \"git push $_ff\" docs/"; do
     pc=$(jq -nc --arg c "$_v" '{tool_name:"Bash",tool_input:{command:$c}}')
     rc=0
@@ -246,6 +249,9 @@ if command -v jq >/dev/null 2>&1; then
   git checkout --quiet -- .forbidden-patterns/shell.txt
 else
   echo "  - skipped agent-precheck tests (jq not installed)"
+  # The jq block holds 28 assertions; count them as skipped so the floor in
+  # run.sh (PASS+SKIP) is the same with and without jq.
+  SKIP=$((SKIP + 28))
 fi
 reset_repo
 

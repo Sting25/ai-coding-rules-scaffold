@@ -109,7 +109,7 @@ fi
 #   the commit-time check-patterns semantics). A missing file or an unparseable
 #   pattern set returns cleanly (fail-OPEN: this is an advisory pre-check, not
 #   the security boundary — commit + CI are the fail-closed backstops).
-# Join one bucket of patterns into a single alternation and scan $content with
+# Join one bucket of patterns into a single alternation and scan $SCAN_TEXT with
 # it. $1 is the grep case flag ("i" or ""); the rest are the patterns. Prints
 # matching lines, or nothing when the bucket is empty or its combined ERE is
 # invalid (the same fail-open-on-invalid posture the single-bucket scan had).
@@ -134,8 +134,9 @@ scan_bucket() {
   fi
 }
 
-# Scan $content, then (Bash only) a normalised copy with backslashes removed and
-# whitespace runs collapsed, so an escaped flag cannot slip past a pattern that
+# Scan $content, then (Bash only) a normalised copy with line continuations
+# joined, backslashes before a word character or hyphen removed and whitespace
+# runs collapsed, so an escaped or continued flag cannot slip past a pattern that
 # expects it after a space. Quotes are kept: the rules exclude quoted text on
 # purpose, and the commit-time scan must agree. Sets HIT, and NORM_HIT=1 when
 # only the copy matched.
@@ -145,7 +146,10 @@ scan_both() {
   SCAN_TEXT=$content
   HIT=$(scan_bucket "$iflag" "$@")
   if [ -z "$HIT" ] && [ "$tool" = Bash ]; then
-    SCAN_TEXT=$(printf '%s' "$content" | tr -d '\134' | tr -s '[:blank:]' ' ')
+    # Join line continuations, drop only a backslash before a word character or
+    # hyphen (so `\|`, `\;`, `\"` and `\ ` stay as they are), collapse blanks.
+    SCAN_TEXT=${content//\\$'\n'/}
+    SCAN_TEXT=$(printf '%s' "$SCAN_TEXT" | sed -E 's/\\([[:alnum:]_-])/\1/g' | tr -s '[:blank:]' ' ')
     HIT=$(scan_bucket "$iflag" "$@")
     [ -z "$HIT" ] || NORM_HIT=1
   fi
@@ -205,7 +209,7 @@ scan_against() {
     echo "(${pfile#"$ROOT"/}). Stop and report this block to the user with the rule that matched."
     echo "A suppression needs a recorded reason and the user's go-ahead (AGENTS.md > \"Fix the file, not the check\"); do not work around the block."
     if [ "$tool" = Bash ]; then
-      echo "A scaffold-allow comment does not exempt a Bash command: the marker is for file content a person sanctioned, not for text you are about to run."
+      echo "A scaffold-allow comment does not exempt a Bash command: the marker is for file content a person sanctioned, not for text you are about to run. Use the Write or Edit tool for file content."
     fi
     echo "Matched:"
     # `|| true`: on a many-line $hit, `head -3` closes the pipe early and printf
