@@ -93,6 +93,7 @@ versioning follows [SemVer](https://semver.org/).
   (exit code unchanged). Case 59 now runs the mutation twin's refusal logging
   (`max-mutants` and `setup-error` lines) instead of reading it.
 - **The doctor no longer reports false "nothing calls it" gaps, or demands a GitHub workflow off GitHub (#244).** A check is now counted as called when it is invoked from `pre-push` or `post-*` hooks, or from a wrapper lib file that a hook invokes (one hop). Installer backups (`*.scaffold-bak`) are no longer treated as checks or callers. In the other direction, a check named only in an `echo`, a comment, a here-doc body or an assignment is now reported as a gap, where it used to read as armed. A missing `.github/workflows/lint.yml` is a note, not a gap, when `remote.origin` is set and is not a github.com URL. Covered by `tests/cases/62-doctor-false-gaps.sh`.
+- **A failing refusal-log call no longer changes a Python gate's exit code (#268).** In `check-red-green` and `check-mutation-diff`, the `refusal-log` subprocess call is now wrapped like the TypeScript twins' call: if it raises (for example a bad bash path), the gate prints one `::warning::refusal-log failed` line to stderr and still exits with its intended code (2 for a crash or timeout, 1 for a decline), where it used to exit 1 with a traceback that `test-guard.yml` read as declined. Covered by four new assertions in `tests/cases/27-test-guard.sh`.
 
 ## [v0.20.0] - 2026-11-07
 
